@@ -1,0 +1,147 @@
+# gpui.mbt product charter and compatibility goal
+
+Status: design only
+
+## Goal
+
+Build a production-ready, MoonBit-native implementation of the GPUI programming model.
+
+The project is not a source-to-source translation of Rust GPUI. It is an independent implementation that preserves the useful behavioral and API concepts of GPUI while fitting MoonBit's ownership, type system, runtime, FFI, and build model.
+
+Production-ready means that a real desktop application can depend on gpui.mbt without carrying a second application framework or a Rust-side GPUI runtime.
+
+## Product principles
+
+1. MoonBit is the implementation language for framework logic.
+2. Application-facing APIs should feel GPUI-like where that improves portability and learning.
+3. Runtime/library dependencies should be MoonBit standard functionality only.
+4. If a required primitive is missing, implement it in this repository rather than adding a general third-party runtime dependency.
+5. Tooling and test-only dependencies are allowed when they do not become dependencies of applications using gpui.mbt.
+6. Platform integration may use the smallest necessary native FFI surface.
+7. No Rust compatibility shim is a permanent architectural requirement.
+8. Headless behavior must be testable without a window server or GPU where practical.
+9. Determinism, reproducibility, accessibility, and failure diagnosis are production requirements, not post-MVP polish.
+
+## Compatibility target
+
+Compatibility is behavioral and conceptual, not Rust source compatibility.
+
+Track these GPUI concepts explicitly:
+
+- Application / App lifecycle
+- Entity[T] identity and state ownership
+- Context[T] updates, notifications, observation, subscriptions
+- Render and IntoElement
+- Element lifecycle: request layout, prepaint, paint
+- Window lifecycle and focus
+- input/event dispatch and propagation
+- actions and key bindings
+- styling and layout
+- scene primitives
+- text shaping and text system contracts
+- async tasks integrated with application lifecycle
+- platform services such as clipboard, cursor, menus, display information, accessibility, and IME
+
+For each tracked concept keep a compatibility matrix with one of:
+
+- compatible
+- compatible with documented deviation
+- planned
+- intentionally unsupported
+
+Do not claim GPUI compatibility globally while required production surfaces remain unclassified.
+
+## Non-goals
+
+- Rust source compatibility
+- binary compatibility with upstream GPUI
+- reproducing Zed application-specific UI crates
+- depending on Zed GPL components
+- matching upstream bugs
+- introducing ecosystem dependencies merely to shorten implementation
+
+## Milestones
+
+### M0: contracts
+
+No UI implementation.
+
+- public conceptual model
+- upstream provenance policy
+- compatibility matrix format
+- dependency policy
+- test strategy
+- platform boundary
+- production readiness gates
+
+### M1: deterministic core
+
+- geometry, color, IDs, event model
+- App / Entity / Context semantics
+- subscriptions and lifecycle
+- deterministic scheduling model suitable for tests
+- headless tests for all state transitions
+
+### M2: element system
+
+- Render / IntoElement / Element
+- layout contract
+- hit testing
+- event dispatch
+- focus model
+- headless scene generation
+
+### M3: rendering core
+
+- retained/transient scene representation as required by the GPUI model
+- quads, paths, clipping, images, text runs
+- deterministic headless scene snapshots
+- renderer/backend abstraction without leaking backend types into application code
+
+### M4: first native platform
+
+- real windows
+- mouse, keyboard, focus
+- clipboard
+- timers/tasks
+- text input and IME baseline
+- GPU rendering
+- production diagnostics
+
+### M5: text, accessibility, interaction completeness
+
+- shaping, font fallback, line layout
+- accessibility tree
+- IME composition correctness
+- menus, cursors, drag/drop where required
+- high-DPI and multi-display behavior
+
+### M6: multi-platform
+
+At minimum define supported tiers for macOS, Windows, and Linux.
+
+A platform is not "supported" until its Tier 1 gate passes; compiling is insufficient.
+
+### M7: production-ready 1.0
+
+All release gates in 0005 are green, compatibility/deviation docs are current, and at least one non-demo application has exercised the framework under sustained use.
+
+## 1.0 definition
+
+1.0 is not "all of upstream GPUI is implemented." It is:
+
+- stable documented public API policy
+- supported-platform matrix
+- no known correctness bug rated release-blocking
+- reproducible CI and release process
+- deterministic test suite
+- PBT and mutation-testing quality gates
+- visual regression path
+- performance budgets with tracked regressions
+- accessibility baseline
+- panic/crash diagnostics
+- documented unsafe/FFI boundaries
+- upstream provenance and license audit
+- migration/deprecation policy
+
+Implementation starts only after the open design packets agree on these contracts.
