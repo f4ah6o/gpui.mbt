@@ -272,3 +272,20 @@ Deterministic tests now cover element-tree validation, reverse-paint hit testing
 ## Dispatch/snapshot test update — 2026-10-03
 
 Deterministic M2 tests now execute the capture and bubble callback phases directly and verify that stop-propagation prevents every later callback. M3 tests now verify provisional `CommandSnapshot` scale validation, owned command storage, stable canonical serialization, command order, and negative-zero normalization. They deliberately do not exercise or claim the reserved `SceneSnapshot` v1 schema. Event/focus state-machine PBT, committed scene golden fixtures, turtles baselines, vlmkit artifacts, and native E2E remain pending.
+
+
+## Event/focus and clip invariant update — 2026-10-03
+
+The next headless correctness slice is implemented. M2 now has immutable
+`ElementTree::without_subtree`, which removes a complete subtree and clears
+focus when the focused node is removed, plus seeded QuickCheck properties for
+capture/bubble route reversal, global stop-propagation, and live focus after
+subtree removal. M3 now validates clip pushes/pops as a strict LIFO stack and
+rejects underflow, ID mismatch, and unclosed clips before a provisional
+`CommandSnapshot` is emitted; a seeded clip-stack property accompanies the
+deterministic cases.
+
+This does not complete the packet. Render/IntoElement lifecycle, recursive auto
+layout, the reserved `SceneSnapshot` v1 resource/clip-chain/item schema,
+mutation baselines, visual/native evidence, renderer/backend work, and later
+production gates remain open.
