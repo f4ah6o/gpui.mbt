@@ -271,4 +271,4 @@ Deterministic tests now cover element-tree validation, reverse-paint hit testing
 
 ## Dispatch/snapshot test update — 2026-10-03
 
-Deterministic M2 tests now execute the capture and bubble callback phases directly and verify that stop-propagation prevents every later callback. M3 tests now verify snapshot scale validation, owned command storage, schema versioning, stable canonical serialization, command order, and negative-zero normalization. Event/focus state-machine PBT, committed scene golden fixtures, turtles baselines, vlmkit artifacts, and native E2E remain pending.
+Deterministic M2 tests now execute the capture and bubble callback phases directly and verify that stop-propagation prevents every later callback. M3 tests now verify provisional `CommandSnapshot` scale validation, owned command storage, stable canonical serialization, command order, and negative-zero normalization. They deliberately do not exercise or claim the reserved `SceneSnapshot` v1 schema. Event/focus state-machine PBT, committed scene golden fixtures, turtles baselines, vlmkit artifacts, and native E2E remain pending.
