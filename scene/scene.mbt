@@ -83,6 +83,64 @@ pub fn PaintCommand::color(self : PaintCommand) -> @primitives.Color? {
   }
 }
 
+
+
+///|
+/// Snapshot construction errors.
+pub enum SceneError {
+  InvalidScale
+} derive(Eq)
+
+///|
+pub extend SceneError with Eq::{not_equal, equal}
+
+///|
+/// Versioned deterministic snapshot of the currently implemented command
+/// scene. Richer item/resource tables can be added behind a future schema.
+pub struct SceneSnapshot {
+  schema_version : Int
+  viewport : @primitives.Rect
+  scale : Double
+  commands : Array[PaintCommand]
+}
+
+///|
+pub fn SceneSnapshot::schema_version(self : SceneSnapshot) -> Int {
+  self.schema_version
+}
+
+///|
+pub fn SceneSnapshot::viewport(self : SceneSnapshot) -> @primitives.Rect {
+  self.viewport
+}
+
+///|
+pub fn SceneSnapshot::scale(self : SceneSnapshot) -> Double {
+  self.scale
+}
+
+///|
+pub fn SceneSnapshot::commands(self : SceneSnapshot) -> Array[PaintCommand] {
+  copy_commands(self.commands)
+}
+
+///|
+/// Canonical field order and compact separators are part of this schema.
+/// Negative zero is normalized to zero.
+pub fn SceneSnapshot::canonical_json(self : SceneSnapshot) -> String {
+  let viewport = canonical_rect_json(self.viewport)
+  let mut commands = ""
+  let mut index = 0
+  while index < self.commands.length() {
+    if index > 0 {
+      commands = commands + ","
+    }
+    commands = commands + canonical_command_json(self.commands[index])
+    index += 1
+  }
+  "{\"schema_version\":\{self.schema_version},\"viewport\":\{viewport},\"scale\":\{canonical_double(self.scale)},\"commands\":[\{commands}]}"
+}
+
 ///|
 /// Immutable-by-contract frame scene. Callers create a command array in stable
 /// order and hand it to the scene as one frame-bounded value.
@@ -116,6 +174,56 @@ pub fn Scene::command_at(self : Scene, index : Int) -> PaintCommand? {
     None
   } else {
     Some(self.commands[index])
+  }
+}
+
+
+
+///|
+/// Freeze this command scene into schema version 1 metadata. Scale must be
+/// finite and positive.
+pub fn Scene::snapshot(
+  self : Scene,
+  viewport : @primitives.Rect,
+  scale : Double,
+) -> Result[SceneSnapshot, SceneError] {
+  if scale.is_nan() || scale.is_inf() || scale <= 0.0 {
+    Err(InvalidScale)
+  } else {
+    Ok({
+      schema_version: 1,
+      viewport,
+      scale,
+      commands: copy_commands(self.commands),
+    })
+  }
+}
+
+///|
+fn canonical_double(value : Double) -> String {
+  let normalized = if value == 0.0 { 0.0 } else { value }
+  "\{normalized}"
+}
+
+///|
+fn canonical_rect_json(rect : @primitives.Rect) -> String {
+  let size = rect.size()
+  "{\"x\":\{canonical_double(rect.left())},\"y\":\{canonical_double(rect.top())},\"width\":\{canonical_double(size.width())},\"height\":\{canonical_double(size.height())}}"
+}
+
+///|
+fn canonical_color_json(color : @primitives.Color) -> String {
+  "{\"red\":\{color.red()},\"green\":\{color.green()},\"blue\":\{color.blue()},\"alpha\":\{color.alpha()}}"
+}
+
+///|
+fn canonical_command_json(command : PaintCommand) -> String {
+  match command {
+    QuadCommand(id~, bounds~, color~) =>
+      "{\"kind\":\"quad\",\"id\":\{id},\"bounds\":\{canonical_rect_json(bounds)},\"color\":\{canonical_color_json(color)}}"
+    ClipPushCommand(id~, bounds~) =>
+      "{\"kind\":\"clip_push\",\"id\":\{id},\"bounds\":\{canonical_rect_json(bounds)}}"
+    ClipPopCommand(id~) => "{\"kind\":\"clip_pop\",\"id\":\{id}}"
   }
 }
 
