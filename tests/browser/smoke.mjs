@@ -55,35 +55,79 @@ try {
 
   await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: "load" });
   const canvas = page.locator("#gpui-viewport");
-  await page.waitForFunction(() => document.querySelector("#frame-state")?.textContent === "RUNNING");
-  await page.waitForFunction(() => Number(document.querySelector("#sequence")?.textContent) >= 3);
-  const initial = await page.evaluate(() => {
+  const readViewport = () => page.evaluate(async () => {
+    const gpui = await import("./gpui-browser.js");
     const canvas = document.querySelector("#gpui-viewport");
     const bounds = canvas.getBoundingClientRect();
-    const context = canvas.getContext("2d");
-    const pixels = context.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
-    const status = {
-      logicalWidth: Number(document.querySelector("#logical-size").textContent.split(" × ")[0]),
-      logicalHeight: Number(document.querySelector("#logical-size").textContent.split(" × ")[1].split(" ")[0]),
-      scale: Number(document.querySelector("#device-scale").textContent.replace("×", "")),
-    };
+    const status = JSON.parse(gpui.gpui_browser_status());
     return {
-      width: canvas.width,
-      height: canvas.height,
       cssWidth: bounds.width,
       cssHeight: bounds.height,
-      pixel: Array.from(pixels),
+      backingWidth: canvas.width,
+      backingHeight: canvas.height,
+      devicePixelRatio: window.devicePixelRatio,
       status,
+      logicalLabel: document.querySelector("#logical-size")?.textContent,
+      backingLabel: document.querySelector("#backing-size")?.textContent,
+      scaleLabel: document.querySelector("#device-scale")?.textContent,
+      frameState: document.querySelector("#frame-state")?.textContent,
     };
   });
-  assert.equal(initial.width, Math.round(initial.cssWidth * 1.5));
-  assert.equal(initial.height, Math.round(initial.cssHeight * 1.5));
-  assert.ok(initial.pixel[0] !== 0 || initial.pixel[1] !== 0 || initial.pixel[2] !== 0, "the shared SceneSnapshot paints visible Canvas2D pixels");
-  assert.equal(initial.status.scale, 1.5);
-  assert.ok(initial.status.logicalWidth > 1 && initial.status.logicalHeight > 1);
+  const waitForCoherentViewport = (expectedScale) => page.waitForFunction(async (scale) => {
+    const gpui = await import("./gpui-browser.js");
+    const measure = () => {
+      const canvas = document.querySelector("#gpui-viewport");
+      if (!canvas) return null;
+      const bounds = canvas.getBoundingClientRect();
+      const status = JSON.parse(gpui.gpui_browser_status());
+      return {
+        cssWidth: bounds.width,
+        cssHeight: bounds.height,
+        backingWidth: canvas.width,
+        backingHeight: canvas.height,
+        devicePixelRatio: window.devicePixelRatio,
+        logicalWidth: status.logicalWidth,
+        logicalHeight: status.logicalHeight,
+        statusDpr: status.dpr,
+        logicalLabel: document.querySelector("#logical-size")?.textContent,
+        backingLabel: document.querySelector("#backing-size")?.textContent,
+        scaleLabel: document.querySelector("#device-scale")?.textContent,
+        frameState: document.querySelector("#frame-state")?.textContent,
+      };
+    };
+    const isCoherent = (state) => state !== null &&
+      state.frameState === "RUNNING" &&
+      state.devicePixelRatio === scale && state.statusDpr === scale &&
+      Math.abs(state.logicalWidth - state.cssWidth) < 0.1 &&
+      Math.abs(state.logicalHeight - state.cssHeight) < 0.1 &&
+      state.backingWidth === Math.round(state.cssWidth * scale) &&
+      state.backingHeight === Math.round(state.cssHeight * scale) &&
+      state.scaleLabel === `${scale.toFixed(2)}×` &&
+      state.backingLabel === `${state.backingWidth} × ${state.backingHeight} px` &&
+      state.logicalLabel === `${Math.round(state.cssWidth)} × ${Math.round(state.cssHeight)} CSS px`;
+    const first = measure();
+    await new Promise(requestAnimationFrame);
+    const second = measure();
+    return isCoherent(first) && isCoherent(second) &&
+      first.cssWidth === second.cssWidth && first.cssHeight === second.cssHeight &&
+      first.backingWidth === second.backingWidth && first.backingHeight === second.backingHeight &&
+      first.devicePixelRatio === second.devicePixelRatio &&
+      first.logicalWidth === second.logicalWidth && first.logicalHeight === second.logicalHeight &&
+      first.statusDpr === second.statusDpr;
+  }, expectedScale);
+  await page.waitForFunction(() => document.querySelector("#frame-state")?.textContent === "RUNNING");
+  await page.waitForFunction(() => Number(document.querySelector("#sequence")?.textContent) >= 3);
+  await waitForCoherentViewport(1.5);
+  const initialViewport = await readViewport();
+  const initialPixel = await page.evaluate(() => {
+    const canvas = document.querySelector("#gpui-viewport");
+    const context = canvas.getContext("2d");
+    const pixels = context.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
+    return Array.from(pixels);
+  });
+  assert.ok(initialPixel[0] !== 0 || initialPixel[1] !== 0 || initialPixel[2] !== 0, "the shared SceneSnapshot paints visible Canvas2D pixels");
+  assert.ok(initialViewport.status.logicalWidth > 1 && initialViewport.status.logicalHeight > 1);
   assert.ok((await page.locator("#capabilities li").count()) >= 8);
-  const readFramework = () => page.evaluate(async () => JSON.parse((await import("./gpui-browser.js")).gpui_browser_status()));
-
   // One idle host should finish its requested frame instead of polling continuously.
   const idleRafCount = await page.evaluate(() => window.__rafCalls);
   await page.waitForTimeout(250);
@@ -97,7 +141,7 @@ try {
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => Number(document.querySelector("#activation-count")?.textContent) === 1);
 
-  // Probe the shared layout by finding one of its focusable tile hit regions.
+  // Use a deterministic CSS-pixel location that the portable fixture maps to tile #4.
   const canvasBounds = await canvas.boundingBox();
   const targetPoint = { x: 120, y: 238 };
   await page.mouse.move(canvasBounds.x + targetPoint.x, canvasBounds.y + targetPoint.y);
@@ -107,11 +151,7 @@ try {
 
   // Resize CSS layout, then change DPR live through Chromium's emulation boundary.
   await page.setViewportSize({ width: 1200, height: 880 });
-  await page.waitForFunction(async () => {
-    const status = JSON.parse((await import("./gpui-browser.js")).gpui_browser_status());
-    const bounds = document.querySelector("#gpui-viewport").getBoundingClientRect();
-    return Math.abs(status.logicalWidth - bounds.width) < 0.1 && Math.abs(status.logicalHeight - bounds.height) < 0.1;
-  });
+  await waitForCoherentViewport(1.5);
   const cdp = await context.newCDPSession(page);
   await cdp.send("Emulation.setDeviceMetricsOverride", {
     width: 1200,
@@ -119,18 +159,12 @@ try {
     deviceScaleFactor: 2,
     mobile: false,
   });
-  await page.waitForFunction(async () => {
-    const status = JSON.parse((await import("./gpui-browser.js")).gpui_browser_status());
-    return status.dpr === 2 && window.devicePixelRatio === 2;
-  });
-  const resized = await page.locator("#gpui-viewport").evaluate((element) => ({
-    width: element.width,
-    height: element.height,
-    cssWidth: element.getBoundingClientRect().width,
-    cssHeight: element.getBoundingClientRect().height,
-  }));
-  assert.equal(resized.width, Math.round(resized.cssWidth * 2));
-  assert.equal(resized.height, Math.round(resized.cssHeight * 2));
+  await waitForCoherentViewport(2);
+  const resized = await readViewport();
+  assert.equal(resized.devicePixelRatio, 2);
+  assert.equal(resized.status.dpr, 2);
+  assert.equal(resized.backingWidth, Math.round(resized.cssWidth * resized.devicePixelRatio));
+  assert.equal(resized.backingHeight, Math.round(resized.cssHeight * resized.devicePixelRatio));
 
   // Headless Chromium cannot switch the tab strip's active tab. Override the
   // standards-backed Document state and deliver its real visibilitychange event.
@@ -148,6 +182,7 @@ try {
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await page.waitForFunction(() => document.querySelector("#last-event")?.textContent === "page visible");
+  await waitForCoherentViewport(2);
 
   // Context loss is surfaced as a typed renderer diagnostic; remount creates a fresh logical app.
   await canvas.evaluate((element) => element.dispatchEvent(new Event("contextlost", { cancelable: true })));
@@ -155,36 +190,28 @@ try {
   await page.getByRole("button", { name: "Remount viewport" }).click();
   await page.waitForFunction(() => document.querySelector("#frame-state")?.textContent === "RUNNING");
   await page.waitForFunction(() => Number(document.querySelector("#sequence")?.textContent) >= 3);
+  await waitForCoherentViewport(2);
   assert.equal(await page.locator("#gpui-viewport").count(), 1);
-  let remounted = await page.locator("#gpui-viewport").evaluate((element) => ({
-    width: element.width,
-    height: element.height,
-    cssWidth: element.getBoundingClientRect().width,
-    cssHeight: element.getBoundingClientRect().height,
-  }));
-  let remountedStatus = await readFramework();
-  assert.equal(remounted.width, Math.round(remounted.cssWidth * 2));
-  assert.equal(remounted.height, Math.round(remounted.cssHeight * 2));
-  assert.ok(Math.abs(remountedStatus.logicalWidth - remounted.cssWidth) < 0.1);
-  assert.ok(Math.abs(remountedStatus.logicalHeight - remounted.cssHeight) < 0.1);
-  assert.equal(remountedStatus.dpr, 2);
+  let remounted = await readViewport();
+  assert.equal(remounted.devicePixelRatio, 2);
+  assert.equal(remounted.status.dpr, 2);
+  assert.ok(Math.abs(remounted.status.logicalWidth - remounted.cssWidth) < 0.1);
+  assert.ok(Math.abs(remounted.status.logicalHeight - remounted.cssHeight) < 0.1);
+  assert.equal(remounted.backingWidth, Math.round(remounted.cssWidth * 2));
+  assert.equal(remounted.backingHeight, Math.round(remounted.cssHeight * 2));
 
   await page.getByRole("button", { name: "Remount viewport" }).click();
   await page.waitForFunction(() => document.querySelector("#frame-state")?.textContent === "RUNNING");
   await page.waitForFunction(() => Number(document.querySelector("#sequence")?.textContent) >= 3);
+  await waitForCoherentViewport(2);
   assert.equal(await page.locator("#gpui-viewport").count(), 1);
-  remounted = await page.locator("#gpui-viewport").evaluate((element) => ({
-    width: element.width,
-    height: element.height,
-    cssWidth: element.getBoundingClientRect().width,
-    cssHeight: element.getBoundingClientRect().height,
-  }));
-  remountedStatus = await readFramework();
-  assert.equal(remounted.width, Math.round(remounted.cssWidth * 2), "remount reapplies the measured viewport instead of stale model defaults");
-  assert.equal(remounted.height, Math.round(remounted.cssHeight * 2));
-  assert.ok(Math.abs(remountedStatus.logicalWidth - remounted.cssWidth) < 0.1);
-  assert.ok(Math.abs(remountedStatus.logicalHeight - remounted.cssHeight) < 0.1);
-  assert.equal(remountedStatus.dpr, 2);
+  remounted = await readViewport();
+  assert.equal(remounted.devicePixelRatio, 2);
+  assert.equal(remounted.status.dpr, 2);
+  assert.ok(Math.abs(remounted.status.logicalWidth - remounted.cssWidth) < 0.1);
+  assert.ok(Math.abs(remounted.status.logicalHeight - remounted.cssHeight) < 0.1);
+  assert.equal(remounted.backingWidth, Math.round(remounted.cssWidth * 2), "remount reapplies the measured viewport instead of stale model defaults");
+  assert.equal(remounted.backingHeight, Math.round(remounted.cssHeight * 2));
   assert.deepEqual(pageErrors, [], "browser callbacks and renderer complete without uncaught errors");
   await context.close();
   console.log("Browser smoke passed: Canvas2D snapshot, DPR, input/focus, resize/lifecycle, hidden-tab scheduling, context loss, and repeated teardown.");
@@ -196,7 +223,22 @@ try {
         title: await page.title(),
         diagnostic: await page.locator("#diagnostic").textContent().catch(() => "unavailable"),
         body: await page.locator("body").innerText().catch(() => "unavailable"),
-        framework: await page.evaluate(async () => JSON.parse((await import("./gpui-browser.js")).gpui_browser_status())).catch(() => null),
+        viewport: await page.evaluate(async () => {
+          const gpui = await import("./gpui-browser.js");
+          const canvas = document.querySelector("#gpui-viewport");
+          const bounds = canvas?.getBoundingClientRect();
+          return {
+            devicePixelRatio: window.devicePixelRatio,
+            cssWidth: bounds?.width,
+            cssHeight: bounds?.height,
+            backingWidth: canvas?.width,
+            backingHeight: canvas?.height,
+            framework: JSON.parse(gpui.gpui_browser_status()),
+            logicalLabel: document.querySelector("#logical-size")?.textContent,
+            backingLabel: document.querySelector("#backing-size")?.textContent,
+            scaleLabel: document.querySelector("#device-scale")?.textContent,
+          };
+        }).catch(() => null),
         pageErrors,
         consoleMessages,
       }, null, 2));
