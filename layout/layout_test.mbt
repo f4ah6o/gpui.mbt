@@ -51,6 +51,42 @@ test "row flex grow preserves order gap and deterministic bounds" {
 }
 
 ///|
+test "fractional exact-fit distribution ignores floating-point residue" {
+  let size = unwrap_size(10.0, 20.0)
+  let intrinsic = unwrap_size(1.0, 8.0)
+  let first = unwrap_item_flex(
+    @layout.FlexItem::new(
+      21,
+      unwrap_points(0.7),
+      @layout.Dimension::auto(),
+      intrinsic,
+    ),
+    0.8,
+    1.0,
+  )
+  let second = unwrap_item_flex(
+    @layout.FlexItem::new(
+      22,
+      unwrap_points(9.1),
+      @layout.Dimension::auto(),
+      intrinsic,
+    ),
+    1.1,
+    1.0,
+  )
+  let container = unwrap_gap(
+    @layout.FlexContainer::new(@layout.FlowDirection::row(), size),
+    0.1,
+  )
+  let layout = unwrap_layout(@layout.layout_flex(container, [first, second]))
+  let items = layout.items()
+  assert_true(items.length() == 2)
+  assert_true(!layout.overflow())
+  assert_true(!items[0].overflow())
+  assert_true(!items[1].overflow())
+}
+
+///|
 test "shrink clamps once and reports minimum-driven overflow" {
   let size = unwrap_size(50.0, 20.0)
   let intrinsic = unwrap_size(40.0, 10.0)
