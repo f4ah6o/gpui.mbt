@@ -39,6 +39,8 @@ jobs:
           version: 1.0.0
           node-version: 24.11.0
           run-install: true
+      - name: Check Vite+ browser tooling
+        run: vp check
       - name: Install Chromium and system dependencies
         run: vp run browser:install
       - name: Build the Vite+ browser proof

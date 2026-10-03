@@ -25,7 +25,7 @@ the first module. This keeps both `vp dev` and `vp build` valid from a clean
 checkout; the MoonBit plugin then owns the normal dev watch/reload path.
 
 Use the repository-pinned MoonBit toolchain and a Node.js release accepted by
-Vite+ 1.0.0 (`^22.18.0 || ^24.11.0 || >=26.0.0`). From a clean checkout:
+Vite+ 1.0.0 (`^22.18.0 || ^24.11.0 || >=26.0.0`). The project pins pnpm 12.9.1 for dependency resolution. From a clean checkout:
 
 ```sh
 vp install
