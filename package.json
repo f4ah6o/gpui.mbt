@@ -1,0 +1,22 @@
+{
+  "name": "gpui-mbt-browser-tooling",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^22.18.0 || ^24.11.0 || >=26.0.0"
+  },
+  "scripts": {
+    "browser:install": "playwright install --with-deps chromium",
+    "browser:smoke": "node tests/browser/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
+    "vite-plugin-moonbit": "0.5.1",
+    "vite-plus": "1.0.0"
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
+    "vitest": "5.0.1"
+  }
+}

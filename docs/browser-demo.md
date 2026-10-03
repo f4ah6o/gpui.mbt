@@ -13,38 +13,56 @@ or establish a production browser backend. WasmGC and Wasm targets, WebGPU,
 text and Japanese IME, accessibility, clipboard/cursor services, renderer
 recovery, and production support remain open work.
 
-## Build and run
+## Browser development toolchain
 
-Use the repository-pinned MoonBit toolchain and Node.js 24 or newer. From a clean
-checkout:
+Browser development and production packaging use Vite+ through the `vp` CLI.
+`vite-plugin-moonbit` resolves the MoonBit browser package through the
+`mbt:` import, starts `moon build --watch` in development, and forwards
+MoonBit source maps into Vite.
+
+The Vite config performs one synchronous MoonBit JS build before Vite resolves
+the first module. This keeps both `vp dev` and `vp build` valid from a clean
+checkout; the MoonBit plugin then owns the normal dev watch/reload path.
+
+Use the repository-pinned MoonBit toolchain and a Node.js release accepted by
+Vite+ 1.0.0 (`^22.18.0 || ^24.11.0 || >=26.0.0`). From a clean checkout:
 
 ```sh
-./scripts/build_browser_demo.sh
-python3 -m http.server --directory _build/browser-site 8000
+vp install
+vp dev
 ```
 
-Open `http://localhost:8000`. The static directory contains the page, the
-repository-owned host bootstrap, and the generated JavaScript module. Serve it
-over HTTP so the browser can load the module.
+The development server serves the browser proof directly. MoonBit edits rebuild
+through the plugin and Vite refreshes the affected browser module.
+
+Build the production artifact with:
+
+```sh
+vp build
+```
+
+The verified static output is written to `_build/browser-site`. Vite uses a
+relative base so the same output can be served locally or from the repository's
+GitHub Pages path.
 
 Run the real-browser smoke test with Chromium installed:
 
 ```sh
-npm ci --prefix tests/browser
-npx --prefix tests/browser playwright install chromium
-npm --prefix tests/browser run smoke
+vp run browser:install
+vp build
+vp run browser:smoke
 ```
 
-Playwright is pinned at 1.63.0 as a test-only dependency (Apache-2.0 in the
-lockfile). It is not included in the generated browser bundle.
+Playwright is pinned at 1.63.0 as a test-only dependency and is not included in
+the generated browser bundle. Vite+ is pinned at 1.0.0 and the Vite peer used by
+plugins is pinned to the matching `@voidzero-dev/vite-plus-core@1.0.0`.
 
 The CI workflow also runs formatting and MoonBit checks/tests across all
-configured targets, installs Chromium, runs the smoke test, then uploads and
-deploys that same verified static artifact with GitHub Pages Actions. Pushes to
-`feature/browser-backend-poc` and pull requests run verification and package the
-artifact but do not deploy. Pushes to `main` and manual runs started from `main`
-deploy the artifact. The first live deployment follows merge to `main` and the
-initial GitHub Pages Actions configuration.
+configured targets, installs the pinned Vite+ toolchain, builds through
+`vp build`, installs Chromium, runs the smoke test, then uploads and deploys
+that same verified static artifact with GitHub Pages Actions. Pull requests run
+verification and package the artifact but do not deploy. Pushes to `main` and
+manual runs started from `main` deploy the artifact.
 
 The headless browser smoke injects a synthetic hidden `Document` state and
 dispatches the browser's `visibilitychange` event to exercise the suspension

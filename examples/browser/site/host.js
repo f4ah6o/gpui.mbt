@@ -1,4 +1,4 @@
-import * as gpui from "./gpui-browser.js";
+import * as gpui from "mbt:f4ah6o/gpui/examples/browser";
 
 const elements = {
   frame: document.querySelector("#canvas-frame"),
@@ -381,7 +381,7 @@ function start() {
   }
 }
 
-const gpuiCapabilities = JSON.parse(gpui.gpui_browser_capabilities());
+window.__gpuiSmokeStatus = () => JSON.parse(gpui.gpui_browser_status());\n\nconst gpuiCapabilities = JSON.parse(gpui.gpui_browser_capabilities());
 elements.remount.addEventListener("click", () => start());
 window.addEventListener("pagehide", stop);
 window.addEventListener("pageshow", (event) => { if (event.persisted || !running) start(); });

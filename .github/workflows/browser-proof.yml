@@ -34,19 +34,17 @@ jobs:
           moon fmt --check
           moon check --target all --deny-warn
           moon test --target all --deny-warn
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: tests/browser/package-lock.json
-      - name: Install browser test dependency
-        run: npm ci --prefix tests/browser
+          version: 1.0.0
+          node-version: 24.11.0
+          run-install: true
       - name: Install Chromium and system dependencies
-        run: npx --prefix tests/browser playwright install --with-deps chromium
-      - name: Build the static browser proof
-        run: ./scripts/build_browser_demo.sh
+        run: vp run browser:install
+      - name: Build the Vite+ browser proof
+        run: vp build
       - name: Run real Chromium smoke tests
-        run: npm --prefix tests/browser run smoke
+        run: vp run browser:smoke
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
