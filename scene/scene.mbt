@@ -1,7 +1,7 @@
 ///|
 /// Platform-neutral paint command kinds used by headless scene tests and
 /// renderer backends.
-pub enum PaintKind {
+pub(all) enum PaintKind {
   Quad
   ClipPush
   ClipPop
