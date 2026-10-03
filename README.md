@@ -6,7 +6,7 @@ The project aims to let a MoonBit desktop application use GPUI-like concepts wit
 
 ## Current state
 
-M0 contracts define the App/Entity/Context model, architecture, dependency rules, and compatibility baseline. M1 implements logical IDs, app/entity/context lifetimes, subscriptions, structured errors, and a deterministic scheduler with headless tests. M2 is now in progress with a platform-neutral deterministic flex-line layout foundation; recursive element trees, hit testing, event dispatch, focus, and headless scenes remain pending. Compatibility rows remain `planned` until behavior has been compared with the pinned GPUI revision; implementation is not a global compatibility claim.
+M0 contracts define the App/Entity/Context model, architecture, dependency rules, and compatibility baseline. M1 implements logical IDs, app/entity/context lifetimes, subscriptions, structured errors, and a deterministic scheduler with headless tests. M2 now includes the platform-neutral deterministic flex-line layout foundation plus a flat pre-order element tree with hit testing, capture/bubble routing metadata, focus state, and deterministic headless background-quad scene generation. Render/IntoElement lifecycle semantics, stop-propagation callbacks, recursive auto layout, and broader scene primitives remain pending. Compatibility rows remain `planned` until behavior has been compared with the pinned GPUI revision; implementation is not a global compatibility claim.
 
 - [Product and core behavior contract](docs/product.md)
 - [Architecture and dependency contract](docs/architecture.md)
@@ -62,8 +62,8 @@ The MoonBit core packages compile and test on the configured local targets, but 
 |---|---|---|
 | M0 — contracts | Product model, compatibility format, dependency policy, test strategy, platform boundary, release gates | Delivered; machine-readable checks are available. |
 | M1 — deterministic core | IDs, App/Entity/Context, subscriptions, deterministic scheduler, headless lifecycle tests | Implemented; 30/30 tests pass on wasm, wasm-gc, js, and native. |
-| M2 — element system | Render/IntoElement/Element, layout, hit testing, event dispatch, focus, headless scenes | In progress; deterministic flex-line layout and seeded layout properties are implemented. Element trees, dispatch, focus, and scenes remain pending. |
-| M3 — rendering core | Stable scene data, primitives, text runs, renderer abstraction, headless snapshots | Planned. |
+| M2 — element system | Render/IntoElement/Element, layout, hit testing, event dispatch, focus, headless scenes | In progress; deterministic flex-line layout, seeded layout properties, flat element trees, hit testing, capture/bubble route planning, focus state, and background-quad headless scenes are implemented. Render/IntoElement lifecycle and stop-propagation callbacks remain pending. |
+| M3 — rendering core | Stable scene data, primitives, text runs, renderer abstraction, headless snapshots | In progress; a platform-neutral ordered scene command foundation for quads and clips is implemented. Stable serialization, paths/images/text runs, renderer contracts, and snapshots remain pending. |
 | M4 — first native platform | Window lifecycle, input, clipboard, timers, text input/IME baseline, GPU surface, diagnostics | Planned; macOS is the first native backend target. |
 | M5 — text and interaction completeness | Shaping/fallback, accessibility, IME correctness, menus/cursors, high-DPI/multi-display | Planned. |
 | M6 — multi-platform | Tier definitions and Tier 1 gates for macOS, Windows, and Linux | Planned. |
@@ -73,7 +73,7 @@ M7 is not a promise to implement every upstream GPUI feature. It requires a stab
 
 ## Validation
 
-The repository contains the M0 design contracts, M1 MoonBit core, and the first M2 layout package. Run the contract and dependency checks with:
+The repository contains the M0 design contracts, M1 MoonBit core, the M2 layout/element foundations, and the first M3 headless scene command package. Run the contract and dependency checks with:
 
 ```sh
 python3 scripts/check_contracts.py
@@ -87,7 +87,7 @@ Formatting can be checked with:
 moon fmt --check
 ```
 
-The checks establish contract structure, package boundaries, formatting, compilation, and package tests. The current 36-test suite passes on wasm, wasm-gc, js, and native, but those results do not establish native desktop platform support. Broader property/mutation tests, visual artifacts, and native E2E gates are defined in the [production and test issue packets](issues/open/).
+The checks establish contract structure, package boundaries, formatting, compilation, and package tests. All tests are expected to pass on wasm, wasm-gc, js, and native; those headless results do not establish native desktop platform support. Broader property/mutation tests, visual artifacts, and native E2E gates are defined in the [production and test issue packets](issues/open/).
 
 ## Upstream reference and independence
 
