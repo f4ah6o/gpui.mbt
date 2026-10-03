@@ -133,3 +133,43 @@ test "scene snapshot v1 reuses identical active clip chains" {
     }
   }
 }
+
+
+///|
+test "scene snapshot v1 rejects invalid directly constructed public items" {
+  let viewport = snapshot_rect(0.0, 0.0, 20.0, 20.0)
+  let bounds = snapshot_rect(1.0, 1.0, 5.0, 5.0)
+  let color = snapshot_color(1, 2, 3)
+  let transform = @scene.AffineTransform::identity()
+  let invalid_opacity = @scene.SceneItem::QuadItem(
+    id=1,
+    bounds~,
+    color~,
+    transform~,
+    opacity=0.0 / 0.0,
+    clip_chain_id=None,
+  )
+  assert_true(
+    @scene.SceneSnapshot::new(viewport, 1.0, [], [], [invalid_opacity])
+    is Err(InvalidOpacity),
+  )
+  let invalid_transform = @scene.SceneItem::QuadItem(
+    id=2,
+    bounds~,
+    color~,
+    transform=@scene.AffineTransform::{
+      a: 1.0,
+      b: 0.0,
+      c: 0.0,
+      d: 1.0,
+      tx: 1.0 / 0.0,
+      ty: 0.0,
+    },
+    opacity=1.0,
+    clip_chain_id=None,
+  )
+  assert_true(
+    @scene.SceneSnapshot::new(viewport, 1.0, [], [], [invalid_transform])
+    is Err(NonFiniteTransform),
+  )
+}
