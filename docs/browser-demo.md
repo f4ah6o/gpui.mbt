@@ -49,6 +49,8 @@ initial GitHub Pages Actions configuration.
 The headless browser smoke injects a synthetic hidden `Document` state and
 dispatches the browser's `visibilitychange` event to exercise the suspension
 path. It does not claim to validate operating-system tab switching behavior.
+The DPR check changes viewport dimensions and device scale together to produce
+a real browser resize signal; the smoke does not isolate DPR-only changes.
 
 For initial repository setup, enable GitHub Pages with **Build and deployment →
 Source: GitHub Actions**. The workflow uses the `github-pages` environment and

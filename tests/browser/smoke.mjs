@@ -46,6 +46,61 @@ try {
   page.on("console", (message) => consoleMessages.push(`${message.type()}: ${message.text()}`));
   await page.addInitScript(() => {
     const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
+    const signals = window.__gpuiSmokeSignals = {
+      windowResizeEvents: 0,
+      resolutionMediaQueries: [],
+      resolutionMediaQueryChanges: [],
+      resizeObserverCallbacks: 0,
+      devicePixelObserverEntries: 0,
+      lastDevicePixelContentBox: null,
+    };
+    window.addEventListener("resize", () => { signals.windowResizeEvents += 1; });
+    const nativeMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query) => {
+      const media = nativeMatchMedia(query);
+      if (query.includes("resolution")) {
+        const registration = {
+          query,
+          matches: media.matches,
+          devicePixelRatio: window.devicePixelRatio,
+        };
+        signals.resolutionMediaQueries.push(registration);
+        const onChange = (event) => {
+          registration.matches = event.matches;
+          registration.devicePixelRatio = window.devicePixelRatio;
+          signals.resolutionMediaQueryChanges.push({
+            query,
+            matches: event.matches,
+            devicePixelRatio: window.devicePixelRatio,
+          });
+        };
+        if (media.addEventListener) media.addEventListener("change", onChange);
+        else media.addListener(onChange);
+      }
+      return media;
+    };
+    const NativeResizeObserver = window.ResizeObserver;
+    window.ResizeObserver = class extends NativeResizeObserver {
+      constructor(callback) {
+        super((entries, observer) => {
+          for (const entry of entries) {
+            if (entry.target?.id !== "gpui-viewport") continue;
+            signals.resizeObserverCallbacks += 1;
+            const box = entry.devicePixelContentBoxSize;
+            const size = Array.isArray(box) ? box[0] : box;
+            if (size) {
+              signals.devicePixelObserverEntries += 1;
+              signals.lastDevicePixelContentBox = {
+                inlineSize: size.inlineSize,
+                blockSize: size.blockSize,
+                devicePixelRatio: window.devicePixelRatio,
+              };
+            }
+          }
+          callback(entries, observer);
+        });
+      }
+    };
     window.__rafCalls = 0;
     window.requestAnimationFrame = (callback) => {
       window.__rafCalls += 1;
@@ -184,18 +239,45 @@ try {
     "pointer cancellation must not surface event.button === -1 as invalid input",
   );
 
-  // Resize CSS layout, then change DPR live through Chromium's emulation boundary.
+  // Change viewport dimensions and DPR together through Chromium's emulation boundary.
   await page.setViewportSize({ width: 1200, height: 880 });
   await waitForCoherentViewport(1.5);
+  const readResizeSignals = () => page.evaluate(() => ({
+    windowResizeEvents: window.__gpuiSmokeSignals.windowResizeEvents,
+    resolutionMediaQueries: window.__gpuiSmokeSignals.resolutionMediaQueries.map((entry) => ({ ...entry })),
+    resolutionMediaQueryChanges: window.__gpuiSmokeSignals.resolutionMediaQueryChanges.length,
+    resizeObserverCallbacks: window.__gpuiSmokeSignals.resizeObserverCallbacks,
+    devicePixelObserverEntries: window.__gpuiSmokeSignals.devicePixelObserverEntries,
+    lastDevicePixelContentBox: window.__gpuiSmokeSignals.lastDevicePixelContentBox,
+  }));
+  const resizeSignalsBeforeDensityChange = await readResizeSignals();
   const cdp = await context.newCDPSession(page);
   await cdp.send("Emulation.setDeviceMetricsOverride", {
-    width: 1200,
-    height: 880,
+    width: 1100,
+    height: 820,
     deviceScaleFactor: 2,
     mobile: false,
   });
   await waitForCoherentViewport(2);
   const resized = await readViewport();
+  const resizeSignalsAfterDensityChange = await readResizeSignals();
+  const resizeSignalDelta = {
+    windowResizeEvents: resizeSignalsAfterDensityChange.windowResizeEvents - resizeSignalsBeforeDensityChange.windowResizeEvents,
+    resolutionMediaQueryChanges: resizeSignalsAfterDensityChange.resolutionMediaQueryChanges - resizeSignalsBeforeDensityChange.resolutionMediaQueryChanges,
+    resizeObserverCallbacks: resizeSignalsAfterDensityChange.resizeObserverCallbacks - resizeSignalsBeforeDensityChange.resizeObserverCallbacks,
+    devicePixelObserverEntries: resizeSignalsAfterDensityChange.devicePixelObserverEntries - resizeSignalsBeforeDensityChange.devicePixelObserverEntries,
+  };
+  console.log("Browser resize/DPR signals:", JSON.stringify({
+    before: resizeSignalsBeforeDensityChange,
+    after: resizeSignalsAfterDensityChange,
+    delta: resizeSignalDelta,
+  }));
+  assert.ok(
+    resizeSignalDelta.windowResizeEvents > 0 ||
+      resizeSignalDelta.resolutionMediaQueryChanges > 0 ||
+      resizeSignalDelta.resizeObserverCallbacks > 0,
+    "the browser reports the real viewport-size/device-scale transition",
+  );
   assert.equal(resized.devicePixelRatio, 2);
   assert.equal(resized.status.dpr, 2);
   assert.equal(resized.backingWidth, Math.round(resized.cssWidth * resized.devicePixelRatio));
@@ -268,6 +350,7 @@ try {
             backingWidth: canvas?.width,
             backingHeight: canvas?.height,
             framework: window.__gpuiSmokeStatus?.() ?? null,
+            signals: window.__gpuiSmokeSignals ?? null,
             logicalLabel: document.querySelector("#logical-size")?.textContent,
             backingLabel: document.querySelector("#backing-size")?.textContent,
             scaleLabel: document.querySelector("#device-scale")?.textContent,
