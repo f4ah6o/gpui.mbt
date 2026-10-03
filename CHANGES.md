@@ -26,3 +26,10 @@
 ### Migration
 
 - Entity payloads of generic type `T` must use immutable or copy-on-write values. Mutating a retained `Array`, `Map`, `Ref`, or other mutable alias outside `App::update` can bypass revision and notification tracking; M1 cannot enforce deep-copy ownership.
+
+
+## Unreleased M2/M3 dispatch and snapshot slice
+
+- Add callback-driven capture/bubble pointer dispatch with shared stop-propagation state and deterministic visited-path results.
+- Add schema-versioned scene command snapshots with validated positive scale, owned command storage, and canonical compact serialization.
+- Extend headless tests and implementation evidence without changing any platform support or release-gate claim.
