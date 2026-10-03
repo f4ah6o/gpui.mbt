@@ -43,27 +43,10 @@ jobs:
         run: vp install --frozen-lockfile
       - name: Check Vite+ browser tooling
         run: vp check
-      - name: Smoke Vite+ development server
-        run: |
-          vp dev --host 127.0.0.1 --port 5173 > /tmp/gpui-vp-dev.log 2>&1 &
-          dev_pid=$!
-          trap 'kill "$dev_pid" 2>/dev/null || true; wait "$dev_pid" 2>/dev/null || true' EXIT
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error http://127.0.0.1:5173/ > /tmp/gpui-vp-dev.html; then
-              break
-            fi
-            if ! kill -0 "$dev_pid" 2>/dev/null; then
-              cat /tmp/gpui-vp-dev.log
-              exit 1
-            fi
-            sleep 1
-          done
-          test -s /tmp/gpui-vp-dev.html || {
-            cat /tmp/gpui-vp-dev.log
-            exit 1
-          }
       - name: Install Chromium and system dependencies
         run: vp run browser:install
+      - name: Exercise Vite+ MoonBit dev watch and source maps
+        run: vp run browser:dev-watch
       - name: Build the Vite+ browser proof
         run: vp build
       - name: Run real Chromium smoke tests
