@@ -284,56 +284,87 @@ pub fn Scene::snapshot_v1(
       Err(error) => Err(error)
       Ok(_) => {
         let clip_stack : Array[@primitives.Rect] = []
-        let clip_ids : Array[UInt64] = []
         let clip_chains : Array[ClipChain] = []
         let items : Array[SceneItem] = []
-        let mut failure : SceneError? = None
         let mut index = 0
-        while index < self.commands.length() && failure is None {
+        while index < self.commands.length() {
           match self.commands[index] {
-            ClipPushCommand(id~, bounds~) => {
-              clip_ids.push(id)
-              clip_stack.push(bounds)
-            }
-            ClipPopCommand(..) =>
-              if clip_ids.length() > 0 {
-                ignore(clip_ids.pop())
-                ignore(clip_stack.pop())
-              }
+            ClipPushCommand(bounds~, ..) => clip_stack.push(bounds)
+            ClipPopCommand(..) => ignore(clip_stack.pop())
             QuadCommand(id~, bounds~, color~) => {
-              let clip_chain_id : Int? = if clip_stack.length() == 0 {
-                None
-              } else {
-                let chain_id = clip_chains.length()
-                clip_chains.push(ClipChain::new(chain_id, clip_stack))
-                Some(chain_id)
-              }
-              match
-                SceneItem::quad(
-                  id,
-                  bounds,
-                  color,
-                  AffineTransform::identity(),
-                  1.0,
-                  clip_chain_id,
-                ) {
-                Err(_) => failure = Some(SceneError::InvalidScale)
-                Ok(item) => items.push(item)
-              }
+              let clip_chain_id = snapshot_clip_chain_id(
+                clip_chains,
+                clip_stack,
+              )
+              items.push(
+                QuadItem(
+                  id~,
+                  bounds~,
+                  color~,
+                  transform=AffineTransform::identity(),
+                  opacity=1.0,
+                  clip_chain_id~,
+                ),
+              )
             }
           }
           index += 1
         }
-        match failure {
-          Some(error) => Err(error)
-          None =>
-            match SceneSnapshot::new(viewport, scale, [], clip_chains, items) {
-              Ok(snapshot) => Ok(snapshot)
-              Err(_) => Err(SceneError::InvalidScale)
-            }
-        }
+        Ok({
+          schema_version: SCENE_SNAPSHOT_SCHEMA_VERSION,
+          viewport,
+          scale,
+          resources: [],
+          clip_chains,
+          items,
+        })
       }
     }
+  }
+}
+
+///|
+fn snapshot_clip_chain_id(
+  chains : Array[ClipChain],
+  rects : Array[@primitives.Rect],
+) -> Int? {
+  if rects.length() == 0 {
+    None
+  } else {
+    let mut found : Int? = None
+    let mut index = 0
+    while index < chains.length() && found is None {
+      if snapshot_rect_arrays_equal(chains[index].rects(), rects) {
+        found = Some(chains[index].id())
+      }
+      index += 1
+    }
+    match found {
+      Some(id) => Some(id)
+      None => {
+        let id = chains.length()
+        chains.push(ClipChain::new(id, rects))
+        Some(id)
+      }
+    }
+  }
+}
+
+///|
+fn snapshot_rect_arrays_equal(
+  left : Array[@primitives.Rect],
+  right : Array[@primitives.Rect],
+) -> Bool {
+  if left.length() != right.length() {
+    false
+  } else {
+    let mut equal = true
+    let mut index = 0
+    while index < left.length() && equal {
+      equal = left[index] == right[index]
+      index += 1
+    }
+    equal
   }
 }
 
