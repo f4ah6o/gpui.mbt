@@ -9,6 +9,7 @@
 #include <math.h>
 #include <poll.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/eventfd.h>
@@ -494,43 +495,72 @@ static void release_host(struct host *h) {
 }
 /* Roundtrips are bounded: a connected but unresponsive compositor must not
  * hang initialization. Startup and creation share the dispatch poll path. */
+static int display_failure(struct host *h, const char *where) {
+  int display_error = wl_display_get_error(h->display);
+  const struct wl_interface *interface = NULL;
+  uint32_t object_id = 0;
+  uint32_t protocol_error =
+      display_error == EPROTO
+          ? wl_display_get_protocol_error(h->display, &interface, &object_id)
+          : 0;
+  fprintf(stderr,
+          "gpui-wayland: %s failed: display_error=%d protocol_error=%u "
+          "object_id=%u interface=%s errno=%d\n",
+          where, display_error, protocol_error, object_id,
+          interface ? interface->name : "-", errno);
+  return GPUI_NATIVE;
+}
 static int pump(struct host *h, int timeout) {
   if (h->error)
     return h->error;
   while (wl_display_prepare_read(h->display) != 0) {
     if (wl_display_dispatch_pending(h->display) < 0)
-      return GPUI_NATIVE;
+      return display_failure(h, "dispatch_pending/prepare");
     if (h->error)
       return h->error;
   }
   int flush = wl_display_flush(h->display);
   if (flush < 0 && errno != EAGAIN) {
     wl_display_cancel_read(h->display);
-    return GPUI_NATIVE;
+    return display_failure(h, "flush");
   }
   struct pollfd fds[2] = {
       {wl_display_get_fd(h->display), POLLIN | (flush < 0 ? POLLOUT : 0), 0},
       {h->wake_fd, POLLIN, 0}};
   int result = poll(fds, 2, timeout);
   if (result < 0) {
+    int poll_error = errno;
     wl_display_cancel_read(h->display);
-    return errno == EINTR ? GPUI_OK : GPUI_NATIVE;
+    if (poll_error == EINTR)
+      return GPUI_OK;
+    fprintf(stderr, "gpui-wayland: poll failed: errno=%d\n", poll_error);
+    return GPUI_NATIVE;
   }
   if (fds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+    short revents = fds[0].revents;
     wl_display_cancel_read(h->display);
-    return GPUI_NATIVE;
+    fprintf(stderr, "gpui-wayland: poll display revents=0x%x\n",
+            (unsigned)revents);
+    return display_failure(h, "poll");
+  }
+  if ((fds[0].revents & POLLOUT) && flush < 0) {
+    if (wl_display_flush(h->display) < 0 && errno != EAGAIN) {
+      wl_display_cancel_read(h->display);
+      return display_failure(h, "flush/pollout");
+    }
   }
   if (fds[0].revents & POLLIN) {
     if (wl_display_read_events(h->display) < 0)
-      return GPUI_NATIVE;
-  } else
+      return display_failure(h, "read_events");
+  } else {
     wl_display_cancel_read(h->display);
+  }
   if (fds[1].revents & POLLIN) {
     uint64_t value;
     UNUSED(read(h->wake_fd, &value, sizeof(value)));
   }
   if (wl_display_dispatch_pending(h->display) < 0)
-    return GPUI_NATIVE;
+    return display_failure(h, "dispatch_pending");
   return h->error;
 }
 static void sync_done(void *d, struct wl_callback *c, uint32_t serial) {

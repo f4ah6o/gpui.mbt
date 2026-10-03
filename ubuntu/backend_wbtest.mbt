@@ -79,9 +79,7 @@ test "input translation retains logical pointer, scroll, focus and modifiers" {
   )
   buffer[0] = 6.0
   buffer[8] = 0.0
-  assert_true(
-    decode_event(buffer) is Some(@platform.FocusChanged(false)),
-  )
+  assert_true(decode_event(buffer) is Some(@platform.FocusChanged(false)))
 }
 
 ///|
