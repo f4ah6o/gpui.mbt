@@ -132,7 +132,6 @@ test "element scene generation follows stable node order" {
   }
 }
 
-
 ///|
 test "element tree and dispatch plans own their arrays" {
   let bounds = element_rect(0.0, 0.0, 20.0, 20.0)
