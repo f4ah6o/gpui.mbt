@@ -215,3 +215,20 @@ The repository now exercises more of the correctness/API/dependency surface thro
 ## Dispatch/snapshot correctness evidence update — 2026-10-03
 
 The headless correctness surface now includes callback-driven capture/bubble dispatch with stop-propagation and deterministic provisional `CommandSnapshot` values that remain separate from the reserved R0 `SceneSnapshot` v1 schema. These tests improve development evidence only. Event/focus PBT, mutation evidence, full scene golden artifacts, native Tier 1 evidence, performance/stability evidence, and all other release-ledger requirements remain pending; no release gate is promoted to `pass`.
+
+
+## Event/focus and clip invariant update — 2026-10-03
+
+The next headless correctness slice is implemented. M2 now has immutable
+`ElementTree::without_subtree`, which removes a complete subtree and clears
+focus when the focused node is removed, plus seeded QuickCheck properties for
+capture/bubble route reversal, global stop-propagation, and live focus after
+subtree removal. M3 now validates clip pushes/pops as a strict LIFO stack and
+rejects underflow, ID mismatch, and unclosed clips before a provisional
+`CommandSnapshot` is emitted; a seeded clip-stack property accompanies the
+deterministic cases.
+
+This does not complete the packet. Render/IntoElement lifecycle, recursive auto
+layout, the reserved `SceneSnapshot` v1 resource/clip-chain/item schema,
+mutation baselines, visual/native evidence, renderer/backend work, and later
+production gates remain open.
