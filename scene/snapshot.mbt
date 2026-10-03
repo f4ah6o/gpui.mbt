@@ -244,8 +244,7 @@ pub fn SceneSnapshot::canonical_json(self : SceneSnapshot) -> String {
     if index > 0 {
       resources_json = resources_json + ","
     }
-    resources_json = resources_json +
-      "{\"id\":\{self.resources[index].id()}}"
+    resources_json = resources_json + "{\"id\":\{self.resources[index].id()}}"
     index += 1
   }
   let mut clips_json = ""
@@ -296,12 +295,11 @@ pub fn Scene::snapshot_v1(
               clip_ids.push(id)
               clip_stack.push(bounds)
             }
-            ClipPopCommand(..) => {
+            ClipPopCommand(..) =>
               if clip_ids.length() > 0 {
                 clip_ids.pop()
                 clip_stack.pop()
               }
-            }
             QuadCommand(id~, bounds~, color~) => {
               let clip_chain_id : Int? = if clip_stack.length() == 0 {
                 None
@@ -452,7 +450,9 @@ fn copy_snapshot_rects(
 }
 
 ///|
-fn copy_snapshot_resources(values : Array[SceneResource]) -> Array[SceneResource] {
+fn copy_snapshot_resources(
+  values : Array[SceneResource],
+) -> Array[SceneResource] {
   let copy : Array[SceneResource] = []
   for value in values {
     copy.push(value)
