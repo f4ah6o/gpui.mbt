@@ -181,6 +181,11 @@ class RuntimeDependencyTests(unittest.TestCase):
             "diagnostics": 'import { "f4ah6o/gpui/primitives" }\n',
             "core": 'import { "f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives" }\n',
             "layout": 'import { "f4ah6o/gpui/primitives" }\n',
+            "scene": 'import { "f4ah6o/gpui/primitives" }\n',
+            "element": (
+                'import { "f4ah6o/gpui/core", "f4ah6o/gpui/primitives", '
+                '"f4ah6o/gpui/layout", "f4ah6o/gpui/scene" }\n'
+            ),
         }
         for package, content in manifests.items():
             directory = self.root / package
@@ -218,12 +223,24 @@ class RuntimeDependencyTests(unittest.TestCase):
         errors = checker.validate_runtime_dependencies(self.root)
         self.assertTrue(any("forbidden runtime package edge" in error for error in errors))
 
+    def test_scene_and_element_edges_are_bounded(self) -> None:
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+        scene = self.root / "scene/moon.pkg"
+        scene.write_text('import { "f4ah6o/gpui/core" }\n', encoding="utf-8")
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(any("forbidden runtime package edge" in error for error in errors))
+        scene.write_text('import { "f4ah6o/gpui/primitives" }\n', encoding="utf-8")
+        element = self.root / "element/moon.pkg"
+        element.write_text('import { "f4ah6o/gpui/diagnostics" }\n', encoding="utf-8")
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(any("forbidden runtime package edge" in error for error in errors))
+
     def test_new_runtime_package_requires_an_approved_layer(self) -> None:
         directory = self.root / "widgets"
         directory.mkdir()
         (directory / "moon.pkg").write_text("", encoding="utf-8")
         errors = checker.validate_runtime_dependencies(self.root)
-        self.assertTrue(any("widgets: runtime package has no approved" in error for error in errors))
+        self.assertTrue(any("widgets: runtime package has no approved dependency layer" in error for error in errors))
 
     def test_approved_headless_example_runtime_edges_are_allowed(self) -> None:
         directory = self.root / "examples/headless"
