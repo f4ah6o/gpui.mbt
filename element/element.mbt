@@ -159,14 +159,15 @@ pub struct ElementTree {
 pub fn ElementTree::new(
   nodes : Array[ElementNode],
 ) -> Result[ElementTree, ElementError] {
+  let owned = copy_nodes(nodes)
   let mut failure : ElementError? = None
   let mut index = 0
-  while index < nodes.length() && failure is None {
-    let node = nodes[index]
+  while index < owned.length() && failure is None {
+    let node = owned[index]
     let mut prior = 0
     let mut duplicate = false
     while prior < index && !duplicate {
-      if nodes[prior].id == node.id {
+      if owned[prior].id == node.id {
         duplicate = true
       }
       prior += 1
@@ -180,7 +181,7 @@ pub fn ElementTree::new(
           let mut parent_found = false
           let mut parent_index = 0
           while parent_index < index && !parent_found {
-            if nodes[parent_index].id == parent_id {
+            if owned[parent_index].id == parent_id {
               parent_found = true
             }
             parent_index += 1
@@ -195,13 +196,13 @@ pub fn ElementTree::new(
   }
   match failure {
     Some(error) => Err(error)
-    None => Ok({ nodes, focused: None, })
+    None => Ok({ nodes: owned, focused: None, })
   }
 }
 
 ///|
 pub fn ElementTree::nodes(self : ElementTree) -> Array[ElementNode] {
-  self.nodes
+  copy_nodes(self.nodes)
 }
 
 ///|
@@ -339,4 +340,13 @@ pub fn ElementTree::to_scene(self : ElementTree) -> @scene.Scene {
     }
   }
   @scene.Scene::new(commands)
+}
+
+///|
+fn copy_nodes(nodes : Array[ElementNode]) -> Array[ElementNode] {
+  let owned : Array[ElementNode] = []
+  for node in nodes {
+    owned.push(node)
+  }
+  owned
 }
