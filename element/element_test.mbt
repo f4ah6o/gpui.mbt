@@ -52,6 +52,27 @@ test "element tree rejects duplicate ids and missing parents" {
 }
 
 ///|
+test "element tree rejects descendants after their subtree closes" {
+  let bounds = element_rect(0.0, 0.0, 10.0, 10.0)
+  assert_true(
+    @element.ElementTree::new([
+      @element.ElementNode::new(1, None, bounds),
+      @element.ElementNode::new(2, Some(1), bounds),
+      @element.ElementNode::new(3, None, bounds),
+      @element.ElementNode::new(4, Some(2), bounds),
+    ])
+    is Err(InvalidPreorder),
+  )
+  let valid = unwrap_tree([
+    @element.ElementNode::new(1, None, bounds),
+    @element.ElementNode::new(2, Some(1), bounds),
+    @element.ElementNode::new(3, Some(2), bounds),
+    @element.ElementNode::new(4, Some(1), bounds),
+  ])
+  assert_true(valid.node(4) is Some(_))
+}
+
+///|
 test "hit test and dispatch use stable reverse paint order" {
   let root = @element.ElementNode::new(
     1,
