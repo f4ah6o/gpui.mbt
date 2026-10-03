@@ -205,3 +205,8 @@ complete. `moon fmt --check`, `moon check --target all --deny-warn`, and
 on each of wasm, wasm-gc, js, and native. Platform, text, renderer, performance,
 mutation, and clean-consumer evidence remain pending. The issue remains
 design-only until all production gates have real, reviewed evidence.
+
+
+## M2/M3 implementation evidence update — 2026-10-03
+
+The repository now exercises more of the correctness/API/dependency surface through `element/` and `scene/` headless tests and stricter package-edge validation. This is development evidence only. No release-ledger gate is changed to `pass`: upstream compatibility comparison, mutation evidence, native Tier 1, text, performance, stability, visual, supply-chain, security-boundary, and clean-consumer evidence remain incomplete.
