@@ -8,9 +8,11 @@ foundation, the flat `element` tree, and ordered `scene` commands. It includes
 deterministic value and lifecycle cases, two seeded rectangle properties, a
 seeded entity lifecycle reference-model property, a seeded flex-line
 geometry/order property, and exact hit-test/dispatch/focus/scene-order tests.
-Recursive auto layout, Render/IntoElement lifecycle, event/focus PBT,
-scene golden fixtures, render/text, mutation testing, and native integration
-tests remain unimplemented. Deterministic callback tests now cover capture/bubble
+Recursive auto layout, Render/IntoElement lifecycle, scene golden fixtures,
+render/text, mutation testing, and native integration tests remain unimplemented.
+Event/focus PBT now exercises route reversal, global stop-propagation, and focus
+normalization after subtree removal; scene PBT now exercises strict clip-stack
+nesting and rejects unclosed stacks before snapshots are emitted. Deterministic callback tests now cover capture/bubble
 execution and stop-propagation, and scene tests cover canonical provisional
 `CommandSnapshot` serialization including negative-zero normalization without
 claiming the reserved R0 `SceneSnapshot` version 1 schema. This document
@@ -177,3 +179,17 @@ packages. It does not run expanded
 PBT, turtles, native integration, visual goldens, stress suites, or performance
 baselines, and it cannot satisfy any production release gate. Check the exact
 workflow commands in [`contracts.yml`](../.github/workflows/contracts.yml).
+
+
+## Event/focus and clip invariant implementation update — 2026-10-03
+
+The active M2 property surface now includes stable seeded suites for pointer-route
+reversal, capture stop-propagation, and focus validity after immutable subtree
+removal. `ElementTree::without_subtree` removes the complete contiguous subtree
+and clears focus only when the focused node is removed.
+
+The active M3 property surface now validates strict LIFO clip nesting. A pop with
+no open clip, a mismatched clip ID, or a frame that ends with an open clip is a
+typed `SceneError`; `command_snapshot` refuses to freeze such a scene. These
+checks strengthen the provisional command model only and do not consume the
+reserved `SceneSnapshot` v1 schema.
