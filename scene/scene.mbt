@@ -83,8 +83,6 @@ pub fn PaintCommand::color(self : PaintCommand) -> @primitives.Color? {
   }
 }
 
-
-
 ///|
 /// Snapshot construction errors.
 pub enum SceneError {
@@ -176,8 +174,6 @@ pub fn Scene::command_at(self : Scene, index : Int) -> PaintCommand? {
     Some(self.commands[index])
   }
 }
-
-
 
 ///|
 /// Freeze this command scene into schema version 1 metadata. Scale must be
