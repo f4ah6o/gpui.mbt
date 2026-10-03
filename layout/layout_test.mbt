@@ -81,6 +81,29 @@ test "shrink clamps once and reports minimum-driven overflow" {
   assert_true(items[1].bounds().size().width() == 35.0)
   assert_true(layout.overflow())
   assert_true(items[1].overflow())
+
+  let huge_size = unwrap_size(1.0e308, 20.0)
+  let huge_intrinsic = unwrap_size(1.0e308, 10.0)
+  let huge_first = @layout.FlexItem::new(
+    11,
+    unwrap_points(1.0e308),
+    @layout.Dimension::auto(),
+    huge_intrinsic,
+  )
+  let huge_second = @layout.FlexItem::new(
+    12,
+    unwrap_points(1.0e308),
+    @layout.Dimension::auto(),
+    huge_intrinsic,
+  )
+  let huge_container = @layout.FlexContainer::new(
+    @layout.FlowDirection::row(),
+    huge_size,
+  )
+  assert_true(
+    @layout.layout_flex(huge_container, [huge_first, huge_second])
+    is Err(NonFiniteValue),
+  )
 }
 
 ///|
