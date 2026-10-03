@@ -563,6 +563,12 @@ static int pump(struct host *h, int timeout) {
     return display_failure(h, "dispatch_pending");
   return h->error;
 }
+static int settle_frame(struct host *h) {
+  int status = GPUI_OK;
+  for (int i = 0; i < 10 && h->frame && !status; ++i)
+    status = pump(h, 100);
+  return status ? status : (h->frame ? GPUI_BUSY : GPUI_OK);
+}
 static void sync_done(void *d, struct wl_callback *c, uint32_t serial) {
   UNUSED(serial);
   *(int *)d = 1;
@@ -820,6 +826,12 @@ int32_t gpui_destroy(int32_t token, int32_t window) {
     return GPUI_OK;
   if (!window || h->window != window)
     return GPUI_STALE;
+  /* Do not tear EGL/surface resources out from under a submitted buffer. The
+   * callback is compositor readiness, not presentation timing, but it gives the
+   * first native slice a bounded ownership handoff before native teardown. */
+  s = settle_frame(h);
+  if (s)
+    return s;
   /* Drop queued old callbacks, then publish one terminal notification. */
   int count = h->count, kept = 0;
   for (int i = 0; i < count; ++i) {

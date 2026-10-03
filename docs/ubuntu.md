@@ -44,8 +44,10 @@ backend is not a native macOS/Windows build target.
   reject other threads. Cross-thread command enqueue is still pending.
 - Logical window IDs are monotonically allocated and never reused. They live in
   `platform/` until a higher-level core window API exists. Stale surface/title/
-  size operations return `StaleHandle`. Explicit destroy is idempotent, drops
-  queued callbacks for that generation, and emits one final `Destroyed` event.
+  size operations return `StaleHandle`. Explicit destroy is idempotent, drains
+  one outstanding compositor frame callback with a bounded wait before releasing
+  EGL/Wayland resources, drops queued callbacks for that generation, and emits
+  one final `Destroyed` event.
 - xdg toplevel configure/ack, UTF-8 titles, client logical size updates, close
   requests, and surface-before-window teardown. Wayland compositors control
   maximized/fullscreen dimensions; `set_size` does not force compositor policy.

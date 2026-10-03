@@ -138,8 +138,13 @@ int main(int argc, char **argv) {
     assert(gpui_recover(host, window) == GPUI_OK);
     assert(gpui_present(host, window, frame, sizeof(frame) / sizeof(double)) ==
            GPUI_OK);
-    await_frame(host);
-    drain(host);
+    /* First cycle verifies destroy can safely drain one submitted frame before
+     * releasing EGL/Wayland resources. Later cycles keep the explicit wait to
+     * cover the normal completion path independently. */
+    if (run != 0) {
+      await_frame(host);
+      drain(host);
+    }
     assert(gpui_close(host, window) == GPUI_OK);
     assert(gpui_next(host, e) == 1 && e[0] == 3);
     assert(active->window == window);
