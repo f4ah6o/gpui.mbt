@@ -134,7 +134,6 @@ test "scene snapshot v1 reuses identical active clip chains" {
   }
 }
 
-
 ///|
 test "scene snapshot v1 rejects invalid directly constructed public items" {
   let viewport = snapshot_rect(0.0, 0.0, 20.0, 20.0)
