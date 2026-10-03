@@ -63,8 +63,7 @@ test "property dispatch route is reversible and stop propagation is global" {
             bubble.length() == expected_length
           let mut index = 0
           while index < capture.length() && routes_match {
-            routes_match = capture[index] ==
-              bubble[bubble.length() - index - 1]
+            routes_match = capture[index] == bubble[bubble.length() - index - 1]
             index += 1
           }
           if !routes_match {
@@ -114,7 +113,11 @@ test "property removing a subtree never leaves focus on a dead node" {
           match tree.with_focus(3) {
             Err(_) => false
             Ok(focused_tree) => {
-              let removed_id : UInt64 = if remove_focused_branch { 2 } else { 4 }
+              let removed_id : UInt64 = if remove_focused_branch {
+                2
+              } else {
+                4
+              }
               match focused_tree.without_subtree(removed_id) {
                 Err(_) => false
                 Ok(next) =>
