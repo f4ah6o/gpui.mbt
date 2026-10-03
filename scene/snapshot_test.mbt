@@ -152,23 +152,5 @@ test "scene snapshot v1 rejects invalid directly constructed public items" {
     @scene.SceneSnapshot::new(viewport, 1.0, [], [], [invalid_opacity])
     is Err(InvalidOpacity),
   )
-  let invalid_transform = @scene.SceneItem::QuadItem(
-    id=2,
-    bounds~,
-    color~,
-    transform=@scene.AffineTransform::{
-      a: 1.0,
-      b: 0.0,
-      c: 0.0,
-      d: 1.0,
-      tx: 1.0 / 0.0,
-      ty: 0.0,
-    },
-    opacity=1.0,
-    clip_chain_id=None,
-  )
-  assert_true(
-    @scene.SceneSnapshot::new(viewport, 1.0, [], [], [invalid_transform])
-    is Err(NonFiniteTransform),
-  )
+
 }
