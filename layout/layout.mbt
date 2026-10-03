@@ -681,7 +681,9 @@ fn place_items(
           used += final_main
         }
       }
-      if numeric_error || !finite(used) || resolved.length() != prepared.length() {
+      if numeric_error ||
+        !finite(used) ||
+        resolved.length() != prepared.length() {
         Err(NonFiniteValue)
       } else {
         let positive_leftover = if main_extent > used {
@@ -753,6 +755,7 @@ fn place_items(
     }
   }
 }
+
 ///|
 fn finite(value : Double) -> Bool {
   !value.is_nan() && !value.is_inf()
