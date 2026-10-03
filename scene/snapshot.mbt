@@ -262,18 +262,6 @@ fn snapshot_has_clip_chain(id : Int, chains : Array[ClipChain]) -> Bool {
 }
 
 ///|
-    Ok({
-      schema_version: SCENE_SNAPSHOT_SCHEMA_VERSION,
-      viewport,
-      scale,
-      resources: copy_snapshot_resources(resources),
-      clip_chains: copy_snapshot_clip_chains(clip_chains),
-      items: copy_snapshot_items(items),
-    })
-  }
-}
-
-///|
 pub fn SceneSnapshot::schema_version(self : SceneSnapshot) -> Int {
   self.schema_version
 }
