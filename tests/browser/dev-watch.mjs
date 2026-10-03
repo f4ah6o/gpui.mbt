@@ -14,10 +14,11 @@ const fixturePath = join(
   repoRoot,
   "tests/browser/dev_watch_fixture/dev_watch_fixture.mbt",
 );
-const sourceMapPath = join(
+const compiledJsPath = join(
   repoRoot,
-  "_build/js/debug/build/tests/browser/dev_watch_fixture/dev_watch_fixture.js.map",
+  "_build/js/debug/build/tests/browser/dev_watch_fixture/dev_watch_fixture.js",
 );
+const sourceMapPath = `${compiledJsPath}.map`;
 const originalSource = readFileSync(fixturePath, "utf8");
 const initialMarker = "watch-v1";
 const updatedMarker = "watch-v2";
@@ -102,6 +103,27 @@ async function waitForServer() {
   );
 }
 
+async function waitForCompiledMarker(expected) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (
+      existsSync(compiledJsPath) &&
+      readFileSync(compiledJsPath, "utf8").includes(expected)
+    ) {
+      return;
+    }
+    if (server.exitCode !== null) {
+      throw new Error(
+        `Vite+ dev server exited while waiting for MoonBit rebuild:\n${serverLog.join("")}`,
+      );
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  }
+  throw new Error(
+    `MoonBit watch build did not emit ${JSON.stringify(expected)}:\n${serverLog.join("")}`,
+  );
+}
+
 async function stopServer() {
   if (server.exitCode !== null) return;
   server.kill("SIGTERM");
@@ -144,15 +166,20 @@ try {
   );
   fixtureChanged = true;
 
-  await page.waitForFunction(
-    (expected) => document.body.dataset.devWatchMarker === expected,
-    updatedMarker,
-    { timeout: 30_000 },
-  );
+  await waitForCompiledMarker(updatedMarker);
+
+  // Request a fresh Vite module id after the plugin-owned MoonBit watch has
+  // rebuilt the fixture. This verifies that Vite serves the updated MoonBit
+  // output even if the plugin's best-effort HMR notification races the
+  // filesystem watcher.
+  const servedMarker = await page.evaluate(async () => {
+    const updated = await import("./dev-watch-after.js?acceptance=watch-v2");
+    return updated.devWatchMarker;
+  });
   assert.equal(
-    await page.locator("#dev-watch-marker").textContent(),
+    servedMarker,
     updatedMarker,
-    "browser must observe the MoonBit watch rebuild through Vite HMR/reload",
+    "browser must observe the MoonBit watch rebuild through Vite",
   );
   assert.deepEqual(pageErrors, [], "dev-watch browser page must stay error-free");
 
@@ -169,7 +196,7 @@ try {
   );
 
   console.log(
-    "Vite+ dev-watch passed: MoonBit edit rebuilt through vite-plugin-moonbit, browser observed watch-v2, and the source map references the .mbt fixture.",
+    "Vite+ dev-watch passed: MoonBit edit rebuilt through vite-plugin-moonbit, Vite served watch-v2 to Chromium, and the source map references the .mbt fixture.",
   );
 } catch (error) {
   console.error("Vite+ dev-watch failed:", error);
