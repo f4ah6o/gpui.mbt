@@ -360,7 +360,11 @@ function start() {
     resizeObserver = new ResizeObserver(() => {
       try { syncViewport(); scheduleFrame(); } catch (error) { showDiagnostic(error); }
     });
-    resizeObserver.observe(canvas);
+    try {
+      resizeObserver.observe(canvas, { box: "device-pixel-content-box" });
+    } catch {
+      resizeObserver.observe(canvas);
+    }
     trackDpr();
     syncViewport();
     scheduleFrame();
