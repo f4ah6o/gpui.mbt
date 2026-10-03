@@ -15,7 +15,7 @@ recovery, and production support remain open work.
 
 ## Browser development toolchain
 
-Browser development and production packaging use Vite+ through the `vp` CLI.
+Browser development and production packaging use Vite+ through the `vp` CLI. The committed `pnpm-lock.yaml` is the dependency-resolution source of truth.
 `vite-plugin-moonbit` resolves the MoonBit browser package through the
 `mbt:` import, starts `moon build --watch` in development, and forwards
 MoonBit source maps into Vite.
@@ -28,7 +28,7 @@ Use the repository-pinned MoonBit toolchain and a Node.js release accepted by
 Vite+ 1.0.0 (`^22.18.0 || ^24.11.0 || >=26.0.0`). The project pins pnpm 12.9.1 for dependency resolution. From a clean checkout:
 
 ```sh
-vp install
+vp install --frozen-lockfile
 vp dev
 ```
 

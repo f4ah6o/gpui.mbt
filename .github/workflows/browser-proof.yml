@@ -38,7 +38,9 @@ jobs:
         with:
           version: 1.0.0
           node-version: 24.11.0
-          run-install: true
+          run-install: false
+      - name: Install browser dependencies from the lockfile
+        run: vp install --frozen-lockfile
       - name: Check Vite+ browser tooling
         run: vp check
       - name: Smoke Vite+ development server
@@ -73,7 +75,6 @@ jobs:
           path: |
             _build/browser-smoke-status.json
             _build/browser-smoke-failure.png
-            pnpm-lock.yaml
           if-no-files-found: ignore
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
