@@ -180,6 +180,7 @@ class RuntimeDependencyTests(unittest.TestCase):
             "primitives": '',
             "diagnostics": 'import { "f4ah6o/gpui/primitives" }\n',
             "core": 'import { "f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives" }\n',
+            "layout": 'import { "f4ah6o/gpui/primitives" }\n',
         }
         for package, content in manifests.items():
             directory = self.root / package
@@ -208,6 +209,14 @@ class RuntimeDependencyTests(unittest.TestCase):
         path.write_text('import { "vendor/random" }\n', encoding="utf-8")
         errors = checker.validate_runtime_dependencies(self.root)
         self.assertTrue(any("third-party runtime import is forbidden" in error for error in errors))
+
+
+    def test_layout_may_depend_only_on_primitives(self) -> None:
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+        path = self.root / "layout/moon.pkg"
+        path.write_text('import { "f4ah6o/gpui/core" }\\n', encoding="utf-8")
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(any("forbidden runtime package edge" in error for error in errors))
 
     def test_new_runtime_package_requires_an_approved_layer(self) -> None:
         directory = self.root / "widgets"
