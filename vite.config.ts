@@ -42,6 +42,9 @@ export default defineConfig({
     // reformatting the existing Markdown/document corpus as part of browser CI.
     fmt: false,
   },
+  lint: {
+    ignorePatterns: ["node_modules/**", "_build/**"],
+  },
   server: {
     fs: {
       allow: [repoRoot],
