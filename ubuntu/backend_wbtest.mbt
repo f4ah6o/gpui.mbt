@@ -161,6 +161,7 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
     assert_true(host.state() == Running)
     assert_true(Host::start() is Err(_))
     for iteration = 0; iteration < 24; iteration = iteration + 1 {
+      println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=create")
       let window = require_ok(
         host.create_window(160, 120, "gpui.mbt E2E 日本語"),
       )
@@ -179,6 +180,7 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
           height = h.to_int()
         }
       }
+      println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=first-present")
       require_ok(
         host.present(
           window,
@@ -197,6 +199,7 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
         }
       }
       assert_true(completed)
+      println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=resize-recover")
       require_ok(host.set_size(window, 180, 140))
       match
         host.present(
@@ -216,7 +219,9 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
         Ok(_) => fail("clipboard unavailable")
       }
       require_ok(host.recover_renderer(window))
+      println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=recovered-present")
       require_ok(host.present(window, snapshot(180.0, 140.0, scale)))
+      println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=destroy")
       require_ok(host.destroy_window(window))
       require_ok(host.destroy_window(window))
       let terminal = require_ok(host.dispatch(0))

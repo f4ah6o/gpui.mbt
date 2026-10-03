@@ -31,7 +31,24 @@ for _ in range(200):
 else:
     raise SystemExit('Weston socket did not become ready; see _build/ubuntu-e2e logs')
 PY
+  set +e
   GPUI_UBUNTU_E2E=1 timeout 120 moon test ubuntu --target native --deny-warn --no-parallelize
+  moon_status=$?
+  set -e
+  if [ "$moon_status" -ne 0 ]; then
+    if kill -0 "$compositor_pid" 2>/dev/null; then
+      echo "GPUI_WESTON_STATUS alive_after_moon_failure=true" >&2
+    else
+      set +e
+      wait "$compositor_pid"
+      weston_status=$?
+      set -e
+      echo "GPUI_WESTON_STATUS exit=$weston_status" >&2
+      compositor_pid=
+    fi
+    tail -n 120 "$PWD/_build/ubuntu-e2e/weston-scale-$scale.log" >&2 || true
+    exit "$moon_status"
+  fi
   GPUI_UBUNTU_SMOKE=1 timeout 30 moon run examples/ubuntu --target native
   # Last test terminates this isolated compositor and checks disconnect handling.
   GPUI_EXPECT_SCALE="$scale" timeout 120 _build/ubuntu-e2e/backend-test "$compositor_pid"

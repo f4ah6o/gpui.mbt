@@ -536,24 +536,26 @@ static int pump(struct host *h, int timeout) {
     fprintf(stderr, "gpui-wayland: poll failed: errno=%d\n", poll_error);
     return GPUI_NATIVE;
   }
-  if (fds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
-    short revents = fds[0].revents;
-    wl_display_cancel_read(h->display);
-    fprintf(stderr, "gpui-wayland: poll display revents=0x%x\n",
-            (unsigned)revents);
-    return display_failure(h, "poll");
-  }
-  if ((fds[0].revents & POLLOUT) && flush < 0) {
+  short display_revents = fds[0].revents;
+  if ((display_revents & POLLOUT) && flush < 0) {
     if (wl_display_flush(h->display) < 0 && errno != EAGAIN) {
       wl_display_cancel_read(h->display);
       return display_failure(h, "flush/pollout");
     }
   }
-  if (fds[0].revents & POLLIN) {
-    if (wl_display_read_events(h->display) < 0)
+  if (display_revents & POLLIN) {
+    if (wl_display_read_events(h->display) < 0) {
+      fprintf(stderr, "gpui-wayland: read after revents=0x%x failed\n",
+              (unsigned)display_revents);
       return display_failure(h, "read_events");
+    }
   } else {
     wl_display_cancel_read(h->display);
+  }
+  if (display_revents & (POLLERR | POLLHUP | POLLNVAL)) {
+    fprintf(stderr, "gpui-wayland: poll display revents=0x%x\n",
+            (unsigned)display_revents);
+    return display_failure(h, "poll");
   }
   if (fds[1].revents & POLLIN) {
     uint64_t value;
