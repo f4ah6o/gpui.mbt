@@ -132,6 +132,9 @@ int main(int argc, char **argv) {
     frame[3] = 90;
     frame[7] = 120;
     frame[8] = 90;
+    /* Consume the resize event before the recovery/teardown assertions below;
+     * run 0 intentionally leaves only the recovered frame outstanding. */
+    drain(host);
     release_gpu(active); /* fault: native surface/device resources disappear */
     assert(gpui_present(host, window, frame, sizeof(frame) / sizeof(double)) ==
            GPUI_SURFACE_LOST);
