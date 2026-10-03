@@ -121,3 +121,35 @@ test "command snapshot canonical json is stable and normalizes negative zero" {
     _ => fail("valid snapshot rejected")
   }
 }
+
+
+///|
+test "scene validates strict clip nesting before snapshot" {
+  let viewport = scene_rect(0.0, 0.0, 100.0, 50.0)
+  let bounds = scene_rect(1.0, 2.0, 3.0, 4.0)
+  let underflow = @scene.Scene::new([@scene.PaintCommand::clip_pop(1)])
+  assert_true(underflow.validate() is Err(ClipUnderflow))
+  assert_true(
+    underflow.command_snapshot(viewport, 1.0) is Err(ClipUnderflow),
+  )
+
+  let mismatch = @scene.Scene::new([
+    @scene.PaintCommand::clip_push(1, bounds),
+    @scene.PaintCommand::clip_push(2, bounds),
+    @scene.PaintCommand::clip_pop(1),
+  ])
+  assert_true(mismatch.validate() is Err(ClipMismatch))
+
+  let unclosed = @scene.Scene::new([
+    @scene.PaintCommand::clip_push(1, bounds),
+  ])
+  assert_true(unclosed.validate() is Err(UnclosedClip))
+
+  let nested = @scene.Scene::new([
+    @scene.PaintCommand::clip_push(1, bounds),
+    @scene.PaintCommand::clip_push(2, bounds),
+    @scene.PaintCommand::clip_pop(2),
+    @scene.PaintCommand::clip_pop(1),
+  ])
+  assert_true(nested.validate() is Ok(_))
+}
