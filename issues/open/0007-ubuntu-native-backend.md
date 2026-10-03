@@ -1,6 +1,6 @@
 # Ubuntu native backend roadmap
 
-Status: open
+Status: in progress — first native slice implemented; remaining gates open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
 Updated: 2026-10-03
 
@@ -176,3 +176,30 @@ The first Ubuntu window does not require:
 - Tier 1 status
 
 Those are later compatibility/support gates.
+
+## Implementation update — 2026-10-03
+
+The first native slice is implemented in `platform/`, `ubuntu/` and
+`examples/ubuntu/`. Setup, native dependency inventory, exact API limitations,
+and evidence are in [docs/ubuntu.md](../../docs/ubuntu.md).
+
+- A: implemented owner-thread session startup, owned connection, bounded dispatch,
+  wake, exit, idempotent teardown and typed session/disconnect failures. Shared
+  host conformance is exercised by the native tests. Cross-thread enqueue is
+  still pending from the parent contract.
+- B: implemented one xdg toplevel and EGL/GLES2 surface, title/client size updates,
+  v1 quad/affine/opacity/rectangle-clip rendering, stale snapshot rejection and
+  compositor frame completion. Local native executable and GPU readback pass.
+- C: basic pointer/keyboard/focus and integer output scale implemented; clipboard,
+  cursor, fractional scale and public display metadata remain pending.
+- D/E: native IME/text shaping and semantic accessibility remain pending. A
+  Japanese title smoke is not Japanese IME evidence.
+- F: 24 MoonBit and 40 C window cycles per scale, resize bursts, explicit renderer
+  recreation, stale generations, FD stability, and terminal compositor disconnect
+  checks implemented. Full fault/recovery and sustained GPU memory gates pending.
+- G: Ubuntu 24.04 x86-64 / Weston 13 / Mesa llvmpipe CI configured at integer
+  scales 1 and 2, with MoonBit 0.10.14+7d59c7ec9. Hosted Ubuntu evidence and
+  real GNOME/Mutter, Japanese IME, accessibility and production gates pending.
+
+Local execution used Debian 13 / Weston 14.0.2; it does not establish Ubuntu
+support. No X11/XWayland, Tier 1 or general Linux support claim is made.

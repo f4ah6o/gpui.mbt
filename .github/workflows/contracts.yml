@@ -29,6 +29,11 @@ jobs:
         with:
           version: 0.10.14+7d59c7ec9
           core-version: 0.10.14+7d59c7ec9
+      - name: Prepare Ubuntu native system boundary
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev
+          sh scripts/prepare_ubuntu.sh
       - name: Show pinned toolchain
         run: moon version --all
       - name: Check formatting
@@ -52,7 +57,7 @@ jobs:
           mkdir -p _build/macos
           set -o pipefail
           moon version --all | tee _build/macos/toolchain.log
-          moon test --target native --deny-warn 2>&1 | tee _build/macos/headless.log
+          moon test --package f4ah6o/gpui/platform/macos --target native --deny-warn 2>&1 | tee _build/macos/headless.log
           ./script/build_and_run.sh --build 2>&1 | tee _build/macos/build.log
           ./script/test_macos.sh --build-only 2>&1 | tee _build/macos/e2e-build.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

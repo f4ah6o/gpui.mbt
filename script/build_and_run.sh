@@ -21,7 +21,7 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Frameworks"
 xcrun clang -dynamiclib -fobjc-arc -Wall -Wextra -Werror \
   platform/macos/native.m -framework AppKit -framework QuartzCore -framework Metal \
   -o "$APP_BUNDLE/Contents/Frameworks/libgpui_macos.dylib"
-moon build --target native --deny-warn
+moon build --target native --deny-warn examples/native_macos
 cp _build/native/debug/build/examples/native_macos/native_macos.exe "$APP_BINARY"
 cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

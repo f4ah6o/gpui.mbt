@@ -2,7 +2,7 @@
 
 gpui.mbt is an independent MoonBit implementation of the GPUI programming model. GPUI is developed by Zed Industries. This project is not affiliated with or endorsed by Zed Industries.
 
-The project aims to let a MoonBit desktop application use GPUI-like concepts without carrying a Rust GPUI runtime or another application framework. It now contains an M1 headless core runtime, but no production release or supported native platform. Compatibility is behavioral and conceptual; Rust source and binary compatibility are out of scope.
+The project aims to let a MoonBit desktop application use GPUI-like concepts without carrying a Rust GPUI runtime or another application framework. It now contains an M1 headless core runtime, plus a first Ubuntu/Wayland native window and quad-rendering slice, but no production release or supported native platform. Compatibility is behavioral and conceptual; Rust source and binary compatibility are out of scope.
 
 ## Current state
 
@@ -12,6 +12,7 @@ M0 contracts define the App/Entity/Context model, architecture, dependency rules
 - [Architecture and dependency contract](docs/architecture.md)
 - [GPUI concept compatibility matrix](docs/compatibility.md)
 - [Open implementation packets](issues/open/)
+- [Ubuntu Wayland native app, setup and evidence](docs/ubuntu.md)
 
 M1 generic entity payloads use an immutable or copy-on-write discipline. MoonBit cannot deeply copy arbitrary `T`, so retaining a mutable alias and changing it outside `App::update` can bypass revision and notification tracking. The core API does not claim to prevent this. M1 also has no windows, rendering, background executor, IME, accessibility adapter, or native platform backend.
 
@@ -48,13 +49,14 @@ The support tiers are evidence-based:
 - **Tier 2 — experimental:** usable for development but missing one or more Tier 1 gates.
 - **Tier 1 — production supported:** native E2E, IME and accessibility baselines, multi-DPI, renderer recovery, release performance budgets, and sustained-run resource checks all pass.
 
-The MoonBit core packages compile and test on the configured local targets, but no native desktop backend has a verified build or end-to-end evidence. Therefore no platform is assigned Tier 0, Tier 2, or Tier 1. macOS, Windows, and Linux remain unsupported until each passes the applicable gates.
+The MoonBit core packages compile and test on the configured local targets, and the first Ubuntu/Wayland backend has local Debian/Weston native build and E2E evidence. Its pinned Ubuntu CI workflow has not yet been observed; real Ubuntu desktop, IME/accessibility and production gates remain pending. Therefore no platform is assigned Tier 0, Tier 2, or Tier 1. macOS, Windows, and Linux remain unsupported until each passes the applicable gates.
 
 | Platform | Status | Evidence |
 |---|---|---|
 | macOS | Planned; unsupported | Core-only MoonBit checks; no native backend or E2E evidence. |
 | Windows | Planned; unsupported | Core-only MoonBit checks; no native backend or E2E evidence. |
-| Linux | Planned; unsupported | Core-only MoonBit checks; no native backend or E2E evidence. |
+| Ubuntu / Wayland | First native slice; unsupported | Local Debian 13/Weston 14 native window, GPU readback and lifecycle E2E; Ubuntu 24.04 CI configured, real desktop gates pending. |
+| X11 / XWayland | Unimplemented; unsupported | No build or E2E evidence. |
 
 ## Milestones
 
@@ -63,8 +65,8 @@ The MoonBit core packages compile and test on the configured local targets, but 
 | M0 — contracts | Product model, compatibility format, dependency policy, test strategy, platform boundary, release gates | Delivered; machine-readable checks are available. |
 | M1 — deterministic core | IDs, App/Entity/Context, subscriptions, deterministic scheduler, headless lifecycle tests | Implemented; covered by the current all-target headless suite on wasm, wasm-gc, js, and native. |
 | M2 — element system | Render/IntoElement/Element, layout, hit testing, event dispatch, focus, headless scenes | In progress; deterministic flex-line and recursive flex-tree layout, seeded layout properties, flat element trees, hit testing, capture/bubble callback dispatch with stop-propagation, subtree-removal focus normalization, seeded event/focus properties, and background-quad headless scenes are implemented. Render/IntoElement lifecycle and recursive auto container sizing remain pending. |
-| M3 — rendering core | Stable scene data, primitives, text runs, renderer abstraction, headless snapshots | In progress; ordered quad/rectangle-clip commands, the provisional canonical `CommandSnapshot`, and a versioned `SceneSnapshot` v1 subset with resource/clip-chain/item tables, affine transforms, opacity, and canonical serialization are implemented. Full v1 quad border/corner data, path clips, paths/images/text runs and resources, renderer contracts, and native rendering remain pending. |
-| M4 — first native platform | Window lifecycle, input, clipboard, timers, text input/IME baseline, GPU surface, diagnostics | Planned; macOS is the first native backend target. |
+| M3 — rendering core | Stable scene data, primitives, text runs, renderer abstraction, headless snapshots | In progress; ordered quad/rectangle-clip commands, the provisional canonical `CommandSnapshot`, and a versioned `SceneSnapshot` v1 subset with resource/clip-chain/item tables, affine transforms, opacity, and canonical serialization are implemented. Full v1 quad border/corner data, path clips, paths/images/text runs and resources, and full renderer contracts remain pending; the shared Backend contract and Ubuntu GLES quad subset now have an initial native implementation. |
+| M4 — first native platform | Window lifecycle, input, clipboard, timers, text input/IME baseline, GPU surface, diagnostics | In progress; the Ubuntu Wayland host/window/GLES quad slice is implemented. Full native services and the planned macOS backend remain pending. |
 | M5 — text and interaction completeness | Shaping/fallback, accessibility, IME correctness, menus/cursors, high-DPI/multi-display | Planned. |
 | M6 — multi-platform | Tier definitions and Tier 1 gates for macOS, Windows, and Linux | Planned. |
 | M7 — production-ready 1.0 | Release gates, current compatibility evidence, and sustained use by a non-demo app | Planned. |
@@ -77,6 +79,8 @@ The repository contains the M0 design contracts, M1 MoonBit core, the M2 layout/
 
 ```sh
 python3 scripts/check_contracts.py
+# Install native system packages as documented in docs/ubuntu.md, then:
+sh scripts/prepare_ubuntu.sh
 moon check --deny-warn
 moon test
 ```

@@ -1,6 +1,6 @@
 # Architecture and dependency contract
 
-Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; native renderer/platform layers remain planned.
+Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; the shared platform contract and first Ubuntu/Wayland/GLES native slice are implemented; complete native services remain planned.
 
 This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, and `element/`. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
 
@@ -54,6 +54,9 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `scene/` | stable, platform-neutral paint commands and ordering | `primitives/` | live GPU handles or backend resource objects |
 | `renderer API` | render submission and resource-lifetime contract | `scene/`, `primitives/` | a concrete renderer vocabulary in public app APIs |
 | `platform API` | window, input, display, text, clipboard, timer, accessibility contracts | `core/`, `diagnostics/`, `primitives/`, renderer API | platform-specific types in core/facade signatures |
+| `platform/` (first slice) | shared Backend trait, logical window IDs, copied ordered events | `scene/`, `diagnostics/`, `primitives/` | native pointers or OS types |
+| `ubuntu/` | Wayland host/window, integer scale, basic input, EGL/GLES quad renderer | `platform/`, `scene/`, `diagnostics/`, `primitives/`, system native APIs | native handles in public application signatures |
+| `examples/ubuntu/` | native executable consuming the shared scene/window contracts | `ubuntu/`, `platform/`, `scene/`, `diagnostics/`, `primitives/`, standard env | private backend tokens |
 | target backend / FFI | event loop and native resources/adapters | platform and renderer APIs; native APIs | types that leak upward through the public facade |
 
 The current runtime edges are `primitives -> stdlib`, `diagnostics -> stdlib`, and `core -> stdlib + diagnostics`. The allowed boundary for diagnostics/core also permits imports from `primitives/`; they currently use no primitive value types. The executable dependency check covers these boundaries and test-only imports. The later packages are architectural boundaries for M2 onward and must be checked against the same rule when introduced. The dependency direction must remain acyclic; cross-cutting code belongs in a lower-level contract rather than a reverse import.
@@ -110,6 +113,18 @@ Prefer a narrow C ABI when it keeps platform types out of MoonBit package interf
 Every dependency addition must identify whether it is runtime, development-only, or platform-native and list its owning package. The executable package-boundary check fails if test tooling reaches a runtime package or an unreviewed third-party MoonBit package enters the runtime graph. Native library inventories are separate per target. Dependency review must also check version pinning, license notices, and the lockfile/toolchain reproducibility policy.
 
 The module plus M1 core and M2/M3 headless runtime packages exist. The package-boundary check validates the current graph, including `scene -> primitives`, `element -> core/primitives/layout/scene`, and the consumer-only `examples/headless/` package; it fails if a package introduces an unreviewed runtime dependency. Current contract, dependency, format, build, and test commands are listed in [README.md](../README.md).
+
+## Ubuntu native dependency exception
+
+The first Ubuntu backend uses system Wayland/xdg-shell, EGL/GLES, xkbcommon and
+libc/pthread behind `ubuntu/`. This narrow native exception and its dependency
+inventory, licenses, upgrade sources and failure behavior are documented in
+[ubuntu.md](ubuntu.md#native-dependency-inventory-and-exception). No portable
+package imports the concrete backend. The executable package audit now permits
+`platform -> scene/diagnostics/primitives`, `ubuntu -> platform/scene/diagnostics/primitives`,
+and the native example edges above. It audits aliased imports and whitebox
+test imports as well as blackbox test imports. All other runtime dependencies
+continue to require a written exception.
 
 ## Initial native package edges
 
