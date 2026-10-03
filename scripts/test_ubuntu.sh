@@ -31,7 +31,7 @@ for scale in 1 2; do
     fi
     if [ -S "$runtime/$WAYLAND_DISPLAY" ]; then
       if command -v wayland-info >/dev/null 2>&1; then
-        if wayland-info >/dev/null 2>&1; then
+        if timeout 1s wayland-info >/dev/null 2>&1; then
           ready=1
           break
         fi
