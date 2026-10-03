@@ -69,7 +69,6 @@ test "scene owns its command storage" {
   assert_eq(scene.command_count(), 1)
 }
 
-
 ///|
 test "scene snapshot validates scale and owns commands" {
   let viewport = scene_rect(0.0, 0.0, 100.0, 50.0)
