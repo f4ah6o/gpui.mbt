@@ -23,6 +23,16 @@ pub enum FlowDirection {
 pub extend FlowDirection with Eq::{not_equal, equal}
 
 ///|
+pub fn FlowDirection::row() -> FlowDirection {
+  Row
+}
+
+///|
+pub fn FlowDirection::column() -> FlowDirection {
+  Column
+}
+
+///|
 /// Main-axis placement of unused positive space.
 pub enum JustifyContent {
   Start
@@ -32,6 +42,21 @@ pub enum JustifyContent {
 
 ///|
 pub extend JustifyContent with Eq::{not_equal, equal}
+
+///|
+pub fn JustifyContent::start() -> JustifyContent {
+  Start
+}
+
+///|
+pub fn JustifyContent::center() -> JustifyContent {
+  Center
+}
+
+///|
+pub fn JustifyContent::end() -> JustifyContent {
+  End
+}
 
 ///|
 /// Cross-axis placement for all items in this first bounded subset.
@@ -44,6 +69,26 @@ pub enum AlignItems {
 
 ///|
 pub extend AlignItems with Eq::{not_equal, equal}
+
+///|
+pub fn AlignItems::start() -> AlignItems {
+  Start
+}
+
+///|
+pub fn AlignItems::center() -> AlignItems {
+  Center
+}
+
+///|
+pub fn AlignItems::end() -> AlignItems {
+  End
+}
+
+///|
+pub fn AlignItems::stretch() -> AlignItems {
+  Stretch
+}
 
 ///|
 /// A logical dimension. Percent values use 1.0 == 100%.
