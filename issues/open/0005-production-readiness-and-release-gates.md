@@ -210,3 +210,8 @@ design-only until all production gates have real, reviewed evidence.
 ## M2/M3 implementation evidence update — 2026-10-03
 
 The repository now exercises more of the correctness/API/dependency surface through `element/` and `scene/` headless tests and stricter package-edge validation. This is development evidence only. No release-ledger gate is changed to `pass`: upstream compatibility comparison, mutation evidence, native Tier 1, text, performance, stability, visual, supply-chain, security-boundary, and clean-consumer evidence remain incomplete.
+
+
+## Dispatch/snapshot correctness evidence update — 2026-10-03
+
+The headless correctness surface now includes callback-driven capture/bubble dispatch with stop-propagation and deterministic provisional `CommandSnapshot` values that remain separate from the reserved R0 `SceneSnapshot` v1 schema. These tests improve development evidence only. Event/focus PBT, mutation evidence, full scene golden artifacts, native Tier 1 evidence, performance/stability evidence, and all other release-ledger requirements remain pending; no release gate is promoted to `pass`.

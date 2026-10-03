@@ -175,3 +175,73 @@ test "element tree and dispatch plans own their arrays" {
   assert_eq(plan.capture().length(), 2)
   assert_eq(plan.bubble().length(), 2)
 }
+
+///|
+test "callback dispatch walks capture then bubble deterministically" {
+  let bounds = element_rect(0.0, 0.0, 100.0, 100.0)
+  let tree = unwrap_tree([
+    @element.ElementNode::new(1, None, bounds),
+    @element.ElementNode::new(2, Some(1), bounds),
+    @element.ElementNode::new(3, Some(2), bounds),
+  ])
+  let ids : Array[UInt64] = []
+  let phases : Array[@element.EventPhase] = []
+  match
+    tree.dispatch_pointer_with(element_point(10.0, 10.0), context => {
+      ids.push(context.current_target())
+      phases.push(context.phase())
+      Ok(())
+    }) {
+    Err(_) => fail("valid dispatch failed")
+    Ok(outcome) => {
+      assert_true(outcome.target() == Some(3))
+      assert_true(!outcome.was_stopped())
+      assert_eq(outcome.capture_visited().length(), 3)
+      assert_eq(outcome.bubble_visited().length(), 3)
+    }
+  }
+  assert_eq(ids.length(), 6)
+  assert_true(ids[0] == 1)
+  assert_true(ids[1] == 2)
+  assert_true(ids[2] == 3)
+  assert_true(ids[3] == 3)
+  assert_true(ids[4] == 2)
+  assert_true(ids[5] == 1)
+  assert_true(phases[0] == @element.EventPhase::Capture)
+  assert_true(phases[2] == @element.EventPhase::Capture)
+  assert_true(phases[3] == @element.EventPhase::Bubble)
+  assert_true(phases[5] == @element.EventPhase::Bubble)
+}
+
+///|
+test "stop propagation prevents later capture and all bubble callbacks" {
+  let bounds = element_rect(0.0, 0.0, 100.0, 100.0)
+  let tree = unwrap_tree([
+    @element.ElementNode::new(1, None, bounds),
+    @element.ElementNode::new(2, Some(1), bounds),
+    @element.ElementNode::new(3, Some(2), bounds),
+  ])
+  let visited : Array[UInt64] = []
+  let stopped_seen = Ref(false)
+  match
+    tree.dispatch_pointer_with(element_point(10.0, 10.0), context => {
+      visited.push(context.current_target())
+      if context.phase() == @element.EventPhase::Capture &&
+        context.current_target() == 2 {
+        context.stop_propagation()
+        stopped_seen.val = context.is_propagation_stopped()
+      }
+      Ok(())
+    }) {
+    Err(_) => fail("valid dispatch failed")
+    Ok(outcome) => {
+      assert_true(outcome.was_stopped())
+      assert_eq(outcome.capture_visited().length(), 2)
+      assert_eq(outcome.bubble_visited().length(), 0)
+    }
+  }
+  assert_eq(visited.length(), 2)
+  assert_true(stopped_seen.val)
+  assert_true(visited[0] == 1)
+  assert_true(visited[1] == 2)
+}

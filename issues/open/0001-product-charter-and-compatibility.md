@@ -172,3 +172,10 @@ Validation: `moon fmt --check`, `moon check --deny-warn --target all`, `moon tes
 The next headless slice now exists in `layout/`, `element/`, and `scene/`. M2 has deterministic flex-line layout plus a flat pre-order element tree with ID/parent validation, reverse-paint hit testing, root-to-target capture routes, target-to-root bubble routes, focusability/focus state, and deterministic background-quad scene generation. M3 has an ordered platform-neutral scene-command foundation for quads and clip push/pop commands.
 
 This does not complete M2 or M3: Render/IntoElement/request-layout/prepaint/paint lifecycle, stop-propagation callbacks, recursive auto layout, stable scene serialization, paths/images/text/transforms, and renderer contracts remain open. Compatibility rows stay `planned` until comparison with the pinned GPUI revision exists.
+
+
+## M2/M3 dispatch and snapshot update — 2026-10-03
+
+The headless element foundation now executes capture and bubble callbacks, records the callbacks that actually ran, propagates callback errors, and supports shared stop-propagation state. The scene foundation now freezes ordered commands into an unversioned provisional `CommandSnapshot` carrying logical viewport and validated positive scale metadata, with deterministic compact serialization and negative-zero normalization.
+
+This still does not complete M2 or M3. Render/IntoElement/request-layout/prepaint/paint lifecycle, recursive auto layout, the reserved `SceneSnapshot` v1 envelope with full R0 resource/clip-chain/item tables, paths/images/text/transforms, renderer contracts, and native rendering remain open.

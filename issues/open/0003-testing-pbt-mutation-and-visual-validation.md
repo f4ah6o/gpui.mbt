@@ -267,3 +267,8 @@ stress, and performance suites remain open, so this packet is still incomplete.
 ## M2/M3 headless test update — 2026-10-03
 
 Deterministic tests now cover element-tree validation, reverse-paint hit testing, capture/bubble route order, focus acceptance/rejection, element-to-scene ordering, and scene command data. These tests are part of the all-target MoonBit CI gate. Event/focus state-machine PBT, stop-propagation properties, scene serialization/goldens, turtles mutation baselines, vlmkit artifacts, and native E2E remain pending and therefore this packet remains open.
+
+
+## Dispatch/snapshot test update — 2026-10-03
+
+Deterministic M2 tests now execute the capture and bubble callback phases directly and verify that stop-propagation prevents every later callback. M3 tests now verify provisional `CommandSnapshot` scale validation, owned command storage, stable canonical serialization, command order, and negative-zero normalization. They deliberately do not exercise or claim the reserved `SceneSnapshot` v1 schema. Event/focus state-machine PBT, committed scene golden fixtures, turtles baselines, vlmkit artifacts, and native E2E remain pending.
