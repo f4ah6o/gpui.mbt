@@ -49,6 +49,8 @@ initial GitHub Pages Actions configuration.
 The headless browser smoke injects a synthetic hidden `Document` state and
 dispatches the browser's `visibilitychange` event to exercise the suspension
 path. It does not claim to validate operating-system tab switching behavior.
+The DPR check changes viewport dimensions and device scale together to produce
+a real browser resize signal; the smoke does not isolate DPR-only changes.
 
 For initial repository setup, enable GitHub Pages with **Build and deployment →
 Source: GitHub Actions**. The workflow uses the `github-pages` environment and
@@ -66,8 +68,10 @@ framework-owned events; only a scheduled frame drains them into the app. Hidden
 pages cancel pending frames and wait for visibility before requesting another.
 
 Canvas coordinates and layout use CSS pixels. The canvas backing store follows
-the measured device-pixel ratio. SceneSnapshot v1 resources must be empty and
-items must be quads; rectangle clip chains are applied in viewport space before
-each item's affine transform, and opacity is carried to Canvas 2D. Unsupported
-or invalid snapshots, missing canvas/context, invalid viewport measurements,
-and context loss surface typed framework diagnostics in the page.
+the measured device-pixel ratio. A device-pixel content-box `ResizeObserver`
+tracks backing-size changes, with a CSS-size fallback and a resolution media
+query for live DPR changes. SceneSnapshot v1 resources must be empty and items
+must be quads; rectangle clip chains are applied in viewport space before each
+item's affine transform, and opacity is carried to Canvas 2D. Unsupported or
+invalid snapshots, missing canvas/context, invalid viewport measurements, and
+context loss surface typed framework diagnostics in the page.

@@ -46,6 +46,61 @@ try {
   page.on("console", (message) => consoleMessages.push(`${message.type()}: ${message.text()}`));
   await page.addInitScript(() => {
     const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
+    const signals = window.__gpuiSmokeSignals = {
+      windowResizeEvents: 0,
+      resolutionMediaQueries: [],
+      resolutionMediaQueryChanges: [],
+      resizeObserverCallbacks: 0,
+      devicePixelObserverEntries: 0,
+      lastDevicePixelContentBox: null,
+    };
+    window.addEventListener("resize", () => { signals.windowResizeEvents += 1; });
+    const nativeMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query) => {
+      const media = nativeMatchMedia(query);
+      if (query.includes("resolution")) {
+        const registration = {
+          query,
+          matches: media.matches,
+          devicePixelRatio: window.devicePixelRatio,
+        };
+        signals.resolutionMediaQueries.push(registration);
+        const onChange = (event) => {
+          registration.matches = event.matches;
+          registration.devicePixelRatio = window.devicePixelRatio;
+          signals.resolutionMediaQueryChanges.push({
+            query,
+            matches: event.matches,
+            devicePixelRatio: window.devicePixelRatio,
+          });
+        };
+        if (media.addEventListener) media.addEventListener("change", onChange);
+        else media.addListener(onChange);
+      }
+      return media;
+    };
+    const NativeResizeObserver = window.ResizeObserver;
+    window.ResizeObserver = class extends NativeResizeObserver {
+      constructor(callback) {
+        super((entries, observer) => {
+          for (const entry of entries) {
+            if (entry.target?.id !== "gpui-viewport") continue;
+            signals.resizeObserverCallbacks += 1;
+            const box = entry.devicePixelContentBoxSize;
+            const size = Array.isArray(box) ? box[0] : box;
+            if (size) {
+              signals.devicePixelObserverEntries += 1;
+              signals.lastDevicePixelContentBox = {
+                inlineSize: size.inlineSize,
+                blockSize: size.blockSize,
+                devicePixelRatio: window.devicePixelRatio,
+              };
+            }
+          }
+          callback(entries, observer);
+        });
+      }
+    };
     window.__rafCalls = 0;
     window.requestAnimationFrame = (callback) => {
       window.__rafCalls += 1;
@@ -54,12 +109,15 @@ try {
   });
 
   await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: "load" });
-  const canvas = page.locator("#gpui-viewport");
-  const readViewport = () => page.evaluate(async () => {
+  await page.evaluate(async () => {
     const gpui = await import("./gpui-browser.js");
+    window.__gpuiSmokeStatus = () => JSON.parse(gpui.gpui_browser_status());
+  });
+  const canvas = page.locator("#gpui-viewport");
+  const readViewport = () => page.evaluate(() => {
     const canvas = document.querySelector("#gpui-viewport");
     const bounds = canvas.getBoundingClientRect();
-    const status = JSON.parse(gpui.gpui_browser_status());
+    const status = window.__gpuiSmokeStatus();
     return {
       cssWidth: bounds.width,
       cssHeight: bounds.height,
@@ -73,48 +131,58 @@ try {
       frameState: document.querySelector("#frame-state")?.textContent,
     };
   });
-  const waitForCoherentViewport = (expectedScale) => page.waitForFunction(async (scale) => {
-    const gpui = await import("./gpui-browser.js");
-    const measure = () => {
-      const canvas = document.querySelector("#gpui-viewport");
-      if (!canvas) return null;
-      const bounds = canvas.getBoundingClientRect();
-      const status = JSON.parse(gpui.gpui_browser_status());
-      return {
-        cssWidth: bounds.width,
-        cssHeight: bounds.height,
-        backingWidth: canvas.width,
-        backingHeight: canvas.height,
-        devicePixelRatio: window.devicePixelRatio,
-        logicalWidth: status.logicalWidth,
-        logicalHeight: status.logicalHeight,
-        statusDpr: status.dpr,
-        logicalLabel: document.querySelector("#logical-size")?.textContent,
-        backingLabel: document.querySelector("#backing-size")?.textContent,
-        scaleLabel: document.querySelector("#device-scale")?.textContent,
-        frameState: document.querySelector("#frame-state")?.textContent,
+  const waitForCoherentViewport = async (expectedScale) => {
+    await page.evaluate(() => { window.__gpuiSmokeViewportSample = null; });
+    // Keep the page predicate synchronous; Playwright treats a returned Promise as truthy.
+    return page.waitForFunction((scale) => {
+      const measure = () => {
+        const canvas = document.querySelector("#gpui-viewport");
+        if (!canvas) return null;
+        const bounds = canvas.getBoundingClientRect();
+        const status = window.__gpuiSmokeStatus();
+        return {
+          cssWidth: bounds.width,
+          cssHeight: bounds.height,
+          backingWidth: canvas.width,
+          backingHeight: canvas.height,
+          devicePixelRatio: window.devicePixelRatio,
+          logicalWidth: status.logicalWidth,
+          logicalHeight: status.logicalHeight,
+          statusDpr: status.dpr,
+          logicalLabel: document.querySelector("#logical-size")?.textContent,
+          backingLabel: document.querySelector("#backing-size")?.textContent,
+          scaleLabel: document.querySelector("#device-scale")?.textContent,
+          frameState: document.querySelector("#frame-state")?.textContent,
+        };
       };
-    };
-    const isCoherent = (state) => state !== null &&
-      state.frameState === "RUNNING" &&
-      state.devicePixelRatio === scale && state.statusDpr === scale &&
-      Math.abs(state.logicalWidth - state.cssWidth) < 0.1 &&
-      Math.abs(state.logicalHeight - state.cssHeight) < 0.1 &&
-      state.backingWidth === Math.round(state.cssWidth * scale) &&
-      state.backingHeight === Math.round(state.cssHeight * scale) &&
-      state.scaleLabel === `${scale.toFixed(2)}×` &&
-      state.backingLabel === `${state.backingWidth} × ${state.backingHeight} px` &&
-      state.logicalLabel === `${Math.round(state.cssWidth)} × ${Math.round(state.cssHeight)} CSS px`;
-    const first = measure();
-    await new Promise(requestAnimationFrame);
-    const second = measure();
-    return isCoherent(first) && isCoherent(second) &&
-      first.cssWidth === second.cssWidth && first.cssHeight === second.cssHeight &&
-      first.backingWidth === second.backingWidth && first.backingHeight === second.backingHeight &&
-      first.devicePixelRatio === second.devicePixelRatio &&
-      first.logicalWidth === second.logicalWidth && first.logicalHeight === second.logicalHeight &&
-      first.statusDpr === second.statusDpr;
-  }, expectedScale);
+      const isCoherent = (state) => state !== null &&
+        state.frameState === "RUNNING" &&
+        state.devicePixelRatio === scale && state.statusDpr === scale &&
+        Math.abs(state.logicalWidth - state.cssWidth) < 0.1 &&
+        Math.abs(state.logicalHeight - state.cssHeight) < 0.1 &&
+        state.backingWidth === Math.round(state.cssWidth * scale) &&
+        state.backingHeight === Math.round(state.cssHeight * scale) &&
+        state.scaleLabel === `${scale.toFixed(2)}×` &&
+        state.backingLabel === `${state.backingWidth} × ${state.backingHeight} px` &&
+        state.logicalLabel === `${Math.round(state.cssWidth)} × ${Math.round(state.cssHeight)} CSS px`;
+      const state = measure();
+      if (!isCoherent(state)) {
+        window.__gpuiSmokeViewportSample = null;
+        return false;
+      }
+      const signature = JSON.stringify([
+        state.cssWidth, state.cssHeight, state.backingWidth, state.backingHeight,
+        state.devicePixelRatio, state.logicalWidth, state.logicalHeight, state.statusDpr,
+        state.logicalLabel, state.backingLabel, state.scaleLabel, state.frameState,
+      ]);
+      const previous = window.__gpuiSmokeViewportSample;
+      const count = previous?.scale === scale && previous.signature === signature
+        ? previous.count + 1
+        : 1;
+      window.__gpuiSmokeViewportSample = { scale, signature, count };
+      return count >= 2;
+    }, expectedScale, { polling: "raf" });
+  };
   await page.waitForFunction(() => document.querySelector("#frame-state")?.textContent === "RUNNING");
   await page.waitForFunction(() => Number(document.querySelector("#sequence")?.textContent) >= 3);
   await waitForCoherentViewport(1.5);
@@ -145,7 +213,7 @@ try {
   const canvasBounds = await canvas.boundingBox();
   const targetPoint = { x: 120, y: 238 };
   await page.mouse.move(canvasBounds.x + targetPoint.x, canvasBounds.y + targetPoint.y);
-  await page.waitForFunction(async () => [4, 5, 6, 7].includes(JSON.parse((await import("./gpui-browser.js")).gpui_browser_status()).hover));
+  await page.waitForFunction(() => [4, 5, 6, 7].includes(window.__gpuiSmokeStatus().hover));
   await page.mouse.click(canvasBounds.x + targetPoint.x, canvasBounds.y + targetPoint.y);
   await page.waitForFunction(() => Number(document.querySelector("#activation-count")?.textContent) >= 2);
 
@@ -171,18 +239,45 @@ try {
     "pointer cancellation must not surface event.button === -1 as invalid input",
   );
 
-  // Resize CSS layout, then change DPR live through Chromium's emulation boundary.
+  // Change viewport dimensions and DPR together through Chromium's emulation boundary.
   await page.setViewportSize({ width: 1200, height: 880 });
   await waitForCoherentViewport(1.5);
+  const readResizeSignals = () => page.evaluate(() => ({
+    windowResizeEvents: window.__gpuiSmokeSignals.windowResizeEvents,
+    resolutionMediaQueries: window.__gpuiSmokeSignals.resolutionMediaQueries.map((entry) => ({ ...entry })),
+    resolutionMediaQueryChanges: window.__gpuiSmokeSignals.resolutionMediaQueryChanges.length,
+    resizeObserverCallbacks: window.__gpuiSmokeSignals.resizeObserverCallbacks,
+    devicePixelObserverEntries: window.__gpuiSmokeSignals.devicePixelObserverEntries,
+    lastDevicePixelContentBox: window.__gpuiSmokeSignals.lastDevicePixelContentBox,
+  }));
+  const resizeSignalsBeforeDensityChange = await readResizeSignals();
   const cdp = await context.newCDPSession(page);
   await cdp.send("Emulation.setDeviceMetricsOverride", {
-    width: 1200,
-    height: 880,
+    width: 1100,
+    height: 820,
     deviceScaleFactor: 2,
     mobile: false,
   });
   await waitForCoherentViewport(2);
   const resized = await readViewport();
+  const resizeSignalsAfterDensityChange = await readResizeSignals();
+  const resizeSignalDelta = {
+    windowResizeEvents: resizeSignalsAfterDensityChange.windowResizeEvents - resizeSignalsBeforeDensityChange.windowResizeEvents,
+    resolutionMediaQueryChanges: resizeSignalsAfterDensityChange.resolutionMediaQueryChanges - resizeSignalsBeforeDensityChange.resolutionMediaQueryChanges,
+    resizeObserverCallbacks: resizeSignalsAfterDensityChange.resizeObserverCallbacks - resizeSignalsBeforeDensityChange.resizeObserverCallbacks,
+    devicePixelObserverEntries: resizeSignalsAfterDensityChange.devicePixelObserverEntries - resizeSignalsBeforeDensityChange.devicePixelObserverEntries,
+  };
+  console.log("Browser resize/DPR signals:", JSON.stringify({
+    before: resizeSignalsBeforeDensityChange,
+    after: resizeSignalsAfterDensityChange,
+    delta: resizeSignalDelta,
+  }));
+  assert.ok(
+    resizeSignalDelta.windowResizeEvents > 0 ||
+      resizeSignalDelta.resolutionMediaQueryChanges > 0 ||
+      resizeSignalDelta.resizeObserverCallbacks > 0,
+    "the browser reports the real viewport-size/device-scale transition",
+  );
   assert.equal(resized.devicePixelRatio, 2);
   assert.equal(resized.status.dpr, 2);
   assert.equal(resized.backingWidth, Math.round(resized.cssWidth * resized.devicePixelRatio));
@@ -245,8 +340,7 @@ try {
         title: await page.title(),
         diagnostic: await page.locator("#diagnostic").textContent().catch(() => "unavailable"),
         body: await page.locator("body").innerText().catch(() => "unavailable"),
-        viewport: await page.evaluate(async () => {
-          const gpui = await import("./gpui-browser.js");
+        viewport: await page.evaluate(() => {
           const canvas = document.querySelector("#gpui-viewport");
           const bounds = canvas?.getBoundingClientRect();
           return {
@@ -255,7 +349,8 @@ try {
             cssHeight: bounds?.height,
             backingWidth: canvas?.width,
             backingHeight: canvas?.height,
-            framework: JSON.parse(gpui.gpui_browser_status()),
+            framework: window.__gpuiSmokeStatus?.() ?? null,
+            signals: window.__gpuiSmokeSignals ?? null,
             logicalLabel: document.querySelector("#logical-size")?.textContent,
             backingLabel: document.querySelector("#backing-size")?.textContent,
             scaleLabel: document.querySelector("#device-scale")?.textContent,
