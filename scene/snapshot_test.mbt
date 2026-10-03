@@ -108,7 +108,6 @@ test "scene snapshot v1 rejects invalid command scale and clip structure" {
   assert_true(empty.snapshot_v1(viewport, 0.0) is Err(InvalidScale))
 }
 
-
 ///|
 test "scene snapshot v1 reuses identical active clip chains" {
   let viewport = snapshot_rect(0.0, 0.0, 100.0, 50.0)
