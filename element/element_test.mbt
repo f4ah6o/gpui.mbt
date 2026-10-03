@@ -131,3 +131,27 @@ test "element scene generation follows stable node order" {
     }
   }
 }
+
+
+///|
+test "element tree and dispatch plans own their arrays" {
+  let bounds = element_rect(0.0, 0.0, 20.0, 20.0)
+  let root = @element.ElementNode::new(1, None, bounds)
+  let child = @element.ElementNode::new(2, Some(1), bounds)
+  let source : Array[@element.ElementNode] = [root, child]
+  let tree = unwrap_tree(source)
+  source.push(@element.ElementNode::new(3, Some(1), bounds))
+  assert_true(tree.node(3) is None)
+
+  let exposed = tree.nodes()
+  exposed.push(@element.ElementNode::new(4, Some(1), bounds))
+  assert_true(tree.node(4) is None)
+
+  let plan = tree.dispatch_pointer(element_point(10.0, 10.0))
+  let capture = plan.capture()
+  let bubble = plan.bubble()
+  capture.push(99)
+  bubble.push(98)
+  assert_eq(plan.capture().length(), 2)
+  assert_eq(plan.bubble().length(), 2)
+}
