@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate M1 contract documents, package imports, and release evidence.
+"""Validate contract documents, package imports, and release evidence.
 
 This standard-library-only checker verifies document structure, cross-links,
 and release-ledger evidence references. A successful default run says nothing
@@ -601,7 +601,7 @@ def _parse_package_imports(path: Path) -> tuple[list[str], list[str], list[str]]
 
 
 def validate_runtime_dependencies(root: Path) -> list[str]:
-    """Audit every MoonBit package manifest against the approved M1 layer graph.
+    """Audit every MoonBit package manifest against the approved runtime layer graph.
 
     Packages below tests/ are test-only. In every other package, runtime imports
     must be MoonBit core or an explicitly allowed first-party layer edge.
@@ -633,9 +633,10 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "primitives": set(),
         "diagnostics": {"primitives"},
         "core": {"primitives", "diagnostics"},
+        "layout": {"primitives"},
         "examples/headless": {"core", "diagnostics", "primitives"},
     }
-    required_runtime_packages = {"primitives", "diagnostics", "core"}
+    required_runtime_packages = {"primitives", "diagnostics", "core", "layout"}
     errors: list[str] = []
     module_prefix = module_name + "/"
 
