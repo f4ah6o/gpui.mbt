@@ -293,13 +293,19 @@ pub fn Scene::snapshot_v1(
             ClipPopCommand(..) => ignore(clip_stack.pop())
             QuadCommand(id~, bounds~, color~) => {
               let clip_chain_id = snapshot_clip_chain_id(
-                clip_chains,
-                clip_stack,
+                clip_chains, clip_stack,
               )
               let transform = AffineTransform::identity()
               let opacity = 1.0
               items.push(
-                QuadItem(id~, bounds~, color~, transform~, opacity~, clip_chain_id~),
+                QuadItem(
+                  id~,
+                  bounds~,
+                  color~,
+                  transform~,
+                  opacity~,
+                  clip_chain_id~,
+                ),
               )
             }
           }
