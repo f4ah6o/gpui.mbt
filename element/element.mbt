@@ -3,6 +3,7 @@
 pub enum ElementError {
   DuplicateId
   MissingParent
+  InvalidPreorder
   UnknownElement
   NotFocusable
 } derive(Eq)
@@ -11,8 +12,9 @@ pub enum ElementError {
 pub extend ElementError with Eq::{not_equal, equal}
 
 ///|
-/// One flat pre-order element record. Requiring parents to appear before their
-/// children makes the tree acyclic by construction and keeps traversal stable.
+/// One flat pre-order element record. Parent subtrees must remain contiguous:
+/// children may only attach to an ancestor in the currently open traversal path.
+/// This makes the tree acyclic by construction and keeps traversal stable.
 pub struct ElementNode {
   id : UInt64
   parent : UInt64?
@@ -161,6 +163,7 @@ pub fn ElementTree::new(
 ) -> Result[ElementTree, ElementError] {
   let owned = copy_nodes(nodes)
   let mut failure : ElementError? = None
+  let mut ancestors : Array[UInt64] = []
   let mut index = 0
   while index < owned.length() && failure is None {
     let node = owned[index]
@@ -176,18 +179,39 @@ pub fn ElementTree::new(
       failure = Some(DuplicateId)
     } else {
       match node.parent {
-        None => ()
+        None => ancestors = [node.id]
         Some(parent_id) => {
-          let mut parent_found = false
-          let mut parent_index = 0
-          while parent_index < index && !parent_found {
-            if owned[parent_index].id == parent_id {
-              parent_found = true
+          let mut ancestor_index = ancestors.length()
+          let mut parent_depth = -1
+          while ancestor_index > 0 && parent_depth < 0 {
+            ancestor_index -= 1
+            if ancestors[ancestor_index] == parent_id {
+              parent_depth = ancestor_index
             }
-            parent_index += 1
           }
-          if !parent_found {
-            failure = Some(MissingParent)
+          if parent_depth < 0 {
+            let mut parent_seen = false
+            let mut prior = 0
+            while prior < index && !parent_seen {
+              if owned[prior].id == parent_id {
+                parent_seen = true
+              }
+              prior += 1
+            }
+            if parent_seen {
+              failure = Some(InvalidPreorder)
+            } else {
+              failure = Some(MissingParent)
+            }
+          } else {
+            let next_ancestors : Array[UInt64] = []
+            let mut depth = 0
+            while depth <= parent_depth {
+              next_ancestors.push(ancestors[depth])
+              depth += 1
+            }
+            next_ancestors.push(node.id)
+            ancestors = next_ancestors
           }
         }
       }
