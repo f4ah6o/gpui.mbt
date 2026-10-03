@@ -1,4 +1,4 @@
-name: Contracts and M1 core
+name: Contracts, M1 core, and M2 layout
 
 on:
   push:

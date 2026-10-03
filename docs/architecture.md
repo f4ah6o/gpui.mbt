@@ -74,7 +74,7 @@ The current executor uses an in-repository FIFO and deterministic timer list. Na
 
 ## Initial layout boundary
 
-The first layout engine supports a deliberately bounded flex subset. It does not claim CSS or full GPUI style compatibility. The first public primitives and diagnostic packages are in place; no layout engine exists yet.
+The first layout engine supports a deliberately bounded flex subset. It does not claim CSS or full GPUI style compatibility. The initial `layout/` package now implements deterministic layout for one definite row/column flex line, including points/percent/auto child dimensions, gap, padding/border, grow/shrink, one-pass min/max clamping, justification/alignment, stable child order, and explicit overflow reporting. Recursive auto-sized containers, intrinsic measure callbacks, element-tree integration, and the broader style surface remain pending.
 
 ### Inputs and outputs
 
