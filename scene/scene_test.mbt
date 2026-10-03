@@ -112,7 +112,7 @@ test "scene snapshot canonical json is stable and normalizes negative zero" {
       assert_eq(left.canonical_json(), right.canonical_json())
       assert_eq(
         left.canonical_json(),
-        "{\"schema_version\":1,\"viewport\":{\"x\":0.0,\"y\":0.0,\"width\":100.0,\"height\":50.0},\"scale\":2.0,\"commands\":[{\"kind\":\"quad\",\"id\":7,\"bounds\":{\"x\":1.0,\"y\":2.0,\"width\":3.0,\"height\":4.0},\"color\":{\"red\":10,\"green\":20,\"blue\":30,\"alpha\":255}},{\"kind\":\"clip_pop\",\"id\":9}]}",
+        "{\"schema_version\":1,\"viewport\":{\"x\":0,\"y\":0,\"width\":100,\"height\":50},\"scale\":2,\"commands\":[{\"kind\":\"quad\",\"id\":7,\"bounds\":{\"x\":1,\"y\":2,\"width\":3,\"height\":4},\"color\":{\"red\":10,\"green\":20,\"blue\":30,\"alpha\":255}},{\"kind\":\"clip_pop\",\"id\":9}]}",
       )
     }
     _ => fail("valid snapshot rejected")
