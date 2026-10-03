@@ -27,6 +27,7 @@ static BOOL overflow;
 #ifdef GPUI_TESTING
 static NSData *frame_pixels;
 static NSUInteger frame_width, frame_height, frame_stride;
+static double test_scale_override;
 #endif
 static void emit(GPWindow *w, int kind, double x, double y, int mods, int code, int repeat) {
   if (w.closing && kind != 13) return;
@@ -38,6 +39,9 @@ static void emit(GPWindow *w, int kind, double x, double y, int mods, int code, 
 }
 static void resize_surface(GPWindow *w) {
   double scale = w.window.backingScaleFactor;
+#ifdef GPUI_TESTING
+  if (test_scale_override > 0) scale = test_scale_override;
+#endif
   BOOL changed = scale != w.scale;
   w.scale = scale;
   w.surface.contentsScale = scale;
@@ -182,10 +186,21 @@ static int present(GPWindow *w, const uint8_t *bytes, int32_t len) {
     }
     if (CGRectIsEmpty(clip) || CGRectIsNull(clip)) continue;
     double s = w.scale;
-    NSUInteger left = (NSUInteger)ceil(CGRectGetMinX(clip)*s), top = (NSUInteger)ceil(CGRectGetMinY(clip)*s);
-    NSUInteger right = MIN((NSUInteger)ceil(CGRectGetMaxX(clip)*s), (NSUInteger)w.surface.drawableSize.width);
-    NSUInteger bottom = MIN((NSUInteger)ceil(CGRectGetMaxY(clip)*s), (NSUInteger)w.surface.drawableSize.height);
-    if (right <= left || bottom <= top) continue;
+    // A scissor pixel is covered when its sample center (i + 0.5) lies in the
+    // logical half-open clip. Convert both edges against that sample lattice.
+    long long left_i = (long long)ceil(CGRectGetMinX(clip)*s - 0.5);
+    long long top_i = (long long)ceil(CGRectGetMinY(clip)*s - 0.5);
+    long long right_i = (long long)ceil(CGRectGetMaxX(clip)*s - 0.5);
+    long long bottom_i = (long long)ceil(CGRectGetMaxY(clip)*s - 0.5);
+    long long width_i = (long long)w.surface.drawableSize.width;
+    long long height_i = (long long)w.surface.drawableSize.height;
+    if (left_i < 0) left_i = 0; if (top_i < 0) top_i = 0;
+    if (right_i < 0) right_i = 0; if (bottom_i < 0) bottom_i = 0;
+    if (left_i > width_i) left_i = width_i; if (right_i > width_i) right_i = width_i;
+    if (top_i > height_i) top_i = height_i; if (bottom_i > height_i) bottom_i = height_i;
+    if (right_i <= left_i || bottom_i <= top_i) continue;
+    NSUInteger left = (NSUInteger)left_i, top = (NSUInteger)top_i;
+    NSUInteger right = (NSUInteger)right_i, bottom = (NSUInteger)bottom_i;
     Draw *draw = &draws[count++];
     draw->clip = (MTLScissorRect){left,top,right-left,bottom-top};
     NSDictionary *t = item[@"transform"], *c = item[@"color"];

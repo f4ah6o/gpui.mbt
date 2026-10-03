@@ -21,6 +21,12 @@ static void pixel(int x, int y, int red, int green, int blue) {
   assert(offset+3 < frame_pixels.length);
   assert(abs(p[offset]-blue)<=2 && abs(p[offset+1]-green)<=2 && abs(p[offset+2]-red)<=2);
 }
+static void device_pixel(int x, int y, int red, int green, int blue) {
+  const uint8_t *p=frame_pixels.bytes;
+  NSUInteger offset=(NSUInteger)y*frame_stride+(NSUInteger)x*4;
+  assert(offset+3 < frame_pixels.length);
+  assert(abs(p[offset]-blue)<=2 && abs(p[offset+1]-green)<=2 && abs(p[offset+2]-red)<=2);
+}
 int main(void) {
   @autoreleasepool {
     api=gpui_macos_api_v1(); assert(api->abi_version==1 && api->struct_size==sizeof(GpuiApi));
@@ -41,6 +47,19 @@ int main(void) {
     assert(call_op(9,token,0,0,snapshot)==0);
     pixel(70,70,255,0,0); pixel(90,70,128,0,128); pixel(50,70,9,13,19); pixel(110,70,4,6,137);
     assert(frame_width==(NSUInteger)(320*w.scale) && frame_height==(NSUInteger)(240*w.scale));
+    // Fractional clip regression: [0.2, 1.2) covers device pixel 0 at 1x,
+    // and device pixels 0..1 at 2x. The next sample center must stay clear.
+    for (int scale=1; scale<=2; scale++) {
+      test_scale_override=scale; resize_surface(w);
+      NSString *fractional=[NSString stringWithFormat:
+        @"{\"schema_version\":1,\"viewport\":{\"x\":0,\"y\":0,\"width\":320,\"height\":240},\"scale\":%d,\"resources\":[],\"clip_chains\":[{\"id\":1,\"rects\":[{\"x\":0.2,\"y\":10,\"width\":1.0,\"height\":10}]}],\"items\":[{\"kind\":\"quad\",\"bounds\":{\"x\":0,\"y\":0,\"width\":4,\"height\":30},\"color\":{\"red\":0,\"green\":255,\"blue\":0,\"alpha\":255},\"transform\":{\"a\":1,\"b\":0,\"c\":0,\"d\":1,\"tx\":0,\"ty\":0},\"opacity\":1,\"clip_chain_id\":1}]}",scale];
+      assert(call_op(9,token,0,0,fractional)==0);
+      int row=15*scale;
+      device_pixel(0,row,0,255,0);
+      if (scale==2) device_pixel(1,row,0,255,0);
+      device_pixel(scale,row,9,13,19);
+    }
+    test_scale_override=0; resize_surface(w);
     pipeline=nil; assert(call_op(9,token,0,0,snapshot)==16); assert(setup_gpu()==0);
     for (int i=0;i<50;i++) assert(call_op(6,0,10,0,nil)==0);
     drain();

@@ -24,6 +24,7 @@ pub(all) enum EventKind {
   Input(@primitives.InputEvent)
   CloseRequested
   Destroyed
+  FrameCompleted
   Wake
   ExitRequested
 }
@@ -35,6 +36,36 @@ pub(all) struct Event {
   sequence : Int64
   scale : Double
   kind : EventKind
+}
+
+///|
+pub fn Event::new(
+  window : WindowId,
+  sequence : Int64,
+  scale : Double,
+  kind : EventKind,
+) -> Event {
+  { window, sequence, scale, kind, }
+}
+
+///|
+pub fn Event::window(self : Event) -> WindowId {
+  self.window
+}
+
+///|
+pub fn Event::sequence(self : Event) -> Int64 {
+  self.sequence
+}
+
+///|
+pub fn Event::scale(self : Event) -> Double {
+  self.scale
+}
+
+///|
+pub fn Event::kind(self : Event) -> EventKind {
+  self.kind
 }
 
 ///|
