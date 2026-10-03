@@ -14,6 +14,9 @@ pub(all) enum HostState {
 } derive(Eq)
 
 ///|
+pub extend HostState with Eq::{not_equal, equal}
+
+///|
 extern "C" fn native_start(version : Int) -> Int = "gpui_start"
 
 ///|
@@ -221,7 +224,10 @@ pub fn Host::set_size(
   width : Int,
   height : Int,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  outcome(native_size(self.token, window.value().to_int(), width, height), "set_size")
+  outcome(
+    native_size(self.token, window.value().to_int(), width, height),
+    "set_size",
+  )
 }
 
 ///|
@@ -230,10 +236,11 @@ pub fn Host::window_metrics(
   window : @platform.WindowId,
 ) -> Result[(Double, Double, Double), @diagnostics.FrameworkError] {
   let metrics = FixedArray::make(3, 0.0)
-  match outcome(
-    native_metrics(self.token, window.value().to_int(), metrics),
-    "window_metrics",
-  ) {
+  match
+    outcome(
+      native_metrics(self.token, window.value().to_int(), metrics),
+      "window_metrics",
+    ) {
     Err(error) => Err(error)
     Ok(_) => Ok((metrics[0], metrics[1], metrics[2]))
   }
@@ -245,7 +252,10 @@ pub fn Host::recover_renderer(
   self : Host,
   window : @platform.WindowId,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  outcome(native_recover(self.token, window.value().to_int()), "recover_renderer")
+  outcome(
+    native_recover(self.token, window.value().to_int()),
+    "recover_renderer",
+  )
 }
 
 ///|
@@ -291,15 +301,12 @@ fn decode_event(data : FixedArray[Double]) -> @platform.EventKind? {
   let detail = data[8].to_int()
   let mods = modifiers(data[9].to_int())
   match data[0].to_int() {
-    1 =>
-      Some(
-        @platform.Resized(width=data[4], height=data[5]),
-      )
+    1 => Some(@platform.Resized(width=data[4], height=data[5]))
     2 => Some(@platform.ScaleChanged)
     3 => Some(@platform.CloseRequested)
     4 => Some(@platform.Destroyed)
     5 => Some(@platform.FrameCompleted)
-    6 => Some(@platform.FocusChanged(focused=detail != 0))
+    6 => Some(@platform.FocusChanged(detail != 0))
     7 | 8 | 9 =>
       match @primitives.Point::new(data[6], data[7]) {
         Err(_) => None

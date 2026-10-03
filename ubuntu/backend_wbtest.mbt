@@ -80,7 +80,7 @@ test "input translation retains logical pointer, scroll, focus and modifiers" {
   buffer[0] = 6.0
   buffer[8] = 0.0
   assert_true(
-    decode_event(buffer) is Some(@platform.FocusChanged(focused=false)),
+    decode_event(buffer) is Some(@platform.FocusChanged(false)),
   )
 }
 
@@ -170,7 +170,7 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
       let mut width = 160
       let mut height = 120
       let mut scale = 1.0
-      let mut sequence = 0
+      let mut sequence : Int64 = 0
       for event in events {
         assert_true(event.window() == window)
         assert_true(event.sequence() > sequence)
