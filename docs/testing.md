@@ -3,19 +3,21 @@
 Status: M1 core plus M2 layout/element and M3 scene foundation tests; current headless tests run in CI.
 
 The current test coverage exercises the headless `primitives` value layer,
-core app/entity/scheduler lifecycle, the deterministic `layout` flex-line
-foundation, the flat `element` tree, and ordered `scene` commands. It includes
-deterministic value and lifecycle cases, two seeded rectangle properties, a
-seeded entity lifecycle reference-model property, a seeded flex-line
-geometry/order property, and exact hit-test/dispatch/focus/scene-order tests.
-Recursive auto layout, Render/IntoElement lifecycle, scene golden fixtures,
-render/text, mutation testing, and native integration tests remain unimplemented.
-Event/focus PBT now exercises route reversal, global stop-propagation, and focus
-normalization after subtree removal; scene PBT now exercises strict clip-stack
-nesting and rejects unclosed stacks before snapshots are emitted. Deterministic callback tests now cover capture/bubble
-execution and stop-propagation, and scene tests cover canonical provisional
-`CommandSnapshot` serialization including negative-zero normalization without
-claiming the reserved R0 `SceneSnapshot` version 1 schema. This document
+core app/entity/scheduler lifecycle, deterministic flex-line and recursive
+flex-tree layout, the flat `element` tree, ordered `scene` commands, and the
+implemented versioned `SceneSnapshot` v1 subset. It includes deterministic
+value and lifecycle cases, two seeded rectangle properties, a seeded entity
+lifecycle reference-model property, seeded flex-line and flex-tree geometry/order
+properties, and exact hit-test/dispatch/focus/scene-order tests. Recursive auto
+container sizing, Render/IntoElement lifecycle, full-schema scene golden
+fixtures, render/text, mutation testing, and native integration tests remain
+unimplemented. Event/focus PBT exercises route reversal, global
+stop-propagation, and focus normalization after subtree removal; scene PBT
+exercises strict clip-stack nesting and rejects unclosed stacks before snapshots
+are emitted. Deterministic callback tests cover capture/bubble execution and
+stop-propagation. Scene tests cover both the provisional `CommandSnapshot` and
+the versioned v1 subset, including canonical serialization, negative-zero
+normalization, envelope validation, and deterministic clip-chain reuse. This document
 separates active checks from future budgets. Release status is tracked in
 [release gates](release-gates.json) and the [release policy](release.md).
 
@@ -193,3 +195,18 @@ no open clip, a mismatched clip ID, or a frame that ends with an open clip is a
 typed `SceneError`; `command_snapshot` refuses to freeze such a scene. These
 checks strengthen the provisional command model only and do not consume the
 reserved `SceneSnapshot` v1 schema.
+
+
+## Recursive layout and SceneSnapshot v1 subset update — 2026-10-03
+
+The recursive layout suite adds deterministic nested row/column cases, preorder
+validation, missing-container rejection, and a fixed-seed 256-case property that
+checks deterministic absolute geometry and descendant ordering. The versioned
+scene suite checks schema version 1 metadata, owned resource/clip/item arrays,
+clip-reference validation, finite opacity/transform inputs, canonical JSON, and
+reuse of identical active rectangle clip chains.
+
+PR CI runs `moon fmt --check`, `moon check --target all --deny-warn`, and
+`moon test --target all --deny-warn`. At this slice the MoonBit suite passes
+62/62 tests on wasm, wasm-gc, js, and native. This is headless target evidence,
+not native GUI/platform evidence.

@@ -232,3 +232,17 @@ This does not complete the packet. Render/IntoElement lifecycle, recursive auto
 layout, the reserved `SceneSnapshot` v1 resource/clip-chain/item schema,
 mutation baselines, visual/native evidence, renderer/backend work, and later
 production gates remain open.
+
+
+## Recursive layout and versioned scene evidence update — 2026-10-03
+
+Development evidence now includes recursive flex-tree deterministic/PBT coverage
+and a versioned `SceneSnapshot` v1 subset with canonical serialization and
+clip-chain normalization. The current all-target MoonBit gate passes 62/62
+tests on wasm, wasm-gc, js, and native, with formatting and warning-denied checks
+also passing.
+
+No production release ledger gate is promoted by this work. Full
+Render/IntoElement lifecycle, complete scene schema, text, native Tier 1,
+mutation, visual, performance, stability, security-boundary, supply-chain, and
+clean-consumer evidence remain pending. This issue therefore remains open.

@@ -2,9 +2,9 @@
 
 This document defines the backend contract before native code exists. It is a
 design target for the core/backend conformance suite; it does not claim that any
-platform backend has been implemented or is supported. A small R0 headless
-scene-command foundation now exists, but it is not yet the complete versioned
-SceneSnapshot described below.
+platform backend has been implemented or is supported. R0 now has both the
+provisional command stream and a versioned SceneSnapshot v1 subset, but the
+snapshot is not yet the complete schema described below.
 
 ## Boundary and first backend
 
@@ -148,16 +148,18 @@ these framework categories at the boundary.
 
 ## Scene and renderer boundary
 
-R0 produces only a versioned, platform-neutral scene snapshot; it does not
-create a native surface or promise raster output. The current `scene/` package
-implements a provisional command-snapshot foundation: stable ordered quad and
-clip commands, element-to-scene generation, viewport/scale metadata, and
-canonical compact serialization with negative-zero normalization. This public
-`CommandSnapshot` is deliberately unversioned and distinct from the contracted
-`SceneSnapshot` schema version 1 below. The full
-resource/clip-chain/item schema below, paths, images, text runs, transforms, and
-renderer-facing resources remain pending. R1 may add a reference
-software raster path for deterministic correctness checks. R2 adds the native
+R0 produces only platform-neutral scene data; it does not create a native
+surface or promise raster output. The current `scene/` package keeps the
+provisional unversioned `CommandSnapshot` and now also exposes a versioned
+`SceneSnapshot` envelope with `schema_version: 1`, logical viewport/scale,
+resource and clip-chain tables, flat ordered items, finite affine transforms,
+opacity, and canonical compact serialization with negative-zero normalization.
+The implemented v1 subset converts the current quad plus rectangle-clip command
+surface, reuses identical active clip chains deterministically, and currently
+emits no renderer-facing resources. The complete schema below still requires
+quad border/corner data, path clips, paths, images, text runs, and their logical
+resources. R1 may add a reference software raster path for deterministic
+correctness checks. R2 adds the native
 GPU renderer required by a production backend. R3 covers optimization and
 device-loss recovery while preserving scene-level oracles.
 

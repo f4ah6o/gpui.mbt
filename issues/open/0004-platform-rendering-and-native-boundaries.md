@@ -271,3 +271,17 @@ This does not complete the packet. Render/IntoElement lifecycle, recursive auto
 layout, the reserved `SceneSnapshot` v1 resource/clip-chain/item schema,
 mutation baselines, visual/native evidence, renderer/backend work, and later
 production gates remain open.
+
+
+## R0 versioned snapshot subset update — 2026-10-03
+
+R0 now includes a `SceneSnapshot` envelope with `schema_version: 1` alongside
+the provisional unversioned `CommandSnapshot`. The implemented subset converts
+ordered quad and rectangle-clip commands into flat items and deterministic
+clip-chain references, carries finite affine transform/opacity fields, exposes
+the resource/clip-chain/item table shape, and serializes canonically.
+
+This does not complete the contracted v1 scene. Quad border/corner data, path
+clips, paths, images, text runs and their resources are still pending, as are
+R1/R2/R3 renderer work, native surfaces/backends, text/IME, accessibility,
+device-loss recovery, and every platform support gate. No platform tier changes.

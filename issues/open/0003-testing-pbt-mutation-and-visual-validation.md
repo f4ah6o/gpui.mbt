@@ -289,3 +289,20 @@ This does not complete the packet. Render/IntoElement lifecycle, recursive auto
 layout, the reserved `SceneSnapshot` v1 resource/clip-chain/item schema,
 mutation baselines, visual/native evidence, renderer/backend work, and later
 production gates remain open.
+
+
+## Recursive layout and versioned scene test update — 2026-10-03
+
+The headless suite now includes a fixed-seed 256-case recursive flex-tree
+property in addition to deterministic nested-layout cases. The versioned scene
+tests cover the `SceneSnapshot` v1 subset envelope, canonical JSON,
+negative-zero normalization, invalid clip references, opacity validation, and
+deterministic reuse of identical rectangle clip chains.
+
+The current PR gate passes `moon fmt --check`,
+`moon check --target all --deny-warn`, and
+`moon test --target all --deny-warn`; the MoonBit suite is 62/62 on wasm,
+wasm-gc, js, and native. These are MoonBit target/headless results only.
+Turtles mutation baselines, committed full-schema scene/raster goldens, vlmkit
+artifacts, Render/text coverage, native E2E, stress, and performance evidence
+remain pending, so this packet stays open.
