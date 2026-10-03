@@ -51,7 +51,7 @@ fn main {
   let mut dirty = true
   let mut frames = 0
   let smoke = @env.get_env_var("GPUI_UBUNTU_SMOKE") == Some("1")
-  while host.state() == @platform.Running {
+  while host.state() == @native.Running {
     match host.dispatch(100) {
       Err(error) => {
         println("\{error.operation()}: \{error.code().label()}")
@@ -61,9 +61,9 @@ fn main {
         for event in events {
           scale = event.scale()
           match event.kind() {
-            @platform.Configured(width=w, height=h) => {
-              width = w
-              height = h
+            @platform.Resized(width=w, height=h) => {
+              width = w.to_int()
+              height = h.to_int()
               dirty = true
             }
             @platform.ScaleChanged => dirty = true
@@ -80,7 +80,7 @@ fn main {
           }
         }
     }
-    if dirty && host.state() == @platform.Running {
+    if dirty && host.state() == @native.Running {
       match host.present(window, quad_scene(width, height, scale)) {
         Ok(_) => dirty = false
         Err(error) =>

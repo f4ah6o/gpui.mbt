@@ -160,7 +160,7 @@ fn[T] require_ok(result : Result[T, @diagnostics.FrameworkError]) -> T raise {
 test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
   if @env.get_env_var("GPUI_UBUNTU_E2E") == Some("1") {
     let host = require_ok(Host::start())
-    assert_true(host.state() == @platform.Running)
+    assert_true(host.state() == Running)
     assert_true(Host::start() is Err(_))
     for iteration = 0; iteration < 24; iteration = iteration + 1 {
       let window = require_ok(
@@ -176,9 +176,9 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
         assert_true(event.sequence() > sequence)
         sequence = event.sequence()
         scale = event.scale()
-        if event.kind() is @platform.Configured(width=w, height=h) {
-          width = w
-          height = h
+        if event.kind() is @platform.Resized(width=w, height=h) {
+          width = w.to_int()
+          height = h.to_int()
         }
       }
       require_ok(

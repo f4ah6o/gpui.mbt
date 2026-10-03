@@ -12,54 +12,73 @@ import {
 // Errors
 
 // Types and methods
-pub struct Event {
+pub(all) enum Capability {
+  NativeWindow
+  QuadFrames
+  PointerKeyboard
+  Clipboard
+  Cursor
+  TextInput
+  Accessibility
+  Menus
+  RendererRecovery
+  CrossThreadCommands
+}
+
+pub(all) enum Cursor {
+  Arrow
+  PointingHand
+  Text
+}
+
+pub(all) struct Event {
   window : WindowId
-  sequence : Int
+  sequence : Int64
   scale : Double
   kind : EventKind
 }
 pub fn Event::kind(Self) -> EventKind
-pub fn Event::new(WindowId, Int, Double, EventKind) -> Self
+pub fn Event::new(WindowId, Int64, Double, EventKind) -> Self
 pub fn Event::scale(Self) -> Double
-pub fn Event::sequence(Self) -> Int
+pub fn Event::sequence(Self) -> Int64
 pub fn Event::window(Self) -> WindowId
 
 pub(all) enum EventKind {
-  Configured(width~ : Int, height~ : Int)
+  Created
+  Resized(width~ : Double, height~ : Double)
+  Moved(x~ : Double, y~ : Double)
   ScaleChanged
+  FocusChanged(Bool)
+  Input(@primitives.InputEvent)
   CloseRequested
   Destroyed
   FrameCompleted
-  FocusChanged(focused~ : Bool)
-  Input(@primitives.InputEvent)
+  Wake
+  ExitRequested
 }
 
-pub(all) enum HostState {
-  Running
-  Quiescing
-  Stopped
-} derive(Eq)
-pub fn HostState::equal(Self, Self) -> Bool
-pub fn HostState::not_equal(Self, Self) -> Bool
-
 pub struct WindowId {
-  value : Int
+  value : Int64
 } derive(Eq)
 pub fn WindowId::equal(Self, Self) -> Bool
-pub fn WindowId::new(Int) -> Self
+pub fn WindowId::new(Int64) -> Self
 pub fn WindowId::not_equal(Self, Self) -> Bool
-pub fn WindowId::value(Self) -> Int
+pub fn WindowId::value(Self) -> Int64
 
 // Type aliases
 
 // Traits
 pub(open) trait Backend {
-  fn state(Self) -> HostState
+  fn require_capability(Self, Capability) -> Result[Unit, @diagnostics.FrameworkError]
+  fn stop(Self) -> Result[Unit, @diagnostics.FrameworkError]
+  fn create_window(Self, String, Double, Double) -> Result[WindowId, @diagnostics.FrameworkError]
+  fn set_title(Self, WindowId, String) -> Result[Unit, @diagnostics.FrameworkError]
+  fn set_size(Self, WindowId, Double, Double) -> Result[Unit, @diagnostics.FrameworkError]
+  fn window_metrics(Self, WindowId) -> Result[(Double, Double, Double), @diagnostics.FrameworkError]
+  fn next_event(Self, timeout_ms? : Int) -> Result[Event?, @diagnostics.FrameworkError]
+  fn present(Self, WindowId, @scene.SceneSnapshot) -> Result[Unit, @diagnostics.FrameworkError]
+  fn request_close(Self, WindowId) -> Result[Unit, @diagnostics.FrameworkError]
+  fn destroy_window(Self, WindowId) -> Result[Unit, @diagnostics.FrameworkError]
   fn wake(Self) -> Result[Unit, @diagnostics.FrameworkError]
   fn request_exit(Self) -> Result[Unit, @diagnostics.FrameworkError]
-  fn stop(Self) -> Result[Unit, @diagnostics.FrameworkError]
-  fn create_window(Self, Int, Int, String) -> Result[WindowId, @diagnostics.FrameworkError]
-  fn destroy_window(Self, WindowId) -> Result[Unit, @diagnostics.FrameworkError]
-  fn dispatch(Self, Int) -> Result[Array[Event], @diagnostics.FrameworkError]
-  fn present(Self, WindowId, @scene.SceneSnapshot) -> Result[Unit, @diagnostics.FrameworkError]
 }

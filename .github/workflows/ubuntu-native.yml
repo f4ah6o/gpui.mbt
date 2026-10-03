@@ -24,3 +24,8 @@ jobs:
           moon version --all
       - name: Native lifecycle, visual readback, integer scale, recovery and disconnect
         run: sh scripts/test_ubuntu.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: ubuntu-native-e2e
+          path: _build/ubuntu-e2e/

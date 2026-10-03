@@ -833,6 +833,18 @@ int32_t gpui_size(int32_t token, int32_t window, int32_t w, int32_t hh) {
   event(h, 1, 0, 0, 0);
   return GPUI_OK;
 }
+int32_t gpui_metrics(int32_t token, int32_t window, double *metrics) {
+  struct host *h;
+  int s = window_check(token, window, &h);
+  if (s)
+    return s;
+  if (!metrics)
+    return GPUI_INVALID;
+  metrics[0] = h->width;
+  metrics[1] = h->height;
+  metrics[2] = h->scale;
+  return GPUI_OK;
+}
 int32_t gpui_dispatch(int32_t token, int32_t timeout) {
   struct host *h;
   int s = check(token, &h);
@@ -920,8 +932,21 @@ int32_t gpui_present(int32_t token, int32_t window, const double *data,
            bottom = fmin(h->height, q[16] + q[18]);
     if (right <= left || bottom <= top)
       continue;
-    int x = (int)ceil(left * h->scale), y = (int)ceil(top * h->scale);
-    int r = (int)floor(right * h->scale), b = (int)floor(bottom * h->scale);
+    /* Include exactly those device pixels whose sample centers lie in the
+     * logical half-open clip. */
+    int x = (int)ceil(left * h->scale - 0.5);
+    int y = (int)ceil(top * h->scale - 0.5);
+    int r = (int)ceil(right * h->scale - 0.5);
+    int b = (int)ceil(bottom * h->scale - 0.5);
+    int dw = h->width * h->scale, dh = h->height * h->scale;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (r < 0) r = 0;
+    if (b < 0) b = 0;
+    if (x > dw) x = dw;
+    if (r > dw) r = dw;
+    if (y > dh) y = dh;
+    if (b > dh) b = dh;
     if (r <= x || b <= y)
       continue;
     glScissor(x, h->height * h->scale - b, r - x, b - y);

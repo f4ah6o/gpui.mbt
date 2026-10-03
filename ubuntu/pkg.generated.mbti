@@ -19,8 +19,10 @@ pub struct Host {
 pub fn Host::create_window(Self, Int, Int, String) -> Result[@platform.WindowId, @diagnostics.FrameworkError]
 pub fn Host::destroy_window(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::dispatch(Self, Int) -> Result[Array[@platform.Event], @diagnostics.FrameworkError]
+pub fn Host::next_event(Self, timeout_ms? : Int) -> Result[@platform.Event?, @diagnostics.FrameworkError]
 pub fn Host::present(Self, @platform.WindowId, @scene.SceneSnapshot) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::read_clipboard(Self) -> Result[String, @diagnostics.FrameworkError]
+pub fn Host::require_capability(Self, @platform.Capability) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::recover_renderer(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::request_close(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::request_exit(Self) -> Result[Unit, @diagnostics.FrameworkError]
@@ -29,11 +31,20 @@ pub fn Host::set_cursor(Self, String) -> Result[Unit, @diagnostics.FrameworkErro
 pub fn Host::set_size(Self, @platform.WindowId, Int, Int) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::set_title(Self, @platform.WindowId, String) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::start() -> Result[Self, @diagnostics.FrameworkError]
-pub fn Host::state(Self) -> @platform.HostState
+pub fn Host::state(Self) -> HostState
 pub fn Host::stop(Self) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::wake(Self) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::window_metrics(Self, @platform.WindowId) -> Result[(Double, Double, Double), @diagnostics.FrameworkError]
 pub fn Host::write_clipboard(Self, String) -> Result[Unit, @diagnostics.FrameworkError]
 pub impl @platform.Backend for Host
+
+pub(all) enum HostState {
+  Running
+  Quiescing
+  Stopped
+}
+pub fn HostState::equal(Self, Self) -> Bool
+pub fn HostState::not_equal(Self, Self) -> Bool
 
 // Type aliases
 

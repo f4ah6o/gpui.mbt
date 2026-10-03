@@ -28,6 +28,18 @@ static EGLBoolean verified_swap(EGLDisplay display, EGLSurface surface) {
     glReadPixels(15 * active->scale, (active->height - 25) * active->scale, 1,
                  1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
     assert(pixel[0] == 255 && pixel[1] == 0 && pixel[2] == 0);
+    /* Fractional clip [60.2, 61.2): one covered sample at 1x, two at 2x. */
+    int base = 60 * active->scale;
+    int row = (active->height - 15) * active->scale;
+    glReadPixels(base, row, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    assert(pixel[0] == 0 && pixel[1] == 255 && pixel[2] == 0);
+    if (active->scale == 2) {
+      glReadPixels(base + 1, row, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+      assert(pixel[0] == 0 && pixel[1] == 255 && pixel[2] == 0);
+    }
+    glReadPixels(base + active->scale, row, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE,
+                 pixel);
+    assert(pixel[0] == 255 && pixel[1] == 0 && pixel[2] == 0);
   }
   return eglSwapBuffers(display, surface);
 }
@@ -72,7 +84,7 @@ int main(int argc, char **argv) {
     int window = gpui_create(host, 100, 80, (const uint8_t *)"fixture", 7);
     assert(window > 0);
     int w = active->width, h = active->height;
-    double frame[5 + 2 * GPUI_QUAD_STRIDE] = {0,   0,   w,   h,   active->scale,
+    double frame[5 + 3 * GPUI_QUAD_STRIDE] = {0,   0,   w,   h,   active->scale,
                                               0,   0,   w,   h,   255,
                                               0,   0,   255, 1,   0,
                                               0,   1,   0,   0,   1,
@@ -81,6 +93,14 @@ int main(int argc, char **argv) {
                                               255, 255, 1,   0,   0,
                                               1,   10,  10,  0.5, 20,
                                               20,  20,  20};
+    double *fractional = frame + 5 + 2 * GPUI_QUAD_STRIDE;
+    fractional[0] = 60; fractional[1] = 10;
+    fractional[2] = 4; fractional[3] = 10;
+    fractional[4] = 0; fractional[5] = 255;
+    fractional[6] = 0; fractional[7] = 255;
+    fractional[8] = 1; fractional[11] = 1; fractional[14] = 1;
+    fractional[15] = 60.2; fractional[16] = 10;
+    fractional[17] = 1.0; fractional[18] = 10;
     assert(gpui_present(host, window, frame, 4) == GPUI_INVALID);
     verify_pixels = 1;
     assert(gpui_present(host, window, frame, sizeof(frame) / sizeof(double)) ==

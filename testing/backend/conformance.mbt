@@ -1,17 +1,25 @@
 ///|
-/// Reusable host conformance gate; consumes and stops a running test host.
-/// Future native backends can run this same gate without native types here.
+/// Reusable portable backend conformance gate; consumes and stops a running
+/// test host without depending on target-specific batching or host-state APIs.
 pub fn[B : @platform.Backend] check_host(
   host : B,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  if host.state() != @platform.Running {
-    return Err(mismatch("running"))
+  match host.require_capability(@platform.NativeWindow) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  match host.require_capability(@platform.TextInput) {
+    Err(e) =>
+      if !(e.code() is @diagnostics.UnsupportedCapability) {
+        return Err(mismatch("unsupported_text_input"))
+      }
+    Ok(_) => return Err(mismatch("unexpected_text_input"))
   }
   match host.wake() {
     Err(e) => return Err(e)
     Ok(_) => ()
   }
-  match host.dispatch(0) {
+  match host.next_event(timeout_ms=0) {
     Err(e) => return Err(e)
     Ok(_) => ()
   }
@@ -19,10 +27,7 @@ pub fn[B : @platform.Backend] check_host(
     Err(e) => return Err(e)
     Ok(_) => ()
   }
-  if host.state() != @platform.Quiescing {
-    return Err(mismatch("quiescing"))
-  }
-  match host.create_window(16, 16, "must be rejected") {
+  match host.create_window("must be rejected", 16.0, 16.0) {
     Err(e) =>
       if !(e.code() is @diagnostics.HostStopping) {
         return Err(mismatch("host_stopping"))
@@ -39,9 +44,6 @@ pub fn[B : @platform.Backend] check_host(
   match host.stop() {
     Err(e) => return Err(e)
     Ok(_) => ()
-  }
-  if host.state() != @platform.Stopped {
-    return Err(mismatch("stopped"))
   }
   Ok(())
 }

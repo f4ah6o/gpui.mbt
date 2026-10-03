@@ -37,8 +37,10 @@ backend is not a native macOS/Windows build target.
 - One UI-owner host and one live window at a time. A second host/window returns
   `Busy`. Startup and initial configure wait at most roughly three seconds each.
   Failed initialization/creation cleans partial resources before returning.
-- `wake`, `dispatch(timeout_ms)`, `request_exit`, and idempotent `stop`. The owner
-  thread can wake before dispatch; wakeups coalesce in an eventfd. UI operations
+- The shared `platform.Backend` uses `wake`, `next_event(timeout_ms?)`,
+  `request_exit`, and idempotent `stop`. `ubuntu.Host::dispatch(timeout_ms)` is
+  a target-specific batch convenience built over the same copied event queue.
+  The owner thread can wake before dispatch; wakeups coalesce in an eventfd. UI operations
   reject other threads. Cross-thread command enqueue is still pending.
 - Logical window IDs are monotonically allocated and never reused. They live in
   `platform/` until a higher-level core window API exists. Stale surface/title/
@@ -54,7 +56,7 @@ backend is not a native macOS/Windows build target.
   color management is pending.
 - Presentation dispatches available protocol events, then verifies snapshot
   size/scale against the latest acknowledged configuration. A stale snapshot or
-  outstanding frame returns `Busy`. Frame callbacks produce `FrameCompleted`
+  outstanding frame returns `Busy`. Frame callbacks produce the shared `FrameCompleted`
   (compositor readiness, not a hardware presentation timestamp).
 - Basic logical pointer movement/buttons/scroll, xkb logical keys/modifiers, and
   keyboard focus. Key repeat, committed text, IME and input-method composition

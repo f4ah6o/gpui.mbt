@@ -34,6 +34,7 @@ int32_t gpui_destroy(int32_t host, int32_t window);
 int32_t gpui_title(int32_t host, int32_t window, const uint8_t *title,
                    int32_t length);
 int32_t gpui_size(int32_t host, int32_t window, int32_t width, int32_t height);
+int32_t gpui_metrics(int32_t host, int32_t window, double *metrics);
 int32_t gpui_dispatch(int32_t host, int32_t timeout_ms);
 int32_t gpui_next(int32_t host, double *event);
 int32_t gpui_present(int32_t host, int32_t window, const double *data,

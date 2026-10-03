@@ -7,6 +7,13 @@ pub struct Host {
 }
 
 ///|
+pub(all) enum HostState {
+  Running
+  Quiescing
+  Stopped
+} derive(Eq)
+
+///|
 extern "C" fn native_start(version : Int) -> Int = "gpui_start"
 
 ///|
@@ -53,6 +60,14 @@ extern "C" fn native_size(
   width : Int,
   height : Int,
 ) -> Int = "gpui_size"
+
+///|
+#borrow(metrics)
+extern "C" fn native_metrics(
+  host : Int,
+  window : Int,
+  metrics : FixedArray[Double],
+) -> Int = "gpui_metrics"
 
 ///|
 extern "C" fn native_dispatch(host : Int, timeout : Int) -> Int = "gpui_dispatch"
@@ -123,14 +138,14 @@ pub fn Host::start() -> Result[Host, @diagnostics.FrameworkError] {
 }
 
 ///|
-pub fn Host::state(self : Host) -> @platform.HostState {
+pub fn Host::state(self : Host) -> HostState {
   if self.stopped {
-    @platform.Stopped
+    Stopped
   } else {
     match native_state(self.token) {
-      0 => @platform.Running
-      1 => @platform.Quiescing
-      _ => @platform.Stopped
+      0 => Running
+      1 => Quiescing
+      _ => Stopped
     }
   }
 }
@@ -172,7 +187,7 @@ pub fn Host::create_window(
   let bytes = @utf8.encode(title)
   let id = native_create(self.token, width, height, bytes, bytes.length())
   if id > 0 {
-    Ok(@platform.WindowId::new(id))
+    Ok(@platform.WindowId::new(Int64::from_int(id)))
   } else {
     Err(backend_error(-id, "create_window"))
   }
@@ -183,7 +198,7 @@ pub fn Host::destroy_window(
   self : Host,
   window : @platform.WindowId,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  outcome(native_destroy(self.token, window.value()), "destroy_window")
+  outcome(native_destroy(self.token, window.value().to_int()), "destroy_window")
 }
 
 ///|
@@ -194,7 +209,7 @@ pub fn Host::set_title(
 ) -> Result[Unit, @diagnostics.FrameworkError] {
   let bytes = @utf8.encode(title)
   outcome(
-    native_title(self.token, window.value(), bytes, bytes.length()),
+    native_title(self.token, window.value().to_int(), bytes, bytes.length()),
     "set_title",
   )
 }
@@ -206,7 +221,22 @@ pub fn Host::set_size(
   width : Int,
   height : Int,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  outcome(native_size(self.token, window.value(), width, height), "set_size")
+  outcome(native_size(self.token, window.value().to_int(), width, height), "set_size")
+}
+
+///|
+pub fn Host::window_metrics(
+  self : Host,
+  window : @platform.WindowId,
+) -> Result[(Double, Double, Double), @diagnostics.FrameworkError] {
+  let metrics = FixedArray::make(3, 0.0)
+  match outcome(
+    native_metrics(self.token, window.value().to_int(), metrics),
+    "window_metrics",
+  ) {
+    Err(error) => Err(error)
+    Ok(_) => Ok((metrics[0], metrics[1], metrics[2]))
+  }
 }
 
 ///|
@@ -215,7 +245,7 @@ pub fn Host::recover_renderer(
   self : Host,
   window : @platform.WindowId,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  outcome(native_recover(self.token, window.value()), "recover_renderer")
+  outcome(native_recover(self.token, window.value().to_int()), "recover_renderer")
 }
 
 ///|
@@ -263,7 +293,7 @@ fn decode_event(data : FixedArray[Double]) -> @platform.EventKind? {
   match data[0].to_int() {
     1 =>
       Some(
-        @platform.Configured(width=data[4].to_int(), height=data[5].to_int()),
+        @platform.Resized(width=data[4], height=data[5]),
       )
     2 => Some(@platform.ScaleChanged)
     3 => Some(@platform.CloseRequested)
@@ -334,6 +364,42 @@ fn decode_event(data : FixedArray[Double]) -> @platform.EventKind? {
 }
 
 ///|
+pub fn Host::next_event(
+  self : Host,
+  timeout_ms? : Int = 16,
+) -> Result[@platform.Event?, @diagnostics.FrameworkError] {
+  let buffer = FixedArray::make(10, 0.0)
+  let mut status = native_next(self.token, buffer)
+  if status == 0 {
+    match outcome(native_dispatch(self.token, timeout_ms), "next_event") {
+      Err(error) => return Err(error)
+      Ok(_) => ()
+    }
+    status = native_next(self.token, buffer)
+  }
+  if status < 0 {
+    Err(backend_error(-status, "next_event"))
+  } else if status == 0 {
+    Ok(None)
+  } else {
+    match decode_event(buffer) {
+      None => Err(backend_error(2, "next_event"))
+      Some(kind) =>
+        Ok(
+          Some(
+            @platform.Event::new(
+              @platform.WindowId::new(Int64::from_int(buffer[1].to_int())),
+              Int64::from_int(buffer[2].to_int()),
+              buffer[3],
+              kind,
+            ),
+          ),
+        )
+    }
+  }
+}
+
+///|
 pub fn Host::dispatch(
   self : Host,
   timeout_ms : Int,
@@ -350,8 +416,8 @@ pub fn Host::dispatch(
           Some(kind) =>
             events.push(
               @platform.Event::new(
-                @platform.WindowId::new(buffer[1].to_int()),
-                buffer[2].to_int(),
+                @platform.WindowId::new(Int64::from_int(buffer[1].to_int())),
+                Int64::from_int(buffer[2].to_int()),
                 buffer[3],
                 kind,
               ),
@@ -443,9 +509,23 @@ pub fn Host::present(
     Err(error) => Err(error)
     Ok(data) =>
       outcome(
-        native_present(self.token, window.value(), data, data.length()),
+        native_present(self.token, window.value().to_int(), data, data.length()),
         "present",
       )
+  }
+}
+
+///|
+pub fn Host::require_capability(
+  _self : Host,
+  capability : @platform.Capability,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  match capability {
+    @platform.NativeWindow
+    | @platform.QuadFrames
+    | @platform.PointerKeyboard
+    | @platform.RendererRecovery => Ok(())
+    _ => Err(backend_error(1, "require_capability"))
   }
 }
 
@@ -483,48 +563,137 @@ pub fn Host::set_candidate_rect(
 }
 
 ///|
-pub impl @platform.Backend for Host with fn state(self) {
-  self.state()
+fn logical_dimension(
+  value : Double,
+  operation : String,
+) -> Result[Int, @diagnostics.FrameworkError] {
+  if value != value || value < 1.0 || value > 16384.0 {
+    return Err(backend_error(3, operation))
+  }
+  let integer = value.to_int()
+  if integer.to_double() != value {
+    Err(backend_error(3, operation))
+  } else {
+    Ok(integer)
+  }
 }
 
 ///|
-pub impl @platform.Backend for Host with fn wake(self) {
-  self.wake()
+pub impl @platform.Backend for Host with fn require_capability(
+  self,
+  capability : @platform.Capability,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  self.require_capability(capability)
 }
 
 ///|
-pub impl @platform.Backend for Host with fn request_exit(self) {
-  self.request_exit()
-}
-
-///|
-pub impl @platform.Backend for Host with fn stop(self) {
+pub impl @platform.Backend for Host with fn stop(self) -> Result[
+  Unit,
+  @diagnostics.FrameworkError,
+] {
   self.stop()
 }
 
 ///|
 pub impl @platform.Backend for Host with fn create_window(
   self,
-  width,
-  height,
-  title,
-) {
+  title : String,
+  width : Double,
+  height : Double,
+) -> Result[@platform.WindowId, @diagnostics.FrameworkError] {
+  let width = match logical_dimension(width, "create_window") {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  let height = match logical_dimension(height, "create_window") {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
   self.create_window(width, height, title)
 }
 
 ///|
-pub impl @platform.Backend for Host with fn destroy_window(self, window) {
+pub impl @platform.Backend for Host with fn set_title(
+  self,
+  window : @platform.WindowId,
+  title : String,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  self.set_title(window, title)
+}
+
+///|
+pub impl @platform.Backend for Host with fn set_size(
+  self,
+  window : @platform.WindowId,
+  width : Double,
+  height : Double,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  let width = match logical_dimension(width, "set_size") {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  let height = match logical_dimension(height, "set_size") {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  self.set_size(window, width, height)
+}
+
+///|
+pub impl @platform.Backend for Host with fn window_metrics(
+  self,
+  window : @platform.WindowId,
+) -> Result[(Double, Double, Double), @diagnostics.FrameworkError] {
+  self.window_metrics(window)
+}
+
+///|
+pub impl @platform.Backend for Host with fn next_event(
+  self,
+  timeout_ms? : Int = 16,
+) -> Result[@platform.Event?, @diagnostics.FrameworkError] {
+  self.next_event(timeout_ms~)
+}
+
+///|
+pub impl @platform.Backend for Host with fn present(
+  self,
+  window : @platform.WindowId,
+  snapshot : @scene.SceneSnapshot,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  self.present(window, snapshot)
+}
+
+///|
+pub impl @platform.Backend for Host with fn request_close(
+  self,
+  window : @platform.WindowId,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  self.request_close(window)
+}
+
+///|
+pub impl @platform.Backend for Host with fn destroy_window(
+  self,
+  window : @platform.WindowId,
+) -> Result[Unit, @diagnostics.FrameworkError] {
   self.destroy_window(window)
 }
 
 ///|
-pub impl @platform.Backend for Host with fn dispatch(self, timeout) {
-  self.dispatch(timeout)
+pub impl @platform.Backend for Host with fn wake(self) -> Result[
+  Unit,
+  @diagnostics.FrameworkError,
+] {
+  self.wake()
 }
 
 ///|
-pub impl @platform.Backend for Host with fn present(self, window, snapshot) {
-  self.present(window, snapshot)
+pub impl @platform.Backend for Host with fn request_exit(self) -> Result[
+  Unit,
+  @diagnostics.FrameworkError,
+] {
+  self.request_exit()
 }
 
 ///|
@@ -533,5 +702,5 @@ pub fn Host::request_close(
   self : Host,
   window : @platform.WindowId,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  outcome(native_close(self.token, window.value()), "request_close")
+  outcome(native_close(self.token, window.value().to_int()), "request_close")
 }
