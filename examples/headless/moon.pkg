@@ -1,0 +1,8 @@
+import {
+  "f4ah6o/gpui/core",
+  "f4ah6o/gpui/diagnostics",
+}
+
+import {
+  "f4ah6o/gpui/examples/headless",
+} for "test"

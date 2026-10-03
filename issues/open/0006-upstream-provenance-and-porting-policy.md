@@ -1,6 +1,34 @@
 # Upstream provenance and porting policy
 
 Status: design only
+Model: gpt-6-luna
+Updated: 2026-10-03
+
+## M0 resolution
+
+The source-use, fixture, attribution, and release-audit rules are recorded in
+[docs/provenance.md](../../docs/provenance.md), with machine-readable pin and
+license evidence in [docs/upstream.json](../../docs/upstream.json). The
+compatibility target is `zed-industries/zed@d9afb21688e04f89d9e94d96d33eb530aef90886`.
+At that revision, `crates/gpui/Cargo.toml` identifies the GPUI package as
+Apache-2.0 and `crates/gpui/LICENSE-APACHE` resolves to the Apache 2.0 text;
+the repository also contains a root `LICENSE-GPL`, so license scope is checked
+by exact path. This is documentation only: no upstream code or fixtures were
+copied, no GPL source was transferred, and no new NOTICE file was needed.
+Per-source port records, adapted-material notices, and the pre-release GPL
+source audit remain future gates.
+
+## M1 evidence
+
+The `diagnostics/`, `core/`, and [`testing/core_model/`](../../testing/core_model/model_test.mbt)
+implementations and synthetic reference-model fixtures are original gpui.mbt
+work. The [`records`](../../docs/upstream.json) array remains empty, no
+upstream source or fixture was copied, and no GPL-derived code was transferred.
+The local command
+`moon test primitives diagnostics core testing/core_model --target native --deny-warn`
+passes 29 tests; `python3 scripts/check_contracts.py` validates the contract
+documents while correctly leaving release evidence pending. These checks do
+not replace the per-source/license/dependency audit required before release.
 
 ## Purpose
 

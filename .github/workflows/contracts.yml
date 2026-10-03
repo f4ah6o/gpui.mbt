@@ -1,0 +1,39 @@
+name: Contracts and M1 core
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-documents:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate document contracts and release evidence ledger
+        run: |
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          python3 scripts/check_contracts.py
+
+  moonbit-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hustcer/setup-moonbit@1522f9aef02a8ca0187dfc00a41f5dd6b16750f7 # v1.23
+        with:
+          version: 0.10.14+7d59c7ec9
+          core-version: 0.10.14+7d59c7ec9
+      - name: Show pinned toolchain
+        run: moon version --all
+      - name: Check formatting
+        run: moon fmt --check
+      - name: Check all targets with warnings denied
+        run: moon check --target all --deny-warn
+      - name: Test all targets with warnings denied
+        run: moon test --target all --deny-warn

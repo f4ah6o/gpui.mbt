@@ -179,3 +179,29 @@ Every new subsystem needs:
 - native E2E when it crosses platform boundary
 - benchmark when it affects a hot path
 - compatibility matrix update when it changes GPUI-facing behavior
+
+## M1 implementation update
+
+Model: gpt-6-luna
+Updated: 2026-10-03
+Status remains: design only
+
+The 1.0 policy is now linked to [docs/release.md](../../docs/release.md),
+[docs/performance.md](../../docs/performance.md), and the machine-readable
+[release ledger](../../docs/release-gates.json). The ledger has all 12 required
+gates and intentionally leaves each `pending`. A gate marked `pass` now needs a
+repository-local checksum-verified evidence manifest with matching gate ID,
+candidate commit, toolchain, target, traceable run URL, and artifact digests.
+The checker rejects missing/duplicate gates, malformed JSON or evidence,
+incorrect state, and evidence paths or hashes that do not validate. It checks
+manifest structure and file hashes only; independent review must still verify
+that remote runs and artifacts substantiate the claim.
+
+Verification: `python3 -m unittest discover -s tests -p 'test_*.py'` passes all
+18 validator tests, and the default contract check passes while reporting
+`pending`. The release decision check exits 2 until the production evidence is
+complete. `moon fmt --check`, `moon check --target all --deny-warn`, and
+`moon test --target all --deny-warn` all pass; the MoonBit suite passes 29 tests
+on each of wasm, wasm-gc, js, and native. Platform, text, renderer, performance,
+mutation, and clean-consumer evidence remain pending. The issue remains
+design-only until all production gates have real, reviewed evidence.

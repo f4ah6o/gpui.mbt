@@ -1,0 +1,270 @@
+"""Focused tests for release-ledger validation and evidence enforcement."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location("check_contracts", ROOT / "scripts/check_contracts.py")
+assert SPEC is not None and SPEC.loader is not None
+checker = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(checker)
+
+
+class ReleaseLedgerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.root = Path(self.tempdir.name)
+
+    def tearDown(self) -> None:
+        self.tempdir.cleanup()
+
+    def pending_document(self) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "release": "1.0",
+            "status": "pending",
+            "candidate_revision": None,
+            "gates": [
+                {"id": gate_id, "status": "pending", "evidence": []}
+                for gate_id in checker.REQUIRED_GATE_IDS
+            ],
+        }
+
+    def write_manifest(self, gate_id: str, revision: str) -> tuple[str, str]:
+        path = Path("release-evidence") / f"{gate_id}.json"
+        absolute = self.root / path
+        absolute.parent.mkdir(parents=True, exist_ok=True)
+        document = {
+            "schema_version": 1,
+            "gate_id": gate_id,
+            "result": "pass",
+            "candidate_revision": revision,
+            "toolchain": "moon 0.1.20260920 / moonc 0.10.14+7d59c7ec9",
+            "target": "ubuntu-latest / native",
+            "run": "https://github.com/example/gpui/actions/runs/1234",
+            "artifacts": [
+                {
+                    "name": "test-report.json",
+                    "uri": "https://github.com/example/gpui/actions/runs/1234/artifacts/5678",
+                    "sha256": "a" * 64,
+                }
+            ],
+        }
+        absolute.write_text(json.dumps(document, sort_keys=True), encoding="utf-8")
+        digest = hashlib.sha256(absolute.read_bytes()).hexdigest()
+        return path.as_posix(), digest
+
+    def mark_one_gate_pass(self, document: dict[str, object], gate_id: str) -> str:
+        revision = "b" * 40
+        document["candidate_revision"] = revision
+        gates = document["gates"]
+        assert isinstance(gates, list)
+        for gate in gates:
+            assert isinstance(gate, dict)
+            if gate["id"] == gate_id:
+                gate["status"] = "pass"
+                path, digest = self.write_manifest(gate_id, revision)
+                gate["evidence"] = [{"type": "ci-report", "path": path, "sha256": digest}]
+                break
+        document["status"] = "pending"  # Other required gates are still pending.
+        return revision
+
+    def test_all_pending_gates_are_a_valid_non_ready_ledger(self) -> None:
+        self.assertEqual(checker.validate_release_gates(self.pending_document(), self.root), [])
+
+    def test_missing_and_duplicate_required_gates_fail(self) -> None:
+        missing = self.pending_document()
+        missing["gates"] = missing["gates"][:-1]  # type: ignore[index]
+        errors = checker.validate_release_gates(missing, self.root)
+        self.assertTrue(any("missing required gates" in error for error in errors))
+
+        duplicate = self.pending_document()
+        duplicate["gates"].append(dict(duplicate["gates"][0]))  # type: ignore[index]
+        errors = checker.validate_release_gates(duplicate, self.root)
+        self.assertTrue(any("duplicate release gate id" in error for error in errors))
+
+    def test_malformed_status_types_fail_without_raising(self) -> None:
+        document = self.pending_document()
+        document["status"] = ["ready"]
+        document["gates"][0]["status"] = {"pass": True}  # type: ignore[index]
+        errors = checker.validate_release_gates(document, self.root)
+        self.assertTrue(any("release ledger status" in error for error in errors))
+        self.assertTrue(any("gate compatibility: status" in error for error in errors))
+
+    def test_pass_without_evidence_or_candidate_commit_fails(self) -> None:
+        document = self.pending_document()
+        document["gates"][0]["status"] = "pass"  # type: ignore[index]
+        errors = checker.validate_release_gates(document, self.root)
+        self.assertTrue(any("requires at least one" in error for error in errors))
+        self.assertTrue(any("requires a pinned candidate_revision" in error for error in errors))
+
+    def test_evidence_path_must_exist_and_match_its_digest(self) -> None:
+        document = self.pending_document()
+        revision = "b" * 40
+        document["candidate_revision"] = revision
+        document["gates"][0]["status"] = "pass"  # type: ignore[index]
+        document["gates"][0]["evidence"] = [  # type: ignore[index]
+            {"type": "ci-report", "path": "missing.json", "sha256": "a" * 64}
+        ]
+        errors = checker.validate_release_gates(document, self.root)
+        self.assertTrue(any("evidence file does not exist" in error for error in errors))
+
+        path, digest = self.write_manifest("compatibility", revision)
+        document["gates"][0]["evidence"] = [  # type: ignore[index]
+            {"type": "ci-report", "path": path, "sha256": "0" * 64}
+        ]
+        errors = checker.validate_release_gates(document, self.root)
+        self.assertTrue(any("checksum mismatch" in error for error in errors))
+        self.assertEqual(len(digest), 64)
+
+    def test_source_document_cannot_stand_in_for_structured_pass_manifest(self) -> None:
+        document = self.pending_document()
+        revision = "b" * 40
+        document["candidate_revision"] = revision
+        prose = self.root / "docs" / "release.md"
+        prose.parent.mkdir()
+        prose.write_text("This gate passes.", encoding="utf-8")
+        digest = hashlib.sha256(prose.read_bytes()).hexdigest()
+        document["gates"][0]["status"] = "pass"  # type: ignore[index]
+        document["gates"][0]["evidence"] = [  # type: ignore[index]
+            {"type": "ci-report", "path": "docs/release.md", "sha256": digest}
+        ]
+        errors = checker.validate_release_gates(document, self.root)
+        self.assertTrue(any("invalid JSON" in error for error in errors))
+
+    def test_pass_manifest_must_match_gate_and_candidate_revision(self) -> None:
+        document = self.pending_document()
+        revision = self.mark_one_gate_pass(document, "compatibility")
+        path, digest = self.write_manifest("correctness", revision)
+        document["gates"][0]["evidence"] = [  # type: ignore[index]
+            {"type": "ci-report", "path": path, "sha256": digest}
+        ]
+        errors = checker.validate_release_gates(document, self.root)
+        self.assertTrue(any("gate_id must match" in error for error in errors))
+
+    def test_ready_requires_every_gate_to_pass(self) -> None:
+        document = self.pending_document()
+        document["status"] = "ready"
+        errors = checker.validate_release_gates(document, self.root)
+        self.assertTrue(any("gate states require 'pending'" in error for error in errors))
+
+    def test_json_loader_rejects_malformed_and_duplicate_keys(self) -> None:
+        path = self.root / "malformed.json"
+        path.write_text("{", encoding="utf-8")
+        with self.assertRaises(checker.ContractError):
+            checker.load_json(path)
+        path.write_text('{"status":"pending","status":"ready"}', encoding="utf-8")
+        with self.assertRaises(checker.ContractError):
+            checker.load_json(path)
+
+    def test_non_object_ledger_fails_without_raising(self) -> None:
+        self.assertEqual(
+            checker.validate_release_gates(["not", "an", "object"], self.root),
+            ["release ledger must be a JSON object"],
+        )
+
+
+class RuntimeDependencyTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.root = Path(self.tempdir.name)
+        (self.root / "moon.mod").write_text('name = "f4ah6o/gpui"\n', encoding="utf-8")
+        manifests = {
+            "primitives": '',
+            "diagnostics": 'import { "f4ah6o/gpui/primitives" }\n',
+            "core": 'import { "f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives" }\n',
+        }
+        for package, content in manifests.items():
+            directory = self.root / package
+            directory.mkdir()
+            (directory / "moon.pkg").write_text(content, encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self.tempdir.cleanup()
+
+    def test_test_only_quickcheck_import_is_allowed(self) -> None:
+        path = self.root / "primitives/moon.pkg"
+        path.write_text(
+            'import { "moonbitlang/core/quickcheck" } for "test"\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+    def test_runtime_quickcheck_import_is_rejected(self) -> None:
+        path = self.root / "primitives/moon.pkg"
+        path.write_text('import { "moonbitlang/core/quickcheck" }\n', encoding="utf-8")
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(any("QuickCheck must be a test-only import" in error for error in errors))
+
+    def test_third_party_runtime_import_is_rejected(self) -> None:
+        path = self.root / "primitives/moon.pkg"
+        path.write_text('import { "vendor/random" }\n', encoding="utf-8")
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(any("third-party runtime import is forbidden" in error for error in errors))
+
+    def test_new_runtime_package_requires_an_approved_layer(self) -> None:
+        directory = self.root / "widgets"
+        directory.mkdir()
+        (directory / "moon.pkg").write_text("", encoding="utf-8")
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(any("widgets: runtime package has no approved" in error for error in errors))
+
+    def test_approved_headless_example_runtime_edges_are_allowed(self) -> None:
+        directory = self.root / "examples/headless"
+        directory.mkdir(parents=True)
+        (directory / "moon.pkg").write_text(
+            'import { "f4ah6o/gpui/core", "f4ah6o/gpui/diagnostics", '
+            '"f4ah6o/gpui/primitives" }\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+    def test_approved_example_still_rejects_third_party_runtime_edges(self) -> None:
+        directory = self.root / "examples/headless"
+        directory.mkdir(parents=True)
+        (directory / "moon.pkg").write_text(
+            'import { "f4ah6o/gpui/core", "vendor/unreviewed" }\n',
+            encoding="utf-8",
+        )
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(
+            any("third-party runtime import is forbidden" in error for error in errors)
+        )
+
+    def test_test_harness_package_is_not_a_runtime_layer(self) -> None:
+        directory = self.root / "testing/core_model"
+        directory.mkdir(parents=True)
+        (directory / "moon.pkg").write_text('import { "vendor/model-checker" }\n', encoding="utf-8")
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+    def test_malformed_package_manifest_fails_cleanly(self) -> None:
+        path = self.root / "primitives/moon.pkg"
+        path.write_text('import { moonbitlang/core/quickcheck }\n', encoding="utf-8")
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(any("malformed import list" in error for error in errors))
+
+    def test_malformed_json_package_manifest_fails_cleanly(self) -> None:
+        path = self.root / "primitives/moon.pkg"
+        path.unlink()
+        (self.root / "primitives/moon.pkg.json").write_text('{"import": [}', encoding="utf-8")
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(any("invalid JSON" in error for error in errors))
+
+
+class WorkflowContractTests(unittest.TestCase):
+    def test_repository_workflow_has_required_commands_and_full_sha_pins(self) -> None:
+        self.assertEqual(
+            checker._validate_workflow(ROOT / ".github/workflows/contracts.yml"),
+            [],
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

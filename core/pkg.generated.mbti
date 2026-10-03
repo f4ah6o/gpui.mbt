@@ -1,0 +1,123 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/core"
+
+import {
+  "f4ah6o/gpui/diagnostics",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct App {
+  // private fields
+}
+pub fn App::advance_time_by(Self, UInt64) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn[T] App::create_entity(Self, T) -> Result[Entity[T], @diagnostics.FrameworkError]
+pub fn[T] App::destroy_entity(Self, Entity[T]) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn App::diagnostics(Self) -> Array[@diagnostics.Diagnostic]
+pub fn App::dispatch(Self, (TaskContext) -> Result[Unit, @diagnostics.FrameworkError]) -> Result[Task, @diagnostics.FrameworkError]
+pub fn App::id(Self) -> AppId
+pub fn App::lifecycle(Self) -> AppLifecycle
+pub fn App::new() -> Result[Self, @diagnostics.FrameworkError]
+pub fn App::now_ms(Self) -> UInt64
+pub fn App::pending_work(Self) -> Int
+pub fn[T, R] App::read(Self, Entity[T], (T) -> R) -> Result[R, @diagnostics.FrameworkError]
+pub fn App::request_stop(Self) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn[T] App::revision(Self, Entity[T]) -> Result[UInt64, @diagnostics.FrameworkError]
+pub fn App::run_ready(Self, Int) -> Result[Int, @diagnostics.FrameworkError]
+pub fn App::schedule_after(Self, UInt64, (TaskContext) -> Result[Unit, @diagnostics.FrameworkError]) -> Result[Task, @diagnostics.FrameworkError]
+pub fn App::start(Self) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn[T] App::update(Self, Entity[T], (Context[T]) -> Result[Unit, @diagnostics.FrameworkError]) -> Result[Unit, @diagnostics.FrameworkError]
+
+pub struct AppId {
+  // private fields
+} derive(Eq)
+pub fn AppId::equal(Self, Self) -> Bool
+pub fn AppId::not_equal(Self, Self) -> Bool
+pub fn AppId::value(Self) -> UInt64
+
+pub(all) enum AppLifecycle {
+  New
+  Running
+  Stopping
+  Stopped
+  Failed
+}
+
+pub struct Context[T] {
+  // private fields
+}
+pub fn[T] Context::entity_id(Self[T]) -> EntityId
+pub fn[T] Context::get(Self[T]) -> Result[T, @diagnostics.FrameworkError]
+pub fn[T] Context::notify(Self[T]) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn[T, U] Context::observe(Self[T], Entity[U], (Self[T]) -> Result[Unit, @diagnostics.FrameworkError]) -> Result[Subscription, @diagnostics.FrameworkError]
+pub fn[T] Context::set(Self[T], T) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn[T, U] Context::subscribe(Self[T], Entity[U], (EntityEvent) -> Result[Unit, @diagnostics.FrameworkError]) -> Result[Subscription, @diagnostics.FrameworkError]
+
+pub struct Entity[T] {
+  // private fields
+}
+pub fn[T] Entity::id(Self[T]) -> EntityId
+pub fn[T] Entity::is_live(Self[T]) -> Bool
+
+pub struct EntityEvent {
+  // private fields
+}
+pub fn EntityEvent::entity_id(Self) -> EntityId
+pub fn EntityEvent::kind(Self) -> EntityEventKind
+pub fn EntityEvent::revision(Self) -> UInt64
+
+pub(all) enum EntityEventKind {
+  Changed
+  Released
+}
+
+pub struct EntityId {
+  // private fields
+} derive(Eq)
+pub fn EntityId::app_id(Self) -> AppId
+pub fn EntityId::equal(Self, Self) -> Bool
+pub fn EntityId::not_equal(Self, Self) -> Bool
+pub fn EntityId::value(Self) -> UInt64
+
+pub struct Subscription {
+  // private fields
+}
+pub fn Subscription::is_active(Self) -> Bool
+pub fn Subscription::unsubscribe(Self) -> Unit
+
+pub struct Task {
+  // private fields
+}
+pub fn Task::cancel(Self) -> Bool
+pub fn Task::failure(Self) -> @diagnostics.FrameworkError?
+pub fn Task::id(Self) -> TaskId
+pub fn Task::status(Self) -> TaskStatus
+
+pub struct TaskContext {
+  // private fields
+}
+pub fn TaskContext::is_cancel_requested(Self) -> Result[Bool, @diagnostics.FrameworkError]
+
+pub struct TaskId {
+  // private fields
+} derive(Eq)
+pub fn TaskId::app_id(Self) -> AppId
+pub fn TaskId::equal(Self, Self) -> Bool
+pub fn TaskId::not_equal(Self, Self) -> Bool
+pub fn TaskId::value(Self) -> UInt64
+
+pub(all) enum TaskStatus {
+  Queued
+  Running
+  Completed
+  Cancelled
+  Failed
+}
+
+// Type aliases
+pub type TaskCallback = (TaskContext) -> Result[Unit, @diagnostics.FrameworkError]
+
+// Traits

@@ -1,6 +1,29 @@
 # Platform, rendering, and native-boundary roadmap
 
 Status: design only
+Model: gpt-6-luna
+Updated: 2026-10-03
+
+## M0 resolution
+
+The backend lifecycle, UI-thread and FFI ownership rules, event/error behavior,
+versioned headless scene shape, text/IME contract, and semantic accessibility
+contract are recorded in [docs/platform.md](../../docs/platform.md). macOS is
+the first planned backend target; Windows and Linux remain planned. No native
+backend or renderer is implemented by this M0 packet, and no platform has a
+support claim. R0 is scene generation only. Native E2E, IME, accessibility,
+multi-DPI, GPU recovery, performance, and resource-lifetime gates remain future
+Tier 1 requirements.
+
+## M1 evidence
+
+Headless core lifecycle/scheduler and diagnostic contracts are implemented;
+the four-package local test command
+`moon test primitives diagnostics core testing/core_model --target native --deny-warn`
+passes 29 tests. This is MoonBit native-target headless evidence only. No
+platform API, GUI backend, native renderer, or platform support claim exists;
+all native E2E, IME, accessibility, multi-DPI, renderer recovery, performance,
+and resource-lifetime gates remain pending.
 
 ## Goal
 

@@ -1,6 +1,8 @@
 # gpui.mbt product charter and compatibility goal
 
 Status: design only
+Model: gpt-6-luna
+Updated: 2026-10-03
 
 ## Goal
 
@@ -144,4 +146,22 @@ All release gates in 0005 are green, compatibility/deviation docs are current, a
 - upstream provenance and license audit
 - migration/deprecation policy
 
-Implementation starts only after the open design packets agree on these contracts.
+M0 established the contract baseline in `docs/`; implementation proceeds milestone by milestone, with remaining design packets tracked as future work.
+
+
+## Incremental delivery record — 2026-10-03
+
+### M0 contract delivery
+
+- Product and lifecycle semantics: [docs/product.md](../../docs/product.md).
+- Package and dependency boundaries: [docs/architecture.md](../../docs/architecture.md).
+- Upstream-pinned concept inventory: [docs/compatibility.md](../../docs/compatibility.md).
+- Project support, milestones, and validation commands: [README.md](../../README.md).
+
+### M1 deterministic core slice
+
+Implemented the MoonBit `core/` package with opaque logical IDs and handles, App lifecycle, Entity create/read/update/revision/release, scoped Context tokens, change/release subscriptions, FIFO event delivery, deterministic foreground tasks, cooperative cancellation, and a manually advanced timer clock. Headless core tests and a separate reference-model suite cover lifecycle, failure, ordering, cancellation, and release behavior. The actual supported subset and deviations are documented in [docs/product.md](../../docs/product.md) and [docs/compatibility.md](../../docs/compatibility.md).
+
+Generic mutable `T` aliases remain caller-managed: M1 requires immutable or copy-on-write payload discipline and does not claim deep-copy ownership. There is no window, rendering, native backend, or GPUI parity claim. M2 through M7 remain future milestones; this incremental delivery does not complete the long-term charter or change this issue's design-only status.
+
+Validation: `moon fmt --check`, `moon check --deny-warn --target all`, `moon test --deny-warn --target all` (30/30 each on wasm, wasm-gc, js, and native), `python3 scripts/check_contracts.py`, and `python3 -m unittest discover -s tests` (20 tests) all pass.

@@ -1,0 +1,5 @@
+import {
+  "moonbitlang/core/double",
+  "moonbitlang/core/quickcheck",
+  "f4ah6o/gpui/primitives",
+} for "test"

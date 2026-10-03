@@ -1,0 +1,142 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/primitives"
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct Color {
+  red : Int
+  green : Int
+  blue : Int
+  alpha : Int
+} derive(Eq)
+pub fn Color::alpha(Self) -> Int
+pub fn Color::blue(Self) -> Int
+pub fn Color::equal(Self, Self) -> Bool
+pub fn Color::green(Self) -> Int
+pub fn Color::is_opaque(Self) -> Bool
+pub fn Color::not_equal(Self, Self) -> Bool
+pub fn Color::red(Self) -> Int
+pub fn Color::rgba(Int, Int, Int, Int) -> Result[Self, ColorError]
+
+pub enum ColorError {
+  ChannelOutOfRange
+} derive(Eq)
+pub fn ColorError::equal(Self, Self) -> Bool
+pub fn ColorError::not_equal(Self, Self) -> Bool
+
+pub enum GeometryError {
+  NonFiniteValue
+  NegativeExtent
+  BoundsOverflow
+  BoundsNotRepresentable
+} derive(Eq)
+pub fn GeometryError::equal(Self, Self) -> Bool
+pub fn GeometryError::not_equal(Self, Self) -> Bool
+
+pub(all) enum InputEvent {
+  KeyPressed(key~ : Key, modifiers~ : Modifiers, repeat~ : Bool)
+  KeyReleased(key~ : Key, modifiers~ : Modifiers)
+  TextInput(text~ : String)
+  PointerMoved(position~ : Point)
+  PointerButtonPressed(position~ : Point, button~ : MouseButton, modifiers~ : Modifiers)
+  PointerButtonReleased(position~ : Point, button~ : MouseButton, modifiers~ : Modifiers)
+  Scroll(position~ : Point, delta~ : Point, modifiers~ : Modifiers)
+} derive(Eq)
+pub fn InputEvent::equal(Self, Self) -> Bool
+pub fn InputEvent::not_equal(Self, Self) -> Bool
+
+pub(all) enum Key {
+  Character(String)
+  Enter
+  Escape
+  Backspace
+  Delete
+  Tab
+  Space
+  ArrowLeft
+  ArrowRight
+  ArrowUp
+  ArrowDown
+  Home
+  End
+  PageUp
+  PageDown
+} derive(Eq)
+pub fn Key::equal(Self, Self) -> Bool
+pub fn Key::not_equal(Self, Self) -> Bool
+
+pub struct Modifiers {
+  shift : Bool
+  control : Bool
+  alt : Bool
+  meta : Bool
+} derive(Eq)
+pub fn Modifiers::alt(Self) -> Bool
+pub fn Modifiers::control(Self) -> Bool
+pub fn Modifiers::equal(Self, Self) -> Bool
+pub fn Modifiers::is_empty(Self) -> Bool
+pub fn Modifiers::meta(Self) -> Bool
+pub fn Modifiers::new(shift~ : Bool, control~ : Bool, alt~ : Bool, meta~ : Bool) -> Self
+pub fn Modifiers::none() -> Self
+pub fn Modifiers::not_equal(Self, Self) -> Bool
+pub fn Modifiers::shift(Self) -> Bool
+
+pub(all) enum MouseButton {
+  Primary
+  Secondary
+  Middle
+  Back
+  Forward
+} derive(Eq)
+pub fn MouseButton::equal(Self, Self) -> Bool
+pub fn MouseButton::not_equal(Self, Self) -> Bool
+
+pub struct Point {
+  x : Double
+  y : Double
+} derive(Eq)
+pub fn Point::equal(Self, Self) -> Bool
+pub fn Point::new(Double, Double) -> Result[Self, GeometryError]
+pub fn Point::not_equal(Self, Self) -> Bool
+pub fn Point::scaled(Self, Double) -> Result[Self, GeometryError]
+pub fn Point::translated(Self, Self) -> Result[Self, GeometryError]
+pub fn Point::x(Self) -> Double
+pub fn Point::y(Self) -> Double
+
+pub struct Rect {
+  origin : Point
+  size : Size
+} derive(Eq)
+pub fn Rect::bottom(Self) -> Double
+pub fn Rect::clamp_point(Self, Point) -> Point
+pub fn Rect::contains(Self, Point) -> Bool
+pub fn Rect::contains_rect(Self, Self) -> Bool
+pub fn Rect::equal(Self, Self) -> Bool
+pub fn Rect::intersection(Self, Self) -> Self?
+pub fn Rect::left(Self) -> Double
+pub fn Rect::new(Double, Double, Double, Double) -> Result[Self, GeometryError]
+pub fn Rect::not_equal(Self, Self) -> Bool
+pub fn Rect::origin(Self) -> Point
+pub fn Rect::right(Self) -> Double
+pub fn Rect::scaled(Self, Double) -> Result[Self, GeometryError]
+pub fn Rect::size(Self) -> Size
+pub fn Rect::top(Self) -> Double
+pub fn Rect::translated(Self, Point) -> Result[Self, GeometryError]
+pub fn Rect::union(Self, Self) -> Result[Self, GeometryError]
+
+pub struct Size {
+  width : Double
+  height : Double
+} derive(Eq)
+pub fn Size::equal(Self, Self) -> Bool
+pub fn Size::height(Self) -> Double
+pub fn Size::new(Double, Double) -> Result[Self, GeometryError]
+pub fn Size::not_equal(Self, Self) -> Bool
+pub fn Size::width(Self) -> Double
+
+// Type aliases
+
+// Traits

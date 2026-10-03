@@ -232,3 +232,31 @@ CI should retain:
 - native crash logs where applicable
 
 A red gate must be diagnosable without reproducing locally first.
+
+## M1 implementation update
+
+Model: gpt-6-luna
+Updated: 2026-10-03
+Status remains: design only
+
+The initial M1 quality path is now concrete: [docs/testing.md](../../docs/testing.md)
+records active versus planned coverage, exact geometry property seeds and PR
+budgets; [docs/performance.md](../../docs/performance.md) records the pending
+baseline policy. `primitives/` has deterministic geometry/color/input tests and
+two seeded rectangle QuickCheck properties. The PR workflow
+([contracts.yml](../../.github/workflows/contracts.yml)) runs Python contract
+tests, document/evidence validation, MoonBit formatting, warning-denied checks,
+and tests. `scripts/check_contracts.py` audits all package manifests, allows
+QuickCheck only in test imports, and rejects new runtime packages until their
+layer is approved.
+
+Verification: `python3 -m unittest discover -s tests -p 'test_*.py'` passes all
+18 validator tests, and `python3 scripts/check_contracts.py --root .` passes
+while reporting the release ledger as pending. `--require-ready` exits 2 as
+required while production evidence is absent. `moon fmt --check`, `moon check
+--target all --deny-warn`, and `moon test --target all --deny-warn` all pass;
+the full MoonBit suite passes 29 tests on each of wasm, wasm-gc, js, and native.
+The active geometry package contributes 9 deterministic/property tests, and
+the lifecycle model is included in the all-target suite. Layout/render/text,
+mutation, visual, native integration, stress, and performance suites remain
+open, so this issue remains design-only.

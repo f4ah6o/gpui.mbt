@@ -1,6 +1,8 @@
 # Architecture and dependency policy
 
 Status: design only
+Model: gpt-6-luna
+Updated: 2026-10-03
 
 ## Dependency rule
 
@@ -214,3 +216,12 @@ Do not make these permanent foundations:
 - shipping Node/browser runtime as the desktop renderer
 - using vlmkit as an application runtime dependency
 - accepting platform-specific types in the framework's core API
+
+
+## Incremental delivery record — 2026-10-03
+
+The M0 architecture and dependency contracts are in [docs/architecture.md](../../docs/architecture.md). The MoonBit module is `f4ah6o/gpui`; M1 runtime packages are `primitives/`, `diagnostics/`, and `core/`. Current runtime imports contain no third-party MoonBit package. Their allowed dependency boundaries and current actual edges are stated in the architecture document and are checked by the repository's executable package-boundary validation.
+
+The deterministic `core/` scheduler is synchronous and headless: zero-delay work enters the FIFO at submission, timers use a manual monotonic clock, and cancellation is cooperative for running callbacks. No GPU, window, native FFI, or external runtime dependency is present in M1. Platform-specific dependency/license inventories, native boundary records, M2+ package edges, and release-candidate transitive audits remain future work. This increment does not complete the long-term policy packet or change its design-only status.
+
+Validation: `moon fmt --check`, `moon check --deny-warn --target all`, `moon test --deny-warn --target all` (30/30 each on wasm, wasm-gc, js, and native), `python3 scripts/check_contracts.py`, and `python3 -m unittest discover -s tests` (20 tests) all pass.

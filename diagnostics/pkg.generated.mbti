@@ -1,0 +1,68 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/diagnostics"
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct Diagnostic {
+  // private fields
+}
+pub fn Diagnostic::error(Self) -> FrameworkError
+
+pub struct DiagnosticSink {
+  // private fields
+}
+pub fn DiagnosticSink::count(Self, ErrorCode) -> UInt64
+pub fn DiagnosticSink::dropped_count(Self) -> UInt64
+pub fn DiagnosticSink::new(Int) -> Result[Self, SinkConfigError]
+pub fn DiagnosticSink::record(Self, FrameworkError) -> Unit
+pub fn DiagnosticSink::snapshot(Self) -> Array[Diagnostic]
+pub fn DiagnosticSink::total_count(Self) -> UInt64
+
+pub(all) enum ErrorCode {
+  AppNotRunning
+  WrongApp
+  EntityNotLive
+  ContextExpired
+  InvalidInput
+  ReentrantUpdate
+  CallbackFailure
+  TaskFailure
+  UnsupportedCapability
+  StaleHandle
+  PermissionDenied
+  Busy
+  ResourceExhausted
+  WindowUnavailable
+  SurfaceLost
+  DeviceLost
+  ConversionFailed
+  WrongThread
+  HostStopping
+  NativeFailure
+}
+pub fn ErrorCode::label(Self) -> String
+
+pub struct FrameworkError {
+  // private fields
+}
+pub fn FrameworkError::app_id(Self) -> UInt64?
+pub fn FrameworkError::backend(Self) -> String?
+pub fn FrameworkError::code(Self) -> ErrorCode
+pub fn FrameworkError::entity_id(Self) -> UInt64?
+pub fn FrameworkError::message(Self) -> String?
+pub fn FrameworkError::new(ErrorCode, String, app_id? : UInt64, entity_id? : UInt64, window_id? : UInt64, task_id? : UInt64, subsystem? : String, backend? : String, message? : String) -> Self
+pub fn FrameworkError::operation(Self) -> String
+pub fn FrameworkError::subsystem(Self) -> String?
+pub fn FrameworkError::task_id(Self) -> UInt64?
+pub fn FrameworkError::window_id(Self) -> UInt64?
+
+pub(all) enum SinkConfigError {
+  CapacityOutOfRange(Int)
+}
+
+// Type aliases
+
+// Traits

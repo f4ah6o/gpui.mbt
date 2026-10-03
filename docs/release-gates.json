@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "release": "1.0",
+  "status": "pending",
+  "candidate_revision": null,
+  "gates": [
+    { "id": "compatibility", "status": "pending", "evidence": [] },
+    { "id": "correctness", "status": "pending", "evidence": [] },
+    { "id": "platform_tier1", "status": "pending", "evidence": [] },
+    { "id": "text", "status": "pending", "evidence": [] },
+    { "id": "performance", "status": "pending", "evidence": [] },
+    { "id": "stability", "status": "pending", "evidence": [] },
+    { "id": "api", "status": "pending", "evidence": [] },
+    { "id": "dependencies", "status": "pending", "evidence": [] },
+    { "id": "supply_chain", "status": "pending", "evidence": [] },
+    { "id": "diagnostics", "status": "pending", "evidence": [] },
+    { "id": "security_boundaries", "status": "pending", "evidence": [] },
+    { "id": "clean_consumer", "status": "pending", "evidence": [] }
+  ]
+}

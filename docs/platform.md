@@ -1,0 +1,233 @@
+# Platform boundary contract (M0)
+
+This document defines the backend contract before native code exists. It is a
+design target for the core/backend conformance suite; it does not claim that any
+platform backend has been implemented or is supported.
+
+## Boundary and first backend
+
+Framework code talks to a platform-neutral backend interface. The interface
+owns the event loop, native windows and surfaces, input translation, display
+metadata, clipboard, cursor, text-input/IME bridge, accessibility adapter, and
+native menu service when exposed. Concrete native types and handles stay inside
+the backend. Core, element, scene, and public application APIs use repository-
+owned values and errors only.
+
+The first backend target is macOS, using a thin repository-owned C ABI shim over
+AppKit, Core Animation, and Metal. AppKit supplies the application loop,
+windows, events, clipboard, cursor, menus, text-input client, and accessibility
+integration; a `CAMetalLayer` backed by Metal supplies the GPU surface and
+device lifecycle. This target can exercise the full M0 contract on the
+project’s initial development platform.
+Windows and Linux remain planned backends: Windows will map the same contract
+to Win32, native text/accessibility services, and a GPU surface; Linux will
+select Wayland or X11 and connect native text/accessibility services. Those
+choices remain implementation work. At M0 no backend has a support claim; a
+build alone is Tier 0, and Tier 1 requires every gate in issue 0004 and the
+production-readiness packet.
+
+## Operations and lifecycle
+
+The backend exposes these logical operations. Calls return a typed result and
+do not terminate the process for an ordinary platform failure.
+
+| Area | Operations | Contract |
+| --- | --- | --- |
+| Host | `start`, `run`, `wake`, `request_exit`, `stop` | `start` returns only after initialization succeeds. `wake` may coalesce, but cannot lose a queued command. `stop` is idempotent and releases owned native resources. |
+| Window | `create_window`, `show`, `set_size`, `set_title`, `request_close`, `destroy_window` | Creation is atomic from the caller’s view: success returns a live logical ID; failure returns no half-live window. Destruction is idempotent. |
+| Surface | `create_surface`, `resize_surface`, `present`, `release_surface`, `recover_renderer` | A surface is tied to one live window generation. Resize and device-loss recovery may invalidate native resources without invalidating the logical window. |
+| Input/focus | translated pointer, keyboard, focus, and close events | Events carry a window ID, monotonic sequence within that window, logical coordinates, and the scale factor observed with the event. Ordering from the native queue is preserved. |
+| Display | `displays`, `window_scale` | Geometry is in logical points; scale is finite and positive. A display change updates scale before later input and frame events use the new value. |
+| Services | `read/write_clipboard`, `set_cursor`, `set_menus`, `accessibility_action` | Unsupported services return `UnsupportedCapability`; they do not silently report success. |
+| Text input | `begin/update/commit/cancel_composition`, `set_candidate_rect` | Composition is scoped to the focused text target and its live window generation. |
+
+The host state machine is `Uninitialized -> Running -> Quiescing -> Stopped`.
+Initialization failure leaves it `Uninitialized`; `request_exit` moves it to
+`Quiescing`; no new windows are accepted after that transition. `stop` drains
+queued destruction work, unregisters callbacks, releases surfaces, then windows,
+then the application object. Repeated `stop` calls have no effect.
+
+Each window moves through `Creating -> Alive -> Closing -> Destroyed`. The
+backend assigns a core-owned `WindowId` before native creation, but publishes it
+only after creation succeeds. `request_close` emits a close-request event; core
+policy decides whether to destroy. Once destruction starts, later native
+callbacks for that window generation are dropped. No event is delivered after
+the final `Destroyed` notification.
+
+Renderer state is `Unavailable -> Ready -> Recovering -> Ready` or
+`Unavailable`. Surface/device loss enters `Recovering`, invalidates frame-local
+resources, and coalesces duplicate loss notifications into one recovery
+episode. An episode makes at most three creation attempts at 0 ms, 50 ms, and
+250 ms, all within a one-second deadline. There is no busy
+loop. Exhaustion enters `Unavailable` and emits one error; a later explicit
+`recover_renderer` request or a new native device-reset event may start a new
+episode. Recovery failure is reported as a recoverable renderer error; the
+application remains alive so it can show or log the failure. Window destruction
+releases its surface before its native window. Stale surface operations return
+`StaleHandle`.
+
+## Identity, threading, and ownership
+
+Core owns monotonically allocated, generational `WindowId`, `EntityId`,
+`TaskId`, and accessibility `NodeId` values. IDs are values, not pointers, and
+are not reused while an event or callback for that generation could still be
+observed. A backend may maintain a private native-object map keyed by
+`(WindowId, generation)`, but native pointers never escape that map. A stale
+generation is rejected or dropped and cannot target a newly created window.
+
+Each backend has one UI-owner thread. Host, window, focus, clipboard, cursor,
+menu, and accessibility operations execute on that thread. A synchronous
+operation called from another thread returns `WrongThread`. The only
+cross-thread entry point is `enqueue(command)`: it copies/owns the command,
+allocates a `CommandId`, wakes the event loop, and returns that ID immediately.
+The backend later emits exactly one `CommandCompleted(CommandId, Result)` on
+the UI event stream. Commands accepted before quiescing complete or fail during
+drain; submissions after quiescing return `HostStopping`. Native callbacks are
+serialized onto the UI thread and translated into backend-neutral events.
+Callbacks do not re-enter core while core is making a backend call: callbacks
+enqueue events, and core dispatch starts after the current FFI call unwinds.
+Destroy requests made during event dispatch take effect logically at once;
+native teardown is deferred until dispatch returns. This makes callback-after-
+destroy and re-entrant destruction safe and gives the later core scheduler a
+single ordering contract.
+
+The backend owns native objects and native allocations. Core owns logical
+records, scene values, and copied event/text payloads. No pointer into a moving
+MoonBit value may be retained by native code or across an asynchronous call.
+Native callbacks borrow payload buffers only until the callback returns; core
+copies data it needs afterward. Every registration has an unregister operation
+whose completion guarantees that no future callback for that registration will
+run.
+
+## C ABI and error shape
+
+The macOS bridge uses a versioned, repository-owned C ABI. ABI records use
+fixed-width integers, explicit enum tags, `u8` booleans, and opaque integer
+tokens; they do not expose Objective-C objects, Swift values, Rust types, or
+native pointers. Every structure starts with `abi_version` and `struct_size`
+so additions can be detected. Text is `(const uint8_t *bytes, uint32_t len)` in
+UTF-8; it is length-delimited, may contain NUL, and is never read with
+`strlen`. Input pointers are borrowed for the call only. Output buffers are
+caller-owned, or have a matching backend release function. Callback userdata is
+an opaque token resolved by the backend, not a MoonBit heap address.
+
+Every operation returns a status code plus an optional operation/object token.
+The status identifies a stable category (`AppNotRunning`, `WrongApp`,
+`EntityNotLive`, `ContextExpired`, `InvalidInput`, `ReentrantUpdate`,
+`CallbackFailure`, `TaskFailure`, `UnsupportedCapability`, `StaleHandle`,
+`PermissionDenied`, `Busy`, `ResourceExhausted`, `WindowUnavailable`,
+`SurfaceLost`, `DeviceLost`, `ConversionFailed`, `WrongThread`,
+`HostStopping`, or `NativeFailure`). A diagnostic record adds backend,
+operation, logical object IDs when safe, and subsystem. Human-readable native
+text is best-effort diagnostic context, not a programmatic discriminator.
+Recoverable errors are returned to the caller; they are not converted to
+unconditional abort or panic.
+
+The MoonBit representation is `diagnostics.FrameworkError`: it carries the
+stable code and operation plus optional logical app/entity/window/task IDs and
+optional subsystem, backend, and message strings. Operation is capped at 96
+Unicode scalars, subsystem/backend at 48 each, and message at 256. The
+single-owner `DiagnosticSink` stores at most 256 records in FIFO order and
+tracks saturating lifetime counts by code, total records, and evictions. It
+adds no clock or thread-dependent data, so the same call sequence produces the
+same snapshot and counters. Platform error adapters map native outcomes into
+these framework categories at the boundary.
+
+| Failure | Required behavior |
+| --- | --- |
+| Window creation fails | Return an error, clean partial native state, and keep the host running. |
+| Clipboard is busy or denied | Return an error; preserve the last known core state and allow the caller to retry. |
+| Surface/device is lost | Enter `Recovering`, invalidate surface resources, report the transition, and attempt recreation. |
+| Resource allocation fails | Return `ResourceExhausted`; discard optional caches where safe and keep logical objects valid. |
+| Font is missing | Use the selected fallback or missing-glyph representation and emit a diagnostic; do not abort. |
+| Invalid UTF-8/native conversion | Reject only that payload or operation with `ConversionFailed`; retain no borrowed buffer. |
+| Callback arrives for a destroyed/stale object | Drop it and record a diagnostic counter; do not dereference stale state. |
+| Unsupported native capability | Return `UnsupportedCapability` and expose the capability as unavailable. |
+
+## Scene and renderer boundary
+
+R0 produces only a versioned, platform-neutral scene snapshot; it does not
+create a native surface or promise raster output. R1 may add a reference
+software raster path for deterministic correctness checks. R2 adds the native
+GPU renderer required by a production backend. R3 covers optimization and
+device-loss recovery while preserving scene-level oracles.
+
+An R0 `SceneSnapshot` has `schema_version: 1`, a logical viewport, finite
+positive scale, logical resource table, ordered clip-chain table, and a flat
+ordered list of `SceneItem` values. The item list is paint stacking order and
+is stable for identical inputs. Every item contains a finite 2D affine
+transform, opacity, and optional clip-chain ID. `Quad` contains a rectangle,
+fill, border, and corner radii; `Path` contains ordered move/line/curve/close
+verbs and fill/stroke styles; `Image` contains a logical image-resource ID,
+source/destination rectangles, and sampling mode; `TextRun` contains UTF-8
+text, style/font tokens, logical origin/baseline, and source ranges needed to
+map selection and accessibility back to text. Clip chains contain ordered
+rectangle/path intersections. No native GPU handles, mutable renderer caches,
+or platform-specific font objects appear in the snapshot.
+
+Geometry is expressed in logical points and represented as finite IEEE-754
+binary64 values. Canonical JSON uses schema field order and shortest-round-trip
+decimal numbers; negative zero is normalized to zero, item/clip/resource order
+is preserved, and NaN/infinity are rejected before a snapshot is emitted.
+Schema changes increment `schema_version`; snapshot equality is structural,
+not a pixel comparison. These rules make scene tests reproducible without a
+window server or GPU.
+
+## Text and IME
+
+The public text model is platform-neutral. Text and composition payloads are
+UTF-8. All ranges are half-open UTF-8 byte ranges whose endpoints must fall on
+Unicode scalar boundaries; conversion to native UTF-16 or platform ranges is
+backend work. User-visible caret and selection endpoints must also fall on
+extended grapheme-cluster boundaries according to the core’s pinned Unicode
+segmentation version, so an edit cannot split a combining sequence or emoji
+ZWJ sequence. IME marked ranges may span scalar boundaries within a grapheme
+while composing, but the active selection/caret remains grapheme-aligned. A
+native range that cannot be preserved reports `ConversionFailed` instead of
+moving the caret silently.
+
+For each focused text target, IME state is `Idle -> Composing -> Idle`. Start
+creates an empty marked range; update replaces the provisional composition and
+reports its marked range and selection; commit emits committed text exactly
+once and clears marked state; cancel clears marked state without committing.
+Focus loss, target destruction, or window destruction cancels composition
+before the corresponding blur/destroy event is delivered. Candidate-window
+position is supplied in logical coordinates and converted by the backend. A
+backend that cannot position a candidate window reports that capability as
+unavailable. The contract suite must cover Japanese composition, mixed script,
+selection/caret mapping, commit, cancel, focus changes during composition, and
+candidate positioning where exposed.
+
+## Accessibility
+
+Core owns a semantic tree independent of the scene and pixels. Each live node
+has a stable generational `NodeId`, parent/child order, role, label/name,
+optional value, state, focused/enabled flags, supported actions, and optional
+text plus selection/caret ranges. A committed semantic update is sent to the
+backend before the next accessibility notification. The backend maps roles,
+properties, and actions to the host accessibility API; it never infers them
+from rendered pixels. Native actions resolve the current `NodeId` and route to
+core; stale or disabled targets return a rejected action result. If native
+exposure is unavailable, the backend reports that capability honestly while
+the semantic tree remains testable headlessly.
+
+## Conformance boundary
+
+The backend conformance suite will verify lifecycle transitions, identity
+generation, event ordering, scale/input mapping, stale callback handling,
+resource cleanup, and structured error mapping. Headless tests own semantic
+scene/text/accessibility expectations; platform E2E verifies native window,
+IME, accessibility, clipboard, focus, DPI, and surface recovery. Exact pixels
+may differ by platform; event, lifecycle, text-range, and accessibility
+semantics must match.
+
+## M1 implementation evidence
+
+The repository now has headless core lifecycle/scheduler tests and structured
+diagnostics, but no platform API package, window system, native backend, or
+renderer. The local command
+`moon test primitives diagnostics core testing/core_model --target native --deny-warn`
+passes 29 tests across the four packages. Here `--target native` identifies the
+MoonBit test target; it is not native GUI or platform integration evidence.
+No platform has a support claim, and every Tier 1 platform gate above remains
+pending.
