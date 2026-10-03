@@ -565,10 +565,10 @@ fn prepare_items(
       Some(_) => ()
       None =>
         if !valid_limits(item.min_main, item.max_main) ||
-          !valid_limits(item.min_cross, item.max_cross) ||
-          !finite(item.grow) ||
-          !finite(item.shrink) {
+          !valid_limits(item.min_cross, item.max_cross) {
           error = Some(InvalidMinMax)
+        } else if !finite(item.grow) || !finite(item.shrink) {
+          error = Some(NonFiniteValue)
         } else if item.grow < 0.0 || item.shrink < 0.0 {
           error = Some(NegativeValue)
         } else {
@@ -603,12 +603,17 @@ fn prepare_items(
                     intrinsic_cross
                   }
               }
-              prepared.push({
-                item,
-                basis,
-                cross: clamp_once(cross, item.min_cross, item.max_cross),
-                weight: item.shrink * basis,
-              })
+              let weight = item.shrink * basis
+              if !finite(weight) {
+                error = Some(NonFiniteValue)
+              } else {
+                prepared.push({
+                  item,
+                  basis,
+                  cross: clamp_once(cross, item.min_cross, item.max_cross),
+                  weight,
+                })
+              }
             }
           }
         }
@@ -647,96 +652,106 @@ fn place_items(
       shrink_total += entry.weight
     }
     let free = main_extent - gaps - basis_total
-    let resolved : Array[Double] = []
-    let mut used = gaps
-    for entry in prepared {
-      let proposed = if free > 0.0 && grow_total > 0.0 {
-        entry.basis + free * entry.item.grow / grow_total
-      } else if free < 0.0 && shrink_total > 0.0 {
-        entry.basis + free * entry.weight / shrink_total
-      } else {
-        entry.basis
-      }
-      let final_main = clamp_once(
-        non_negative(proposed),
-        entry.item.min_main,
-        entry.item.max_main,
-      )
-      resolved.push(final_main)
-      used += final_main
-    }
-    if !finite(used) {
+    if !finite(basis_total) ||
+      !finite(grow_total) ||
+      !finite(shrink_total) ||
+      !finite(free) {
       Err(NonFiniteValue)
     } else {
-      let positive_leftover = if main_extent > used {
-        main_extent - used
+      let resolved : Array[Double] = []
+      let mut used = gaps
+      for entry in prepared {
+        let proposed = if free > 0.0 && grow_total > 0.0 {
+          entry.basis + free * (entry.item.grow / grow_total)
+        } else if free < 0.0 && shrink_total > 0.0 {
+          entry.basis + free * (entry.weight / shrink_total)
+        } else {
+          entry.basis
+        }
+        if !finite(proposed) {
+          used = @double.infinity
+        } else {
+          let final_main = clamp_once(
+            non_negative(proposed),
+            entry.item.min_main,
+            entry.item.max_main,
+          )
+          resolved.push(final_main)
+          used += final_main
+        }
+      }
+      if !finite(used) || resolved.length() != prepared.length() {
+        Err(NonFiniteValue)
       } else {
-        0.0
-      }
-      let mut cursor = match container.justify {
-        JustifyContent::Start => 0.0
-        Center => positive_leftover / 2.0
-        End => positive_leftover
-      }
-      let output : Array[LayoutBox] = []
-      let mut any_overflow = used > main_extent
-      let mut error : LayoutError? = None
-      let mut index = 0
-      while index < prepared.length() {
-        let entry = prepared[index]
-        let main_size = resolved[index]
-        let cross_size = entry.cross
-        let cross_offset = if cross_size >= cross_extent {
+        let positive_leftover = if main_extent > used {
+          main_extent - used
+        } else {
           0.0
-        } else {
-          match container.align {
-            AlignItems::Start | Stretch => 0.0
-            AlignItems::Center => (cross_extent - cross_size) / 2.0
-            AlignItems::End => cross_extent - cross_size
-          }
         }
-        let x = if container.direction is Row {
-          content_bounds.left() + cursor
-        } else {
-          content_bounds.left() + cross_offset
+        let mut cursor = match container.justify {
+          JustifyContent::Start => 0.0
+          Center => positive_leftover / 2.0
+          End => positive_leftover
         }
-        let y = if container.direction is Row {
-          content_bounds.top() + cross_offset
-        } else {
-          content_bounds.top() + cursor
-        }
-        let width = if container.direction is Row {
-          main_size
-        } else {
-          cross_size
-        }
-        let height = if container.direction is Row {
-          cross_size
-        } else {
-          main_size
-        }
-        match @primitives.Rect::new(x, y, width, height) {
-          Err(_) => error = Some(GeometryFailure)
-          Ok(bounds) => {
-            let overflow = cursor + main_size > main_extent ||
-              cross_size > cross_extent
-            if overflow {
-              any_overflow = true
+        let output : Array[LayoutBox] = []
+        let mut any_overflow = used > main_extent
+        let mut error : LayoutError? = None
+        let mut index = 0
+        while index < prepared.length() {
+          let entry = prepared[index]
+          let main_size = resolved[index]
+          let cross_size = entry.cross
+          let cross_offset = if cross_size >= cross_extent {
+            0.0
+          } else {
+            match container.align {
+              AlignItems::Start | Stretch => 0.0
+              AlignItems::Center => (cross_extent - cross_size) / 2.0
+              AlignItems::End => cross_extent - cross_size
             }
-            output.push({ id: entry.item.id, bounds, overflow, })
           }
+          let x = if container.direction is Row {
+            content_bounds.left() + cursor
+          } else {
+            content_bounds.left() + cross_offset
+          }
+          let y = if container.direction is Row {
+            content_bounds.top() + cross_offset
+          } else {
+            content_bounds.top() + cursor
+          }
+          let width = if container.direction is Row {
+            main_size
+          } else {
+            cross_size
+          }
+          let height = if container.direction is Row {
+            cross_size
+          } else {
+            main_size
+          }
+          match @primitives.Rect::new(x, y, width, height) {
+            Err(_) => error = Some(GeometryFailure)
+            Ok(bounds) => {
+              let overflow = cursor + main_size > main_extent ||
+                cross_size > cross_extent
+              if overflow {
+                any_overflow = true
+              }
+              output.push({ id: entry.item.id, bounds, overflow, })
+            }
+          }
+          cursor += main_size + container.gap
+          index += 1
         }
-        cursor += main_size + container.gap
-        index += 1
-      }
-      match error {
-        Some(value) => Err(value)
-        None => Ok({ content_bounds, items: output, overflow: any_overflow, })
+        match error {
+          Some(value) => Err(value)
+          None => Ok({ content_bounds, items: output, overflow: any_overflow, })
+        }
       }
     }
   }
 }
-
 ///|
 fn finite(value : Double) -> Bool {
   !value.is_nan() && !value.is_inf()
