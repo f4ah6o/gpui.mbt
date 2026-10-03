@@ -296,15 +296,10 @@ pub fn Scene::snapshot_v1(
                 clip_chains,
                 clip_stack,
               )
+              let transform = AffineTransform::identity()
+              let opacity = 1.0
               items.push(
-                QuadItem(
-                  id~,
-                  bounds~,
-                  color~,
-                  transform=AffineTransform::identity(),
-                  opacity=1.0,
-                  clip_chain_id~,
-                ),
+                QuadItem(id~, bounds~, color~, transform~, opacity~, clip_chain_id~),
               )
             }
           }
