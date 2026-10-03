@@ -176,6 +176,6 @@ This does not complete M2 or M3: Render/IntoElement/request-layout/prepaint/pain
 
 ## M2/M3 dispatch and snapshot update — 2026-10-03
 
-The headless element foundation now executes capture and bubble callbacks, records the callbacks that actually ran, propagates callback errors, and supports shared stop-propagation state. The scene foundation now freezes ordered commands into a schema-versioned snapshot carrying logical viewport and validated positive scale metadata, with deterministic compact serialization and negative-zero normalization.
+The headless element foundation now executes capture and bubble callbacks, records the callbacks that actually ran, propagates callback errors, and supports shared stop-propagation state. The scene foundation now freezes ordered commands into an unversioned provisional `CommandSnapshot` carrying logical viewport and validated positive scale metadata, with deterministic compact serialization and negative-zero normalization.
 
-This still does not complete M2 or M3. Render/IntoElement/request-layout/prepaint/paint lifecycle, recursive auto layout, full R0 resource/clip-chain/item tables, paths/images/text/transforms, renderer contracts, and native rendering remain open.
+This still does not complete M2 or M3. Render/IntoElement/request-layout/prepaint/paint lifecycle, recursive auto layout, the reserved `SceneSnapshot` v1 envelope with full R0 resource/clip-chain/item tables, paths/images/text/transforms, renderer contracts, and native rendering remain open.
