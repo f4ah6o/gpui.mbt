@@ -176,7 +176,6 @@ test "element tree and dispatch plans own their arrays" {
   assert_eq(plan.bubble().length(), 2)
 }
 
-
 ///|
 test "callback dispatch walks capture then bubble deterministically" {
   let bounds = element_rect(0.0, 0.0, 100.0, 100.0)
@@ -187,11 +186,12 @@ test "callback dispatch walks capture then bubble deterministically" {
   ])
   let ids : Array[UInt64] = []
   let phases : Array[@element.EventPhase] = []
-  match tree.dispatch_pointer_with(element_point(10.0, 10.0), context => {
-    ids.push(context.current_target())
-    phases.push(context.phase())
-    Ok(())
-  }) {
+  match
+    tree.dispatch_pointer_with(element_point(10.0, 10.0), context => {
+      ids.push(context.current_target())
+      phases.push(context.phase())
+      Ok(())
+    }) {
     Err(_) => fail("valid dispatch failed")
     Ok(outcome) => {
       assert_true(outcome.target() == Some(3))
@@ -222,15 +222,16 @@ test "stop propagation prevents later capture and all bubble callbacks" {
     @element.ElementNode::new(3, Some(2), bounds),
   ])
   let visited : Array[UInt64] = []
-  match tree.dispatch_pointer_with(element_point(10.0, 10.0), context => {
-    visited.push(context.current_target())
-    if context.phase() == @element.EventPhase::Capture &&
-      context.current_target() == 2 {
-      context.stop_propagation()
-      assert_true(context.is_propagation_stopped())
-    }
-    Ok(())
-  }) {
+  match
+    tree.dispatch_pointer_with(element_point(10.0, 10.0), context => {
+      visited.push(context.current_target())
+      if context.phase() == @element.EventPhase::Capture &&
+        context.current_target() == 2 {
+        context.stop_propagation()
+        assert_true(context.is_propagation_stopped())
+      }
+      Ok(())
+    }) {
     Err(_) => fail("valid dispatch failed")
     Ok(outcome) => {
       assert_true(outcome.was_stopped())
