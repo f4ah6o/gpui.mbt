@@ -31,5 +31,5 @@
 ## Unreleased M2/M3 dispatch and snapshot slice
 
 - Add callback-driven capture/bubble pointer dispatch with shared stop-propagation state and deterministic visited-path results.
-- Add schema-versioned scene command snapshots with validated positive scale, owned command storage, and canonical compact serialization.
+- Add provisional `CommandSnapshot` values with validated positive scale, owned command storage, and canonical compact serialization while reserving `SceneSnapshot` v1 for the full R0 contract.
 - Extend headless tests and implementation evidence without changing any platform support or release-gate claim.
