@@ -262,3 +262,8 @@ deterministic flex-line cases plus a fixed-seed QuickCheck property. The current
 suite passes 36/36 tests on wasm, wasm-gc, js, and native. Recursive layout and
 element-tree properties, render/text, mutation, visual, native integration,
 stress, and performance suites remain open, so this packet is still incomplete.
+
+
+## M2/M3 headless test update — 2026-10-03
+
+Deterministic tests now cover element-tree validation, reverse-paint hit testing, capture/bubble route order, focus acceptance/rejection, element-to-scene ordering, and scene command data. These tests are part of the all-target MoonBit CI gate. Event/focus state-machine PBT, stop-propagation properties, scene serialization/goldens, turtles mutation baselines, vlmkit artifacts, and native E2E remain pending and therefore this packet remains open.
