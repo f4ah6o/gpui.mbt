@@ -10,12 +10,13 @@ test "property flex line preserves order and finite non-negative geometry" {
       let grow_a = (grow0 % 8).abs().to_double()
       let grow_b = (grow1 % 8).abs().to_double()
       let gap = (gap0 % 12).abs().to_double()
-      match (
-        @primitives.Size::new(width, 40.0),
-        @primitives.Size::new(8.0, 8.0),
-        @layout.Dimension::points(basis_a),
-        @layout.Dimension::points(basis_b),
-      ) {
+      match
+        (
+          @primitives.Size::new(width, 40.0),
+          @primitives.Size::new(8.0, 8.0),
+          @layout.Dimension::points(basis_a),
+          @layout.Dimension::points(basis_b),
+        ) {
         (Ok(size), Ok(intrinsic), Ok(main_a), Ok(main_b)) => {
           let first = @layout.FlexItem::new(
             1,
@@ -29,14 +30,14 @@ test "property flex line preserves order and finite non-negative geometry" {
             @layout.Dimension::Auto,
             intrinsic,
           )
-          match (
-            first.with_flex(grow_a, 1.0),
-            second.with_flex(grow_b, 1.0),
-            @layout.FlexContainer::new(
-              @layout.FlowDirection::Row,
-              size,
-            ).with_gap(gap),
-          ) {
+          match
+            (
+              first.with_flex(grow_a, 1.0),
+              second.with_flex(grow_b, 1.0),
+              @layout.FlexContainer::new(@layout.FlowDirection::Row, size).with_gap(
+                gap,
+              ),
+            ) {
             (Ok(a), Ok(b), Ok(container)) =>
               match @layout.layout_flex(container, [a, b]) {
                 Err(_) => false
