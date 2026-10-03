@@ -181,11 +181,7 @@ pub fn Scene::command_snapshot(
   if scale.is_nan() || scale.is_inf() || scale <= 0.0 {
     Err(InvalidScale)
   } else {
-    Ok({
-      viewport,
-      scale,
-      commands: copy_commands(self.commands),
-    })
+    Ok({ viewport, scale, commands: copy_commands(self.commands), })
   }
 }
 
