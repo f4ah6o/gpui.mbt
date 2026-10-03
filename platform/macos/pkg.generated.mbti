@@ -1,0 +1,38 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/platform/macos"
+
+import {
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/scene",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct Host {
+  // private fields
+}
+pub fn Host::create_window(Self, String, Double, Double) -> Result[@platform.WindowId, @diagnostics.FrameworkError]
+pub fn Host::destroy_window(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::next_event(Self, timeout_ms? : Int) -> Result[@platform.Event?, @diagnostics.FrameworkError]
+pub fn Host::present(Self, @platform.WindowId, @scene.SceneSnapshot) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::read_clipboard(Self) -> Result[String, @diagnostics.FrameworkError]
+pub fn Host::request_close(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::request_exit(Self) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::require_capability(Self, @platform.Capability) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::set_cursor(Self, @platform.Cursor) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::set_size(Self, @platform.WindowId, Double, Double) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::set_title(Self, @platform.WindowId, String) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::start() -> Result[Self, @diagnostics.FrameworkError]
+pub fn Host::stop(Self) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::wake(Self) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::window_metrics(Self, @platform.WindowId) -> Result[(Double, Double, Double), @diagnostics.FrameworkError]
+pub fn Host::write_clipboard(Self, String) -> Result[Unit, @diagnostics.FrameworkError]
+pub impl @platform.Backend for Host
+
+// Type aliases
+
+// Traits

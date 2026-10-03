@@ -1,0 +1,8 @@
+version = 1
+name = "gpui.mbt"
+[setup]
+script = ""
+[[actions]]
+name = "Run macOS demo"
+icon = "run"
+command = "./script/build_and_run.sh"

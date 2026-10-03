@@ -92,3 +92,10 @@ The checks establish contract structure, package boundaries, formatting, compila
 ## Upstream reference and independence
 
 The compatibility target is GPUI at the immutable revision [`zed-industries/zed@d9afb21688e04f89d9e94d96d33eb530aef90886`](https://github.com/zed-industries/zed/tree/d9afb21688e04f89d9e94d96d33eb530aef90886). The upstream GPUI crate manifest identifies Apache-2.0 for that crate. This does not make all source in the Zed repository Apache-2.0; verify the exact file context before any source adaptation. This project does not port Zed application-specific UI code or depend on Zed GPL components. M0 documentation and M1 core behavior are written independently from the pinned comparison target; no upstream implementation code is copied.
+
+## macOS native demo
+
+On macOS with Xcode command-line tools, run `./script/build_and_run.sh` to open
+the MoonBit/AppKit/Metal quad demo. `./script/test_macos.sh` runs native GPU,
+input, and lifecycle checks. See [the native slice guide](docs/macos-native.md)
+for build, ABI, CI evidence, and remaining production gates.
