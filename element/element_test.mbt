@@ -245,3 +245,31 @@ test "stop propagation prevents later capture and all bubble callbacks" {
   assert_true(visited[0] == 1)
   assert_true(visited[1] == 2)
 }
+
+///|
+test "subtree removal preserves preorder and normalizes focus" {
+  let bounds = element_rect(0.0, 0.0, 20.0, 20.0)
+  let root = @element.ElementNode::new(1, None, bounds)
+  let branch = @element.ElementNode::new(2, Some(1), bounds)
+  let leaf = @element.ElementNode::new(3, Some(2), bounds).with_focusable(true)
+  let sibling = @element.ElementNode::new(4, Some(1), bounds)
+  let tree = unwrap_tree([root, branch, leaf, sibling])
+  match tree.with_focus(3) {
+    Err(_) => fail("focusable node rejected")
+    Ok(focused) =>
+      match focused.without_subtree(2) {
+        Err(_) => fail("live subtree rejected")
+        Ok(next) => {
+          assert_true(next.focused() is None)
+          assert_true(next.node(2) is None)
+          assert_true(next.node(3) is None)
+          assert_true(next.node(4) is Some(_))
+          let nodes = next.nodes()
+          assert_eq(nodes.length(), 2)
+          assert_true(nodes[0].id() == 1)
+          assert_true(nodes[1].id() == 4)
+        }
+      }
+  }
+  assert_true(tree.without_subtree(99) is Err(UnknownElement))
+}

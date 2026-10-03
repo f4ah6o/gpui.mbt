@@ -33,3 +33,12 @@
 - Add callback-driven capture/bubble pointer dispatch with shared stop-propagation state and deterministic visited-path results.
 - Add provisional `CommandSnapshot` values with validated positive scale, owned command storage, and canonical compact serialization while reserving `SceneSnapshot` v1 for the full R0 contract.
 - Extend headless tests and implementation evidence without changing any platform support or release-gate claim.
+
+
+## 2026-10-03 — M2 focus and M3 clip invariants
+
+- add immutable element subtree removal that clears focus when the focused node dies
+- add seeded event/focus properties for route reversal, stop-propagation, and focus validity
+- validate scene clip stacks with typed underflow/mismatch/unclosed errors
+- reject invalid clip structure before creating provisional command snapshots
+- add seeded scene clip-stack properties

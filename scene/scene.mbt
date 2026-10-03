@@ -87,6 +87,9 @@ pub fn PaintCommand::color(self : PaintCommand) -> @primitives.Color? {
 /// Snapshot construction errors.
 pub enum SceneError {
   InvalidScale
+  ClipUnderflow
+  ClipMismatch
+  UnclosedClip
 } derive(Eq)
 
 ///|
@@ -170,9 +173,46 @@ pub fn Scene::command_at(self : Scene, index : Int) -> PaintCommand? {
 }
 
 ///|
+/// Validate clip-stack structure without consulting a renderer. Clip IDs are
+/// nested strictly: each pop must match the most recent unmatched push, and a
+/// frame cannot finish with an open clip.
+pub fn Scene::validate(self : Scene) -> Result[Unit, SceneError] {
+  let stack : Array[UInt64] = []
+  let mut depth = 0
+  let mut failure : SceneError? = None
+  let mut index = 0
+  while index < self.commands.length() && failure is None {
+    match self.commands[index] {
+      ClipPushCommand(id~, ..) => {
+        if depth == stack.length() {
+          stack.push(id)
+        } else {
+          stack[depth] = id
+        }
+        depth += 1
+      }
+      ClipPopCommand(id~) =>
+        if depth == 0 {
+          failure = Some(ClipUnderflow)
+        } else if stack[depth - 1] != id {
+          failure = Some(ClipMismatch)
+        } else {
+          depth -= 1
+        }
+      QuadCommand(..) => ()
+    }
+    index += 1
+  }
+  match failure {
+    Some(error) => Err(error)
+    None => if depth == 0 { Ok(()) } else { Err(UnclosedClip) }
+  }
+}
+
+///|
 /// Freeze this provisional command scene for deterministic headless tests.
-/// Scale must be finite and positive. This does not construct the contracted
-/// versioned SceneSnapshot R0 envelope.
+/// Scale must be finite and positive, and clip-stack structure must be valid.
+/// This does not construct the contracted versioned SceneSnapshot R0 envelope.
 pub fn Scene::command_snapshot(
   self : Scene,
   viewport : @primitives.Rect,
@@ -181,7 +221,10 @@ pub fn Scene::command_snapshot(
   if scale.is_nan() || scale.is_inf() || scale <= 0.0 {
     Err(InvalidScale)
   } else {
-    Ok({ viewport, scale, commands: copy_commands(self.commands), })
+    match self.validate() {
+      Err(error) => Err(error)
+      Ok(_) => Ok({ viewport, scale, commands: copy_commands(self.commands), })
+    }
   }
 }
 
