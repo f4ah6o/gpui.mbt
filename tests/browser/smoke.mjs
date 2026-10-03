@@ -54,12 +54,15 @@ try {
   });
 
   await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: "load" });
-  const canvas = page.locator("#gpui-viewport");
-  const readViewport = () => page.evaluate(async () => {
+  await page.evaluate(async () => {
     const gpui = await import("./gpui-browser.js");
+    window.__gpuiSmokeStatus = () => JSON.parse(gpui.gpui_browser_status());
+  });
+  const canvas = page.locator("#gpui-viewport");
+  const readViewport = () => page.evaluate(() => {
     const canvas = document.querySelector("#gpui-viewport");
     const bounds = canvas.getBoundingClientRect();
-    const status = JSON.parse(gpui.gpui_browser_status());
+    const status = window.__gpuiSmokeStatus();
     return {
       cssWidth: bounds.width,
       cssHeight: bounds.height,
@@ -73,48 +76,58 @@ try {
       frameState: document.querySelector("#frame-state")?.textContent,
     };
   });
-  const waitForCoherentViewport = (expectedScale) => page.waitForFunction(async (scale) => {
-    const gpui = await import("./gpui-browser.js");
-    const measure = () => {
-      const canvas = document.querySelector("#gpui-viewport");
-      if (!canvas) return null;
-      const bounds = canvas.getBoundingClientRect();
-      const status = JSON.parse(gpui.gpui_browser_status());
-      return {
-        cssWidth: bounds.width,
-        cssHeight: bounds.height,
-        backingWidth: canvas.width,
-        backingHeight: canvas.height,
-        devicePixelRatio: window.devicePixelRatio,
-        logicalWidth: status.logicalWidth,
-        logicalHeight: status.logicalHeight,
-        statusDpr: status.dpr,
-        logicalLabel: document.querySelector("#logical-size")?.textContent,
-        backingLabel: document.querySelector("#backing-size")?.textContent,
-        scaleLabel: document.querySelector("#device-scale")?.textContent,
-        frameState: document.querySelector("#frame-state")?.textContent,
+  const waitForCoherentViewport = async (expectedScale) => {
+    await page.evaluate(() => { window.__gpuiSmokeViewportSample = null; });
+    // Keep the page predicate synchronous; Playwright treats a returned Promise as truthy.
+    return page.waitForFunction((scale) => {
+      const measure = () => {
+        const canvas = document.querySelector("#gpui-viewport");
+        if (!canvas) return null;
+        const bounds = canvas.getBoundingClientRect();
+        const status = window.__gpuiSmokeStatus();
+        return {
+          cssWidth: bounds.width,
+          cssHeight: bounds.height,
+          backingWidth: canvas.width,
+          backingHeight: canvas.height,
+          devicePixelRatio: window.devicePixelRatio,
+          logicalWidth: status.logicalWidth,
+          logicalHeight: status.logicalHeight,
+          statusDpr: status.dpr,
+          logicalLabel: document.querySelector("#logical-size")?.textContent,
+          backingLabel: document.querySelector("#backing-size")?.textContent,
+          scaleLabel: document.querySelector("#device-scale")?.textContent,
+          frameState: document.querySelector("#frame-state")?.textContent,
+        };
       };
-    };
-    const isCoherent = (state) => state !== null &&
-      state.frameState === "RUNNING" &&
-      state.devicePixelRatio === scale && state.statusDpr === scale &&
-      Math.abs(state.logicalWidth - state.cssWidth) < 0.1 &&
-      Math.abs(state.logicalHeight - state.cssHeight) < 0.1 &&
-      state.backingWidth === Math.round(state.cssWidth * scale) &&
-      state.backingHeight === Math.round(state.cssHeight * scale) &&
-      state.scaleLabel === `${scale.toFixed(2)}×` &&
-      state.backingLabel === `${state.backingWidth} × ${state.backingHeight} px` &&
-      state.logicalLabel === `${Math.round(state.cssWidth)} × ${Math.round(state.cssHeight)} CSS px`;
-    const first = measure();
-    await new Promise(requestAnimationFrame);
-    const second = measure();
-    return isCoherent(first) && isCoherent(second) &&
-      first.cssWidth === second.cssWidth && first.cssHeight === second.cssHeight &&
-      first.backingWidth === second.backingWidth && first.backingHeight === second.backingHeight &&
-      first.devicePixelRatio === second.devicePixelRatio &&
-      first.logicalWidth === second.logicalWidth && first.logicalHeight === second.logicalHeight &&
-      first.statusDpr === second.statusDpr;
-  }, expectedScale);
+      const isCoherent = (state) => state !== null &&
+        state.frameState === "RUNNING" &&
+        state.devicePixelRatio === scale && state.statusDpr === scale &&
+        Math.abs(state.logicalWidth - state.cssWidth) < 0.1 &&
+        Math.abs(state.logicalHeight - state.cssHeight) < 0.1 &&
+        state.backingWidth === Math.round(state.cssWidth * scale) &&
+        state.backingHeight === Math.round(state.cssHeight * scale) &&
+        state.scaleLabel === `${scale.toFixed(2)}×` &&
+        state.backingLabel === `${state.backingWidth} × ${state.backingHeight} px` &&
+        state.logicalLabel === `${Math.round(state.cssWidth)} × ${Math.round(state.cssHeight)} CSS px`;
+      const state = measure();
+      if (!isCoherent(state)) {
+        window.__gpuiSmokeViewportSample = null;
+        return false;
+      }
+      const signature = JSON.stringify([
+        state.cssWidth, state.cssHeight, state.backingWidth, state.backingHeight,
+        state.devicePixelRatio, state.logicalWidth, state.logicalHeight, state.statusDpr,
+        state.logicalLabel, state.backingLabel, state.scaleLabel, state.frameState,
+      ]);
+      const previous = window.__gpuiSmokeViewportSample;
+      const count = previous?.scale === scale && previous.signature === signature
+        ? previous.count + 1
+        : 1;
+      window.__gpuiSmokeViewportSample = { scale, signature, count };
+      return count >= 2;
+    }, expectedScale, { polling: "raf" });
+  };
   await page.waitForFunction(() => document.querySelector("#frame-state")?.textContent === "RUNNING");
   await page.waitForFunction(() => Number(document.querySelector("#sequence")?.textContent) >= 3);
   await waitForCoherentViewport(1.5);
@@ -145,7 +158,7 @@ try {
   const canvasBounds = await canvas.boundingBox();
   const targetPoint = { x: 120, y: 238 };
   await page.mouse.move(canvasBounds.x + targetPoint.x, canvasBounds.y + targetPoint.y);
-  await page.waitForFunction(async () => [4, 5, 6, 7].includes(JSON.parse((await import("./gpui-browser.js")).gpui_browser_status()).hover));
+  await page.waitForFunction(() => [4, 5, 6, 7].includes(window.__gpuiSmokeStatus().hover));
   await page.mouse.click(canvasBounds.x + targetPoint.x, canvasBounds.y + targetPoint.y);
   await page.waitForFunction(() => Number(document.querySelector("#activation-count")?.textContent) >= 2);
 
@@ -245,8 +258,7 @@ try {
         title: await page.title(),
         diagnostic: await page.locator("#diagnostic").textContent().catch(() => "unavailable"),
         body: await page.locator("body").innerText().catch(() => "unavailable"),
-        viewport: await page.evaluate(async () => {
-          const gpui = await import("./gpui-browser.js");
+        viewport: await page.evaluate(() => {
           const canvas = document.querySelector("#gpui-viewport");
           const bounds = canvas?.getBoundingClientRect();
           return {
@@ -255,7 +267,7 @@ try {
             cssHeight: bounds?.height,
             backingWidth: canvas?.width,
             backingHeight: canvas?.height,
-            framework: JSON.parse(gpui.gpui_browser_status()),
+            framework: window.__gpuiSmokeStatus?.() ?? null,
             logicalLabel: document.querySelector("#logical-size")?.textContent,
             backingLabel: document.querySelector("#backing-size")?.textContent,
             scaleLabel: document.querySelector("#device-scale")?.textContent,
