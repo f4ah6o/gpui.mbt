@@ -93,39 +93,33 @@ pub enum SceneError {
 pub extend SceneError with Eq::{not_equal, equal}
 
 ///|
-/// Versioned deterministic snapshot of the currently implemented command
-/// scene. Richer item/resource tables can be added behind a future schema.
-pub struct SceneSnapshot {
-  schema_version : Int
+/// Deterministic snapshot of the provisional command scene. This type is
+/// deliberately distinct from the contracted versioned SceneSnapshot R0 shape.
+pub struct CommandSnapshot {
   viewport : @primitives.Rect
   scale : Double
   commands : Array[PaintCommand]
 }
 
 ///|
-pub fn SceneSnapshot::schema_version(self : SceneSnapshot) -> Int {
-  self.schema_version
-}
-
-///|
-pub fn SceneSnapshot::viewport(self : SceneSnapshot) -> @primitives.Rect {
+pub fn CommandSnapshot::viewport(self : CommandSnapshot) -> @primitives.Rect {
   self.viewport
 }
 
 ///|
-pub fn SceneSnapshot::scale(self : SceneSnapshot) -> Double {
+pub fn CommandSnapshot::scale(self : CommandSnapshot) -> Double {
   self.scale
 }
 
 ///|
-pub fn SceneSnapshot::commands(self : SceneSnapshot) -> Array[PaintCommand] {
+pub fn CommandSnapshot::commands(self : CommandSnapshot) -> Array[PaintCommand] {
   copy_commands(self.commands)
 }
 
 ///|
-/// Canonical field order and compact separators are part of this schema.
-/// Negative zero is normalized to zero.
-pub fn SceneSnapshot::canonical_json(self : SceneSnapshot) -> String {
+/// Canonical field order and compact separators are stable for command
+/// snapshots. Negative zero is normalized to zero.
+pub fn CommandSnapshot::canonical_json(self : CommandSnapshot) -> String {
   let viewport = canonical_rect_json(self.viewport)
   let mut commands = ""
   let mut index = 0
@@ -176,18 +170,18 @@ pub fn Scene::command_at(self : Scene, index : Int) -> PaintCommand? {
 }
 
 ///|
-/// Freeze this command scene into schema version 1 metadata. Scale must be
-/// finite and positive.
-pub fn Scene::snapshot(
+/// Freeze this provisional command scene for deterministic headless tests.
+/// Scale must be finite and positive. This does not construct the contracted
+/// versioned SceneSnapshot R0 envelope.
+pub fn Scene::command_snapshot(
   self : Scene,
   viewport : @primitives.Rect,
   scale : Double,
-) -> Result[SceneSnapshot, SceneError] {
+) -> Result[CommandSnapshot, SceneError] {
   if scale.is_nan() || scale.is_inf() || scale <= 0.0 {
     Err(InvalidScale)
   } else {
     Ok({
-      schema_version: 1,
       viewport,
       scale,
       commands: copy_commands(self.commands),
