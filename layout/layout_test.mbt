@@ -19,7 +19,7 @@ test "row flex grow preserves order gap and deterministic bounds" {
     @layout.FlexItem::new(
       1,
       unwrap_points(20.0),
-      @layout.Dimension::Auto,
+      @layout.Dimension::auto(),
       intrinsic,
     ),
     1.0,
@@ -29,14 +29,14 @@ test "row flex grow preserves order gap and deterministic bounds" {
     @layout.FlexItem::new(
       2,
       unwrap_points(20.0),
-      @layout.Dimension::Auto,
+      @layout.Dimension::auto(),
       intrinsic,
     ),
     1.0,
     1.0,
   )
   let container = unwrap_gap(
-    @layout.FlexContainer::new(@layout.FlowDirection::Row, size),
+    @layout.FlexContainer::new(@layout.FlowDirection::row(), size),
     10.0,
   )
   let layout = unwrap_layout(@layout.layout_flex(container, [first, second]))
@@ -58,7 +58,7 @@ test "shrink clamps once and reports minimum-driven overflow" {
     @layout.FlexItem::new(
       1,
       unwrap_points(40.0),
-      @layout.Dimension::Auto,
+      @layout.Dimension::auto(),
       intrinsic,
     ),
     35.0,
@@ -68,13 +68,13 @@ test "shrink clamps once and reports minimum-driven overflow" {
     @layout.FlexItem::new(
       2,
       unwrap_points(40.0),
-      @layout.Dimension::Auto,
+      @layout.Dimension::auto(),
       intrinsic,
     ),
     35.0,
     None,
   )
-  let container = @layout.FlexContainer::new(@layout.FlowDirection::Row, size)
+  let container = @layout.FlexContainer::new(@layout.FlowDirection::row(), size)
   let layout = unwrap_layout(@layout.layout_flex(container, [first, second]))
   let items = layout.items()
   assert_true(items[0].bounds().size().width() == 35.0)
@@ -92,16 +92,16 @@ test "padding border column alignment and stretch stay platform neutral" {
   let item = @layout.FlexItem::new(
     7,
     unwrap_points(20.0),
-    @layout.Dimension::Auto,
+    @layout.Dimension::auto(),
     intrinsic,
   )
   let container = @layout.FlexContainer::new(
-      @layout.FlowDirection::Column,
+      @layout.FlowDirection::column(),
       size,
     )
     .with_insets(padding, border)
-    .with_align(@layout.AlignItems::Stretch)
-    .with_justify(@layout.JustifyContent::Center)
+    .with_align(@layout.AlignItems::stretch())
+    .with_justify(@layout.JustifyContent::center())
   let layout = unwrap_layout(@layout.layout_flex(container, [item]))
   let content = layout.content_bounds()
   assert_true(content.left() == 11.0)
@@ -120,11 +120,11 @@ test "duplicate ids are rejected before producing layout" {
   let intrinsic = unwrap_size(10.0, 10.0)
   let item = @layout.FlexItem::new(
     9,
-    @layout.Dimension::Auto,
-    @layout.Dimension::Auto,
+    @layout.Dimension::auto(),
+    @layout.Dimension::auto(),
     intrinsic,
   )
-  let container = @layout.FlexContainer::new(@layout.FlowDirection::Row, size)
+  let container = @layout.FlexContainer::new(@layout.FlowDirection::row(), size)
   assert_true(@layout.layout_flex(container, [item, item]) is Err(DuplicateId))
 }
 
