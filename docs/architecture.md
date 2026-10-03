@@ -1,8 +1,8 @@
 # Architecture and dependency contract
 
-Status: M1 package boundaries and the deterministic core are implemented; later UI/platform layers remain planned.
+Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; native renderer/platform layers remain planned.
 
-This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current packages `primitives/`, `diagnostics/`, and `core/`. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
+This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, and `element/`. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
 
 ## Runtime dependency budget
 
@@ -109,4 +109,4 @@ Prefer a narrow C ABI when it keeps platform types out of MoonBit package interf
 
 Every dependency addition must identify whether it is runtime, development-only, or platform-native and list its owning package. The executable package-boundary check fails if test tooling reaches a runtime package or an unreviewed third-party MoonBit package enters the runtime graph. Native library inventories are separate per target. Dependency review must also check version pinning, license notices, and the lockfile/toolchain reproducibility policy.
 
-The module and M1 runtime packages exist. The package-boundary check validates the current graph, including the consumer-only `examples/headless/` package, and fails if example code introduces an unreviewed runtime dependency. Current contract, dependency, format, build, and test commands are listed in [README.md](../README.md).
+The module plus M1 core and M2/M3 headless runtime packages exist. The package-boundary check validates the current graph, including `scene -> primitives`, `element -> core/primitives/layout/scene`, and the consumer-only `examples/headless/` package; it fails if a package introduces an unreviewed runtime dependency. Current contract, dependency, format, build, and test commands are listed in [README.md](../README.md).
