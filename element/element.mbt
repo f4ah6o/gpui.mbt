@@ -139,12 +139,12 @@ pub fn DispatchPlan::target(self : DispatchPlan) -> UInt64? {
 
 ///|
 pub fn DispatchPlan::capture(self : DispatchPlan) -> Array[UInt64] {
-  self.capture
+  copy_ids(self.capture)
 }
 
 ///|
 pub fn DispatchPlan::bubble(self : DispatchPlan) -> Array[UInt64] {
-  self.bubble
+  copy_ids(self.bubble)
 }
 
 ///|
@@ -347,6 +347,15 @@ fn copy_nodes(nodes : Array[ElementNode]) -> Array[ElementNode] {
   let owned : Array[ElementNode] = []
   for node in nodes {
     owned.push(node)
+  }
+  owned
+}
+
+///|
+fn copy_ids(ids : Array[UInt64]) -> Array[UInt64] {
+  let owned : Array[UInt64] = []
+  for id in ids {
+    owned.push(id)
   }
   owned
 }
