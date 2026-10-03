@@ -25,6 +25,20 @@ platform API, GUI backend, native renderer, or platform support claim exists;
 all native E2E, IME, accessibility, multi-DPI, renderer recovery, performance,
 and resource-lifetime gates remain pending.
 
+## Platform-specific child packets
+
+Implementation is split into concrete backend packets so that "native" is
+proven per operating system rather than inferred from MoonBit's native target:
+
+- [0006 — macOS native backend](0006-macos-native-backend.md)
+- [0007 — Ubuntu native backend](0007-ubuntu-native-backend.md)
+- [0008 — Windows native backend](0008-windows-native-backend.md)
+
+Each packet owns its native window/event-loop, rendering surface, input,
+text/IME, accessibility, teardown/recovery, and OS-specific E2E evidence.
+This parent issue continues to own the cross-platform contracts and support-tier
+definitions.
+
 ## Goal
 
 Reach native production quality while keeping the framework core platform-neutral and dependency-light.
