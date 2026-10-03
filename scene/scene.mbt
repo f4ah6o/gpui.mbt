@@ -130,7 +130,7 @@ pub fn CommandSnapshot::canonical_json(self : CommandSnapshot) -> String {
     commands = commands + canonical_command_json(self.commands[index])
     index += 1
   }
-  "{\"schema_version\":\{self.schema_version},\"viewport\":\{viewport},\"scale\":\{canonical_double(self.scale)},\"commands\":[\{commands}]}"
+  "{\"viewport\":\{viewport},\"scale\":\{canonical_double(self.scale)},\"commands\":[\{commands}]}"
 }
 
 ///|
