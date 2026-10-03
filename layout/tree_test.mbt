@@ -36,18 +36,16 @@ test "recursive flex tree produces absolute stable preorder bounds" {
     Ok(value) => value
     Err(_) => abort("valid child style rejected")
   }
-  let branch = @layout.FlexTreeNode::new(tree_item(2, 60.0, 80.0), 1)
-    .with_children(child_style)
+  let branch = @layout.FlexTreeNode::new(tree_item(2, 60.0, 80.0), 1).with_children(
+    child_style,
+  )
   let leaf_a = @layout.FlexTreeNode::new(tree_item(3, 20.0, 30.0), 2)
   let leaf_b = @layout.FlexTreeNode::new(tree_item(4, 20.0, 30.0), 2)
   let sibling = @layout.FlexTreeNode::new(tree_item(5, 30.0, 80.0), 1)
   match
-    @layout.layout_flex_tree(
-      1,
-      tree_size(100.0, 80.0),
-      root_style,
-      [branch, leaf_a, leaf_b, sibling],
-    ) {
+    @layout.layout_flex_tree(1, tree_size(100.0, 80.0), root_style, [
+      branch, leaf_a, leaf_b, sibling,
+    ]) {
     Err(_) => fail("valid recursive tree rejected")
     Ok(result) => {
       assert_true(result.root_id() == 1)
@@ -82,12 +80,9 @@ test "recursive flex tree rejects missing parents and closed subtrees" {
   let sibling = @layout.FlexTreeNode::new(tree_item(3, 10.0, 10.0), 1)
   let late_child = @layout.FlexTreeNode::new(tree_item(4, 5.0, 5.0), 2)
   assert_true(
-    @layout.layout_flex_tree(
-      1,
-      tree_size(100.0, 20.0),
-      style,
-      [branch, sibling, late_child],
-    )
+    @layout.layout_flex_tree(1, tree_size(100.0, 20.0), style, [
+      branch, sibling, late_child,
+    ])
     is Err(InvalidPreorder),
   )
 }
@@ -98,12 +93,7 @@ test "recursive flex tree requires container style for live children" {
   let branch = @layout.FlexTreeNode::new(tree_item(2, 40.0, 20.0), 1)
   let child = @layout.FlexTreeNode::new(tree_item(3, 10.0, 10.0), 2)
   assert_true(
-    @layout.layout_flex_tree(
-      1,
-      tree_size(100.0, 20.0),
-      style,
-      [branch, child],
-    )
+    @layout.layout_flex_tree(1, tree_size(100.0, 20.0), style, [branch, child])
     is Err(MissingContainer),
   )
 }
