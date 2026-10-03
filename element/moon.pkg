@@ -5,6 +5,7 @@ import {
 }
 
 import {
+  "moonbitlang/core/quickcheck",
   "f4ah6o/gpui/element",
   "f4ah6o/gpui/primitives",
   "f4ah6o/gpui/scene",
