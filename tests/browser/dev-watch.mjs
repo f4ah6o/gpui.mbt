@@ -16,7 +16,7 @@ const fixturePath = join(
 );
 const sourceMapPath = join(
   repoRoot,
-  "_build/js/release/build/tests/browser/dev_watch_fixture/dev_watch_fixture.js.map",
+  "_build/js/debug/build/tests/browser/dev_watch_fixture/dev_watch_fixture.js.map",
 );
 const originalSource = readFileSync(fixturePath, "utf8");
 const initialMarker = "watch-v1";
@@ -35,7 +35,7 @@ const initialBuild = spawnSync(
     "tests/browser/dev_watch_fixture",
     "--target",
     "js",
-    "--release",
+    "--debug",
     "--deny-warn",
   ],
   {
