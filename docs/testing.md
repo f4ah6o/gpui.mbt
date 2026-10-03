@@ -11,8 +11,9 @@ geometry/order property, and exact hit-test/dispatch/focus/scene-order tests.
 Recursive auto layout, Render/IntoElement lifecycle, event/focus PBT,
 scene golden fixtures, render/text, mutation testing, and native integration
 tests remain unimplemented. Deterministic callback tests now cover capture/bubble
-execution and stop-propagation, and scene tests cover schema-versioned canonical
-command snapshots including negative-zero normalization. This document
+execution and stop-propagation, and scene tests cover canonical provisional
+`CommandSnapshot` serialization including negative-zero normalization without
+claiming the reserved R0 `SceneSnapshot` version 1 schema. This document
 separates active checks from future budgets. Release status is tracked in
 [release gates](release-gates.json) and the [release policy](release.md).
 
