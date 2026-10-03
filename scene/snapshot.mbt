@@ -190,9 +190,79 @@ pub fn SceneSnapshot::new(
     Err(InvalidScale)
   } else if snapshot_has_duplicate_clip_ids(clip_chains) {
     Err(DuplicateClipChain)
-  } else if !snapshot_items_reference_known_clips(items, clip_chains) {
-    Err(UnknownClipChain)
   } else {
+    match snapshot_validate_items(items, clip_chains) {
+      Err(error) => Err(error)
+      Ok(_) =>
+        Ok({
+          schema_version: SCENE_SNAPSHOT_SCHEMA_VERSION,
+          viewport,
+          scale,
+          resources: copy_snapshot_resources(resources),
+          clip_chains: copy_snapshot_clip_chains(clip_chains),
+          items: copy_snapshot_items(items),
+        })
+    }
+  }
+}
+
+///|
+fn snapshot_validate_items(
+  items : Array[SceneItem],
+  chains : Array[ClipChain],
+) -> Result[Unit, SnapshotError] {
+  let mut failure : SnapshotError? = None
+  let mut item_index = 0
+  while item_index < items.length() && failure is None {
+    match items[item_index] {
+      QuadItem(transform~, opacity~, clip_chain_id~, ..) => {
+        if !snapshot_finite(opacity) || opacity < 0.0 || opacity > 1.0 {
+          failure = Some(InvalidOpacity)
+        } else if !snapshot_transform_finite(transform) {
+          failure = Some(NonFiniteTransform)
+        } else {
+          match clip_chain_id {
+            None => ()
+            Some(id) =>
+              if !snapshot_has_clip_chain(id, chains) {
+                failure = Some(UnknownClipChain)
+              }
+          }
+        }
+      }
+    }
+    item_index += 1
+  }
+  match failure {
+    Some(error) => Err(error)
+    None => Ok(())
+  }
+}
+
+///|
+fn snapshot_transform_finite(transform : AffineTransform) -> Bool {
+  snapshot_finite(transform.a()) &&
+  snapshot_finite(transform.b()) &&
+  snapshot_finite(transform.c()) &&
+  snapshot_finite(transform.d()) &&
+  snapshot_finite(transform.tx()) &&
+  snapshot_finite(transform.ty())
+}
+
+///|
+fn snapshot_has_clip_chain(id : Int, chains : Array[ClipChain]) -> Bool {
+  let mut found = false
+  let mut chain_index = 0
+  while chain_index < chains.length() && !found {
+    if chains[chain_index].id() == id {
+      found = true
+    }
+    chain_index += 1
+  }
+  found
+}
+
+///|
     Ok({
       schema_version: SCENE_SNAPSHOT_SCHEMA_VERSION,
       viewport,
@@ -442,34 +512,6 @@ fn snapshot_has_duplicate_clip_ids(chains : Array[ClipChain]) -> Bool {
 }
 
 ///|
-fn snapshot_items_reference_known_clips(
-  items : Array[SceneItem],
-  chains : Array[ClipChain],
-) -> Bool {
-  let mut valid = true
-  let mut item_index = 0
-  while item_index < items.length() && valid {
-    match items[item_index].clip_chain_id() {
-      None => ()
-      Some(id) => {
-        let mut found = false
-        let mut chain_index = 0
-        while chain_index < chains.length() && !found {
-          if chains[chain_index].id() == id {
-            found = true
-          }
-          chain_index += 1
-        }
-        if !found {
-          valid = false
-        }
-      }
-    }
-    item_index += 1
-  }
-  valid
-}
-
 ///|
 fn copy_snapshot_rects(
   values : Array[@primitives.Rect],
