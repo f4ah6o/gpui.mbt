@@ -378,9 +378,11 @@ recovery, and worker commands unavailable.
 The local build and all-target check/test suites pass. A pinned Chromium smoke
 test covers rendered Canvas 2D output, pointer/focus input, live viewport/DPR
 updates, hidden-page scheduling, context-loss diagnostics, and repeated
-teardown. The smoke runs in GitHub Actions; local Chromium download was
-unavailable in the implementation environment, so browser execution evidence
-is pending that workflow. Build and test instructions are in
+teardown. GitHub Actions run `37132433860` passed the all-target suites and real
+Chromium smoke test and uploaded the Pages artifact. The deployment job is
+restricted to `main`; the first live deployment follows merge and initial Pages
+Actions configuration. Local Chromium was unavailable in the implementation
+environment. Build and test instructions are in
 [`docs/browser-demo.md`](../../docs/browser-demo.md).
 
 This is the first JavaScript proof slice only. This packet remains open for CI

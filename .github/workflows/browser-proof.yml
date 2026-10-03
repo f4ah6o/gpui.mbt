@@ -62,7 +62,7 @@ jobs:
   deploy:
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/browser-backend-poc')
+      github.ref == 'refs/heads/main'
     needs: verify-and-package
     runs-on: ubuntu-latest
     timeout-minutes: 10

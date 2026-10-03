@@ -41,10 +41,10 @@ lockfile). It is not included in the generated browser bundle.
 The CI workflow also runs formatting and MoonBit checks/tests across all
 configured targets, installs Chromium, runs the smoke test, then uploads and
 deploys that same verified static artifact with GitHub Pages Actions. Pushes to
-`feature/browser-backend-poc` publish the initial proof; after merge, pushes to
-`main` publish the maintained version. Pull requests run verification and
-package the artifact but do not deploy. Manual runs deploy only when started
-from `main` or `feature/browser-backend-poc`.
+`feature/browser-backend-poc` and pull requests run verification and package the
+artifact but do not deploy. Pushes to `main` and manual runs started from `main`
+deploy the artifact. The first live deployment follows merge to `main` and the
+initial GitHub Pages Actions configuration.
 
 The headless browser smoke injects a synthetic hidden `Document` state and
 dispatches the browser's `visibilitychange` event to exercise the suspension
@@ -52,7 +52,9 @@ path. It does not claim to validate operating-system tab switching behavior.
 
 For initial repository setup, enable GitHub Pages with **Build and deployment →
 Source: GitHub Actions**. The workflow uses the `github-pages` environment and
-the built-in `GITHUB_TOKEN`; it does not publish a generated branch.
+the built-in `GITHUB_TOKEN`; it does not publish a generated branch. Allow
+`main` in the `github-pages` environment's deployment branch rules; feature
+branch and pull request runs never target that protected environment.
 
 ## Boundaries and current capability report
 
