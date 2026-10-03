@@ -21,20 +21,20 @@ test "property flex line preserves order and finite non-negative geometry" {
           let first = @layout.FlexItem::new(
             1,
             main_a,
-            @layout.Dimension::Auto,
+            @layout.Dimension::auto(),
             intrinsic,
           )
           let second = @layout.FlexItem::new(
             2,
             main_b,
-            @layout.Dimension::Auto,
+            @layout.Dimension::auto(),
             intrinsic,
           )
           match
             (
               first.with_flex(grow_a, 1.0),
               second.with_flex(grow_b, 1.0),
-              @layout.FlexContainer::new(@layout.FlowDirection::Row, size).with_gap(
+              @layout.FlexContainer::new(@layout.FlowDirection::row(), size).with_gap(
                 gap,
               ),
             ) {
