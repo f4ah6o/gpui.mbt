@@ -2,7 +2,9 @@
 
 This document defines the backend contract before native code exists. It is a
 design target for the core/backend conformance suite; it does not claim that any
-platform backend has been implemented or is supported.
+platform backend has been implemented or is supported. A small R0 headless
+scene-command foundation now exists, but it is not yet the complete versioned
+SceneSnapshot described below.
 
 ## Boundary and first backend
 
@@ -147,7 +149,10 @@ these framework categories at the boundary.
 ## Scene and renderer boundary
 
 R0 produces only a versioned, platform-neutral scene snapshot; it does not
-create a native surface or promise raster output. R1 may add a reference
+create a native surface or promise raster output. The current `scene/` package
+is an earlier R0 foundation: stable ordered quad and clip commands plus
+element-to-scene generation. Snapshot schema/versioning, paths, images, text
+runs, transforms, resources, and canonical serialization remain pending. R1 may add a reference
 software raster path for deterministic correctness checks. R2 adds the native
 GPU renderer required by a production backend. R3 covers optimization and
 device-loss recovery while preserving scene-level oracles.

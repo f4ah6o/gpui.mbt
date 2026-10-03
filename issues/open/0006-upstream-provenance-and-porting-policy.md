@@ -119,3 +119,8 @@ Before 1.0 and every major release:
 - verify dependency license inventory for non-runtime tooling separately
 - verify no accidental GPL-derived source entered runtime packages
 - verify README independence statement remains accurate
+
+
+## M2/M3 provenance update — 2026-10-03
+
+The new `element/` and `scene/` foundations were implemented from this repository's documented behavior contracts and existing gpui.mbt value/layout APIs. No upstream GPUI implementation text or fixture was copied for this slice, so `docs/upstream.json` requires no new source-adaptation record. The pinned upstream revision remains the later conformance target.

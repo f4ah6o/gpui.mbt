@@ -1,13 +1,16 @@
 # Testing and quality contracts
 
-Status: M1 core plus an M2 layout partial suite; current headless tests run in CI.
+Status: M1 core plus M2 layout/element and M3 scene foundation tests; current headless tests run in CI.
 
 The current test coverage exercises the headless `primitives` value layer,
-core app/entity/scheduler lifecycle, and the first deterministic `layout` flex-line
-foundation. It includes deterministic value and lifecycle cases, two seeded
-rectangle properties, a seeded entity lifecycle reference-model property, and a
-seeded flex-line geometry/order property. Recursive layout/element, render/text,
-visual goldens, mutation testing, and native integration tests remain unimplemented. This document
+core app/entity/scheduler lifecycle, the deterministic `layout` flex-line
+foundation, the flat `element` tree, and ordered `scene` commands. It includes
+deterministic value and lifecycle cases, two seeded rectangle properties, a
+seeded entity lifecycle reference-model property, a seeded flex-line
+geometry/order property, and exact hit-test/dispatch/focus/scene-order tests.
+Recursive auto layout, Render/IntoElement lifecycle, stop-propagation PBT,
+scene serialization/goldens, render/text, mutation testing, and native
+integration tests remain unimplemented. This document
 separates active checks from future budgets. Release status is tracked in
 [release gates](release-gates.json) and the [release policy](release.md).
 
@@ -166,7 +169,8 @@ lifecycle, large text/layout fixtures, and renderer recovery.
 
 The PR workflow runs the Python contract-validator unit tests, document and
 ledger validation, `moon fmt --check`, and warning-denied all-target MoonBit
-checks and tests. It covers the present M1 packages. It does not run expanded
+checks and tests. It covers the present M1 core and M2/M3 headless foundation
+packages. It does not run expanded
 PBT, turtles, native integration, visual goldens, stress suites, or performance
 baselines, and it cannot satisfy any production release gate. Check the exact
 workflow commands in [`contracts.yml`](../.github/workflows/contracts.yml).

@@ -165,3 +165,10 @@ Implemented the MoonBit `core/` package with opaque logical IDs and handles, App
 Generic mutable `T` aliases remain caller-managed: M1 requires immutable or copy-on-write payload discipline and does not claim deep-copy ownership. There is no window, rendering, native backend, or GPUI parity claim. M2 through M7 remain future milestones; this incremental delivery does not complete the long-term charter or change this issue's design-only status.
 
 Validation: `moon fmt --check`, `moon check --deny-warn --target all`, `moon test --deny-warn --target all` (30/30 each on wasm, wasm-gc, js, and native), `python3 scripts/check_contracts.py`, and `python3 -m unittest discover -s tests` (20 tests) all pass.
+
+
+## M2/M3 foundation update — 2026-10-03
+
+The next headless slice now exists in `layout/`, `element/`, and `scene/`. M2 has deterministic flex-line layout plus a flat pre-order element tree with ID/parent validation, reverse-paint hit testing, root-to-target capture routes, target-to-root bubble routes, focusability/focus state, and deterministic background-quad scene generation. M3 has an ordered platform-neutral scene-command foundation for quads and clip push/pop commands.
+
+This does not complete M2 or M3: Render/IntoElement/request-layout/prepaint/paint lifecycle, stop-propagation callbacks, recursive auto layout, stable scene serialization, paths/images/text/transforms, and renderer contracts remain open. Compatibility rows stay `planned` until comparison with the pinned GPUI revision exists.

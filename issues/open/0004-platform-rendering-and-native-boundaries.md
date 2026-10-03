@@ -244,3 +244,8 @@ Semantic contracts must match:
 - action dispatch
 
 Pixel goldens are platform-specific unless a deterministic common raster backend is used.
+
+
+## R0 foundation update — 2026-10-03
+
+A platform-neutral `scene/` package now provides the first R0 implementation slice: stable ordered quad and clip commands with no native/GPU handles, and `element/` can emit background quads deterministically. This is intentionally smaller than the contracted versioned SceneSnapshot: resources, transforms, paths, images, text runs, canonical serialization, renderer API, rasterization, GPU surfaces, and every native backend remain pending. No platform support tier changes.

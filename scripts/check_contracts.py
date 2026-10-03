@@ -634,9 +634,18 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "diagnostics": {"primitives"},
         "core": {"primitives", "diagnostics"},
         "layout": {"primitives"},
+        "scene": {"primitives"},
+        "element": {"core", "primitives", "layout", "scene"},
         "examples/headless": {"core", "diagnostics", "primitives"},
     }
-    required_runtime_packages = {"primitives", "diagnostics", "core", "layout"}
+    required_runtime_packages = {
+        "primitives",
+        "diagnostics",
+        "core",
+        "layout",
+        "scene",
+        "element",
+    }
     errors: list[str] = []
     module_prefix = module_name + "/"
 
@@ -664,7 +673,7 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
             continue
 
         if package not in allowed_internal_edges:
-            errors.append(f"{package or '.'}: runtime package has no approved M1 dependency layer")
+            errors.append(f"{package or '.'}: runtime package has no approved dependency layer")
             continue
         found_runtime_packages.add(package)
         for imported in test_imports:
