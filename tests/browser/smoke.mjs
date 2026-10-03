@@ -149,6 +149,28 @@ try {
   await page.mouse.click(canvasBounds.x + targetPoint.x, canvasBounds.y + targetPoint.y);
   await page.waitForFunction(() => Number(document.querySelector("#activation-count")?.textContent) >= 2);
 
+  // pointercancel is stream cancellation, not a button transition. Browsers may
+  // report button === -1, so the host must release tracked buttons without
+  // forwarding that sentinel value into the framework.
+  await canvas.evaluate((element, point) => {
+    const bounds = element.getBoundingClientRect();
+    const common = {
+      bubbles: true,
+      pointerId: 41,
+      pointerType: "touch",
+      isPrimary: true,
+      clientX: bounds.left + point.x,
+      clientY: bounds.top + point.y,
+    };
+    element.dispatchEvent(new PointerEvent("pointerdown", { ...common, button: 0, buttons: 1 }));
+    element.dispatchEvent(new PointerEvent("pointercancel", { ...common, button: -1, buttons: 0 }));
+  }, targetPoint);
+  await page.waitForFunction(() => document.querySelector("#frame-state")?.textContent === "RUNNING");
+  assert.ok(
+    !((await page.locator("#diagnostic-code").textContent()) || "").startsWith("invalid_input"),
+    "pointer cancellation must not surface event.button === -1 as invalid input",
+  );
+
   // Resize CSS layout, then change DPR live through Chromium's emulation boundary.
   await page.setViewportSize({ width: 1200, height: 880 });
   await waitForCoherentViewport(1.5);
