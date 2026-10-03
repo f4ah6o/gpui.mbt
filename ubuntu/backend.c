@@ -426,33 +426,38 @@ static void global_remove(void *d, struct wl_registry *r, uint32_t name) {
 }
 static const struct wl_registry_listener registry_listener = {
     .global = global, .global_remove = global_remove};
-static void release_gpu(struct host *h) {
-  if (h->egl != EGL_NO_DISPLAY) {
-    if (h->context != EGL_NO_CONTEXT && h->egl_surface != EGL_NO_SURFACE &&
-        eglMakeCurrent(h->egl, h->egl_surface, h->egl_surface, h->context) &&
-        h->program)
-      glDeleteProgram(h->program);
+static void release_window_gpu(struct host *h) {
+  if (h->egl != EGL_NO_DISPLAY)
     eglMakeCurrent(h->egl, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-    if (h->egl_surface != EGL_NO_SURFACE)
-      eglDestroySurface(h->egl, h->egl_surface);
-    if (h->context != EGL_NO_CONTEXT)
-      eglDestroyContext(h->egl, h->context);
-    eglTerminate(h->egl);
-  }
+  if (h->egl != EGL_NO_DISPLAY && h->egl_surface != EGL_NO_SURFACE)
+    eglDestroySurface(h->egl, h->egl_surface);
   if (h->egl_window)
     wl_egl_window_destroy(h->egl_window);
   h->egl_window = NULL;
-  h->egl = EGL_NO_DISPLAY;
-  h->context = EGL_NO_CONTEXT;
   h->egl_surface = EGL_NO_SURFACE;
-  h->program = 0;
 }
+static void release_renderer(struct host *h, int terminate_display) {
+  release_window_gpu(h);
+  if (h->egl != EGL_NO_DISPLAY && h->context != EGL_NO_CONTEXT)
+    eglDestroyContext(h->egl, h->context);
+  h->context = EGL_NO_CONTEXT;
+  h->program = 0;
+  h->color_uniform = -1;
+  if (terminate_display && h->egl != EGL_NO_DISPLAY) {
+    eglTerminate(h->egl);
+    h->egl = EGL_NO_DISPLAY;
+    h->config = NULL;
+  }
+}
+/* Renderer recovery resets context/surface state but keeps the EGLDisplay tied
+ * to the externally owned wl_display alive for the host lifetime. */
+static void release_gpu(struct host *h) { release_renderer(h, 0); }
 static void release_window(struct host *h) {
   if (h->frame) {
     wl_callback_destroy(h->frame);
     h->frame = NULL;
   }
-  release_gpu(h);
+  release_window_gpu(h);
   if (h->toplevel)
     xdg_toplevel_destroy(h->toplevel);
   if (h->xdg)
@@ -469,6 +474,7 @@ static void release_window(struct host *h) {
 }
 static void release_host(struct host *h) {
   release_window(h);
+  release_renderer(h, 1);
   if (h->pointer)
     wl_pointer_destroy(h->pointer);
   if (h->keyboard)
@@ -603,65 +609,81 @@ static GLuint shader(GLenum type, const char *src) {
   return sh;
 }
 static int create_gpu(struct host *h) {
+  if (h->egl == EGL_NO_DISPLAY) {
+    PFNEGLGETPLATFORMDISPLAYEXTPROC get_display =
+        (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress(
+            "eglGetPlatformDisplayEXT");
+    h->egl =
+        get_display ? get_display(EGL_PLATFORM_WAYLAND_EXT, h->display, NULL)
+                    : EGL_NO_DISPLAY;
+    if (h->egl == EGL_NO_DISPLAY || !eglInitialize(h->egl, NULL, NULL) ||
+        !eglBindAPI(EGL_OPENGL_ES_API)) {
+      release_renderer(h, 1);
+      return GPUI_DEVICE_LOST;
+    }
+    const EGLint attrs[] = {EGL_SURFACE_TYPE,
+                            EGL_WINDOW_BIT,
+                            EGL_RENDERABLE_TYPE,
+                            EGL_OPENGL_ES2_BIT,
+                            EGL_RED_SIZE,
+                            8,
+                            EGL_GREEN_SIZE,
+                            8,
+                            EGL_BLUE_SIZE,
+                            8,
+                            EGL_ALPHA_SIZE,
+                            8,
+                            EGL_NONE};
+    EGLint n;
+    if (!eglChooseConfig(h->egl, attrs, &h->config, 1, &n) || !n) {
+      release_renderer(h, 1);
+      return GPUI_DEVICE_LOST;
+    }
+  }
   h->egl_window = wl_egl_window_create(h->surface, h->width * h->scale,
                                        h->height * h->scale);
   if (!h->egl_window)
     return GPUI_RESOURCE;
-  PFNEGLGETPLATFORMDISPLAYEXTPROC get_display =
-      (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress(
-          "eglGetPlatformDisplayEXT");
-  h->egl = get_display ? get_display(EGL_PLATFORM_WAYLAND_EXT, h->display, NULL)
-                       : EGL_NO_DISPLAY;
-  if (h->egl == EGL_NO_DISPLAY || !eglInitialize(h->egl, NULL, NULL) ||
-      !eglBindAPI(EGL_OPENGL_ES_API))
-    return GPUI_DEVICE_LOST;
-  const EGLint attrs[] = {EGL_SURFACE_TYPE,
-                          EGL_WINDOW_BIT,
-                          EGL_RENDERABLE_TYPE,
-                          EGL_OPENGL_ES2_BIT,
-                          EGL_RED_SIZE,
-                          8,
-                          EGL_GREEN_SIZE,
-                          8,
-                          EGL_BLUE_SIZE,
-                          8,
-                          EGL_ALPHA_SIZE,
-                          8,
-                          EGL_NONE};
-  EGLint n;
-  if (!eglChooseConfig(h->egl, attrs, &h->config, 1, &n) || !n)
-    return GPUI_DEVICE_LOST;
-  const EGLint ctx[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
-  h->context = eglCreateContext(h->egl, h->config, EGL_NO_CONTEXT, ctx);
+  if (h->context == EGL_NO_CONTEXT) {
+    const EGLint ctx[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+    h->context = eglCreateContext(h->egl, h->config, EGL_NO_CONTEXT, ctx);
+    if (h->context == EGL_NO_CONTEXT)
+      return GPUI_DEVICE_LOST;
+  }
   h->egl_surface = eglCreateWindowSurface(
       h->egl, h->config, (EGLNativeWindowType)h->egl_window, NULL);
-  if (h->context == EGL_NO_CONTEXT || h->egl_surface == EGL_NO_SURFACE ||
+  if (h->egl_surface == EGL_NO_SURFACE ||
       !eglMakeCurrent(h->egl, h->egl_surface, h->egl_surface, h->context))
     return GPUI_SURFACE_LOST;
-  GLuint v =
-      shader(GL_VERTEX_SHADER,
-             "attribute vec2 pos; void main(){gl_Position=vec4(pos,0.,1.);}");
-  GLuint f =
-      shader(GL_FRAGMENT_SHADER, "precision mediump float; uniform vec4 color; "
-                                 "void main(){gl_FragColor=color;}");
-  if (!v || !f) {
-    if (v)
-      glDeleteShader(v);
-    if (f)
-      glDeleteShader(f);
-    return GPUI_DEVICE_LOST;
+  if (!h->program) {
+    GLuint v =
+        shader(GL_VERTEX_SHADER,
+               "attribute vec2 pos; void main(){gl_Position=vec4(pos,0.,1.);}");
+    GLuint f = shader(
+        GL_FRAGMENT_SHADER,
+        "precision mediump float; uniform vec4 color; "
+        "void main(){gl_FragColor=color;}");
+    if (!v || !f) {
+      if (v)
+        glDeleteShader(v);
+      if (f)
+        glDeleteShader(f);
+      return GPUI_DEVICE_LOST;
+    }
+    h->program = glCreateProgram();
+    glAttachShader(h->program, v);
+    glAttachShader(h->program, f);
+    glBindAttribLocation(h->program, 0, "pos");
+    glLinkProgram(h->program);
+    glDeleteShader(v);
+    glDeleteShader(f);
+    GLint ok;
+    glGetProgramiv(h->program, GL_LINK_STATUS, &ok);
+    if (!ok)
+      return GPUI_DEVICE_LOST;
+    h->color_uniform = glGetUniformLocation(h->program, "color");
   }
-  h->program = glCreateProgram();
-  glAttachShader(h->program, v);
-  glAttachShader(h->program, f);
-  glBindAttribLocation(h->program, 0, "pos");
-  glLinkProgram(h->program);
-  glDeleteShader(v);
-  glDeleteShader(f);
-  GLint ok;
-  glGetProgramiv(h->program, GL_LINK_STATUS, &ok);
-  h->color_uniform = glGetUniformLocation(h->program, "color");
-  return ok ? GPUI_OK : GPUI_DEVICE_LOST;
+  return GPUI_OK;
 }
 static int32_t start_impl(int32_t abi) {
   if (abi != GPUI_UBUNTU_ABI)

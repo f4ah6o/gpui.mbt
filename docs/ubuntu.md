@@ -51,6 +51,10 @@ backend is not a native macOS/Windows build target.
 - xdg toplevel configure/ack, UTF-8 titles, client logical size updates, close
   requests, and surface-before-window teardown. Wayland compositors control
   maximized/fullscreen dimensions; `set_size` does not force compositor policy.
+- The EGLDisplay associated with the externally owned Wayland display is kept
+  initialized for the host lifetime. Window destruction releases only the
+  per-window EGLSurface/wl_egl_window; explicit renderer recovery recreates the
+  context/surface without repeatedly terminating the shared EGLDisplay.
 - SceneSnapshot v1 quads, affine transforms, opacity, paint order, and intersected
   rectangle clips in logical viewport coordinates. Resources and nonzero
   viewport origins return `UnsupportedCapability`; text/path/image rendering is
