@@ -225,3 +225,8 @@ The M0 architecture and dependency contracts are in [docs/architecture.md](../..
 The deterministic `core/` scheduler is synchronous and headless: zero-delay work enters the FIFO at submission, timers use a manual monotonic clock, and cancellation is cooperative for running callbacks. No GPU, window, native FFI, or external runtime dependency is present in M1. Platform-specific dependency/license inventories, native boundary records, M2+ package edges, and release-candidate transitive audits remain future work. This increment does not complete the long-term policy packet or change its design-only status.
 
 Validation: `moon fmt --check`, `moon check --deny-warn --target all`, `moon test --deny-warn --target all` (30/30 each on wasm, wasm-gc, js, and native), `python3 scripts/check_contracts.py`, and `python3 -m unittest discover -s tests` (20 tests) all pass.
+
+
+## M2/M3 dependency update — 2026-10-03
+
+The executable dependency policy now recognizes `scene -> primitives` and `element -> core/primitives/layout/scene` in addition to the existing layers. `scripts/check_contracts.py` requires both new runtime packages and rejects unapproved internal or third-party runtime edges; its Python tests cover these boundaries. The new packages use repository-owned MoonBit code only and add no production runtime dependency.
