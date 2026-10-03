@@ -107,3 +107,30 @@ test "scene snapshot v1 rejects invalid command scale and clip structure" {
   let empty = @scene.Scene::empty()
   assert_true(empty.snapshot_v1(viewport, 0.0) is Err(InvalidScale))
 }
+
+
+///|
+test "scene snapshot v1 reuses identical active clip chains" {
+  let viewport = snapshot_rect(0.0, 0.0, 100.0, 50.0)
+  let clip = snapshot_rect(0.0, 0.0, 80.0, 40.0)
+  let first = snapshot_rect(1.0, 2.0, 3.0, 4.0)
+  let second = snapshot_rect(5.0, 6.0, 7.0, 8.0)
+  let color = snapshot_color(10, 20, 30)
+  let scene = @scene.Scene::new([
+    @scene.PaintCommand::clip_push(9, clip),
+    @scene.PaintCommand::quad(7, first, color),
+    @scene.PaintCommand::quad(8, second, color),
+    @scene.PaintCommand::clip_pop(9),
+  ])
+  match scene.snapshot_v1(viewport, 1.0) {
+    Err(_) => fail("valid v1 scene snapshot rejected")
+    Ok(snapshot) => {
+      let chains = snapshot.clip_chains()
+      let items = snapshot.items()
+      assert_eq(chains.length(), 1)
+      assert_eq(items.length(), 2)
+      assert_true(items[0].clip_chain_id() == Some(0))
+      assert_true(items[1].clip_chain_id() == Some(0))
+    }
+  }
+}
