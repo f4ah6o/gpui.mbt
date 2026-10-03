@@ -196,3 +196,25 @@ This does not complete the packet. Render/IntoElement lifecycle, recursive auto
 layout, the reserved `SceneSnapshot` v1 resource/clip-chain/item schema,
 mutation baselines, visual/native evidence, renderer/backend work, and later
 production gates remain open.
+
+
+## Recursive layout and SceneSnapshot v1 subset update — 2026-10-03
+
+M2 now has a bounded recursive flex-tree layer over the existing flex-line
+engine. It validates stable preorder/parent structure, recursively lays out
+nested containers from a definite root, produces absolute descendant bounds,
+propagates overflow, and has deterministic plus seeded QuickCheck coverage.
+Intrinsic auto dimensions work through the existing `FlexItem` contract;
+auto container sizing from descendant content remains pending.
+
+M3 now has a versioned `SceneSnapshot` envelope with `schema_version: 1`,
+logical viewport/scale, resource and rectangle clip-chain tables, ordered quad
+items, finite affine transform/opacity fields, deterministic clip-chain reuse,
+and canonical serialization. This is a v1 subset, not completion of the full
+contract: quad borders/corners, path clips, paths, images, text runs/resources,
+and renderer integration remain open.
+
+`Render`/`IntoElement` and request-layout/prepaint/paint remain intentionally
+unfixed because their MoonBit API shape is still undecided. Native platform,
+text, accessibility, renderer, mutation/visual evidence, and production gates
+also remain open, so this issue stays in `issues/open`.
