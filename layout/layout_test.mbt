@@ -4,10 +4,10 @@ test "dimension resolution rejects indefinite percentages" {
     Ok(value) => value
     Err(_) => fail("valid percentage was rejected")
   }
-  assert_true(@layout.resolve_dimension(half, None) is Err(IndefinitePercentage))
   assert_true(
-    @layout.resolve_dimension(half, Some(80.0)) is Ok(Some(40.0)),
+    @layout.resolve_dimension(half, None) is Err(IndefinitePercentage),
   )
+  assert_true(@layout.resolve_dimension(half, Some(80.0)) is Ok(Some(40.0)))
   assert_true(@layout.Dimension::points(-1.0) is Err(NegativeValue))
 }
 
@@ -96,9 +96,9 @@ test "padding border column alignment and stretch stay platform neutral" {
     intrinsic,
   )
   let container = @layout.FlexContainer::new(
-    @layout.FlowDirection::Column,
-    size,
-  )
+      @layout.FlowDirection::Column,
+      size,
+    )
     .with_insets(padding, border)
     .with_align(@layout.AlignItems::Stretch)
     .with_justify(@layout.JustifyContent::Center)
