@@ -34,6 +34,19 @@ browser smoke/E2E evidence.
 Use MoonBit standard/core plus narrow repository-owned browser FFI. Do not add a
 third-party JavaScript UI/runtime framework merely to host gpui.mbt.
 
+## Browser development toolchain
+
+Standardize browser development and packaging on Vite+ through the `vp` CLI,
+with `vite-plugin-moonbit` as the MoonBit/Vite integration. This is a tooling
+choice only: it must not introduce a JavaScript UI/runtime framework or move
+portable gpui.mbt semantics into Vite.
+
+The current manual `moon build` + static-file copy proof remains transitional
+until the Vite+ path reproduces the existing production-build Chromium smoke and
+GitHub Pages artifact. The migration, dependency/CI policy, source-map
+requirements, and removal gates are tracked in
+[0010-browser-vite-plus-toolchain.md](0010-browser-vite-plus-toolchain.md).
+
 ## Browser host model
 
 A gpui.mbt `WindowId` is a logical framework window. For the first browser
