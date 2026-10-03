@@ -179,3 +179,20 @@ This does not complete M2 or M3: Render/IntoElement/request-layout/prepaint/pain
 The headless element foundation now executes capture and bubble callbacks, records the callbacks that actually ran, propagates callback errors, and supports shared stop-propagation state. The scene foundation now freezes ordered commands into an unversioned provisional `CommandSnapshot` carrying logical viewport and validated positive scale metadata, with deterministic compact serialization and negative-zero normalization.
 
 This still does not complete M2 or M3. Render/IntoElement/request-layout/prepaint/paint lifecycle, recursive auto layout, the reserved `SceneSnapshot` v1 envelope with full R0 resource/clip-chain/item tables, paths/images/text/transforms, renderer contracts, and native rendering remain open.
+
+
+## Event/focus and clip invariant update — 2026-10-03
+
+The next headless correctness slice is implemented. M2 now has immutable
+`ElementTree::without_subtree`, which removes a complete subtree and clears
+focus when the focused node is removed, plus seeded QuickCheck properties for
+capture/bubble route reversal, global stop-propagation, and live focus after
+subtree removal. M3 now validates clip pushes/pops as a strict LIFO stack and
+rejects underflow, ID mismatch, and unclosed clips before a provisional
+`CommandSnapshot` is emitted; a seeded clip-stack property accompanies the
+deterministic cases.
+
+This does not complete the packet. Render/IntoElement lifecycle, recursive auto
+layout, the reserved `SceneSnapshot` v1 resource/clip-chain/item schema,
+mutation baselines, visual/native evidence, renderer/backend work, and later
+production gates remain open.
