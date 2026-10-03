@@ -1,12 +1,13 @@
 # Testing and quality contracts
 
-Status: M1 partial suite; the current headless primitives tests run in CI.
+Status: M1 core plus an M2 layout partial suite; current headless tests run in CI.
 
-The current M1 test coverage exercises the headless `primitives` value layer
-and core app/entity/scheduler lifecycle. It includes deterministic value and
-lifecycle cases, two seeded rectangle properties, and a seeded entity lifecycle
-reference-model property. Layout/render/text suites, visual goldens, mutation
-testing, and native integration tests remain unimplemented. This document
+The current test coverage exercises the headless `primitives` value layer,
+core app/entity/scheduler lifecycle, and the first deterministic `layout` flex-line
+foundation. It includes deterministic value and lifecycle cases, two seeded
+rectangle properties, a seeded entity lifecycle reference-model property, and a
+seeded flex-line geometry/order property. Recursive layout/element, render/text,
+visual goldens, mutation testing, and native integration tests remain unimplemented. This document
 separates active checks from future budgets. Release status is tracked in
 [release gates](release-gates.json) and the [release policy](release.md).
 
