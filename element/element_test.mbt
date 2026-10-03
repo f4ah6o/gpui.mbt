@@ -246,7 +246,6 @@ test "stop propagation prevents later capture and all bubble callbacks" {
   assert_true(visited[1] == 2)
 }
 
-
 ///|
 test "subtree removal preserves preorder and normalizes focus" {
   let bounds = element_rect(0.0, 0.0, 20.0, 20.0)
