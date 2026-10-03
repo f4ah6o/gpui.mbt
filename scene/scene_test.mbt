@@ -75,6 +75,7 @@ test "command snapshot validates scale and owns commands" {
   let bounds = scene_rect(1.0, 2.0, 3.0, 4.0)
   let color = scene_color(10, 20, 30)
   let scene = @scene.Scene::new([
+    @scene.PaintCommand::clip_push(9, bounds),
     @scene.PaintCommand::quad(7, bounds, color),
     @scene.PaintCommand::clip_pop(9),
   ])
@@ -86,9 +87,9 @@ test "command snapshot validates scale and owns commands" {
       assert_true(snapshot.viewport() == viewport)
       assert_true(snapshot.scale() == 2.0)
       let commands = snapshot.commands()
-      assert_eq(commands.length(), 2)
+      assert_eq(commands.length(), 3)
       commands.push(@scene.PaintCommand::clip_pop(100))
-      assert_eq(snapshot.commands().length(), 2)
+      assert_eq(snapshot.commands().length(), 3)
     }
   }
 }
@@ -99,10 +100,12 @@ test "command snapshot canonical json is stable and normalizes negative zero" {
   let bounds = scene_rect(1.0, 2.0, 3.0, 4.0)
   let color = scene_color(10, 20, 30)
   let first = @scene.Scene::new([
+    @scene.PaintCommand::clip_push(9, bounds),
     @scene.PaintCommand::quad(7, bounds, color),
     @scene.PaintCommand::clip_pop(9),
   ])
   let second = @scene.Scene::new([
+    @scene.PaintCommand::clip_push(9, bounds),
     @scene.PaintCommand::quad(7, bounds, color),
     @scene.PaintCommand::clip_pop(9),
   ])
@@ -115,7 +118,7 @@ test "command snapshot canonical json is stable and normalizes negative zero" {
       assert_eq(left.canonical_json(), right.canonical_json())
       assert_eq(
         left.canonical_json(),
-        "{\"viewport\":{\"x\":0,\"y\":0,\"width\":100,\"height\":50},\"scale\":2,\"commands\":[{\"kind\":\"quad\",\"id\":7,\"bounds\":{\"x\":1,\"y\":2,\"width\":3,\"height\":4},\"color\":{\"red\":10,\"green\":20,\"blue\":30,\"alpha\":255}},{\"kind\":\"clip_pop\",\"id\":9}]}",
+        "{\"viewport\":{\"x\":0,\"y\":0,\"width\":100,\"height\":50},\"scale\":2,\"commands\":[{\"kind\":\"clip_push\",\"id\":9,\"bounds\":{\"x\":1,\"y\":2,\"width\":3,\"height\":4}},{\"kind\":\"quad\",\"id\":7,\"bounds\":{\"x\":1,\"y\":2,\"width\":3,\"height\":4},\"color\":{\"red\":10,\"green\":20,\"blue\":30,\"alpha\":255}},{\"kind\":\"clip_pop\",\"id\":9}]}",
       )
     }
     _ => fail("valid snapshot rejected")
