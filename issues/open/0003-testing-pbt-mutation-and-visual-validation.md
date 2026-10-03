@@ -237,7 +237,7 @@ A red gate must be diagnosable without reproducing locally first.
 
 Model: gpt-6-luna
 Updated: 2026-10-03
-Status remains: design only
+Status: design with partial M1/M2 implementation evidence
 
 The initial M1 quality path is now concrete: [docs/testing.md](../../docs/testing.md)
 records active versus planned coverage, exact geometry property seeds and PR
@@ -256,7 +256,9 @@ while reporting the release ledger as pending. `--require-ready` exits 2 as
 required while production evidence is absent. `moon fmt --check`, `moon check
 --target all --deny-warn`, and `moon test --target all --deny-warn` all pass;
 the full MoonBit suite passes 29 tests on each of wasm, wasm-gc, js, and native.
-The active geometry package contributes 9 deterministic/property tests, and
-the lifecycle model is included in the all-target suite. Layout/render/text,
-mutation, visual, native integration, stress, and performance suites remain
-open, so this issue remains design-only.
+The active geometry package contributes deterministic/property tests, the
+lifecycle model is included in the all-target suite, and `layout/` now adds
+deterministic flex-line cases plus a fixed-seed QuickCheck property. The current
+suite passes 36/36 tests on wasm, wasm-gc, js, and native. Recursive layout and
+element-tree properties, render/text, mutation, visual, native integration,
+stress, and performance suites remain open, so this packet is still incomplete.
