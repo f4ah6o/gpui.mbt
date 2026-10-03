@@ -53,3 +53,19 @@ test "scene preserves deterministic paint order and command data" {
   assert_true(scene.command_at(-1) is None)
   assert_true(scene.command_at(4) is None)
 }
+
+
+///|
+test "scene owns its command storage" {
+  let bounds = scene_rect(0.0, 0.0, 10.0, 10.0)
+  let color = scene_color(1, 2, 3)
+  let commands : Array[@scene.PaintCommand] = [
+    @scene.PaintCommand::quad(1, bounds, color),
+  ]
+  let scene = @scene.Scene::new(commands)
+  commands.push(@scene.PaintCommand::clip_pop(99))
+  assert_eq(scene.command_count(), 1)
+  let exposed = scene.commands()
+  exposed.push(@scene.PaintCommand::clip_pop(100))
+  assert_eq(scene.command_count(), 1)
+}
