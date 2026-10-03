@@ -150,9 +150,11 @@ these framework categories at the boundary.
 
 R0 produces only a versioned, platform-neutral scene snapshot; it does not
 create a native surface or promise raster output. The current `scene/` package
-is an earlier R0 foundation: stable ordered quad and clip commands plus
-element-to-scene generation. Snapshot schema/versioning, paths, images, text
-runs, transforms, resources, and canonical serialization remain pending. R1 may add a reference
+implements an R0 command-snapshot foundation: stable ordered quad and clip
+commands, element-to-scene generation, schema version 1 viewport/scale metadata,
+and canonical compact serialization with negative-zero normalization. The full
+resource/clip-chain/item schema below, paths, images, text runs, transforms, and
+renderer-facing resources remain pending. R1 may add a reference
 software raster path for deterministic correctness checks. R2 adds the native
 GPU renderer required by a production backend. R3 covers optimization and
 device-loss recovery while preserving scene-level oracles.
