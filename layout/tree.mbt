@@ -267,8 +267,8 @@ fn layout_tree_children(
             let mut index = 0
             while index < direct_nodes.length() && failure is None {
               let node = direct_nodes[index]
-              let local = local_boxes[index]
-              let local_bounds = local.bounds()
+              let child_box = local_boxes[index]
+              let local_bounds = child_box.bounds()
               match
                 @primitives.Rect::new(
                   parent_bounds.left() + local_bounds.left(),
@@ -278,13 +278,13 @@ fn layout_tree_children(
                 ) {
                 Err(_) => failure = Some(GeometryFailure)
                 Ok(bounds) => {
-                  if local.overflow() {
+                  if child_box.overflow() {
                     overflow.val = true
                   }
                   output.push({
                     id: node.id(),
                     bounds,
-                    overflow: local.overflow(),
+                    overflow: child_box.overflow(),
                   })
                   let has_children = tree_has_direct_children(node.id(), nodes)
                   if has_children {
