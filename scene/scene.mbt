@@ -205,12 +205,7 @@ pub fn Scene::validate(self : Scene) -> Result[Unit, SceneError] {
   }
   match failure {
     Some(error) => Err(error)
-    None =>
-      if depth == 0 {
-        Ok(())
-      } else {
-        Err(UnclosedClip)
-      }
+    None => if depth == 0 { Ok(()) } else { Err(UnclosedClip) }
   }
 }
 
