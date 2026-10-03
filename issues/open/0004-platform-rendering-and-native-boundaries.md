@@ -249,3 +249,8 @@ Pixel goldens are platform-specific unless a deterministic common raster backend
 ## R0 foundation update — 2026-10-03
 
 A platform-neutral `scene/` package now provides the first R0 implementation slice: stable ordered quad and clip commands with no native/GPU handles, and `element/` can emit background quads deterministically. This is intentionally smaller than the contracted versioned SceneSnapshot: resources, transforms, paths, images, text runs, canonical serialization, renderer API, rasterization, GPU surfaces, and every native backend remain pending. No platform support tier changes.
+
+
+## R0 command snapshot update — 2026-10-03
+
+`scene/` now exposes a schema-versioned command snapshot with logical viewport, finite positive scale validation, owned ordered commands, and canonical compact serialization. This is deliberately a command-snapshot foundation rather than the full contracted R0 `SceneSnapshot`: resource tables, clip-chain tables, flat rich `SceneItem` data, transforms, paths, images, text runs, and renderer/native surfaces remain pending. No platform support tier changes.
