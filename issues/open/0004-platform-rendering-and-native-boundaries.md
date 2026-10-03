@@ -253,4 +253,4 @@ A platform-neutral `scene/` package now provides the first R0 implementation sli
 
 ## R0 command snapshot update — 2026-10-03
 
-`scene/` now exposes a schema-versioned command snapshot with logical viewport, finite positive scale validation, owned ordered commands, and canonical compact serialization. This is deliberately a command-snapshot foundation rather than the full contracted R0 `SceneSnapshot`: resource tables, clip-chain tables, flat rich `SceneItem` data, transforms, paths, images, text runs, and renderer/native surfaces remain pending. No platform support tier changes.
+`scene/` now exposes an unversioned provisional `CommandSnapshot` with logical viewport, finite positive scale validation, owned ordered commands, and canonical compact serialization. It is deliberately distinct from and does not consume the full contracted R0 `SceneSnapshot` schema version 1: resource tables, clip-chain tables, flat rich `SceneItem` data, transforms, paths, images, text runs, and renderer/native surfaces remain pending. No platform support tier changes.
