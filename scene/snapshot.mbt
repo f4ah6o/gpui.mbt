@@ -215,7 +215,7 @@ fn snapshot_validate_items(
   let mut item_index = 0
   while item_index < items.length() && failure is None {
     match items[item_index] {
-      QuadItem(transform~, opacity~, clip_chain_id~, ..) => {
+      QuadItem(transform~, opacity~, clip_chain_id~, ..) =>
         if !snapshot_finite(opacity) || opacity < 0.0 || opacity > 1.0 {
           failure = Some(InvalidOpacity)
         } else if !snapshot_transform_finite(transform) {
@@ -229,7 +229,6 @@ fn snapshot_validate_items(
               }
           }
         }
-      }
     }
     item_index += 1
   }
@@ -512,6 +511,7 @@ fn snapshot_has_duplicate_clip_ids(chains : Array[ClipChain]) -> Bool {
 }
 
 ///|
+
 ///|
 fn copy_snapshot_rects(
   values : Array[@primitives.Rect],
