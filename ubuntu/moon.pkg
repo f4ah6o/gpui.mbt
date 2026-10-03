@@ -1,0 +1,27 @@
+import {
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/scene",
+  "moonbitlang/core/encoding/utf8",
+}
+
+supported_targets = "native"
+
+import {
+  "moonbitlang/core/env",
+  "f4ah6o/gpui/testing/backend" @conformance,
+} for "wbtest"
+
+options(
+  "native-stub": [ "backend.c", "xdg-shell-protocol.c" ],
+  link: {
+    "native": {
+      "cc": "cc",
+      "cc-flags": "-O2",
+      "cc-link-flags": "-lwayland-client -lwayland-egl -lEGL -lGLESv2 -lxkbcommon -lpthread -lm",
+      "stub-cc": "cc",
+      "stub-cc-flags": "-std=c11 -Wall -Wextra",
+    },
+  },
+)

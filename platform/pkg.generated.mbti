@@ -1,0 +1,65 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/platform"
+
+import {
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/scene",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct Event {
+  window : WindowId
+  sequence : Int
+  scale : Double
+  kind : EventKind
+}
+pub fn Event::kind(Self) -> EventKind
+pub fn Event::new(WindowId, Int, Double, EventKind) -> Self
+pub fn Event::scale(Self) -> Double
+pub fn Event::sequence(Self) -> Int
+pub fn Event::window(Self) -> WindowId
+
+pub(all) enum EventKind {
+  Configured(width~ : Int, height~ : Int)
+  ScaleChanged
+  CloseRequested
+  Destroyed
+  FrameCompleted
+  FocusChanged(focused~ : Bool)
+  Input(@primitives.InputEvent)
+}
+
+pub(all) enum HostState {
+  Running
+  Quiescing
+  Stopped
+} derive(Eq)
+pub fn HostState::equal(Self, Self) -> Bool
+pub fn HostState::not_equal(Self, Self) -> Bool
+
+pub struct WindowId {
+  value : Int
+} derive(Eq)
+pub fn WindowId::equal(Self, Self) -> Bool
+pub fn WindowId::new(Int) -> Self
+pub fn WindowId::not_equal(Self, Self) -> Bool
+pub fn WindowId::value(Self) -> Int
+
+// Type aliases
+
+// Traits
+pub(open) trait Backend {
+  fn state(Self) -> HostState
+  fn wake(Self) -> Result[Unit, @diagnostics.FrameworkError]
+  fn request_exit(Self) -> Result[Unit, @diagnostics.FrameworkError]
+  fn stop(Self) -> Result[Unit, @diagnostics.FrameworkError]
+  fn create_window(Self, Int, Int, String) -> Result[WindowId, @diagnostics.FrameworkError]
+  fn destroy_window(Self, WindowId) -> Result[Unit, @diagnostics.FrameworkError]
+  fn dispatch(Self, Int) -> Result[Array[Event], @diagnostics.FrameworkError]
+  fn present(Self, WindowId, @scene.SceneSnapshot) -> Result[Unit, @diagnostics.FrameworkError]
+}

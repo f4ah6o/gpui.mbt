@@ -1,8 +1,9 @@
 # Platform boundary contract (M0)
 
-This document defines the backend contract before native code exists. It is a
-design target for the core/backend conformance suite; it does not claim that any
-platform backend has been implemented or is supported. R0 now has both the
+This document defines the M0 backend design target and core/backend conformance
+boundary. Its host/window/quad subset now has a first Ubuntu/Wayland implementation,
+without a platform support claim. See [Ubuntu implementation and limits](ubuntu.md).
+R0 now has both the
 provisional command stream and a versioned SceneSnapshot v1 subset, but the
 snapshot is not yet the complete schema described below.
 
@@ -21,10 +22,10 @@ windows, events, clipboard, cursor, menus, text-input client, and accessibility
 integration; a `CAMetalLayer` backed by Metal supplies the GPU surface and
 device lifecycle. This target can exercise the full M0 contract on the
 project’s initial development platform.
-Windows and Linux remain planned backends: Windows will map the same contract
-to Win32, native text/accessibility services, and a GPU surface; Linux will
-select Wayland or X11 and connect native text/accessibility services. Those
-choices remain implementation work. At M0 no backend has a support claim; a
+Windows remains planned and will map the same contract to Win32, native
+text/accessibility services, and a GPU surface. Ubuntu now uses Wayland/xdg-shell
+and EGL/GLES for its initial native slice; complete text/accessibility services
+and other Linux configurations remain implementation work. At M0 no backend has a support claim; a
 build alone is Tier 0, and Tier 1 requires every gate in issue 0004 and the
 production-readiness packet.
 
@@ -235,13 +236,13 @@ semantics must match.
 ## M1 implementation evidence
 
 The repository now has headless core lifecycle/scheduler tests and structured
-diagnostics, but no platform API package, window system, native backend, or
-renderer. The local command
+diagnostics. The separate initial Ubuntu platform/window/renderer slice is
+described below; it is not part of the M1 core. The local command
 `moon test primitives diagnostics core testing/core_model --target native --deny-warn`
 passes 29 tests across the four packages. Here `--target native` identifies the
 MoonBit test target; it is not native GUI or platform integration evidence.
-No platform has a support claim, and every Tier 1 platform gate above remains
-pending.
+No platform has a support claim, and the complete Tier 1 platform gates above
+remain pending.
 
 
 ## R0 clip-structure validation update — 2026-10-03
@@ -252,3 +253,12 @@ unclosed clips are typed scene errors and are covered by deterministic and
 seeded property tests. This remains part of the unversioned command foundation;
 the contracted `SceneSnapshot` schema version 1 resource/clip-chain/item model
 is still pending.
+
+## First Ubuntu native implementation — 2026-10-03
+
+The executable subset is `platform.Backend`, implemented by `ubuntu.Host` with
+private Wayland/xdg-shell and EGL/GLES resources. It uses copied ordered events
+and the existing immutable SceneSnapshot v1 quad subset. The full M0 design
+above remains the target: cross-thread enqueue, complete native services, text
+and accessibility, fractional scaling and automatic timed recovery are pending.
+See [ubuntu.md](ubuntu.md) for exact tested behavior and current evidence.

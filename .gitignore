@@ -2,3 +2,5 @@ _build/
 .moon/
 __pycache__/
 *.pyc
+ubuntu/xdg-shell-client-protocol.h
+ubuntu/xdg-shell-protocol.c

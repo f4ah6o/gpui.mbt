@@ -29,6 +29,11 @@ jobs:
         with:
           version: 0.10.14+7d59c7ec9
           core-version: 0.10.14+7d59c7ec9
+      - name: Prepare Ubuntu native system boundary
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev
+          sh scripts/prepare_ubuntu.sh
       - name: Show pinned toolchain
         run: moon version --all
       - name: Check formatting

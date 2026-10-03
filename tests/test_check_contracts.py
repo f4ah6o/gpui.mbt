@@ -270,6 +270,20 @@ class RuntimeDependencyTests(unittest.TestCase):
         (directory / "moon.pkg").write_text('import { "vendor/model-checker" }\n', encoding="utf-8")
         self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
 
+    def test_backend_edges_aliases_and_whitebox_imports_are_audited(self) -> None:
+        for package, content in {
+            "platform": 'import { "f4ah6o/gpui/scene", "f4ah6o/gpui/diagnostics" }',
+            "ubuntu": 'import { "f4ah6o/gpui/platform" @shared, "f4ah6o/gpui/scene" }\nimport { "moonbitlang/core/env" } for "wbtest"',
+            "examples/ubuntu": 'import { "f4ah6o/gpui/ubuntu" @native }',
+        }.items():
+            directory = self.root / package
+            directory.mkdir(parents=True)
+            (directory / "moon.pkg").write_text(content)
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+        (self.root / "core/moon.pkg").write_text('import { "f4ah6o/gpui/ubuntu" @native }')
+        self.assertTrue(any("forbidden runtime package edge" in error
+                            for error in checker.validate_runtime_dependencies(self.root)))
+
     def test_malformed_package_manifest_fails_cleanly(self) -> None:
         path = self.root / "primitives/moon.pkg"
         path.write_text('import { moonbitlang/core/quickcheck }\n', encoding="utf-8")

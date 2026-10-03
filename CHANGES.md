@@ -42,3 +42,10 @@
 - validate scene clip stacks with typed underflow/mismatch/unclosed errors
 - reject invalid clip structure before creating provisional command snapshots
 - add seeded scene clip-stack properties
+
+## 2026-10-03 — first Ubuntu Wayland native slice
+
+- Add shared backend/window/event contracts and an owned Wayland/xdg-shell host.
+- Add an EGL/GLES2 SceneSnapshot v1 quad renderer, ordered basic input, integer scale, frame completion, and explicit renderer recreation.
+- Add the native MoonBit example, shared host conformance gate, GPU readback/lifecycle/FD tests, and Ubuntu 24.04 Weston CI at 1×/2×.
+- Keep clipboard, IME/accessibility, fractional scale and production support gates open; see [Ubuntu evidence and limits](docs/ubuntu.md).

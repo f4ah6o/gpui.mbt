@@ -99,7 +99,10 @@ MOON_IMPORT_BLOCK_RE = re.compile(
     r'(?ms)^\s*import\s*\{([^}]*)\}\s*(?:for\s+"([^"]+)")?'
 )
 PACKAGE_STRING_RE = re.compile(r'"([^"\\]+)"')
-PACKAGE_IMPORTS_RE = re.compile(r'\s*(?:"[^"\\]+"\s*(?:,\s*"[^"\\]+"\s*)*,?)?\s*')
+PACKAGE_IMPORTS_RE = re.compile(
+    r'\s*(?:"[^"\\]+"(?:\s+@[A-Za-z_][A-Za-z0-9_]*)?\s*'
+    r'(?:,\s*"[^"\\]+"(?:\s+@[A-Za-z_][A-Za-z0-9_]*)?\s*)*,?)?\s*'
+)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -593,7 +596,7 @@ def _parse_package_imports(path: Path) -> tuple[list[str], list[str], list[str]]
         scope = block.group(2)
         if scope is None:
             runtime_imports.extend(imports)
-        elif scope == "test":
+        elif scope in {"test", "wbtest"}:
             test_imports.extend(imports)
         else:
             errors.append(f"{path}: unsupported import scope {scope!r}")
@@ -635,6 +638,9 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "core": {"primitives", "diagnostics"},
         "layout": {"primitives"},
         "scene": {"primitives"},
+        "platform": {"primitives", "diagnostics", "scene"},
+        "ubuntu": {"platform", "primitives", "diagnostics", "scene"},
+        "examples/ubuntu": {"ubuntu", "platform", "primitives", "diagnostics", "scene"},
         "element": {"core", "primitives", "layout", "scene"},
         "examples/headless": {"core", "diagnostics", "primitives"},
     }
