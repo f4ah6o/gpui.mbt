@@ -89,8 +89,8 @@ test "hit test and dispatch use stable reverse paint order" {
 test "focus accepts only focusable live nodes" {
   let bounds = element_rect(0.0, 0.0, 10.0, 10.0)
   let root = @element.ElementNode::new(1, None, bounds)
-  let child = @element.ElementNode::new(2, Some(1), bounds).
-    with_focusable(true)
+  let child_base = @element.ElementNode::new(2, Some(1), bounds)
+  let child = child_base.with_focusable(true)
   let tree = unwrap_tree([root, child])
   assert_true(tree.with_focus(1) is Err(NotFocusable))
   match tree.with_focus(2) {
@@ -108,10 +108,10 @@ test "element scene generation follows stable node order" {
   let red = element_color(255, 0, 0)
   let blue = element_color(0, 0, 255)
   let bounds = element_rect(0.0, 0.0, 10.0, 10.0)
-  let root = @element.ElementNode::new(1, None, bounds).
-    with_background(Some(red))
-  let child = @element.ElementNode::new(2, Some(1), bounds).
-    with_background(Some(blue))
+  let root_base = @element.ElementNode::new(1, None, bounds)
+  let root = root_base.with_background(Some(red))
+  let child_base = @element.ElementNode::new(2, Some(1), bounds)
+  let child = child_base.with_background(Some(blue))
   let invisible = @element.ElementNode::new(3, Some(1), bounds)
   let scene = unwrap_tree([root, child, invisible]).to_scene()
   assert_eq(scene.command_count(), 2)
