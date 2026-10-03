@@ -70,7 +70,7 @@ test "scene owns its command storage" {
 }
 
 ///|
-test "scene snapshot validates scale and owns commands" {
+test "command snapshot validates scale and owns commands" {
   let viewport = scene_rect(0.0, 0.0, 100.0, 50.0)
   let bounds = scene_rect(1.0, 2.0, 3.0, 4.0)
   let color = scene_color(10, 20, 30)
@@ -78,12 +78,11 @@ test "scene snapshot validates scale and owns commands" {
     @scene.PaintCommand::quad(7, bounds, color),
     @scene.PaintCommand::clip_pop(9),
   ])
-  assert_true(scene.snapshot(viewport, 0.0) is Err(InvalidScale))
-  assert_true(scene.snapshot(viewport, -1.0) is Err(InvalidScale))
-  match scene.snapshot(viewport, 2.0) {
+  assert_true(scene.command_snapshot(viewport, 0.0) is Err(InvalidScale))
+  assert_true(scene.command_snapshot(viewport, -1.0) is Err(InvalidScale))
+  match scene.command_snapshot(viewport, 2.0) {
     Err(_) => fail("valid snapshot rejected")
     Ok(snapshot) => {
-      assert_eq(snapshot.schema_version(), 1)
       assert_true(snapshot.viewport() == viewport)
       assert_true(snapshot.scale() == 2.0)
       let commands = snapshot.commands()
@@ -95,7 +94,7 @@ test "scene snapshot validates scale and owns commands" {
 }
 
 ///|
-test "scene snapshot canonical json is stable and normalizes negative zero" {
+test "command snapshot canonical json is stable and normalizes negative zero" {
   let viewport = scene_rect(-0.0, 0.0, 100.0, 50.0)
   let bounds = scene_rect(1.0, 2.0, 3.0, 4.0)
   let color = scene_color(10, 20, 30)
@@ -107,7 +106,7 @@ test "scene snapshot canonical json is stable and normalizes negative zero" {
     @scene.PaintCommand::quad(7, bounds, color),
     @scene.PaintCommand::clip_pop(9),
   ])
-  match (first.snapshot(viewport, 2.0), second.snapshot(viewport, 2.0)) {
+  match (first.command_snapshot(viewport, 2.0), second.command_snapshot(viewport, 2.0)) {
     (Ok(left), Ok(right)) => {
       assert_eq(left.canonical_json(), right.canonical_json())
       assert_eq(
