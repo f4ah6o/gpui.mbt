@@ -35,6 +35,11 @@ vp dev
 The development server serves the browser proof directly. MoonBit edits rebuild
 through the plugin and Vite refreshes the affected browser module.
 
+`vp check` is also part of CI. Its format phase is disabled so Vite+ does not
+reformat the repository's existing Markdown/document corpus; `moon fmt --check`
+remains the canonical repository formatting gate, while Vite+ supplies the
+browser JavaScript/TypeScript lint check.
+
 Build the production artifact with:
 
 ```sh
