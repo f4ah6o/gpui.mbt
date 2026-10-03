@@ -43,7 +43,9 @@ pub(open) trait Backend {
 /// first native frame also provides text, accessibility, or recovery services.
 pub(all) enum Capability {
   NativeWindow
+  LogicalViewport
   QuadFrames
+  FrameScheduling
   PointerKeyboard
   Clipboard
   Cursor

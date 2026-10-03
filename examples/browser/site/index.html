@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="A MoonBit app model rendered through gpui.mbt's experimental JavaScript browser host."
+    />
+    <title>gpui.mbt · Browser viewport proof</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="topbar">
+        <a class="wordmark" href="#top" aria-label="gpui.mbt browser proof home">
+          <span class="brand-glyph" aria-hidden="true">g</span>
+          <span>gpui<span class="wordmark-muted">.mbt</span></span>
+        </a>
+        <div class="topbar-meta">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span>Browser backend · concept proof</span>
+        </div>
+      </header>
+
+      <section class="intro" id="top" aria-labelledby="page-title">
+        <p class="eyebrow">ISSUE 0009 · FIRST JS SLICE</p>
+        <h1 id="page-title">One MoonBit scene.<br /><span>A browser host.</span></h1>
+        <p class="lede">
+          The app model, flex layout, hit testing, focus, event queue and
+          <code>SceneSnapshot</code> run in MoonBit. The browser owns one Canvas
+          2D viewport and feeds it typed input.
+        </p>
+        <div class="intro-tags" aria-label="Prototype facts">
+          <span>MoonBit JS</span>
+          <span>Canvas 2D</span>
+          <span>One logical viewport</span>
+        </div>
+      </section>
+
+      <section class="demo-grid" aria-label="Browser backend demo">
+        <article class="viewport-card">
+          <header class="card-heading">
+            <div>
+              <p class="card-kicker">LIVE VIEWPORT</p>
+              <h2>Portable app fixture</h2>
+            </div>
+            <span class="frame-badge" id="frame-state">STARTING</span>
+          </header>
+          <div class="canvas-frame" id="canvas-frame">
+            <canvas
+              id="gpui-viewport"
+              tabindex="0"
+              aria-label="gpui.mbt canvas viewport. Use Tab and arrow keys to move focus, then Enter or Space to activate."
+            ></canvas>
+            <div class="canvas-sheen" aria-hidden="true"></div>
+          </div>
+          <footer class="viewport-footer">
+            <p><kbd>Tab</kbd> focus <kbd>← →</kbd> move <kbd>Enter</kbd> activate</p>
+            <button class="quiet-button" id="remount" type="button">Remount viewport</button>
+          </footer>
+        </article>
+
+        <aside class="inspector" aria-label="Framework state and browser capabilities">
+          <section class="inspector-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="card-kicker">FRAMEWORK STATE</p>
+                <h2>Event ingress</h2>
+              </div>
+              <span class="live-label">LIVE</span>
+            </div>
+            <dl class="metrics">
+              <div><dt>Logical viewport</dt><dd id="logical-size">—</dd></div>
+              <div><dt>Backing store</dt><dd id="backing-size">—</dd></div>
+              <div><dt>Device scale</dt><dd id="device-scale">—</dd></div>
+              <div><dt>Accepted events</dt><dd id="event-count">0</dd></div>
+              <div><dt>Last sequence</dt><dd id="sequence">0</dd></div>
+              <div><dt>Hit target</dt><dd id="hit-target">—</dd></div>
+              <div><dt>Logical focus</dt><dd id="focus-target">—</dd></div>
+              <div><dt>Activations</dt><dd id="activation-count">0</dd></div>
+            </dl>
+            <p class="last-event" id="last-event">Waiting for the first frame…</p>
+          </section>
+
+          <section class="inspector-panel capability-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="card-kicker">DECLARED CAPABILITIES</p>
+                <h2>What this slice supports</h2>
+              </div>
+            </div>
+            <ul class="capability-list" id="capabilities"></ul>
+          </section>
+        </aside>
+      </section>
+
+      <section class="diagnostic" id="diagnostic" role="status" aria-live="polite" hidden>
+        <div class="diagnostic-mark" aria-hidden="true">!</div>
+        <div>
+          <p class="card-kicker">FRAMEWORK DIAGNOSTIC</p>
+          <h2 id="diagnostic-title">Browser host could not start</h2>
+          <p id="diagnostic-message"></p>
+          <code id="diagnostic-code"></code>
+        </div>
+      </section>
+
+      <section class="notes" aria-label="Proof boundaries">
+        <div>
+          <span class="note-index">01</span>
+          <h2>Same portable model</h2>
+          <p>Flex layout and reverse-order element hit testing feed the shared quad scene.</p>
+        </div>
+        <div>
+          <span class="note-index">02</span>
+          <h2>Logical size stays logical</h2>
+          <p>Pointer coordinates and layout use CSS pixels; DPR only scales the canvas backing store.</p>
+        </div>
+        <div>
+          <span class="note-index">03</span>
+          <h2>Experimental by design</h2>
+          <p>No WebGPU, Japanese IME, accessibility bridge, clipboard, or production support claim.</p>
+        </div>
+      </section>
+
+      <footer class="page-footer">
+        <span>Independent MoonBit implementation of the GPUI programming model.</span>
+        <span>Canvas 2D is execution evidence, not the production renderer path.</span>
+      </footer>
+    </main>
+    <script type="module" src="./host.js"></script>
+  </body>
+</html>

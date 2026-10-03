@@ -1,8 +1,8 @@
 # Architecture and dependency contract
 
-Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; the shared platform contract and first Ubuntu/Wayland/GLES native slice are implemented; complete native services remain planned.
+Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; the shared platform contract and first Ubuntu/Wayland/GLES native slice are implemented; a JS browser proof of concept is in progress; complete native and browser services remain planned.
 
-This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, and `element/`. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
+This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, and `element/`, plus native and example adapters. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
 
 ## Runtime dependency budget
 
@@ -14,7 +14,7 @@ The published gpui.mbt runtime may depend on:
 
 No third-party MoonBit package is a runtime dependency by default. The current runtime packages import only MoonBit standard/core and repository packages. If a required facility is missing from standard/core, first write a narrow internal contract, implement the minimum behavior here, and test it independently. Reconsider extraction only after gpui.mbt has exercised the API. Do not vendor a general-purpose dependency merely to save initial implementation effort.
 
-Development and CI tools are separate from the runtime graph. The initial allowed tools are `moonbitlang/quickcheck` for properties, `f4ah6o/turtles` for mutation testing, optional `mizchi/vlmkit` for external artifact review, and the required platform CI tools. None may be imported by the published runtime packages. Their exact locked revisions, licenses, and transitive graphs belong in the development dependency audit.
+Development and CI tools are separate from the runtime graph. The initial allowed tools are `moonbitlang/quickcheck` for properties, `f4ah6o/turtles` for mutation testing, optional `mizchi/vlmkit` for external artifact review, Playwright for browser tests only, and the required platform CI tools. None may be imported by the published runtime packages. Their exact locked revisions, licenses, and transitive graphs belong in the development dependency audit.
 
 For every release candidate, archive a machine-readable dependency inventory for runtime and development graphs separately. The audit must show direct and transitive MoonBit packages, target-specific native libraries, resolved revisions, license identifiers, and the package that introduced each dependency. Any native library must additionally name its platform, purpose, FFI owner, upgrade source, and failure behavior. A new runtime dependency requires a written exception in this document and a compatibility/release review; there is no implicit exception for the upstream Rust GPUI dependency list.
 
@@ -49,6 +49,8 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `diagnostics/` | shared error categories and structured diagnostic values | MoonBit standard/core, `primitives/` | concrete backend types and framework state ownership |
 | `core/` | app/entity/task IDs, App/Entity/Context, lifecycle, subscriptions, deterministic foreground scheduler | MoonBit standard/core, `diagnostics/`, `primitives/` | window, OS, GPU, renderer, or concrete backend types |
 | `examples/headless/` | consumer usage example and executable API example test | public `core/`, `diagnostics/`, and `primitives/` interfaces | runtime imports, native/platform APIs, private core types |
+| `examples/browser_app/` | host-neutral demo app model, event processing, flex layout, hit testing, and portable scene fixture | `core/`, `diagnostics/`, `element/`, `layout/`, `platform/`, `primitives/`, `scene/` | DOM, Canvas, JS references, browser or native handles |
+| `examples/browser/` | JS-only adapter translating browser callback values to framework events | `examples/browser_app/`, `diagnostics/`, `platform/`, `primitives/` | browser handles in shared packages or browser-to-model reverse dependencies |
 | `layout/` | style subset, constraints, intrinsic measure interface, layout result | `primitives/` | renderer or platform types |
 | `element/` | Render/IntoElement/Element, tree, hit-test and dispatch metadata | `core/`, `primitives/`, `layout/`, `scene/` contract | backend callbacks or OS event structs |
 | `scene/` | stable, platform-neutral paint commands and ordering | `primitives/` | live GPU handles or backend resource objects |
@@ -59,7 +61,7 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `examples/ubuntu/` | native executable consuming the shared scene/window contracts | `ubuntu/`, `platform/`, `scene/`, `diagnostics/`, `primitives/`, standard env | private backend tokens |
 | target backend / FFI | event loop and native resources/adapters | platform and renderer APIs; native APIs | types that leak upward through the public facade |
 
-The current runtime edges are `primitives -> stdlib`, `diagnostics -> stdlib`, and `core -> stdlib + diagnostics`. The allowed boundary for diagnostics/core also permits imports from `primitives/`; they currently use no primitive value types. The executable dependency check covers these boundaries and test-only imports. The later packages are architectural boundaries for M2 onward and must be checked against the same rule when introduced. The dependency direction must remain acyclic; cross-cutting code belongs in a lower-level contract rather than a reverse import.
+The current runtime edges include `primitives -> stdlib`, `diagnostics -> stdlib`, and `core -> stdlib + diagnostics`; the executable allowlist also records the current layout, scene, element, native, and example edges. The browser app fixture is portable and the JS host adapter is a leaf above it. The executable dependency check covers these boundaries and test-only imports; new runtime packages still require an explicit layer entry and reject unlisted edges. The dependency direction must remain acyclic; cross-cutting code belongs in a lower-level contract rather than a reverse import.
 
 ## Async and application scheduling
 
@@ -112,7 +114,7 @@ Prefer a narrow C ABI when it keeps platform types out of MoonBit package interf
 
 Every dependency addition must identify whether it is runtime, development-only, or platform-native and list its owning package. The executable package-boundary check fails if test tooling reaches a runtime package or an unreviewed third-party MoonBit package enters the runtime graph. Native library inventories are separate per target. Dependency review must also check version pinning, license notices, and the lockfile/toolchain reproducibility policy.
 
-The module plus M1 core and M2/M3 headless runtime packages exist. The package-boundary check validates the current graph, including `scene -> primitives`, `element -> core/primitives/layout/scene`, and the consumer-only `examples/headless/` package; it fails if a package introduces an unreviewed runtime dependency. Current contract, dependency, format, build, and test commands are listed in [README.md](../README.md).
+The package-boundary check validates the current graph, including `scene -> primitives`, `element -> core/primitives/layout/scene`, the consumer-only `examples/headless/` package, and the one-way `examples/browser -> examples/browser_app` adapter edge. A dedicated checker test ensures the portable browser app cannot import its JS host layer. Current contract, dependency, format, build, and test commands are listed in [README.md](../README.md) and the [browser proof guide](browser-demo.md).
 
 ## Ubuntu native dependency exception
 
@@ -135,3 +137,7 @@ The portable Backend trait includes frame submission in this first slice; a
 separate renderer interface is deferred. No reverse edge from core, element,
 layout, or scene to a backend is permitted. Native OS dependencies and ABI
 ownership are documented in [macos-native.md](macos-native.md).
+
+## JavaScript browser proof edges
+
+The browser proof adds `examples/browser_app -> core/diagnostics/element/layout/platform/primitives/scene` and `examples/browser -> examples/browser_app/diagnostics/platform/primitives`. The first package is host-neutral and compiles on all configured targets; the second is JavaScript-only. Its DOM and Canvas implementation remains in the static host bootstrap, below the adapter boundary. The package audit has a regression test for this one-way direction; see the [browser proof guide](browser-demo.md) for scope and limits.

@@ -252,6 +252,36 @@ class RuntimeDependencyTests(unittest.TestCase):
         )
         self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
 
+    def test_browser_host_is_a_leaf_above_the_portable_app_fixture(self) -> None:
+        browser_app = self.root / "examples/browser_app"
+        browser_app.mkdir(parents=True)
+        (browser_app / "moon.pkg").write_text(
+            'import { "f4ah6o/gpui/core", "f4ah6o/gpui/diagnostics", '
+            '"f4ah6o/gpui/element", "f4ah6o/gpui/layout", '
+            '"f4ah6o/gpui/platform", "f4ah6o/gpui/primitives", '
+            '"f4ah6o/gpui/scene" }\n',
+            encoding="utf-8",
+        )
+        browser = self.root / "examples/browser"
+        browser.mkdir(parents=True)
+        browser_manifest = browser / "moon.pkg"
+        browser_manifest.write_text(
+            'import { "f4ah6o/gpui/examples/browser_app", '
+            '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/platform", '
+            '"f4ah6o/gpui/primitives" }\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+        (browser_app / "moon.pkg").write_text(
+            'import { "f4ah6o/gpui/examples/browser" }\n',
+            encoding="utf-8",
+        )
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(
+            any("forbidden runtime package edge" in error for error in errors)
+        )
+
     def test_approved_example_still_rejects_third_party_runtime_edges(self) -> None:
         directory = self.root / "examples/headless"
         directory.mkdir(parents=True)
