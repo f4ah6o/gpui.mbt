@@ -168,16 +168,20 @@ try {
 
   await waitForCompiledMarker(updatedMarker);
 
-  // Request a fresh Vite module id after the plugin-owned MoonBit watch has
-  // rebuilt the fixture. This verifies that Vite serves the updated MoonBit
-  // output even if the plugin's best-effort HMR notification races the
-  // filesystem watcher.
-  const servedMarker = await page.evaluate(async () => {
-    const updated = await import("./dev-watch-after.js?acceptance=watch-v2");
-    return updated.devWatchMarker;
+  // Open a fresh Vite entry after the plugin-owned MoonBit watch has rebuilt
+  // the fixture. The entry imports a unique mbt: module id so Vite must resolve
+  // and serve the updated MoonBit output instead of reusing the initial graph.
+  await page.goto("http://127.0.0.1:5173/dev-watch-after.html", {
+    waitUntil: "load",
+    timeout: 30_000,
   });
+  await page.waitForFunction(
+    (expected) => document.body.dataset.devWatchMarker === expected,
+    updatedMarker,
+    { timeout: 30_000 },
+  );
   assert.equal(
-    servedMarker,
+    await page.locator("#dev-watch-marker").textContent(),
     updatedMarker,
     "browser must observe the MoonBit watch rebuild through Vite",
   );
