@@ -297,8 +297,8 @@ pub fn Scene::snapshot_v1(
             }
             ClipPopCommand(..) =>
               if clip_ids.length() > 0 {
-                clip_ids.pop()
-                clip_stack.pop()
+                ignore(clip_ids.pop())
+                ignore(clip_stack.pop())
               }
             QuadCommand(id~, bounds~, color~) => {
               let clip_chain_id : Int? = if clip_stack.length() == 0 {
