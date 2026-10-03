@@ -495,6 +495,56 @@ pub fn ElementTree::with_focus(
 }
 
 ///|
+/// Remove one live node and its complete contiguous subtree. Focus is cleared
+/// when the focused node is removed; focus outside the removed subtree is
+/// preserved. The returned tree owns a new node array and preserves preorder.
+pub fn ElementTree::without_subtree(
+  self : ElementTree,
+  id : UInt64,
+) -> Result[ElementTree, ElementError] {
+  if self.node(id) is None {
+    Err(UnknownElement)
+  } else {
+    let removed : Array[UInt64] = []
+    let kept : Array[ElementNode] = []
+    for node in self.nodes {
+      let mut remove = node.id == id
+      match node.parent {
+        None => ()
+        Some(parent_id) => {
+          let mut index = 0
+          while index < removed.length() && !remove {
+            if removed[index] == parent_id {
+              remove = true
+            }
+            index += 1
+          }
+        }
+      }
+      if remove {
+        removed.push(node.id)
+      } else {
+        kept.push(node)
+      }
+    }
+    let mut focused = self.focused
+    match focused {
+      None => ()
+      Some(focused_id) => {
+        let mut index = 0
+        while index < removed.length() && focused is Some(_) {
+          if removed[index] == focused_id {
+            focused = None
+          }
+          index += 1
+        }
+      }
+    }
+    Ok({ nodes: kept, focused, })
+  }
+}
+
+///|
 pub fn ElementTree::clear_focus(self : ElementTree) -> ElementTree {
   { nodes: self.nodes, focused: None, }
 }
