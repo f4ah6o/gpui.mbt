@@ -240,3 +240,13 @@ passes 29 tests across the four packages. Here `--target native` identifies the
 MoonBit test target; it is not native GUI or platform integration evidence.
 No platform has a support claim, and every Tier 1 platform gate above remains
 pending.
+
+
+## R0 clip-structure validation update — 2026-10-03
+
+The provisional command scene now validates clip pushes/pops as a strict LIFO
+stack before a `CommandSnapshot` can be emitted. Underflow, mismatched IDs, and
+unclosed clips are typed scene errors and are covered by deterministic and
+seeded property tests. This remains part of the unversioned command foundation;
+the contracted `SceneSnapshot` schema version 1 resource/clip-chain/item model
+is still pending.
