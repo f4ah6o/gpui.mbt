@@ -106,7 +106,11 @@ test "command snapshot canonical json is stable and normalizes negative zero" {
     @scene.PaintCommand::quad(7, bounds, color),
     @scene.PaintCommand::clip_pop(9),
   ])
-  match (first.command_snapshot(viewport, 2.0), second.command_snapshot(viewport, 2.0)) {
+  match
+    (
+      first.command_snapshot(viewport, 2.0),
+      second.command_snapshot(viewport, 2.0),
+    ) {
     (Ok(left), Ok(right)) => {
       assert_eq(left.canonical_json(), right.canonical_json())
       assert_eq(
