@@ -22,7 +22,7 @@ test "property recursive layout is deterministic and descendants stay ordered" {
       let (root_width0, branch_width0, leaf_height0, gap0) = values
       let root_width = (root_width0 % 300).abs().to_double() + 100.0
       let branch_width = (branch_width0 % 60).abs().to_double() + 20.0
-      let leaf_height = (leaf_height0 % 20).abs().to_double() + 5.0
+      let leaf_height = (leaf_height0 % 20).abs().to_double() + 1.0
       let gap = (gap0 % 8).abs().to_double()
       let root_style_result = @layout.FlexTreeStyle::new(
         @layout.FlowDirection::row(),
