@@ -152,5 +152,4 @@ test "scene snapshot v1 rejects invalid directly constructed public items" {
     @scene.SceneSnapshot::new(viewport, 1.0, [], [], [invalid_opacity])
     is Err(InvalidOpacity),
   )
-
 }
