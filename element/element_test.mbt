@@ -222,13 +222,14 @@ test "stop propagation prevents later capture and all bubble callbacks" {
     @element.ElementNode::new(3, Some(2), bounds),
   ])
   let visited : Array[UInt64] = []
+  let stopped_seen = Ref(false)
   match
     tree.dispatch_pointer_with(element_point(10.0, 10.0), context => {
       visited.push(context.current_target())
       if context.phase() == @element.EventPhase::Capture &&
         context.current_target() == 2 {
         context.stop_propagation()
-        assert_true(context.is_propagation_stopped())
+        stopped_seen.val = context.is_propagation_stopped()
       }
       Ok(())
     }) {
@@ -240,6 +241,7 @@ test "stop propagation prevents later capture and all bubble callbacks" {
     }
   }
   assert_eq(visited.length(), 2)
+  assert_true(stopped_seen.val)
   assert_true(visited[0] == 1)
   assert_true(visited[1] == 2)
 }
