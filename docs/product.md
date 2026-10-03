@@ -1,6 +1,6 @@
 # Product charter and core behavior contract
 
-Status: M1 headless core implemented; native UI and platform milestones remain planned.
+Status: M1 headless core implemented; M2 layout/element and M3 headless scene foundations are in progress; native UI/platform milestones remain planned.
 
 This document fixes the product boundary and behavioral baseline. M1 implements the headless app/entity/context/scheduler slice described below. The complete GPUI concept inventory and evidence status live in [compatibility.md](compatibility.md); the package and dependency boundary lives in [architecture.md](architecture.md).
 
@@ -8,7 +8,7 @@ This document fixes the product boundary and behavioral baseline. M1 implements 
 
 gpui.mbt is an independent MoonBit implementation of the GPUI programming model for native desktop applications. It will preserve useful GPUI concepts where they fit MoonBit, while defining MoonBit-native APIs and explicit behavior. It does not promise Rust source compatibility, binary compatibility, matching upstream bugs, or compatibility with Zed application crates.
 
-The framework runtime is implemented in MoonBit. M1 delivers a headless `core/` package for app/entity/context lifetimes, subscriptions, and deterministic scheduling. A desktop backend may use a small repository-owned native FFI layer. An application using gpui.mbt must not need to ship a Rust GPUI runtime, browser runtime, or third-party MoonBit framework runtime.
+The framework runtime is implemented in MoonBit. M1 delivers a headless `core/` package for app/entity/context lifetimes, subscriptions, and deterministic scheduling. The current M2/M3 foundation adds deterministic flex-line layout, a flat pre-order element tree, hit testing, capture/bubble route planning, focus state, and ordered headless paint commands for background quads and clips. A desktop backend may use a small repository-owned native FFI layer. An application using gpui.mbt must not need to ship a Rust GPUI runtime, browser runtime, or third-party MoonBit framework runtime.
 
 The supported behavioral contract has four requirements:
 
@@ -75,7 +75,7 @@ Cancellation is a terminal task result, not an error. M1 `App::diagnostics()` re
 
 ## GPUI-facing surface and current boundaries
 
-The conceptual surface includes `App`, `Entity[T]`, `Context[T]`, `Render`, `IntoElement`, elements, windows, actions, events, style/layout, scenes, text, tasks, and platform services. M1 implements the headless app/entity/context/subscription/task slice in [`core/`](../core/) and shared value/error packages in [`primitives/`](../primitives/) and [`diagnostics/`](../diagnostics/). These rows remain `planned` in the compatibility matrix until behavior is compared to the pinned upstream revision and evidence supports a compatibility claim. See [compatibility.md](compatibility.md).
+The conceptual surface includes `App`, `Entity[T]`, `Context[T]`, `Render`, `IntoElement`, elements, windows, actions, events, style/layout, scenes, text, tasks, and platform services. M1 implements the headless app/entity/context/subscription/task slice in [`core/`](../core/) and shared value/error packages in [`primitives/`](../primitives/) and [`diagnostics/`](../diagnostics/). M2/M3 now also provide [`layout/`](../layout/), [`element/`](../element/), and [`scene/`](../scene/) foundations; they do not yet implement the complete Render/IntoElement lifecycle or a renderer. These rows remain `planned` in the compatibility matrix until behavior is compared to the pinned upstream revision and evidence supports a compatibility claim. See [compatibility.md](compatibility.md).
 
 ### M1 public core slice
 
