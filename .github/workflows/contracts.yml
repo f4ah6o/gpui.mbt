@@ -37,3 +37,26 @@ jobs:
         run: moon check --target all --deny-warn
       - name: Test all targets with warnings denied
         run: moon test --target all --deny-warn
+
+  macos-native-build:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: hustcer/setup-moonbit@1522f9aef02a8ca0187dfc00a41f5dd6b16750f7
+        with:
+          version: 0.10.14+7d59c7ec9
+          core-version: 0.10.14+7d59c7ec9
+      - name: Build native app bundle and E2E runner; test portable contracts
+        run: |
+          mkdir -p _build/macos
+          set -o pipefail
+          moon version --all | tee _build/macos/toolchain.log
+          moon test --target native --deny-warn 2>&1 | tee _build/macos/headless.log
+          ./script/build_and_run.sh --build 2>&1 | tee _build/macos/build.log
+          ./script/test_macos.sh --build-only 2>&1 | tee _build/macos/e2e-build.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: macos-native-build
+          path: _build/macos/

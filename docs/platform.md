@@ -252,3 +252,12 @@ unclosed clips are typed scene errors and are covered by deterministic and
 seeded property tests. This remains part of the unversioned command foundation;
 the contracted `SceneSnapshot` schema version 1 resource/clip-chain/item model
 is still pending.
+
+## First native macOS implementation
+
+The [macOS native slice](macos-native.md) adds the initial `platform.Backend`
+interface and its AppKit/Metal implementation. It covers the first visible
+window and SceneSnapshot v1 quad frame milestone, with native input/lifecycle
+and GPU readback E2E. Cross-thread enqueue, text/IME, accessibility and automatic
+renderer recovery remain design targets; the M1 evidence paragraph above is
+historical. No Tier 1 or production release gate is promoted by this slice.

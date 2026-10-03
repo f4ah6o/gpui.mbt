@@ -1,0 +1,12 @@
+import {
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/scene",
+  "moonbitlang/core/encoding/utf8",
+}
+
+options(
+  "native-stub": [ "loader.c" ],
+  targets: { "ffi.mbt": [ "native" ], "unsupported.mbt": [ "not", "native" ] },
+)

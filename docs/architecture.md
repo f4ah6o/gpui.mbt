@@ -110,3 +110,13 @@ Prefer a narrow C ABI when it keeps platform types out of MoonBit package interf
 Every dependency addition must identify whether it is runtime, development-only, or platform-native and list its owning package. The executable package-boundary check fails if test tooling reaches a runtime package or an unreviewed third-party MoonBit package enters the runtime graph. Native library inventories are separate per target. Dependency review must also check version pinning, license notices, and the lockfile/toolchain reproducibility policy.
 
 The module plus M1 core and M2/M3 headless runtime packages exist. The package-boundary check validates the current graph, including `scene -> primitives`, `element -> core/primitives/layout/scene`, and the consumer-only `examples/headless/` package; it fails if a package introduces an unreviewed runtime dependency. Current contract, dependency, format, build, and test commands are listed in [README.md](../README.md).
+
+## Initial native package edges
+
+The first macOS slice adds checked edges `platform -> primitives/diagnostics/scene`,
+`platform/macos -> platform/primitives/diagnostics/scene`, and
+`examples/native_macos -> platform/macos/platform/primitives/diagnostics/scene`.
+The portable Backend trait includes frame submission in this first slice; a
+separate renderer interface is deferred. No reverse edge from core, element,
+layout, or scene to a backend is permitted. Native OS dependencies and ABI
+ownership are documented in [macos-native.md](macos-native.md).
