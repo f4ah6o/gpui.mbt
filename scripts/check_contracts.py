@@ -639,6 +639,8 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "layout": {"primitives"},
         "scene": {"primitives"},
         "platform": {"primitives", "diagnostics", "scene"},
+        "platform/macos": {"platform", "primitives", "diagnostics", "scene"},
+        "examples/native_macos": {"platform/macos", "platform", "primitives", "diagnostics", "scene"},
         "ubuntu": {"platform", "primitives", "diagnostics", "scene"},
         "examples/ubuntu": {"ubuntu", "platform", "primitives", "diagnostics", "scene"},
         "element": {"core", "primitives", "layout", "scene"},
@@ -697,8 +699,7 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
                 continue
             if imported.startswith(module_prefix):
                 relative = imported[len(module_prefix) :]
-                dependency = relative.split("/", 1)[0]
-                if relative != dependency or dependency not in allowed_internal_edges[package]:
+                if relative not in allowed_internal_edges[package]:
                     errors.append(f"{package}/: forbidden runtime package edge to {imported!r}")
             else:
                 errors.append(f"{package}/: third-party runtime import is forbidden: {imported!r}")

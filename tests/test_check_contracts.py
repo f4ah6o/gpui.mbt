@@ -284,6 +284,19 @@ class RuntimeDependencyTests(unittest.TestCase):
         self.assertTrue(any("forbidden runtime package edge" in error
                             for error in checker.validate_runtime_dependencies(self.root)))
 
+    def test_native_edges_are_explicit_and_cannot_leak_into_core(self) -> None:
+        for package, content in {
+            "platform": 'import { "f4ah6o/gpui/primitives", "f4ah6o/gpui/diagnostics", "f4ah6o/gpui/scene" }',
+            "platform/macos": 'import { "f4ah6o/gpui/platform", "f4ah6o/gpui/scene" }',
+            "examples/native_macos": 'import { "f4ah6o/gpui/platform/macos", "f4ah6o/gpui/platform" }',
+        }.items():
+            directory = self.root / package
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "moon.pkg").write_text(content, encoding="utf-8")
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+        (self.root / "core/moon.pkg").write_text('import { "f4ah6o/gpui/platform/macos" }', encoding="utf-8")
+        self.assertTrue(any("forbidden runtime package edge" in error for error in checker.validate_runtime_dependencies(self.root)))
+
     def test_malformed_package_manifest_fails_cleanly(self) -> None:
         path = self.root / "primitives/moon.pkg"
         path.write_text('import { moonbitlang/core/quickcheck }\n', encoding="utf-8")

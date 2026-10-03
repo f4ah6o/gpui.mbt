@@ -125,3 +125,13 @@ package imports the concrete backend. The executable package audit now permits
 and the native example edges above. It audits aliased imports and whitebox
 test imports as well as blackbox test imports. All other runtime dependencies
 continue to require a written exception.
+
+## Initial native package edges
+
+The first macOS slice adds checked edges `platform -> primitives/diagnostics/scene`,
+`platform/macos -> platform/primitives/diagnostics/scene`, and
+`examples/native_macos -> platform/macos/platform/primitives/diagnostics/scene`.
+The portable Backend trait includes frame submission in this first slice; a
+separate renderer interface is deferred. No reverse edge from core, element,
+layout, or scene to a backend is permitted. Native OS dependencies and ABI
+ownership are documented in [macos-native.md](macos-native.md).

@@ -1,6 +1,7 @@
 # macOS native backend roadmap
 
 Status: open
+Model: unknown
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
 Updated: 2026-10-03
 
@@ -167,3 +168,29 @@ Do not block the first visible window on:
 - Windows or Ubuntu parity
 
 Those remain required before the corresponding support/release claims.
+
+## Implementation progress — 2026-10-03
+
+The first native slice is implemented; this roadmap remains open for later
+packets. See [macos-native.md](../../docs/macos-native.md) for the exact boundary.
+
+- A/B: MoonBit executable, UI-owned AppKit lifecycle, logical window identities,
+  title/size/close policy, CAMetalLayer and Metal command completion, and v1
+  quad/transform/opacity/rectangle-clip rendering are implemented.
+- C: Pointer/key/focus/move/resize/backing-scale events, cursor and clipboard
+  APIs are implemented. Real multi-display E2E and clipboard/cursor smoke remain.
+- D/E: Text shaping, text-input/IME, semantic accessibility, public native menus
+  and their smoke tests remain pending.
+- F: Multiple windows, token/host generations, callback invalidation and 32-cycle
+  churn are covered. Automatic recovery, sustained resource growth and full
+  multi-window focus/display E2E remain pending. DeviceLost reporting is tested.
+- G: App-bundle build, hosted macOS build/headless CI, and a manual native
+  self-hosted E2E workflow with artifacts are added. Packaging/notarization and
+  complete release-gate evidence remain pending.
+
+Local validation: all four MoonBit targets pass 66 tests each with warnings
+denied. Native E2E verifies GPU pixel fixtures, pointer/key delivery, logical
+coordinates, resize, close policy, wrong-thread/stale rejection and churn.
+MoonBit smoke verifies two GPU frames, resize and clean close. This is local
+evidence; new CI workflows have not yet run. No support tier or production
+release gate has been promoted.

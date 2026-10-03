@@ -262,3 +262,12 @@ and the existing immutable SceneSnapshot v1 quad subset. The full M0 design
 above remains the target: cross-thread enqueue, complete native services, text
 and accessibility, fractional scaling and automatic timed recovery are pending.
 See [ubuntu.md](ubuntu.md) for exact tested behavior and current evidence.
+
+## First native macOS implementation
+
+The [macOS native slice](macos-native.md) adds the initial `platform.Backend`
+interface and its AppKit/Metal implementation. It covers the first visible
+window and SceneSnapshot v1 quad frame milestone, with native input/lifecycle
+and GPU readback E2E. Cross-thread enqueue, text/IME, accessibility and automatic
+renderer recovery remain design targets; the M1 evidence paragraph above is
+historical. No Tier 1 or production release gate is promoted by this slice.
