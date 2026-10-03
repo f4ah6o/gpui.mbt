@@ -149,6 +149,88 @@ pub fn DispatchPlan::bubble(self : DispatchPlan) -> Array[UInt64] {
   copy_ids(self.bubble)
 }
 
+
+///|
+/// Event phase for deterministic element-tree dispatch.
+pub(all) enum EventPhase {
+  Capture
+  Bubble
+} derive(Eq)
+
+///|
+pub extend EventPhase with Eq::{not_equal, equal}
+
+///|
+/// Per-callback dispatch context. The stopped flag is shared across the
+/// complete dispatch so a capture callback can prevent later callbacks.
+pub struct DispatchContext {
+  target : UInt64
+  current_target : UInt64
+  phase : EventPhase
+  stopped : Ref[Bool]
+}
+
+///|
+pub fn DispatchContext::target(self : DispatchContext) -> UInt64 {
+  self.target
+}
+
+///|
+pub fn DispatchContext::current_target(self : DispatchContext) -> UInt64 {
+  self.current_target
+}
+
+///|
+pub fn DispatchContext::phase(self : DispatchContext) -> EventPhase {
+  self.phase
+}
+
+///|
+pub fn DispatchContext::stop_propagation(self : DispatchContext) -> Unit {
+  self.stopped.val = true
+}
+
+///|
+pub fn DispatchContext::is_propagation_stopped(
+  self : DispatchContext,
+) -> Bool {
+  self.stopped.val
+}
+
+///|
+/// Observable result of callback dispatch. The visited arrays contain only
+/// callbacks that actually ran.
+pub struct DispatchOutcome {
+  target : UInt64?
+  capture_visited : Array[UInt64]
+  bubble_visited : Array[UInt64]
+  stopped : Bool
+}
+
+///|
+pub fn DispatchOutcome::target(self : DispatchOutcome) -> UInt64? {
+  self.target
+}
+
+///|
+pub fn DispatchOutcome::capture_visited(
+  self : DispatchOutcome,
+) -> Array[UInt64] {
+  copy_ids(self.capture_visited)
+}
+
+///|
+pub fn DispatchOutcome::bubble_visited(
+  self : DispatchOutcome,
+) -> Array[UInt64] {
+  copy_ids(self.bubble_visited)
+}
+
+///|
+pub fn DispatchOutcome::was_stopped(self : DispatchOutcome) -> Bool {
+  self.stopped
+}
+
 ///|
 /// Headless element tree. Nodes are stored in stable pre-order and later nodes
 /// are considered visually above earlier nodes during hit testing.
@@ -327,6 +409,78 @@ pub fn ElementTree::dispatch_pointer(
           { target: Some(target), capture, bubble, }
         }
       }
+  }
+}
+
+
+///|
+/// Dispatch pointer callbacks in capture order followed by bubble order.
+/// Returning an error aborts dispatch. Stopping propagation prevents every
+/// later callback in both phases.
+pub fn ElementTree::dispatch_pointer_with(
+  self : ElementTree,
+  position : @primitives.Point,
+  callback : (DispatchContext) -> Result[Unit, ElementError],
+) -> Result[DispatchOutcome, ElementError] {
+  let plan = self.dispatch_pointer(position)
+  match plan.target() {
+    None =>
+      Ok({
+        target: None,
+        capture_visited: [],
+        bubble_visited: [],
+        stopped: false,
+      })
+    Some(target) => {
+      let stopped = Ref(false)
+      let capture_visited : Array[UInt64] = []
+      let bubble_visited : Array[UInt64] = []
+      let capture = plan.capture()
+      let bubble = plan.bubble()
+      let mut failure : ElementError? = None
+      let mut index = 0
+      while index < capture.length() && failure is None && !stopped.val {
+        let current_target = capture[index]
+        capture_visited.push(current_target)
+        let context : DispatchContext = {
+          target,
+          current_target,
+          phase: Capture,
+          stopped,
+        }
+        match callback(context) {
+          Ok(_) => ()
+          Err(error) => failure = Some(error)
+        }
+        index += 1
+      }
+      index = 0
+      while index < bubble.length() && failure is None && !stopped.val {
+        let current_target = bubble[index]
+        bubble_visited.push(current_target)
+        let context : DispatchContext = {
+          target,
+          current_target,
+          phase: Bubble,
+          stopped,
+        }
+        match callback(context) {
+          Ok(_) => ()
+          Err(error) => failure = Some(error)
+        }
+        index += 1
+      }
+      match failure {
+        Some(error) => Err(error)
+        None =>
+          Ok({
+            target: Some(target),
+            capture_visited,
+            bubble_visited,
+            stopped: stopped.val,
+          })
+      }
+    }
   }
 }
 
