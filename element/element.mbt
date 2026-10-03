@@ -149,7 +149,6 @@ pub fn DispatchPlan::bubble(self : DispatchPlan) -> Array[UInt64] {
   copy_ids(self.bubble)
 }
 
-
 ///|
 /// Event phase for deterministic element-tree dispatch.
 pub(all) enum EventPhase {
@@ -191,9 +190,7 @@ pub fn DispatchContext::stop_propagation(self : DispatchContext) -> Unit {
 }
 
 ///|
-pub fn DispatchContext::is_propagation_stopped(
-  self : DispatchContext,
-) -> Bool {
+pub fn DispatchContext::is_propagation_stopped(self : DispatchContext) -> Bool {
   self.stopped.val
 }
 
@@ -220,9 +217,7 @@ pub fn DispatchOutcome::capture_visited(
 }
 
 ///|
-pub fn DispatchOutcome::bubble_visited(
-  self : DispatchOutcome,
-) -> Array[UInt64] {
+pub fn DispatchOutcome::bubble_visited(self : DispatchOutcome) -> Array[UInt64] {
   copy_ids(self.bubble_visited)
 }
 
@@ -411,7 +406,6 @@ pub fn ElementTree::dispatch_pointer(
       }
   }
 }
-
 
 ///|
 /// Dispatch pointer callbacks in capture order followed by bubble order.
