@@ -697,7 +697,7 @@ fn place_items(
           End => positive_leftover
         }
         let output : Array[LayoutBox] = []
-        let mut any_overflow = used > main_extent
+        let mut any_overflow = exceeds_with_tolerance(used, main_extent)
         let mut error : LayoutError? = None
         let mut index = 0
         while index < prepared.length() {
@@ -736,8 +736,11 @@ fn place_items(
           match @primitives.Rect::new(x, y, width, height) {
             Err(_) => error = Some(GeometryFailure)
             Ok(bounds) => {
-              let overflow = cursor + main_size > main_extent ||
-                cross_size > cross_extent
+              let overflow = exceeds_with_tolerance(
+                  cursor + main_size,
+                  main_extent,
+                ) ||
+                exceeds_with_tolerance(cross_size, cross_extent)
               if overflow {
                 any_overflow = true
               }
@@ -759,6 +762,25 @@ fn place_items(
 ///|
 fn finite(value : Double) -> Bool {
   !value.is_nan() && !value.is_inf()
+}
+
+///|
+/// Layout overflow compares reconstructed floating-point sums with a small
+/// scale-relative tolerance so exact-fit distributions do not overflow only
+/// because of a few ulps of arithmetic residue.
+fn exceeds_with_tolerance(value : Double, limit : Double) -> Bool {
+  if value <= limit {
+    false
+  } else {
+    let scale = if value > 1.0 {
+      value
+    } else if limit > 1.0 {
+      limit
+    } else {
+      1.0
+    }
+    value - limit > scale * 1.0e-12
+  }
 }
 
 ///|
