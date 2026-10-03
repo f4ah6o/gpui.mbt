@@ -660,6 +660,7 @@ fn place_items(
     } else {
       let resolved : Array[Double] = []
       let mut used = gaps
+      let mut numeric_error = false
       for entry in prepared {
         let proposed = if free > 0.0 && grow_total > 0.0 {
           entry.basis + free * (entry.item.grow / grow_total)
@@ -669,7 +670,7 @@ fn place_items(
           entry.basis
         }
         if !finite(proposed) {
-          used = @double.infinity
+          numeric_error = true
         } else {
           let final_main = clamp_once(
             non_negative(proposed),
@@ -680,7 +681,7 @@ fn place_items(
           used += final_main
         }
       }
-      if !finite(used) || resolved.length() != prepared.length() {
+      if numeric_error || !finite(used) || resolved.length() != prepared.length() {
         Err(NonFiniteValue)
       } else {
         let positive_leftover = if main_extent > used {
