@@ -765,9 +765,10 @@ fn finite(value : Double) -> Bool {
 }
 
 ///|
-/// Layout overflow compares reconstructed floating-point sums with a small
-/// scale-relative tolerance so exact-fit distributions do not overflow only
-/// because of a few ulps of arithmetic residue.
+/// Layout overflow compares reconstructed floating-point sums with a bounded
+/// scale-relative tolerance of roughly 32 binary64 epsilons. This suppresses
+/// arithmetic residue from exact-fit distributions without masking meaningful
+/// layout excess.
 fn exceeds_with_tolerance(value : Double, limit : Double) -> Bool {
   if value <= limit {
     false
@@ -779,7 +780,7 @@ fn exceeds_with_tolerance(value : Double, limit : Double) -> Bool {
     } else {
       1.0
     }
-    value - limit > scale * 1.0e-12
+    value - limit > scale * 7.105427357601002e-15
   }
 }
 
