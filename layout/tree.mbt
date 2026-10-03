@@ -206,24 +206,14 @@ pub fn layout_flex_tree(
     Err(error) => Err(error)
     Ok(_) =>
       match
-        @primitives.Rect::new(
-          0.0,
-          0.0,
-          root_size.width(),
-          root_size.height(),
-        ) {
+        @primitives.Rect::new(0.0, 0.0, root_size.width(), root_size.height()) {
         Err(_) => Err(GeometryFailure)
         Ok(root_bounds) => {
           let output : Array[TreeLayoutBox] = []
           let overflow = Ref(false)
           match
             layout_tree_children(
-              root_id,
-              root_bounds,
-              root_style,
-              nodes,
-              output,
-              overflow,
+              root_id, root_bounds, root_style, nodes, output, overflow,
             ) {
             Err(error) => Err(error)
             Ok(_) =>
