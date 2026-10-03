@@ -54,7 +54,6 @@ test "scene preserves deterministic paint order and command data" {
   assert_true(scene.command_at(4) is None)
 }
 
-
 ///|
 test "scene owns its command storage" {
   let bounds = scene_rect(0.0, 0.0, 10.0, 10.0)
