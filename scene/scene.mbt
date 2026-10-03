@@ -97,12 +97,12 @@ pub fn Scene::empty() -> Scene {
 
 ///|
 pub fn Scene::new(commands : Array[PaintCommand]) -> Scene {
-  { commands, }
+  { commands: copy_commands(commands), }
 }
 
 ///|
 pub fn Scene::commands(self : Scene) -> Array[PaintCommand] {
-  self.commands
+  copy_commands(self.commands)
 }
 
 ///|
@@ -117,4 +117,13 @@ pub fn Scene::command_at(self : Scene, index : Int) -> PaintCommand? {
   } else {
     Some(self.commands[index])
   }
+}
+
+///|
+fn copy_commands(commands : Array[PaintCommand]) -> Array[PaintCommand] {
+  let owned : Array[PaintCommand] = []
+  for command in commands {
+    owned.push(command)
+  }
+  owned
 }
