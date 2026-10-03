@@ -140,7 +140,7 @@ pub extend Insets with Eq::{not_equal, equal}
 
 ///|
 pub fn Insets::zero() -> Insets {
-  { top: 0.0, right: 0.0, bottom: 0.0, left: 0.0 }
+  { top: 0.0, right: 0.0, bottom: 0.0, left: 0.0, }
 }
 
 ///|
@@ -160,7 +160,7 @@ pub fn Insets::new(
   } else if top < 0.0 || right < 0.0 || bottom < 0.0 || left < 0.0 {
     Err(NegativeValue)
   } else {
-    Ok({ top, right, bottom, left })
+    Ok({ top, right, bottom, left, })
   }
 }
 
@@ -463,10 +463,14 @@ pub fn layout_flex(
   if has_duplicate_ids(items) {
     Err(DuplicateId)
   } else {
-    let horizontal = container.padding.left + container.padding.right +
-      container.border.left + container.border.right
-    let vertical = container.padding.top + container.padding.bottom +
-      container.border.top + container.border.bottom
+    let horizontal = container.padding.left +
+      container.padding.right +
+      container.border.left +
+      container.border.right
+    let vertical = container.padding.top +
+      container.padding.bottom +
+      container.border.top +
+      container.border.bottom
     if !finite(horizontal) || !finite(vertical) {
       Err(NonFiniteValue)
     } else {
@@ -491,11 +495,7 @@ pub fn layout_flex(
             Err(error) => Err(error)
             Ok(prepared) =>
               place_items(
-                container,
-                prepared,
-                content_bounds,
-                main_extent,
-                cross_extent,
+                container, prepared, content_bounds, main_extent, cross_extent,
               )
           }
         }
@@ -527,10 +527,11 @@ fn prepare_items(
         } else if item.grow < 0.0 || item.shrink < 0.0 {
           error = Some(NegativeValue)
         } else {
-          match (
-            resolve_dimension(item.main, Some(main_extent)),
-            resolve_dimension(item.cross, Some(cross_extent)),
-          ) {
+          match
+            (
+              resolve_dimension(item.main, Some(main_extent)),
+              resolve_dimension(item.cross, Some(cross_extent)),
+            ) {
             (Err(value), _) => error = Some(value)
             (_, Err(value)) => error = Some(value)
             (Ok(main_value), Ok(cross_value)) => {
@@ -677,7 +678,7 @@ fn place_items(
             if overflow {
               any_overflow = true
             }
-            output.push({ id: entry.item.id, bounds, overflow })
+            output.push({ id: entry.item.id, bounds, overflow, })
           }
         }
         cursor += main_size + container.gap
@@ -685,12 +686,7 @@ fn place_items(
       }
       match error {
         Some(value) => Err(value)
-        None =>
-          Ok({
-            content_bounds,
-            items: output,
-            overflow: any_overflow,
-          })
+        None => Ok({ content_bounds, items: output, overflow: any_overflow, })
       }
     }
   }
@@ -724,11 +720,7 @@ fn valid_limits(min : Double, max : Double?) -> Bool {
 
 ///|
 fn clamp_once(value : Double, min : Double, max : Double?) -> Double {
-  let lower = if value < min {
-    min
-  } else {
-    value
-  }
+  let lower = if value < min { min } else { value }
   match max {
     Some(limit) if lower > limit => limit
     _ => lower
