@@ -41,6 +41,25 @@ jobs:
           run-install: true
       - name: Check Vite+ browser tooling
         run: vp check
+      - name: Smoke Vite+ development server
+        run: |
+          vp dev --host 127.0.0.1 --port 5173 > /tmp/gpui-vp-dev.log 2>&1 &
+          dev_pid=$!
+          trap 'kill "$dev_pid" 2>/dev/null || true; wait "$dev_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:5173/ > /tmp/gpui-vp-dev.html; then
+              break
+            fi
+            if ! kill -0 "$dev_pid" 2>/dev/null; then
+              cat /tmp/gpui-vp-dev.log
+              exit 1
+            fi
+            sleep 1
+          done
+          test -s /tmp/gpui-vp-dev.html || {
+            cat /tmp/gpui-vp-dev.log
+            exit 1
+          }
       - name: Install Chromium and system dependencies
         run: vp run browser:install
       - name: Build the Vite+ browser proof
@@ -54,6 +73,7 @@ jobs:
           path: |
             _build/browser-smoke-status.json
             _build/browser-smoke-failure.png
+            pnpm-lock.yaml
           if-no-files-found: ignore
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
