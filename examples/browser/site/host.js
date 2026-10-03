@@ -45,6 +45,7 @@ let logicalWidth = 0;
 let logicalHeight = 0;
 let deviceScale = 0;
 let listeners = [];
+const activePointerButtons = new Map();
 
 class FrameworkHostError extends Error {
   constructor(diagnostic) {
@@ -255,17 +256,33 @@ function attachCanvasEvents() {
     const bounds = canvas.getBoundingClientRect();
     queueInput("gpui_browser_pointer_move", event.clientX - bounds.left, event.clientY - bounds.top);
   });
-  const pointerButton = (event, pressed) => {
+  const pointerButton = (event, button, pressed) => {
     if (pressed) canvas.focus({ preventScroll: true });
     const bounds = canvas.getBoundingClientRect();
-    queueInput("gpui_browser_pointer_button", event.clientX - bounds.left, event.clientY - bounds.top, event.button, pressed, ...modifiers(event));
+    queueInput("gpui_browser_pointer_button", event.clientX - bounds.left, event.clientY - bounds.top, button, pressed, ...modifiers(event));
   };
   listen(canvas, "pointerdown", (event) => {
-    pointerButton(event, true);
+    if (event.button >= 0 && event.button <= 4) {
+      const buttons = activePointerButtons.get(event.pointerId) || new Set();
+      buttons.add(event.button);
+      activePointerButtons.set(event.pointerId, buttons);
+      pointerButton(event, event.button, true);
+    }
     try { canvas.setPointerCapture(event.pointerId); } catch { /* Some synthetic events cannot be captured. */ }
   });
-  listen(canvas, "pointerup", (event) => pointerButton(event, false));
-  listen(canvas, "pointercancel", (event) => pointerButton(event, false));
+  listen(canvas, "pointerup", (event) => {
+    if (event.button < 0 || event.button > 4) return;
+    const buttons = activePointerButtons.get(event.pointerId);
+    buttons?.delete(event.button);
+    if (buttons?.size === 0) activePointerButtons.delete(event.pointerId);
+    pointerButton(event, event.button, false);
+  });
+  listen(canvas, "pointercancel", (event) => {
+    const buttons = activePointerButtons.get(event.pointerId);
+    activePointerButtons.delete(event.pointerId);
+    if (!buttons) return;
+    for (const button of buttons) pointerButton(event, button, false);
+  });
   listen(canvas, "keydown", (event) => {
     if (["Tab", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(event.key)) event.preventDefault();
     queueInput("gpui_browser_key", event.key, true, event.repeat, ...modifiers(event));
@@ -304,6 +321,7 @@ function stop() {
   }
   dprQuery = null;
   for (const remove of listeners.splice(0)) remove();
+  activePointerButtons.clear();
   if (hadAdapter) gpui.gpui_browser_destroy();
   context = null;
   if (canvas?.isConnected) canvas.remove();
