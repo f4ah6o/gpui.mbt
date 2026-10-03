@@ -1,0 +1,83 @@
+name: Browser backend proof
+
+on:
+  push:
+    branches: [main, feature/browser-backend-poc]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-proof-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hustcer/setup-moonbit@1522f9aef02a8ca0187dfc00a41f5dd6b16750f7 # v1.23
+        with:
+          version: 0.10.14+7d59c7ec9
+          core-version: 0.10.14+7d59c7ec9
+      - name: Prepare the Linux host packages required by the all-target suite
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev
+          sh scripts/prepare_ubuntu.sh
+      - name: Check formatting, all targets, and tests
+        run: |
+          moon fmt --check
+          moon check --target all --deny-warn
+          moon test --target all --deny-warn
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/browser/package-lock.json
+      - name: Install browser test dependency
+        run: npm ci --prefix tests/browser
+      - name: Install Chromium and system dependencies
+        run: npx --prefix tests/browser playwright install --with-deps chromium
+      - name: Build the static browser proof
+        run: ./scripts/build_browser_demo.sh
+      - name: Run real Chromium smoke tests
+        run: npm --prefix tests/browser run smoke
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: browser-smoke-diagnostics
+          path: |
+            _build/browser-smoke-status.json
+            _build/browser-smoke-failure.png
+          if-no-files-found: ignore
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: _build/browser-site
+
+  deploy:
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/browser-backend-poc')
+    needs: verify-and-package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      - name: Deploy the verified browser artifact
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

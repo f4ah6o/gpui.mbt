@@ -645,6 +645,14 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "examples/ubuntu": {"ubuntu", "platform", "primitives", "diagnostics", "scene"},
         "element": {"core", "primitives", "layout", "scene"},
         "examples/headless": {"core", "diagnostics", "primitives"},
+        # Portable browser fixture consumes framework layers only. Browser host
+        # code is a target-specific leaf above that fixture and shared values.
+        "examples/browser_app": {
+            "core", "diagnostics", "element", "layout", "platform", "primitives", "scene",
+        },
+        "examples/browser": {
+            "examples/browser_app", "diagnostics", "platform", "primitives",
+        },
     }
     required_runtime_packages = {
         "primitives",

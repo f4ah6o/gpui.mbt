@@ -1,0 +1,16 @@
+import {
+  "f4ah6o/gpui/core",
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/element",
+  "f4ah6o/gpui/layout",
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/scene",
+}
+
+import {
+  "f4ah6o/gpui/examples/browser_app",
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/scene",
+} for "test"

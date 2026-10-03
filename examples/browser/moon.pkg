@@ -1,0 +1,14 @@
+import {
+  "f4ah6o/gpui/examples/browser_app",
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/primitives",
+}
+
+supported_targets = "js"
+
+pkgtype(kind: "foreign_library")
+
+options(
+  link: { "js": { "format": "esm" } },
+)

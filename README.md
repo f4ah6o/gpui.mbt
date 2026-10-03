@@ -13,6 +13,7 @@ M0 contracts define the App/Entity/Context model, architecture, dependency rules
 - [GPUI concept compatibility matrix](docs/compatibility.md)
 - [Open implementation packets](issues/open/)
 - [Ubuntu Wayland native app, setup and evidence](docs/ubuntu.md)
+- [JavaScript browser proof of concept](docs/browser-demo.md)
 
 M1 generic entity payloads use an immutable or copy-on-write discipline. MoonBit cannot deeply copy arbitrary `T`, so retaining a mutable alias and changing it outside `App::update` can bypass revision and notification tracking. The core API does not claim to prevent this. M1 also has no windows, rendering, background executor, IME, accessibility adapter, or native platform backend.
 
@@ -53,6 +54,7 @@ The MoonBit core packages compile and test on the configured local targets, and 
 
 | Platform | Status | Evidence |
 |---|---|---|
+| JavaScript browser | Proof of concept; unsupported | Canvas 2D `SceneSnapshot` v1 slice, shared MoonBit app/layout/event model, and real-Chromium smoke workflow; WebGPU and browser production gates remain open. |
 | macOS | Planned; unsupported | Core-only MoonBit checks; no native backend or E2E evidence. |
 | Windows | Planned; unsupported | Core-only MoonBit checks; no native backend or E2E evidence. |
 | Ubuntu / Wayland | First native slice; unsupported | Local Debian 13/Weston 14 native window, GPU readback and lifecycle E2E; Ubuntu 24.04 CI configured, real desktop gates pending. |
@@ -84,6 +86,10 @@ sh scripts/prepare_ubuntu.sh
 moon check --deny-warn
 moon test
 ```
+
+The experimental JavaScript browser proof has its own static build and
+real-Chromium smoke workflow. See [the browser proof guide](docs/browser-demo.md)
+for local steps and its current capability limits.
 
 Formatting can be checked with:
 

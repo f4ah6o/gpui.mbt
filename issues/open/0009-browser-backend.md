@@ -363,3 +363,27 @@ evidence.
 The final evidence must demonstrate that browser support reuses the same
 portable core, layout, element, scene, event, text, accessibility, and
 diagnostic contracts rather than maintaining a parallel web framework.
+
+## First JavaScript proof slice — 2026-10-03
+
+The repository now contains a JavaScript-only Canvas 2D host and a separate
+host-neutral MoonBit app fixture. The fixture uses the shared app/entity,
+flex-tree layout, element hit testing, focus, common event ingress, and
+`SceneSnapshot` v1 quad data. The host owns the canvas, CSS-pixel/DPR measurement,
+pointer and keyboard callbacks, focus/visibility/lifecycle listeners, and
+on-demand `requestAnimationFrame` presentation. Its current capability report
+keeps native top-level windows, clipboard, cursor, IME, accessibility, renderer
+recovery, and worker commands unavailable.
+
+The local build and all-target check/test suites pass. A pinned Chromium smoke
+test covers rendered Canvas 2D output, pointer/focus input, live viewport/DPR
+updates, hidden-page scheduling, context-loss diagnostics, and repeated
+teardown. The smoke runs in GitHub Actions; local Chromium download was
+unavailable in the implementation environment, so browser execution evidence
+is pending that workflow. Build and test instructions are in
+[`docs/browser-demo.md`](../../docs/browser-demo.md).
+
+This is the first JavaScript proof slice only. This packet remains open for CI
+browser evidence, WasmGC and Wasm browser targets, broader input and text
+services, WebGPU, accessibility, renderer recovery, native/backend conformance,
+and the production gates above.

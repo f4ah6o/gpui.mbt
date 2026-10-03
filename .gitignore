@@ -1,5 +1,6 @@
 _build/
 .moon/
+/tests/browser/node_modules/
 __pycache__/
 *.pyc
 ubuntu/xdg-shell-client-protocol.h
