@@ -37,6 +37,11 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
   },
+  check: {
+    // MoonBit's formatter remains authoritative for this repository. Avoid
+    // reformatting the existing Markdown/document corpus as part of browser CI.
+    fmt: false,
+  },
   server: {
     fs: {
       allow: [repoRoot],
