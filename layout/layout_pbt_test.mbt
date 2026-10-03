@@ -39,19 +39,31 @@ test "property flex line preserves order and finite non-negative geometry" {
               ),
             ) {
             (Ok(a), Ok(b), Ok(container)) =>
-              match @layout.layout_flex(container, [a, b]) {
-                Err(_) => false
-                Ok(result) => {
+              match
+                (
+                  @layout.layout_flex(container, [a, b]),
+                  @layout.layout_flex(container, [a, b]),
+                ) {
+                (Ok(result), Ok(repeated)) => {
                   let items = result.items()
+                  let repeated_items = repeated.items()
                   items.length() == 2 &&
+                  repeated_items.length() == 2 &&
+                  result.content_bounds() == repeated.content_bounds() &&
+                  result.overflow() == repeated.overflow() &&
                   items[0].id() == 1 &&
                   items[1].id() == 2 &&
+                  items[0].bounds() == repeated_items[0].bounds() &&
+                  items[1].bounds() == repeated_items[1].bounds() &&
+                  items[0].overflow() == repeated_items[0].overflow() &&
+                  items[1].overflow() == repeated_items[1].overflow() &&
                   items[0].bounds().size().width() >= 0.0 &&
                   items[1].bounds().size().width() >= 0.0 &&
                   items[0].bounds().size().height() >= 0.0 &&
                   items[1].bounds().size().height() >= 0.0 &&
                   items[0].bounds().left() <= items[1].bounds().left()
                 }
+                _ => false
               }
             _ => false
           }
