@@ -28,9 +28,7 @@ fn element_color(red : Int, green : Int, blue : Int) -> @primitives.Color {
 }
 
 ///|
-fn unwrap_tree(
-  nodes : Array[@element.ElementNode],
-) -> @element.ElementTree {
+fn unwrap_tree(nodes : Array[@element.ElementNode]) -> @element.ElementTree {
   match @element.ElementTree::new(nodes) {
     Ok(value) => value
     Err(_) => abort("valid element tree rejected")
@@ -44,12 +42,12 @@ test "element tree rejects duplicate ids and missing parents" {
     @element.ElementTree::new([
       @element.ElementNode::new(1, None, bounds),
       @element.ElementNode::new(1, Some(1), bounds),
-    ]) is Err(DuplicateId),
+    ])
+    is Err(DuplicateId),
   )
   assert_true(
-    @element.ElementTree::new([
-      @element.ElementNode::new(2, Some(99), bounds),
-    ]) is Err(MissingParent),
+    @element.ElementTree::new([@element.ElementNode::new(2, Some(99), bounds)])
+    is Err(MissingParent),
   )
 }
 
