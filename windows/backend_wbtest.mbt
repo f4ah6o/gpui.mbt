@@ -16,6 +16,18 @@ extern "C" fn native_clipboard_validation() -> Int = "gpui_windows_test_clipboar
 extern "C" fn native_wake_stop_race(host : Int) -> Int = "gpui_windows_test_wake_stop_race"
 
 ///|
+extern "C" fn native_size_message(host : Int, window : Int, phase : Int) -> Int = "gpui_windows_test_size_message"
+
+///|
+extern "C" fn native_mouse_capture(host : Int, window : Int) -> Int = "gpui_windows_test_mouse_capture"
+
+///|
+extern "C" fn native_mouse_arm_destroy(host : Int, window : Int) -> Int = "gpui_windows_test_mouse_arm_destroy"
+
+///|
+extern "C" fn native_mouse_destroy_reset(host : Int, window : Int) -> Int = "gpui_windows_test_mouse_destroy_reset"
+
+///|
 fn rect(w : Double, h : Double) -> @primitives.Rect {
   match @primitives.Rect::new(0.0, 0.0, w, h) {
     Ok(r) => r
@@ -298,6 +310,99 @@ test "Windows D3D11 HWND renders and reads back first frame" {
     }
     assert_true(frame_completed)
 
+    let (initial_width, initial_height, _) = required(
+      host.window_metrics(window),
+    )
+    for phase in 0..<2 {
+      required(
+        outcome(
+          native_size_message(host.token, window.value().to_int(), phase),
+          "size_message",
+        ),
+      )
+      let size_events = required(host.dispatch(0))
+      for event in size_events {
+        assert_true(event.sequence() > last_sequence)
+        last_sequence = event.sequence()
+      }
+      assert_true(
+        !size_events.any(event => event.kind() is @platform.Resized(..)),
+      )
+      let (width, height, _) = required(host.window_metrics(window))
+      assert_eq(width, initial_width)
+      assert_eq(height, initial_height)
+    }
+    required(
+      outcome(
+        native_size_message(host.token, window.value().to_int(), 2),
+        "size_restore",
+      ),
+    )
+    let restore_events = required(host.dispatch(0))
+    let mut restored = false
+    for event in restore_events {
+      assert_true(event.sequence() > last_sequence)
+      last_sequence = event.sequence()
+      match event.kind() {
+        @platform.Resized(width~, height~) => {
+          assert_eq(width, initial_width)
+          assert_eq(height, initial_height)
+          restored = true
+        }
+        _ => ()
+      }
+    }
+    assert_true(restored)
+    let (restored_width, restored_height, _) = required(
+      host.window_metrics(window),
+    )
+    assert_eq(restored_width, initial_width)
+    assert_eq(restored_height, initial_height)
+
+    required(
+      outcome(
+        native_mouse_capture(host.token, window.value().to_int()),
+        "mouse_capture_probe",
+      ),
+    )
+    let mouse_events = required(host.dispatch(0))
+    let expected_buttons = [
+      @primitives.Primary,
+      @primitives.Secondary,
+      @primitives.Primary,
+      @primitives.Secondary,
+      @primitives.Back,
+      @primitives.Forward,
+      @primitives.Back,
+      @primitives.Forward,
+      @primitives.Middle,
+      @primitives.Middle,
+      @primitives.Primary,
+      @primitives.Primary,
+    ]
+    let expected_pressed = [
+      true, true, false, false, true, true, false, false, true, false, true, true,
+    ]
+    let mut button_event_index = 0
+    for event in mouse_events {
+      assert_true(event.sequence() > last_sequence)
+      last_sequence = event.sequence()
+      match event.kind() {
+        @platform.Input(@primitives.PointerButtonPressed(button~, ..)) => {
+          assert_true(expected_pressed[button_event_index])
+          assert_true(button == expected_buttons[button_event_index])
+          button_event_index += 1
+        }
+        @platform.Input(@primitives.PointerButtonReleased(button~, ..)) => {
+          assert_true(!expected_pressed[button_event_index])
+          assert_true(button == expected_buttons[button_event_index])
+          button_event_index += 1
+        }
+        _ => ()
+      }
+    }
+    assert_eq(button_event_index, expected_buttons.length())
+
     let sample_text = "clipboard 日本語 😀"
     match host.write_clipboard("prefix\u{0}suffix") {
       Err(error) => assert_eq(error.code().label(), "conversion_failed")
@@ -339,7 +444,19 @@ test "Windows D3D11 HWND renders and reads back first frame" {
     assert_true(
       close_events.any(event => event.kind() is @platform.CloseRequested),
     )
+    required(
+      outcome(
+        native_mouse_arm_destroy(host.token, window.value().to_int()),
+        "mouse_arm_destroy",
+      ),
+    )
     required(host.destroy_window(window))
+    required(
+      outcome(
+        native_mouse_destroy_reset(host.token, window.value().to_int()),
+        "mouse_destroy_reset",
+      ),
+    )
     required(host.destroy_window(window))
     let terminal_events = required(host.dispatch(0))
     assert_eq(terminal_events.length(), 1)

@@ -48,6 +48,11 @@ struct output {
   uint32_t name;
   int scale, entered;
 };
+enum input_serial_origin {
+  INPUT_SERIAL_NONE,
+  INPUT_SERIAL_POINTER,
+  INPUT_SERIAL_KEYBOARD
+};
 struct host {
   int token, window, state, wake_fd, error;
   pthread_t owner;
@@ -60,11 +65,14 @@ struct host {
   struct wl_data_device *data_device;
   struct wl_data_offer *selection_offer, *pending_offer;
   uint32_t compositor_name, shell_name, shm_name, data_manager_name;
+  uint32_t seat_name;
   struct wl_seat *seat;
   struct wl_pointer *pointer;
   struct wl_keyboard *keyboard;
   uint32_t pointer_serial, input_serial;
-  int pointer_inside;
+  int input_serial_window;
+  enum input_serial_origin input_serial_origin;
+  int pointer_inside, pointer_focus_current, keyboard_focus_current;
   struct wl_cursor_theme *cursor_theme;
   struct wl_cursor *cursors[3];
   struct wl_surface *cursor_surface;
@@ -102,6 +110,35 @@ static int next_host = 1;
 static int next_window = 1;
 static void flush_transfers(struct host *h);
 static void collect_source(struct clipboard_source *source);
+static void remember_input_serial(struct host *h, uint32_t serial,
+                                  enum input_serial_origin origin) {
+  int focused = origin == INPUT_SERIAL_POINTER
+                    ? h->pointer_focus_current
+                    : (origin == INPUT_SERIAL_KEYBOARD
+                           ? h->keyboard_focus_current
+                           : 0);
+  if (!serial || !focused || !h->seat_name)
+    return;
+  h->input_serial = serial;
+  h->input_serial_window = h->window;
+  h->input_serial_origin = origin;
+}
+static void invalidate_input_serial(struct host *h,
+                                    enum input_serial_origin origin) {
+  if (origin == INPUT_SERIAL_NONE || h->input_serial_origin == origin) {
+    h->input_serial = 0;
+    h->input_serial_window = 0;
+    h->input_serial_origin = INPUT_SERIAL_NONE;
+  }
+}
+static int has_input_serial(const struct host *h) {
+  return h->seat_name && h->window && h->input_serial &&
+         h->input_serial_window == h->window &&
+         ((h->input_serial_origin == INPUT_SERIAL_POINTER &&
+           h->pointer_focus_current) ||
+          (h->input_serial_origin == INPUT_SERIAL_KEYBOARD &&
+           h->keyboard_focus_current));
+}
 static int valid_size(int w, int h, int scale) {
   return w > 0 && h > 0 && scale > 0 && w <= 16384 / scale &&
          h <= 16384 / scale;
@@ -549,10 +586,11 @@ static void pointer_enter(void *d, struct wl_pointer *p, uint32_t serial,
                           struct wl_surface *s, wl_fixed_t x, wl_fixed_t y) {
   UNUSED(p);
   UNUSED(serial);
-  UNUSED(s);
   struct host *h = d;
+  invalidate_input_serial(h, INPUT_SERIAL_POINTER);
   h->pointer_serial = serial;
   h->pointer_inside = 1;
+  h->pointer_focus_current = h->surface && s == h->surface;
   h->px = wl_fixed_to_double(x);
   h->py = wl_fixed_to_double(y);
   if (h->cursor_surface)
@@ -561,12 +599,13 @@ static void pointer_enter(void *d, struct wl_pointer *p, uint32_t serial,
 }
 static void pointer_leave(void *d, struct wl_pointer *p, uint32_t serial,
                           struct wl_surface *s) {
-  UNUSED(d);
   UNUSED(p);
   UNUSED(s);
   struct host *h = d;
   h->pointer_inside = 0;
+  h->pointer_focus_current = 0;
   h->pointer_serial = serial;
+  invalidate_input_serial(h, INPUT_SERIAL_POINTER);
 }
 static void pointer_motion(void *d, struct wl_pointer *p, uint32_t time,
                            wl_fixed_t x, wl_fixed_t y) {
@@ -583,7 +622,7 @@ static void pointer_button(void *d, struct wl_pointer *p, uint32_t serial,
   UNUSED(time);
   struct host *h = d;
   if (state == WL_POINTER_BUTTON_STATE_PRESSED)
-    h->input_serial = serial;
+    remember_input_serial(h, serial, INPUT_SERIAL_POINTER);
   if (button >= 0x110 && button <= 0x114)
     event(h, state ? 8 : 9, button - 0x110, h->px, h->py);
 }
@@ -637,9 +676,11 @@ static void keyboard_enter(void *d, struct wl_keyboard *k, uint32_t serial,
                            struct wl_surface *s, struct wl_array *keys) {
   UNUSED(k);
   UNUSED(serial);
-  UNUSED(s);
   UNUSED(keys);
-  event(d, 6, 1, 0, 0);
+  struct host *h = d;
+  invalidate_input_serial(h, INPUT_SERIAL_KEYBOARD);
+  h->keyboard_focus_current = h->surface && s == h->surface;
+  event(h, 6, 1, 0, 0);
 }
 static void keyboard_leave(void *d, struct wl_keyboard *k, uint32_t serial,
                            struct wl_surface *s) {
@@ -648,6 +689,8 @@ static void keyboard_leave(void *d, struct wl_keyboard *k, uint32_t serial,
   UNUSED(s);
   struct host *h = d;
   h->modifiers = 0;
+  h->keyboard_focus_current = 0;
+  invalidate_input_serial(h, INPUT_SERIAL_KEYBOARD);
   event(h, 6, 0, 0, 0);
 }
 static void keyboard_key(void *d, struct wl_keyboard *k, uint32_t serial,
@@ -656,7 +699,7 @@ static void keyboard_key(void *d, struct wl_keyboard *k, uint32_t serial,
   UNUSED(time);
   struct host *h = d;
   if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
-    h->input_serial = serial;
+    remember_input_serial(h, serial, INPUT_SERIAL_KEYBOARD);
   if (!h->keys)
     return;
   xkb_keysym_t sym = xkb_state_key_get_one_sym(h->keys, key + 8);
@@ -701,19 +744,27 @@ static void seat_caps(void *d, struct wl_seat *s, uint32_t caps) {
     wl_pointer_add_listener(h->pointer, &pointer_listener, h);
     h->pointer_inside = 0;
     h->pointer_serial = 0;
-  } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && h->pointer) {
-    h->pointer_inside = 0;
-    h->pointer_serial = 0;
-    wl_pointer_destroy(h->pointer);
-    h->pointer = NULL;
+  } else if (!(caps & WL_SEAT_CAPABILITY_POINTER)) {
+    invalidate_input_serial(h, INPUT_SERIAL_POINTER);
+    h->pointer_focus_current = 0;
+    if (h->pointer) {
+      h->pointer_inside = 0;
+      h->pointer_serial = 0;
+      wl_pointer_destroy(h->pointer);
+      h->pointer = NULL;
+    }
   }
   if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !h->keyboard) {
     h->keyboard = wl_seat_get_keyboard(s);
     wl_keyboard_add_listener(h->keyboard, &keyboard_listener, h);
-  } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && h->keyboard) {
-    event(h, 6, 0, 0, 0);
-    wl_keyboard_destroy(h->keyboard);
-    h->keyboard = NULL;
+  } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD)) {
+    invalidate_input_serial(h, INPUT_SERIAL_KEYBOARD);
+    h->keyboard_focus_current = 0;
+    if (h->keyboard) {
+      event(h, 6, 0, 0, 0);
+      wl_keyboard_destroy(h->keyboard);
+      h->keyboard = NULL;
+    }
   }
 }
 static const struct wl_seat_listener seat_listener = {.capabilities =
@@ -730,6 +781,7 @@ static void global(void *d, struct wl_registry *r, uint32_t name,
     xdg_wm_base_add_listener(h->shell, &shell_listener, h);
   } else if (!strcmp(interface, "wl_seat") && !h->seat) {
     h->seat = wl_registry_bind(r, name, &wl_seat_interface, 1);
+    h->seat_name = name;
     wl_seat_add_listener(h->seat, &seat_listener, h);
     maybe_create_data_device(h);
   } else if (!strcmp(interface, "wl_shm") && !h->shm) {
@@ -763,6 +815,13 @@ static void global_remove(void *d, struct wl_registry *r, uint32_t name) {
   }
   if (name == h->data_manager_name) {
     h->data_manager_name = 0;
+  }
+  if (h->seat_name && name == h->seat_name) {
+    h->seat_name = 0;
+    invalidate_input_serial(h, INPUT_SERIAL_NONE);
+    h->pointer_inside = 0;
+    h->pointer_focus_current = 0;
+    h->keyboard_focus_current = 0;
   }
   for (int i = 0; i < OUTPUT_CAPACITY; ++i)
     if (h->outputs[i].name == name) {
@@ -800,6 +859,9 @@ static void release_renderer(struct host *h, int terminate_display) {
  * to the externally owned wl_display alive for the host lifetime. */
 static void release_gpu(struct host *h) { release_renderer(h, 0); }
 static void release_window(struct host *h) {
+  invalidate_input_serial(h, INPUT_SERIAL_NONE);
+  h->pointer_focus_current = 0;
+  h->keyboard_focus_current = 0;
   if (h->frame) {
     wl_callback_destroy(h->frame);
     h->frame = NULL;
@@ -1599,7 +1661,7 @@ int32_t gpui_write_clipboard(int32_t token, const uint8_t *bytes,
     return GPUI_STOPPING;
   if (!h->window || !h->data_device || !h->data_manager)
     return GPUI_UNSUPPORTED;
-  if (!h->input_serial)
+  if (!has_input_serial(h))
     return GPUI_UNSUPPORTED;
   if (length < 0 || length > CLIPBOARD_LIMIT || (length && !bytes) ||
       (length && memchr(bytes, 0, (size_t)length)))

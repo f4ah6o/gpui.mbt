@@ -46,6 +46,8 @@ typedef BOOL(WINAPI *fn_set_window_text_w)(HWND, LPCWSTR);
 typedef BOOL(WINAPI *fn_set_window_pos)(HWND, HWND, int, int, int, int, UINT);
 typedef BOOL(WINAPI *fn_get_client_rect)(HWND, LPRECT);
 typedef BOOL(WINAPI *fn_get_window_rect)(HWND, LPRECT);
+typedef LRESULT(WINAPI *fn_send_message_w)(HWND, UINT, WPARAM, LPARAM);
+typedef HWND(WINAPI *fn_get_capture)(void);
 typedef BOOL(WINAPI *fn_adjust_window_rect_ex_for_dpi)(LPRECT, DWORD, BOOL,
                                                        DWORD, UINT);
 typedef BOOL(WINAPI *fn_adjust_window_rect_ex)(LPRECT, DWORD, BOOL, DWORD);
@@ -106,6 +108,8 @@ typedef struct gpui_windows_api {
   fn_set_window_pos set_window_pos;
   fn_get_client_rect get_client_rect;
   fn_get_window_rect get_window_rect;
+  fn_send_message_w send_message_w;
+  fn_get_capture get_capture;
   fn_adjust_window_rect_ex_for_dpi adjust_window_rect_ex_for_dpi;
   fn_adjust_window_rect_ex adjust_window_rect_ex;
   fn_screen_to_client screen_to_client;
@@ -192,6 +196,12 @@ static volatile LONG g_next_window;
 static SRWLOCK g_host_lifecycle_lock = SRWLOCK_INIT;
 static const GUID gpui_iid_texture2d =
     {0x6f15aaf2, 0xd208, 0x4e89, {0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f, 0x9c}};
+
+#define GPUI_MOUSE_LEFT (1u << 0)
+#define GPUI_MOUSE_RIGHT (1u << 1)
+#define GPUI_MOUSE_MIDDLE (1u << 2)
+#define GPUI_MOUSE_X1 (1u << 3)
+#define GPUI_MOUSE_X2 (1u << 4)
 
 static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
                                          WPARAM wparam, LPARAM lparam);
@@ -369,6 +379,8 @@ static int32_t api_init(gpui_windows_host *host) {
   GPUI_LOAD(user32, set_window_pos, fn_set_window_pos, "SetWindowPos");
   GPUI_LOAD(user32, get_client_rect, fn_get_client_rect, "GetClientRect");
   GPUI_LOAD(user32, get_window_rect, fn_get_window_rect, "GetWindowRect");
+  GPUI_LOAD(user32, send_message_w, fn_send_message_w, "SendMessageW");
+  GPUI_LOAD(user32, get_capture, fn_get_capture, "GetCapture");
   g_host.api.adjust_window_rect_ex_for_dpi =
       (fn_adjust_window_rect_ex_for_dpi)(uintptr_t)GetProcAddress(
           user32, "AdjustWindowRectExForDpi");
@@ -969,6 +981,46 @@ static void emit_character(gpui_windows_host *host, uint32_t scalar,
   emit_event(host, 11, (double)scalar, 0, 0, mods);
 }
 
+static UINT mouse_button_bit(UINT message, WPARAM wparam) {
+  switch (message) {
+  case WM_LBUTTONDOWN:
+  case WM_LBUTTONUP:
+    return GPUI_MOUSE_LEFT;
+  case WM_RBUTTONDOWN:
+  case WM_RBUTTONUP:
+    return GPUI_MOUSE_RIGHT;
+  case WM_MBUTTONDOWN:
+  case WM_MBUTTONUP:
+    return GPUI_MOUSE_MIDDLE;
+  case WM_XBUTTONDOWN:
+  case WM_XBUTTONUP:
+    return HIWORD(wparam) == XBUTTON1 ? GPUI_MOUSE_X1
+                                     : HIWORD(wparam) == XBUTTON2
+                                           ? GPUI_MOUSE_X2
+                                           : 0;
+  default:
+    return 0;
+  }
+}
+
+static UINT update_mouse_buttons(UINT buttons, UINT message, WPARAM wparam) {
+  UINT bit = mouse_button_bit(message, wparam);
+  switch (message) {
+  case WM_LBUTTONDOWN:
+  case WM_RBUTTONDOWN:
+  case WM_MBUTTONDOWN:
+  case WM_XBUTTONDOWN:
+    return buttons | bit;
+  case WM_LBUTTONUP:
+  case WM_RBUTTONUP:
+  case WM_MBUTTONUP:
+  case WM_XBUTTONUP:
+    return buttons & ~bit;
+  default:
+    return buttons;
+  }
+}
+
 static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
                                          WPARAM wparam, LPARAM lparam) {
   gpui_windows_host *host = (gpui_windows_host *)
@@ -1001,7 +1053,7 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
   case WM_SIZE: {
     int32_t width = LOWORD(lparam);
     int32_t height = HIWORD(lparam);
-    if (width > 0 && height > 0) {
+    if (wparam != SIZE_MINIMIZED && width > 0 && height > 0) {
       HRESULT hr = resize_gpu(host, width, height);
       if (FAILED(hr))
         InterlockedExchange(&host->error, map_hresult(hr));
@@ -1009,8 +1061,8 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
       host->pixel_height = height;
       host->logical_width = (double)width / host->scale;
       host->logical_height = (double)height / host->scale;
+      emit_event(host, 1, 0, 0, 0, 0);
     }
-    emit_event(host, 1, 0, 0, 0, 0);
     return 0;
   }
   case WM_DPICHANGED: {
@@ -1038,6 +1090,10 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
   case WM_KILLFOCUS:
     emit_event(host, 6, 0, 0, 0, 0);
     host->pending_high_surrogate = 0;
+    host->mouse_buttons = 0;
+    return 0;
+  case WM_CAPTURECHANGED:
+    host->mouse_buttons = 0;
     return 0;
   case WM_CLOSE:
     emit_event(host, 3, 0, 0, 0, 0);
@@ -1064,7 +1120,8 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
   case WM_RBUTTONDOWN:
   case WM_MBUTTONDOWN:
   case WM_XBUTTONDOWN: {
-    host->mouse_buttons |= (UINT)wparam;
+    host->mouse_buttons =
+        update_mouse_buttons(host->mouse_buttons, message, wparam);
     host->api.set_capture(hwnd);
     int32_t button = message == WM_LBUTTONDOWN ? 0
                      : message == WM_RBUTTONDOWN ? 1
@@ -1088,8 +1145,10 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
     emit_event(host, 9, (double)(short)LOWORD(lparam) / host->scale,
                (double)(short)HIWORD(lparam) / host->scale, button,
                modifiers_from_message(host, wparam));
-    host->mouse_buttons = 0;
-    host->api.release_capture();
+    host->mouse_buttons =
+        update_mouse_buttons(host->mouse_buttons, message, wparam);
+    if (host->mouse_buttons == 0)
+      host->api.release_capture();
     return message == WM_XBUTTONUP ? TRUE : 0;
   }
   case WM_MOUSEWHEEL:
@@ -1154,6 +1213,8 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
     }
     break;
   case WM_NCDESTROY:
+    host->mouse_buttons = 0;
+    host->mouse_tracking = FALSE;
     host->api.set_window_long_ptr_w(hwnd, GWLP_USERDATA, 0);
     break;
   default:
@@ -1390,6 +1451,7 @@ int32_t gpui_windows_destroy(int32_t token, int32_t window) {
   g_host.hwnd = NULL;
   g_host.window_id = 0;
   g_host.destroying = FALSE;
+  g_host.mouse_buttons = 0;
   g_host.pixel_width = 0;
   g_host.pixel_height = 0;
   g_host.logical_width = 0;
@@ -1440,6 +1502,155 @@ int32_t gpui_windows_metrics(int32_t token, int32_t window, double *metrics) {
   metrics[1] = g_host.logical_height;
   metrics[2] = g_host.scale;
   return GPUI_WINDOWS_OK;
+}
+
+/* CI-only deterministic WM_SIZE probe. phase 0 sends SIZE_MINIMIZED, phase 1
+ * sends a zero-sized restore message, and phase 2 restores the cached size. */
+int32_t gpui_windows_test_size_message(int32_t token, int32_t window,
+                                       int32_t phase) {
+  int32_t status = check_window(token, window);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  int32_t old_width = g_host.pixel_width;
+  int32_t old_height = g_host.pixel_height;
+  double old_logical_width = g_host.logical_width;
+  double old_logical_height = g_host.logical_height;
+  int32_t old_event_count = g_host.event_count;
+  if (phase == 0) {
+    g_host.api.send_message_w(g_host.hwnd, WM_SIZE, SIZE_MINIMIZED, 0);
+  } else if (phase == 1) {
+    g_host.api.send_message_w(g_host.hwnd, WM_SIZE, SIZE_RESTORED, 0);
+  } else if (phase == 2) {
+    if (old_width <= 0 || old_height <= 0 || old_width > 65535 ||
+        old_height > 65535)
+      return GPUI_WINDOWS_INVALID;
+    g_host.api.send_message_w(g_host.hwnd, WM_SIZE, SIZE_RESTORED,
+                              MAKELPARAM(old_width, old_height));
+  } else {
+    return GPUI_WINDOWS_INVALID;
+  }
+
+  if (phase < 2) {
+    return g_host.pixel_width == old_width &&
+                   g_host.pixel_height == old_height &&
+                   g_host.logical_width == old_logical_width &&
+                   g_host.logical_height == old_logical_height &&
+                   g_host.event_count == old_event_count
+               ? GPUI_WINDOWS_OK
+               : GPUI_WINDOWS_NATIVE;
+  }
+  int32_t at = (g_host.event_read + g_host.event_count - 1) %
+               GPUI_EVENT_CAPACITY;
+  return g_host.pixel_width == old_width &&
+                 g_host.pixel_height == old_height &&
+                 g_host.logical_width == old_logical_width &&
+                 g_host.logical_height == old_logical_height &&
+                 g_host.event_count == old_event_count + 1 &&
+                 (int32_t)g_host.events[at][0] == 1
+             ? GPUI_WINDOWS_OK
+             : GPUI_WINDOWS_NATIVE;
+}
+
+static BOOL mouse_probe_matches(gpui_windows_host *host, UINT buttons,
+                                BOOL captured) {
+  return host->mouse_buttons == buttons &&
+         ((host->api.get_capture() == host->hwnd) == captured);
+}
+
+/* CI-only probe that sends real Win32 input messages directly through the
+ * current window procedure and checks capture retention after each release. */
+int32_t gpui_windows_test_mouse_capture(int32_t token, int32_t window) {
+  int32_t status = check_window(token, window);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  if (g_host.mouse_buttons != 0 || g_host.api.get_capture() == g_host.hwnd)
+    return GPUI_WINDOWS_BUSY;
+
+#define GPUI_MOUSE_PROBE_STEP(message_value, wparam_value, buttons, captured)  \
+  do {                                                                        \
+    g_host.api.send_message_w(g_host.hwnd, (message_value), (wparam_value),   \
+                              MAKELPARAM(12, 14));                              \
+    if (!mouse_probe_matches(&g_host, (buttons), (captured)))                 \
+      goto mouse_probe_failed;                                                \
+  } while (0)
+
+  GPUI_MOUSE_PROBE_STEP(WM_LBUTTONDOWN,
+                        MK_LBUTTON | MK_SHIFT | MK_CONTROL,
+                        GPUI_MOUSE_LEFT, TRUE);
+  GPUI_MOUSE_PROBE_STEP(WM_RBUTTONDOWN, MK_LBUTTON | MK_RBUTTON,
+                        GPUI_MOUSE_LEFT | GPUI_MOUSE_RIGHT, TRUE);
+  GPUI_MOUSE_PROBE_STEP(WM_LBUTTONUP,
+                        MK_RBUTTON | MK_SHIFT | MK_CONTROL,
+                        GPUI_MOUSE_RIGHT, TRUE);
+  GPUI_MOUSE_PROBE_STEP(WM_RBUTTONUP, 0, 0, FALSE);
+  GPUI_MOUSE_PROBE_STEP(WM_XBUTTONDOWN,
+                        MAKEWPARAM(MK_XBUTTON1, XBUTTON1), GPUI_MOUSE_X1,
+                        TRUE);
+  GPUI_MOUSE_PROBE_STEP(WM_XBUTTONDOWN,
+                        MAKEWPARAM(MK_XBUTTON1 | MK_XBUTTON2, XBUTTON2),
+                        GPUI_MOUSE_X1 | GPUI_MOUSE_X2, TRUE);
+  GPUI_MOUSE_PROBE_STEP(WM_XBUTTONUP,
+                        MAKEWPARAM(MK_XBUTTON2, XBUTTON1), GPUI_MOUSE_X2,
+                        TRUE);
+  GPUI_MOUSE_PROBE_STEP(WM_XBUTTONUP, MAKEWPARAM(0, XBUTTON2), 0, FALSE);
+  GPUI_MOUSE_PROBE_STEP(WM_MBUTTONDOWN, MK_MBUTTON, GPUI_MOUSE_MIDDLE, TRUE);
+  GPUI_MOUSE_PROBE_STEP(WM_MBUTTONUP, 0, 0, FALSE);
+
+  GPUI_MOUSE_PROBE_STEP(WM_LBUTTONDOWN, MK_LBUTTON, GPUI_MOUSE_LEFT, TRUE);
+  g_host.api.send_message_w(g_host.hwnd, WM_CAPTURECHANGED, 0, 0);
+  if (g_host.mouse_buttons != 0)
+    goto mouse_probe_failed;
+  if (g_host.api.get_capture() == g_host.hwnd)
+    g_host.api.release_capture();
+  if (g_host.api.get_capture() == g_host.hwnd)
+    goto mouse_probe_failed;
+
+  GPUI_MOUSE_PROBE_STEP(WM_LBUTTONDOWN, MK_LBUTTON, GPUI_MOUSE_LEFT, TRUE);
+  g_host.api.send_message_w(g_host.hwnd, WM_KILLFOCUS, 0, 0);
+  if (g_host.mouse_buttons != 0)
+    goto mouse_probe_failed;
+  if (g_host.api.get_capture() == g_host.hwnd)
+    g_host.api.release_capture();
+  if (g_host.api.get_capture() == g_host.hwnd)
+    goto mouse_probe_failed;
+
+#undef GPUI_MOUSE_PROBE_STEP
+  return GPUI_WINDOWS_OK;
+
+mouse_probe_failed:
+#undef GPUI_MOUSE_PROBE_STEP
+  g_host.mouse_buttons = 0;
+  if (g_host.api.get_capture() == g_host.hwnd)
+    g_host.api.release_capture();
+  return GPUI_WINDOWS_NATIVE;
+}
+
+/* Called after the E2E destroys its window to verify teardown cleared input. */
+int32_t gpui_windows_test_mouse_destroy_reset(int32_t token, int32_t window) {
+  int32_t status = check_host(token, TRUE);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  return !g_host.hwnd && g_host.last_destroyed_window == window &&
+                 g_host.mouse_buttons == 0
+             ? GPUI_WINDOWS_OK
+             : GPUI_WINDOWS_NATIVE;
+}
+
+/* Arms one held button immediately before the public destroy-path assertion. */
+int32_t gpui_windows_test_mouse_arm_destroy(int32_t token, int32_t window) {
+  int32_t status = check_window(token, window);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  if (g_host.mouse_buttons != 0 || g_host.api.get_capture() == g_host.hwnd)
+    return GPUI_WINDOWS_BUSY;
+  g_host.api.send_message_w(g_host.hwnd, WM_LBUTTONDOWN, MK_LBUTTON,
+                            MAKELPARAM(12, 14));
+  if (mouse_probe_matches(&g_host, GPUI_MOUSE_LEFT, TRUE))
+    return GPUI_WINDOWS_OK;
+  g_host.mouse_buttons = 0;
+  if (g_host.api.get_capture() == g_host.hwnd)
+    g_host.api.release_capture();
+  return GPUI_WINDOWS_NATIVE;
 }
 
 typedef struct gpui_wrong_thread_probe {
@@ -1939,6 +2150,28 @@ int32_t gpui_windows_test_wake_stop_race(int32_t host) {
   return GPUI_WINDOWS_UNSUPPORTED;
 }
 int32_t gpui_windows_test_clipboard_validation(void) {
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_size_message(int32_t host, int32_t window,
+                                       int32_t phase) {
+  (void)host;
+  (void)window;
+  (void)phase;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_mouse_capture(int32_t host, int32_t window) {
+  (void)host;
+  (void)window;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_mouse_arm_destroy(int32_t host, int32_t window) {
+  (void)host;
+  (void)window;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_mouse_destroy_reset(int32_t host, int32_t window) {
+  (void)host;
+  (void)window;
   return GPUI_WINDOWS_UNSUPPORTED;
 }
 

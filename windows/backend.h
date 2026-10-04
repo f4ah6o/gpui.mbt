@@ -56,5 +56,11 @@ int32_t gpui_windows_test_wrong_thread(int32_t host, int32_t window);
 int32_t gpui_windows_test_wake_stop_race(int32_t host);
 /* CI-only pure-data probe for malformed, unterminated UTF-16 clipboard data. */
 int32_t gpui_windows_test_clipboard_validation(void);
+/* CI-only direct-message probes: size phases are minimize, zero-size, restore. */
+int32_t gpui_windows_test_size_message(int32_t host, int32_t window,
+                                       int32_t phase);
+int32_t gpui_windows_test_mouse_capture(int32_t host, int32_t window);
+int32_t gpui_windows_test_mouse_arm_destroy(int32_t host, int32_t window);
+int32_t gpui_windows_test_mouse_destroy_reset(int32_t host, int32_t window);
 
 #endif

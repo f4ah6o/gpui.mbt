@@ -182,10 +182,120 @@ static void test_clipboard_mime_staging(void) {
   clear_selection_mime_types(&host);
   assert(!host.clipboard_has_utf8 && !host.clipboard_has_plain);
 }
+static void test_input_serial_lifetime(void) {
+  struct host host = {0};
+  host.seat_name = 5;
+  host.window = 7;
+  host.surface = (struct wl_surface *)(uintptr_t)1;
+
+  pointer_enter(&host, NULL, 1, host.surface, 0, 0);
+  pointer_button(&host, NULL, 11, 0, 0x110,
+                 WL_POINTER_BUTTON_STATE_PRESSED);
+  assert(has_input_serial(&host));
+  pointer_leave(&host, NULL, 12, host.surface);
+  assert(!has_input_serial(&host));
+
+  keyboard_enter(&host, NULL, 20, host.surface, NULL);
+  keyboard_key(&host, NULL, 21, 0, 30, WL_KEYBOARD_KEY_STATE_PRESSED);
+  assert(has_input_serial(&host));
+  /* Losing pointer focus keeps a keyboard-origin serial usable. */
+  pointer_enter(&host, NULL, 22, host.surface, 0, 0);
+  pointer_leave(&host, NULL, 23, host.surface);
+  assert(has_input_serial(&host));
+  keyboard_leave(&host, NULL, 24, host.surface);
+  assert(!has_input_serial(&host));
+
+  pointer_enter(&host, NULL, 25, host.surface, 0, 0);
+  pointer_button(&host, NULL, 26, 0, 0x110,
+                 WL_POINTER_BUTTON_STATE_PRESSED);
+  host.keyboard = (struct wl_keyboard *)(uintptr_t)1;
+  seat_caps(&host, NULL, WL_SEAT_CAPABILITY_KEYBOARD);
+  assert(!has_input_serial(&host));
+  host.keyboard = NULL;
+
+  /* Capability loss invalidates its own provenance, even if the proxy is
+   * already absent, while retaining a serial from the unrelated device. */
+  keyboard_enter(&host, NULL, 30, host.surface, NULL);
+  keyboard_key(&host, NULL, 31, 0, 30, WL_KEYBOARD_KEY_STATE_PRESSED);
+  host.keyboard = (struct wl_keyboard *)(uintptr_t)1;
+  seat_caps(&host, NULL, WL_SEAT_CAPABILITY_KEYBOARD);
+  assert(has_input_serial(&host));
+  host.keyboard = NULL;
+  keyboard_leave(&host, NULL, 32, host.surface);
+  assert(!has_input_serial(&host));
+  keyboard_enter(&host, NULL, 33, host.surface, NULL);
+  keyboard_key(&host, NULL, 34, 0, 30, WL_KEYBOARD_KEY_STATE_PRESSED);
+  seat_caps(&host, NULL, 0);
+  assert(!has_input_serial(&host));
+
+  /* A serial observed before gpui_create assigns its window id stays tied to
+   * that zero id and cannot become valid for the newly created window. */
+  host.window = 0;
+  host.pointer_focus_current = 1;
+  remember_input_serial(&host, 40, INPUT_SERIAL_POINTER);
+  host.window = 8;
+  assert(!has_input_serial(&host));
+
+  host.window = 8;
+  keyboard_enter(&host, NULL, 41, host.surface, NULL);
+  keyboard_key(&host, NULL, 42, 0, 30, WL_KEYBOARD_KEY_STATE_PRESSED);
+  assert(has_input_serial(&host));
+  host.surface = NULL;
+  release_window(&host);
+  host.window = 9;
+  host.surface = (struct wl_surface *)(uintptr_t)2;
+  assert(!has_input_serial(&host));
+  pointer_enter(&host, NULL, 42, host.surface, 0, 0);
+  pointer_button(&host, NULL, 43, 0, 0x110,
+                 WL_POINTER_BUTTON_STATE_PRESSED);
+  assert(has_input_serial(&host));
+
+  /* Entering another surface invalidates the old pointer serial, and a later
+   * return to this surface cannot make it valid again without a fresh press. */
+  struct wl_surface *other_surface = (struct wl_surface *)(uintptr_t)3;
+  pointer_enter(&host, NULL, 44, other_surface, 0, 0);
+  pointer_button(&host, NULL, 45, 0, 0x110,
+                 WL_POINTER_BUTTON_STATE_PRESSED);
+  pointer_enter(&host, NULL, 46, host.surface, 0, 0);
+  assert(!has_input_serial(&host));
+  pointer_button(&host, NULL, 47, 0, 0x110,
+                 WL_POINTER_BUTTON_STATE_PRESSED);
+  assert(has_input_serial(&host));
+
+  /* Exercise the public write entry point with fake native proxies: an
+   * invalidated serial must return Unsupported before touching either one. */
+  pointer_leave(&host, NULL, 48, host.surface);
+  uint8_t fake_proxy_storage = 0;
+  host.token = 91;
+  host.owner = pthread_self();
+  host.data_device = (struct wl_data_device *)&fake_proxy_storage;
+  host.data_manager = (struct wl_data_device_manager *)&fake_proxy_storage;
+  struct host *saved_active = active;
+  active = &host;
+  assert(gpui_write_clipboard(host.token, (const uint8_t *)"stale", 5) ==
+         GPUI_UNSUPPORTED);
+  active = saved_active;
+
+  /* Removing the seat global leaves late events from its bound proxies unable
+   * to restore a writable serial. */
+  host.scale = 1;
+  host.width = 100;
+  host.height = 80;
+  pointer_enter(&host, NULL, 50, host.surface, 0, 0);
+  pointer_button(&host, NULL, 51, 0, 0x110,
+                 WL_POINTER_BUTTON_STATE_PRESSED);
+  assert(has_input_serial(&host));
+  global_remove(&host, NULL, host.seat_name);
+  pointer_enter(&host, NULL, 52, host.surface, 0, 0);
+  pointer_button(&host, NULL, 53, 0, 0x110,
+                 WL_POINTER_BUTTON_STATE_PRESSED);
+  assert(!has_input_serial(&host));
+}
 int main(int argc, char **argv) {
   if (argc == 2 && !strcmp(argv[1], "--clipboard-unit")) {
     test_clipboard_transfer_writer();
     test_clipboard_mime_staging();
+    test_input_serial_lifetime();
     puts("Wayland clipboard transfer and MIME helper checks passed.");
     return 0;
   }

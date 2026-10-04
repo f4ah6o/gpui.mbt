@@ -12,7 +12,7 @@ Build GPUI-style user interfaces in MoonBit.
 - **Semantic capabilities** — one typed operation can be bound to GUI actions, direct MoonBit calls, and optional in-process MCP dispatch with shared domain validation.
 - **macOS** — an AppKit + Metal native host with windows, input, clipboard/cursors, scale/resize events, quad presentation, and an experimental renderer-recovery path.
 - **Ubuntu / Wayland** — a Wayland + EGL/OpenGL ES 2 native host with window lifecycle, input, clipboard/cursor services, scale handling, and quad presentation.
-- **Windows** — an experimental one-window Win32/D3D11 hardware-or-WARP slice with basic input and quad presentation; the hosted workflow still needs a successful run.
+- **Windows** — an experimental one-window Win32/D3D11 hardware-or-WARP slice with basic input and quad presentation. For prior HEAD `0f7bdfd`, the hosted [Windows Server 2025/MSVC run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37189793257) passed portable checks (6/6), native GPU E2E (1/1), shared backend conformance (1/1), and the example smoke. This is evidence for the experimental slice, not a Windows support-tier or production claim; see the [Windows native guide](docs/windows-native.md).
 - **Browser** — a JavaScript-target proof using the same MoonBit app/layout/event/scene model and a Canvas 2D host.
 - **Headless testing** — portable model, layout, event, focus, and scene behavior can be exercised without a window system.
 
