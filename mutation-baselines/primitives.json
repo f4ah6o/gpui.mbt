@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "kind": "turtles-mutation-ratchet",
+  "scope": "primitives/",
+  "turtles_version": "0.3.0",
+  "target": "moon-default",
+  "test_scope": "module",
+  "source": {
+    "head_sha": "0dac8f5e9141a960cf0d85e23da81c30e04f26dd",
+    "merge_sha": "16c5f9d116cc65055b869ebbc2515fdaefbc2b82",
+    "workflow_run_id": 37202065139,
+    "observed_at": "2026-10-04",
+    "source_manifest_sha256": "ebc348b7eda1a72dcef76d15ef115a69dc38a90684097f07d62f6358c7c822bd"
+  },
+  "overall": {
+    "killed": 140,
+    "survived": 5,
+    "timeout": 0,
+    "viable": 145
+  },
+  "by_operator": {
+    "arithmetic": {
+      "killed": 20,
+      "survived": 0,
+      "timeout": 0,
+      "viable": 20
+    },
+    "boolean": {
+      "killed": 25,
+      "survived": 3,
+      "timeout": 0,
+      "viable": 28
+    },
+    "comparison": {
+      "killed": 37,
+      "survived": 0,
+      "timeout": 0,
+      "viable": 37
+    },
+    "condition": {
+      "killed": 54,
+      "survived": 2,
+      "timeout": 0,
+      "viable": 56
+    },
+    "literal": {
+      "killed": 4,
+      "survived": 0,
+      "timeout": 0,
+      "viable": 4
+    }
+  }
+}

@@ -4,6 +4,25 @@ Status: in progress — first native slice implemented; remaining gates open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
 Updated: 2026-10-04
 
+## Current-head acceptance triage — 2026-10-04
+
+Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
+
+- [x] The Wayland/xdg-shell/EGL/GLES2 first-window path and basic input, focus,
+  integer scaling, clipboard, and cursor paths are implemented. The hosted
+  [Ubuntu run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649294)
+  passed Weston/llvmpipe native E2E at scales 1 and 2, including the serial
+  lifetime and optional-service regressions.
+- [x] The run collected 30 recovery-to-first-frame samples per scale.
+- [ ] Its comparator reports `no_baseline`; this is not a performance pass.
+  Clipboard interoperability and visible cursor smoke, fractional scaling and
+  public display metadata, Japanese IME/text, accessibility/menus, reconnect,
+  sustained resource limits, and real Ubuntu desktop evidence remain open.
+
+Ubuntu/Wayland remains an experimental configuration, not general Linux or
+Tier 1 support.
+
 ## Goal
 
 Provide a real native gpui.mbt desktop backend for Ubuntu while preserving the

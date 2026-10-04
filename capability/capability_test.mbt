@@ -128,6 +128,17 @@ test "schema projection is deterministic and validates closed records" {
 }
 
 ///|
+test "integer schema advertises the complete signed 32-bit value range" {
+  let integer = @capability.Schema::int()
+  assert_eq(
+    integer.canonical_json(),
+    "{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647}",
+  )
+  assert_true(integer.accepts(@capability.Value::int(-2147483648)))
+  assert_true(integer.accepts(@capability.Value::int(2147483647)))
+}
+
+///|
 test "tagged schemas reserve payload key and number JSON stays valid" {
   let variant = match
     @capability.SchemaVariant::new("ok", @capability.Schema::string()) {

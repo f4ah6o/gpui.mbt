@@ -1,6 +1,31 @@
 # Testing: property-based, mutation, and visual validation
 
-Status: design only
+Status: in progress — deterministic/PBT coverage and blocking primitives mutation ratchet; broader gates pending
+
+## Current-head acceptance triage — 2026-10-04
+
+Basis: PR #14 hosted mutation observation at head
+`0dac8f5e9141a960cf0d85e23da81c30e04f26dd`, followed by the checked-in
+ratchet implementation on the same PR branch.
+
+- [x] Deterministic tests, fixed-seed geometry/entity/layout/event/focus/scene
+  properties, and the entity reference-model suite run in hosted CI.
+- [x] Pinned `turtles` 0.3.0 mutation testing covers the configured
+  `primitives/` scope and retains schema-2 JSON plus survivor/timeout diffs.
+  The accepted hosted observation killed 140 of 145 viable mutants (96.552%),
+  leaving five survivors and zero timeouts.
+- [x] The reviewed baseline is stored in
+  `mutation-baselines/primitives.json`. CI now blocks when the overall
+  killed/viable fraction regresses, any configured operator fraction regresses,
+  or timeout count rises. Scope, turtles version, target, and test-scope drift
+  also fail closed instead of silently reusing the baseline.
+- [ ] The five remaining primitives survivors, all-target mutation,
+  capability/MCP and other critical-package mutation coverage, scene/raster
+  goldens, vlmkit artifacts, expanded stress jobs, and broad
+  native/performance evidence remain open.
+
+The first `primitives/` mutation ratchet is now a blocking quality gate, while
+the broader mutation release gate remains incomplete.
 
 ## Goal
 
@@ -237,7 +262,7 @@ A red gate must be diagnosable without reproducing locally first.
 
 Model: gpt-6-luna
 Updated: 2026-10-03
-Status: design with partial M1/M2 implementation evidence
+Status: in progress; M1–M3 deterministic/PBT evidence is active, while the mutation ratchet and visual/native release layers remain open
 
 The initial M1 quality path is now concrete: [docs/testing.md](../../docs/testing.md)
 records active versus planned coverage, exact geometry property seeds and PR
@@ -357,3 +382,21 @@ viable mutants: 115 killed, 30 survived, zero timed out or was unviable
 This is one hosted observation, not a reviewed/repeated baseline, score
 ratchet, or clean release-candidate result. The mutation and broader test
 evidence packet remains open.
+
+
+## Blocking primitives mutation ratchet — 2026-10-04
+
+PR #14 promotes the latest stable hosted observation from diagnostics to a
+checked-in CI ratchet. The baseline records overall 140/145 killed viable
+mutants and operator floors of arithmetic 20/20, boolean 25/28, comparison
+37/37, condition 54/56, and literal 4/4, with zero timeouts. The report audit
+uses exact integer fraction comparisons, so rounded percentages cannot hide a
+regression. A global improvement also cannot mask an operator regression, and a
+new timeout fails even if the score floor would otherwise hold.
+
+The source observation is GitHub Actions run `37202065139` at PR head
+`0dac8f5e9141a960cf0d85e23da81c30e04f26dd`. The checked-in baseline keeps
+its run/head/source-manifest provenance, while current source fingerprints are
+still audited independently for each mutation run. This closes only the
+initial default-target `primitives/` ratchet acceptance; the remaining five
+survivors and the broader release mutation scope stay open.

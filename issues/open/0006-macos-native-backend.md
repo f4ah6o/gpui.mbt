@@ -5,6 +5,23 @@ Model: unknown
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
 Updated: 2026-10-04
 
+## Current-head acceptance triage — 2026-10-04
+
+Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
+
+- [x] The AppKit/Metal backend, app-bundle build, and native E2E runner are
+  present; the hosted [contracts/core run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649283)
+  built the bundle and runner and passed the portable native tests.
+- [ ] That hosted macOS job is build-only. A final-head native window/frame
+  runtime result and Metal recovery runtime result are not recorded.
+- [ ] Clipboard/cursor smoke, multi-display DPI, text shaping/Japanese IME,
+  accessibility, menus, complete multi-window behavior, sustained resources,
+  and comparable performance evidence remain open.
+
+Keep the backend experimental; this evidence does not satisfy a macOS support
+tier or release gate.
+
 ## Goal
 
 Make gpui.mbt launch and run as a real macOS GUI application using the shared

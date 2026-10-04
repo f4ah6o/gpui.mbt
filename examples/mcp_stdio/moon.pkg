@@ -1,0 +1,13 @@
+import {
+  "f4ah6o/gpui/capability",
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/mcp",
+}
+
+supported_targets = "js"
+
+pkgtype(kind: "foreign_library")
+
+options(
+  link: { "js": { "format": "esm" } },
+)

@@ -9,13 +9,11 @@ Implemented in PR #12:
 - deterministic inventory/manifest registration-order tests
 - QuickCheck direct-vs-MCP semantic operation sequence parity
 
-Still required before this packet is complete:
+Remaining follow-up scope:
 
-- broader generated schema round trips and reference operations beyond the one-document CRUD fixture
-- host cancellation/disconnect timing matrix for a genuinely long-running operation
-- rendered browser host smoke for the GUI/direct/MCP redraw path
-- native endpoint topology and lifecycle smoke gates
-- turtles mutation gate once the capability API stabilizes
+- genuinely asynchronous host cancellation/disconnect and native/browser
+  endpoint topology, tracked in child 0016
+- capability-layer mutation ratchet, handled next through issue 0003
 
 ## Normalized CRUD and request-lifecycle update — 2026-10-04
 
@@ -34,18 +32,73 @@ may have committed, and oversized-result tombstones. The browser proof fixture
 routes an External counter write through an in-process MCP adapter and uses the
 same observable state as the rendered UI.
 
-Long-running host cancellation/disconnect timing, broader generated schema
-round trips, native endpoint topology, and a reviewed mutation baseline remain
-pending. The browser fixture demonstrates in-process dispatch, not protocol
-wire parity or MCP transport cancellation.
+## Schema and wire round-trip update — 2026-10-04
+
+The conformance suite now compares GUI, direct API, and MCP wire entry for 15
+supported schema/value cases: unit, bool, both int32 limits, integer and
+fractional numbers, escaped strings, arrays, nested records, optional values,
+and tagged alternatives. It checks exact published input/output schema forms,
+semantic results, and handler effects. A seeded QuickCheck property exercises
+64 bounded integer arrays. Negative cases prove that int32 overflow,
+unknown or missing closed-record fields, and an unknown const discriminator
+are rejected before the handler runs. This closes the supported-schema
+round-trip gap for the reference fixture; it does not claim a broad set of
+application-domain fixtures.
+
+On the worktree based on implementation commit
+`60aabcd19c5d3326965f9f4dcee3e820f51638c5`, validation passed:
+
+- `moon test mcp --target all --deny-warn`: 26/26 on native, wasm, wasm-gc,
+  and js
+- `scripts/test_mcp_stdio.sh`: compiled host build, Node endpoint 4/4, and
+  generated inventory drift check
+- exact input/output schema projection assertions and 64-seed bounded-array
+  property are included in the all-target MCP suite
+
+Async cancellation/disconnect and native/browser host topologies remain in
+child 0016. The reviewed mutation baseline is still pending in issue 0003.
 
 # GUI / API / MCP equivalence conformance suite
 
 Status: open
-Parent: [0012-semantic-capability-model.md](0012-semantic-capability-model.md)
+Parent: [0012-semantic-capability-model.md](../closed/0012-semantic-capability-model.md)
 Depends on: [0013-generated-api-and-mcp-adapters.md](0013-generated-api-and-mcp-adapters.md)
 Related: [0003-testing-pbt-mutation-and-visual-validation.md](0003-testing-pbt-mutation-and-visual-validation.md)
 Updated: 2026-10-04
+Child: [0016-mcp-endpoint-lifecycle-conformance.md](0016-mcp-endpoint-lifecycle-conformance.md)
+
+## Current-head acceptance triage — 2026-10-04
+
+Baseline: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`. The schema/wire conformance
+patch was tested on a worktree based on implementation commit
+`60aabcd19c5d3326965f9f4dcee3e820f51638c5`.
+
+- [x] A normalized CRUD trace compares create, rename, and delete through GUI,
+  direct, and MCP lanes, including state, result, revisions, notifications,
+  and committed side-effect records.
+- [x] Availability, invalid input, policy denial, stale owners, duplicate and
+  conflicting request IDs, reentrant calls, teardown ambiguity, and oversized
+  outcome behavior have negative/no-reexecution coverage.
+- [x] A seeded direct-versus-MCP operation-sequence property and deterministic
+  generated inventory/schema tests pass in the hosted
+  [contracts/core run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649283).
+- [x] Real Chromium smoke verifies GUI/direct/MCP mutations reach the same
+  app-owned value and repaint the canvas; see the hosted
+  [browser run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282).
+- [x] The supported schema/value projection round-trips across GUI, direct,
+  and MCP wire lanes for 15 cases; exact input/output schemas, bounded-array
+  QuickCheck, and fail-before-handler rejection are verified in the all-target
+  MCP suite.
+- [ ] Cancellation/disconnect timing for a genuinely long-running request and
+  browser/native endpoint topology smoke are split to packet 0016; no
+  asynchronous host cancellation is claimed.
+- [ ] A reviewed capability-layer mutation baseline is still required after
+  the API and adapter behavior settle; issue 0003 owns that next ratchet step.
+
+The browser redraw and supported-schema/wire parity gates are complete. This
+packet remains open for the mutation gate; transport topology and asynchronous
+lifecycle are tracked separately in child 0016.
 
 ## Goal
 
