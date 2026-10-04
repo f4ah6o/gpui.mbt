@@ -125,8 +125,16 @@ pub fn Value::canonical_json(self : Value) -> String {
     BoolValue(value) => if value { "true" } else { "false" }
     IntValue(value) => "\{value}"
     NumberValue(value) => {
-      let normalized = if value == 0.0 { 0.0 } else { value }
-      "\{normalized}"
+      if value != value {
+        "\"NaN\""
+      } else if value > 1.7976931348623157e+308 {
+        "\"Infinity\""
+      } else if value < -1.7976931348623157e+308 {
+        "\"-Infinity\""
+      } else {
+        let normalized = if value == 0.0 { 0.0 } else { value }
+        "\{normalized}"
+      }
     }
     StringValue(value) => "\"\{json_escape(value)}\""
     ArrayValue(values) => {
@@ -171,10 +179,42 @@ pub fn json_escape(text : String) -> String {
       '\n' => builder.write_string("\\n")
       '\r' => builder.write_string("\\r")
       '\t' => builder.write_string("\\t")
-      _ => builder.write_char(character)
+      _ => {
+        let code = character.to_int()
+        if code < 0x20 {
+          builder.write_string("\\u00")
+          builder.write_char(hex_digit(code / 16))
+          builder.write_char(hex_digit(code % 16))
+        } else {
+          builder.write_char(character)
+        }
+      }
     }
   }
   builder.to_string()
+}
+
+///|
+fn hex_digit(value : Int) -> Char {
+  match value {
+    0 => '0'
+    1 => '1'
+    2 => '2'
+    3 => '3'
+    4 => '4'
+    5 => '5'
+    6 => '6'
+    7 => '7'
+    8 => '8'
+    9 => '9'
+    10 => 'a'
+    11 => 'b'
+    12 => 'c'
+    13 => 'd'
+    14 => 'e'
+    15 => 'f'
+    _ => '0'
+  }
 }
 
 ///|
