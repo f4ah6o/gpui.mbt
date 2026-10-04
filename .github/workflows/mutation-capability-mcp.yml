@@ -1,0 +1,78 @@
+name: Capability and MCP mutation ratchets
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-capability-mcp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semantic-mutation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [capability, mcp]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: hustcer/setup-moonbit@1522f9aef02a8ca0187dfc00a41f5dd6b16750f7
+        with:
+          version: 0.10.14+7d59c7ec9
+          core-version: 0.10.14+7d59c7ec9
+      - name: Record pinned toolchain
+        run: moon version --all
+      - name: Install pinned turtles 0.3.0
+        run: |
+          mkdir -p _build/tools _build/mutation
+          moon install f4ah6o/turtles/cmd/turtles@0.3.0 --bin _build/tools
+          _build/tools/turtles --version
+      - name: Select independent package scope
+        run: cp mutation-scopes/${{ matrix.scope }}.toml turtles.toml
+      - name: Mutate semantic boundary and enforce reviewed baseline
+        env:
+          MUTATION_SCOPE: ${{ matrix.scope }}
+        run: |
+          set -o pipefail
+          set +e
+          _build/tools/turtles \
+            --dir . \
+            --jobs 2 \
+            --timeout 180 \
+            --timeout-multiplier 3 \
+            --fail-under 0 \
+            --emit-regressions \
+            --json _build/mutation/report.json \
+            --output-dir _build/mutation/turtles 2>&1 | tee _build/mutation/console.log
+          turtles_status=$?
+          set -e
+          # Preserve a complete observation even when a baseline is absent or
+          # the ratchet fails. Neither case is allowed to pass this job.
+          python3 scripts/check_turtles_report.py \
+            --scope "$MUTATION_SCOPE/" \
+            --config "mutation-scopes/$MUTATION_SCOPE.toml" \
+            --report _build/mutation/report.json \
+            --output _build/mutation/observation.json \
+            --survivor-dir _build/mutation/turtles/survivors
+          if [ "$turtles_status" -ne 0 ]; then exit "$turtles_status"; fi
+          python3 scripts/check_turtles_report.py \
+            --scope "$MUTATION_SCOPE/" \
+            --config "mutation-scopes/$MUTATION_SCOPE.toml" \
+            --report _build/mutation/report.json \
+            --output _build/mutation/ratchet.json \
+            --survivor-dir _build/mutation/turtles/survivors \
+            --baseline "mutation-baselines/$MUTATION_SCOPE.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: ${{ matrix.scope }}-mutation-report
+          path: _build/mutation/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 14 || 30 }}

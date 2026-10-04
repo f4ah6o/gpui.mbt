@@ -25,14 +25,21 @@ EXPECTED_TURTLES_VERSION = "0.3.0"
 EXPECTED_OUTCOMES = {"KILLED", "SURVIVED", "TIMEOUT", "UNVIABLE"}
 EXPECTED_COUNTERS = ("killed", "survived", "timeout", "unviable")
 EXPECTED_OPERATORS = {"comparison", "boolean", "arithmetic", "literal", "condition"}
-EXPECTED_INCLUDE = ["primitives/"]
+ALLOWED_SCOPES = ("primitives/", "capability/", "mcp/")
+
+
+def _validate_scope(scope: str) -> None:
+    if scope not in ALLOWED_SCOPES:
+        raise ValueError(f"unsupported mutation scope: {scope!r}")
 
 
 def audit_report(
     report: dict[str, Any],
     revision: str,
     survivor_dir: Path | None = None,
+    scope: str = "primitives/",
 ) -> dict[str, Any]:
+    _validate_scope(scope)
     if report.get("schema") != 2:
         raise ValueError("expected turtles JSON schema 2")
     if report.get("turtles_version") != EXPECTED_TURTLES_VERSION:
@@ -50,8 +57,8 @@ def audit_report(
     files = report.get("files")
     if not isinstance(files, dict) or "turtles.toml" not in files:
         raise ValueError("report must fingerprint source/configuration files, including turtles.toml")
-    if not any(isinstance(path, str) and path.startswith("primitives/") for path in files):
-        raise ValueError("report file fingerprints do not include primitives/")
+    if not any(isinstance(path, str) and path.startswith(scope) for path in files):
+        raise ValueError(f"report file fingerprints do not include {scope}")
     if any(
         not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{16}", digest)
         for digest in files.values()
@@ -63,10 +70,10 @@ def audit_report(
     if any(
         isinstance(item, dict)
         and isinstance(item.get("path"), str)
-        and item["path"].startswith("primitives/")
+        and item["path"].startswith(scope)
         for item in skipped_files
     ):
-        raise ValueError("turtles skipped a file in the configured primitives scope")
+        raise ValueError(f"turtles skipped a file in the configured {scope} scope")
     mutants = report.get("mutants")
     if not isinstance(mutants, list) or not mutants:
         raise ValueError("report must contain a non-empty mutants array")
@@ -92,8 +99,8 @@ def audit_report(
         counter = outcome.lower()
         counts[counter] += 1
         path = mutant.get("path")
-        if not isinstance(path, str) or not path.startswith("primitives/"):
-            raise ValueError(f"mutants[{index}] is outside the configured primitives scope")
+        if not isinstance(path, str) or not path.startswith(scope):
+            raise ValueError(f"mutants[{index}] is outside the configured {scope} scope")
         operator = mutant.get("group")
         if operator not in EXPECTED_OPERATORS:
             raise ValueError(f"mutants[{index}] has an unexpected mutation operator {operator!r}")
@@ -170,6 +177,7 @@ def audit_report(
         "target": "moon-default",
         "test_scope": report.get("test_scope", "module"),
         "revision": revision,
+        "scope": scope,
         "source_manifest_sha256": source_manifest.hexdigest(),
         "module": report.get("module"),
         "moon_version": report["moon_version"],
@@ -213,13 +221,18 @@ def _fnv1a64_hex(content: bytes) -> str:
     return f"{value:016x}"
 
 
-def validate_scope_configuration(config_path: Path, report: dict[str, Any]) -> None:
+def validate_scope_configuration(
+    config_path: Path, report: dict[str, Any], scope: str = "primitives/",
+) -> None:
+    _validate_scope(scope)
     try:
         config = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as error:
         raise ValueError(f"cannot read turtles scope configuration: {error}") from error
-    if config.get("include") != EXPECTED_INCLUDE:
-        raise ValueError(f"turtles.toml include must be exactly {EXPECTED_INCLUDE}")
+    if set(config) != {"include", "operators"}:
+        raise ValueError("turtles scope config must contain only include and operators")
+    if config.get("include") != [scope]:
+        raise ValueError(f"turtles.toml include must be exactly {[scope]}")
     if set(config.get("operators", [])) != EXPECTED_OPERATORS:
         raise ValueError("turtles.toml operator groups differ from the audited baseline scope")
     fingerprints = report.get("files")
@@ -276,17 +289,74 @@ def _require_no_ratio_regression(
         )
 
 
+def _enforce_survivor_review(
+    summary: dict[str, Any], baseline: dict[str, Any], scope: str,
+) -> dict[str, Any]:
+    """Critical semantic scopes cannot trade an unexplained survivor for kills."""
+    reviews = baseline.get("survivor_reviews")
+    if not isinstance(reviews, list):
+        raise ValueError("semantic baseline must contain survivor_reviews")
+    if baseline["overall"]["timeout"] != 0:
+        raise ValueError("semantic baseline must have zero timeouts")
+    if len(reviews) != baseline["overall"]["survived"]:
+        raise ValueError("survivor review count does not match baseline survivors")
+    reviewed: dict[str, dict[str, Any]] = {}
+    for review in reviews:
+        if not isinstance(review, dict):
+            raise ValueError("survivor review must be an object")
+        identity = review.get("id")
+        if not isinstance(identity, str) or not identity or identity in reviewed:
+            raise ValueError("survivor review has missing or duplicate id")
+        if review.get("classification") not in ("equivalent", "redundant"):
+            raise ValueError("survivor review must explain equivalence or redundancy")
+        reason = review.get("rationale")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("survivor review requires a nonempty rationale")
+        if not isinstance(review.get("path"), str) or not review["path"].startswith(scope):
+            raise ValueError("survivor review is outside the selected scope")
+        if review.get("operator") not in EXPECTED_OPERATORS:
+            raise ValueError("survivor review has an unexpected operator")
+        for field in ("original", "replacement"):
+            if not isinstance(review.get(field), str):
+                raise ValueError(f"survivor review must record {field}")
+        reviewed[identity] = review
+    unresolved = summary.get("unresolved")
+    if not isinstance(unresolved, list):
+        raise ValueError("audited semantic summary must list unresolved mutants")
+    if len(unresolved) != summary["mutation_counts"]["survived"] + summary["mutation_counts"]["timeout"]:
+        raise ValueError("audited semantic unresolved count differs from survivor counts")
+    seen: set[str] = set()
+    for mutant in unresolved:
+        identity = mutant.get("id")
+        if identity in seen:
+            raise ValueError("audited semantic summary repeats a survivor id")
+        seen.add(identity)
+        if mutant.get("outcome") != "SURVIVED":
+            raise ValueError("semantic mutation gate permits no unresolved timeouts")
+        review = reviewed.get(identity)
+        if review is None:
+            raise ValueError(f"unreviewed semantic survivor: {identity}")
+        for field in ("path", "operator", "original", "replacement"):
+            if mutant.get(field) != review[field]:
+                raise ValueError(f"survivor review identity mismatch for {identity}: {field}")
+    return {"status": "pass", "surviving_reviewed": len(unresolved), "reviewed_baseline_count": len(reviews)}
+
+
 def enforce_ratchet(
     summary: dict[str, Any],
     baseline: dict[str, Any],
+    scope: str = "primitives/",
 ) -> dict[str, Any]:
+    _validate_scope(scope)
+    if summary.get("scope") != scope:
+        raise ValueError("audited summary scope does not match selected mutation scope")
     if baseline.get("schema_version") != 1:
         raise ValueError("mutation ratchet baseline must use schema_version 1")
     if baseline.get("kind") != "turtles-mutation-ratchet":
         raise ValueError("mutation ratchet baseline has the wrong kind")
-    if baseline.get("scope") != EXPECTED_INCLUDE[0]:
+    if baseline.get("scope") != scope:
         raise ValueError(
-            f"mutation ratchet baseline scope must be {EXPECTED_INCLUDE[0]!r}"
+            f"mutation ratchet baseline scope must be {scope!r}"
         )
     for field in ("turtles_version", "target", "test_scope"):
         if baseline.get(field) != summary.get(field):
@@ -399,8 +469,12 @@ def enforce_ratchet(
             },
         }
 
+    survivor_review = None
+    if scope in ("capability/", "mcp/"):
+        survivor_review = _enforce_survivor_review(summary, baseline, scope)
     return {
         "status": "pass",
+        "survivor_review": survivor_review,
         "baseline_source": source,
         "overall": {
             "current": {
@@ -438,6 +512,8 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--survivor-dir", type=Path, required=True)
     parser.add_argument("--baseline", type=Path)
+    parser.add_argument("--scope", choices=ALLOWED_SCOPES, default="primitives/")
+    parser.add_argument("--config", type=Path, default=Path("turtles.toml"))
     args = parser.parse_args()
     report_path = args.report.resolve()
     repo_root = Path(__file__).resolve().parents[1]
@@ -447,8 +523,8 @@ def main() -> int:
         if not survivor_dir.is_absolute():
             survivor_dir = repo_root / survivor_dir
         report = _read_report(report_path)
-        validate_scope_configuration(repo_root / "turtles.toml", report)
-        summary = audit_report(report, _revision(repo_root), survivor_dir)
+        validate_scope_configuration(repo_root / args.config, report, args.scope)
+        summary = audit_report(report, _revision(repo_root), survivor_dir, args.scope)
         if args.baseline is not None:
             baseline_path = args.baseline
             if not baseline_path.is_absolute():
@@ -456,6 +532,7 @@ def main() -> int:
             summary["ratchet"] = enforce_ratchet(
                 summary,
                 _read_baseline(baseline_path),
+                args.scope,
             )
             summary["baseline_state"] = "ratchet_enforced"
     except (OSError, ValueError, TypeError, KeyError) as error:
