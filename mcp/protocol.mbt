@@ -511,6 +511,22 @@ fn json_to_schema_value(
         Some(Json::Object(value)) => value
         _ => return Err("Object input schema has no properties")
       }
+      match json_member(schema, "required") {
+        Some(Json::Array(required)) => {
+          for required_field in required {
+            match required_field {
+              Json::String(name) =>
+                match fields.get(name) {
+                  Some(_) => ()
+                  None => return Err("Missing required input field")
+                }
+              _ => return Err("Object input schema has invalid required entries")
+            }
+          }
+        }
+        Some(_) => return Err("Object input schema has invalid required list")
+        None => ()
+      }
       let result : Array[(String, @capability.Value)] = []
       for (key, child) in fields.to_array() {
         let child_schema = match properties.get(key) {
