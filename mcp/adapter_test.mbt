@@ -230,6 +230,49 @@ test "generated inventory is deterministic and default-safe" {
 }
 
 ///|
+test "resource-only query cannot be invoked through tool dispatch" {
+  let app = running_mcp_app()
+  let entity = match app.create_entity(0) {
+    Ok(value) => value
+    Err(_) => fail("entity creation should succeed")
+  }
+  let notifications = Ref(0)
+  let (registry, _command, _query) = install_fixture(app, entity, notifications)
+  let adapter = @mcp.Adapter::new(registry)
+  match adapter.call_tool("document_current", @capability.Value::unit()) {
+    Err(error) => assert_true(error.code() is @mcp.UnknownOperation)
+    Ok(_) => fail("resource-only capability must not be callable as a tool")
+  }
+}
+
+///|
+test "output conversion failure is reported as a server-side domain failure" {
+  let descriptor = mcp_command_descriptor(
+    "document.invalid-output",
+    @capability.External,
+  )
+  let capability = @capability.TypedCapability::new(
+    descriptor,
+    value => value.as_int(),
+    value => Ok(@capability.Value::string("\{value}")),
+    value => Ok(value),
+    () => Ok(()),
+    _origin => Ok(()),
+  )
+  let registry = @capability.Registry::new()
+  assert_true(registry.register(capability) is Ok(_))
+  let adapter = @mcp.Adapter::new(registry)
+  match
+    adapter.call_tool(
+      "document_invalid_output",
+      @capability.Value::int(7),
+    ) {
+    Err(error) => assert_true(error.code() is @mcp.DomainFailure)
+    Ok(_) => fail("invalid server output must not be reported as client input")
+  }
+}
+
+///|
 test "GUI direct and MCP lanes converge on semantic state and notifications" {
   let gui = run_lane(0, 41)
   let direct = run_lane(1, 41)
