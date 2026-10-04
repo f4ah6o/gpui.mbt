@@ -73,9 +73,21 @@ pub fn Descriptor::new(
   version : Int,
 ) -> Result[Descriptor, @diagnostics.FrameworkError] {
   if id.length() == 0 {
-    Err(capability_error(@diagnostics.InvalidInput, "descriptor", "capability id must not be empty"))
+    Err(
+      capability_error(
+        @diagnostics.InvalidInput,
+        "descriptor",
+        "capability id must not be empty",
+      ),
+    )
   } else if version <= 0 {
-    Err(capability_error(@diagnostics.InvalidInput, "descriptor", "capability version must be positive"))
+    Err(
+      capability_error(
+        @diagnostics.InvalidInput,
+        "descriptor",
+        "capability version must be positive",
+      ),
+    )
   } else {
     let mapped = match external_name {
       Some(name) =>
@@ -302,7 +314,10 @@ pub fn[I, O] GuiBinding::is_enabled(self : GuiBinding[I, O]) -> Bool {
 ///|
 priv struct RegistryEntry {
   descriptor : Descriptor
-  invoke : (InvocationOrigin, Value) -> Result[Value, @diagnostics.FrameworkError]
+  invoke : (InvocationOrigin, Value) -> Result[
+    Value,
+    @diagnostics.FrameworkError,
+  ]
 }
 
 ///|
@@ -491,10 +506,14 @@ fn derive_external_name(id : String) -> String {
 }
 
 ///|
-fn insert_entry_sorted(entries : Array[RegistryEntry], entry : RegistryEntry) -> Unit {
+fn insert_entry_sorted(
+  entries : Array[RegistryEntry],
+  entry : RegistryEntry,
+) -> Unit {
   entries.push(entry)
   let mut cursor = entries.length() - 1
-  while cursor > 0 && entries[cursor].descriptor.id < entries[cursor - 1].descriptor.id {
+  while cursor > 0 &&
+        entries[cursor].descriptor.id < entries[cursor - 1].descriptor.id {
     let previous = entries[cursor - 1]
     entries[cursor - 1] = entries[cursor]
     entries[cursor] = previous
@@ -544,6 +563,6 @@ fn capability_error(
     code,
     operation,
     subsystem="capability",
-    message=message,
+    message~,
   )
 }
