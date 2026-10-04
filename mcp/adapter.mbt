@@ -195,12 +195,7 @@ pub fn Adapter::call_tool(
   if !self.state.val.open {
     return Err({ code: AdapterClosed, message: "adapter is closed", })
   }
-  match
-    self.registry.invoke_external(
-      name,
-      @capability.RemoteMcp,
-      input,
-    ) {
+  match self.registry.invoke_external(name, @capability.RemoteMcp, input) {
     Ok(value) => Ok(value)
     Err(error) => Err(map_error(error))
   }
@@ -249,9 +244,7 @@ fn tool_from_descriptor(descriptor : @capability.Descriptor) -> Tool {
 }
 
 ///|
-fn resource_from_descriptor(
-  descriptor : @capability.Descriptor,
-) -> Resource {
+fn resource_from_descriptor(descriptor : @capability.Descriptor) -> Resource {
   {
     uri: "gpui://capability/\{descriptor.external_name()}",
     semantic_id: descriptor.id(),
