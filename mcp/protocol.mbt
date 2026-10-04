@@ -183,7 +183,10 @@ fn ProtocolServer::call_tool(
     if tool.name() == name {
       input = match tool_arguments_to_value(tool, arguments) {
         Ok(value) => Some(value)
-        Err(message) => return Some(self.error(id_json, -32602, message))
+        Err(message) =>
+          return Some(
+            self.result(id_json, self.tool_error_result_json(message)),
+          )
       }
     }
   }
