@@ -44,7 +44,7 @@ fn int_capability(
   entity : @core.Entity[Int],
   id : String,
   kind : @capability.OperationKind,
-) -> @capability.TypedCapability[Int, Int] {
+) -> @capability.TypedCapability[Int, Int] raise {
   @capability.TypedCapability::new(
     external_int_descriptor(id, kind),
     value => value.as_int(),
