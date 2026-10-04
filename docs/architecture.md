@@ -2,7 +2,7 @@
 
 Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; the shared platform contract and first Ubuntu/Wayland/GLES native slice are implemented; a JS browser proof of concept is in progress; complete native and browser services remain planned.
 
-This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, and `element/`, plus native and example adapters. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
+This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, `element/`, `capability/`, and optional `mcp/`, plus native and example adapters. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
 
 ## Runtime dependency budget
 
@@ -31,6 +31,9 @@ application API / facade
   └── platform API ──────> core + diagnostics + primitives
           └──────────────> renderer API ──> scene + primitives
 
+semantic capability ──> diagnostics
+optional MCP adapter ──> semantic capability + diagnostics
+
 target backend ──> platform API + renderer API + scene
 target FFI     ──> native OS / graphics / text APIs
 
@@ -54,6 +57,8 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `layout/` | style subset, constraints, intrinsic measure interface, layout result | `primitives/` | renderer or platform types |
 | `element/` | Render/IntoElement/Element, tree, hit-test and dispatch metadata | `core/`, `primitives/`, `layout/`, `scene/` contract | backend callbacks or OS event structs |
 | `scene/` | stable, platform-neutral paint commands and ordering | `primitives/` | live GPU handles or backend resource objects |
+| `capability/` | typed semantic operation descriptors, schema/value projection, registry, GUI binding, deterministic manifest generation | `diagnostics/` | renderer/native/MCP transport state, host handles, duplicated domain handlers |
+| `mcp/` | optional MCP-facing inventory/dispatch adapter over semantic capabilities | `capability/`, `diagnostics/` | application state ownership, domain handlers, privileged host APIs |
 | `renderer API` | render submission and resource-lifetime contract | `scene/`, `primitives/` | a concrete renderer vocabulary in public app APIs |
 | `platform API` | window, input, display, text, clipboard, timer, accessibility contracts | `core/`, `diagnostics/`, `primitives/`, renderer API | platform-specific types in core/facade signatures |
 | `platform/` (first slice) | shared Backend trait, logical window IDs, copied ordered events | `scene/`, `diagnostics/`, `primitives/` | native pointers or OS types |
@@ -61,7 +66,7 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `examples/ubuntu/` | native executable consuming the shared scene/window contracts | `ubuntu/`, `platform/`, `scene/`, `diagnostics/`, `primitives/`, standard env | private backend tokens |
 | target backend / FFI | event loop and native resources/adapters | platform and renderer APIs; native APIs | types that leak upward through the public facade |
 
-The current runtime edges include `primitives -> stdlib`, `diagnostics -> stdlib`, and `core -> stdlib + diagnostics`; the executable allowlist also records the current layout, scene, element, native, and example edges. The browser app fixture is portable and the JS host adapter is a leaf above it. The executable dependency check covers these boundaries and test-only imports; new runtime packages still require an explicit layer entry and reject unlisted edges. The dependency direction must remain acyclic; cross-cutting code belongs in a lower-level contract rather than a reverse import.
+The current runtime edges include `primitives -> stdlib`, `diagnostics -> stdlib`, `core -> stdlib + diagnostics`, `capability -> diagnostics`, and `mcp -> capability + diagnostics`; the executable allowlist also records the current layout, scene, element, native, and example edges. The browser app fixture is portable and the JS host adapter is a leaf above it. The executable dependency check covers these boundaries and test-only imports; new runtime packages still require an explicit layer entry and reject unlisted edges. The dependency direction must remain acyclic; cross-cutting code belongs in a lower-level contract rather than a reverse import.
 
 ## Async and application scheduling
 
