@@ -4,6 +4,26 @@ Status: open
 Parent: [0009-browser-backend.md](0009-browser-backend.md)
 Updated: 2026-10-04
 
+## Current-head acceptance triage — 2026-10-04
+
+Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
+
+- [x] The portable host-service bridge enforces default-deny grants, bounded
+  owned request/completion values, typed service state, and stale-scope
+  rejection. Fake Electron IPC/Tauri invoke tests and the browser migration
+  host smoke pass in the hosted
+  [browser run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282).
+- [x] A browser legacy DOM island demonstrates logical bounds, focus/input
+  ownership handoff, disposal, and remount alongside the gpui.mbt canvas.
+- [ ] There is no real Electron main-process handler or Tauri Rust command
+  implementation, and neither desktop runtime has an integration smoke.
+  Production mixed-runtime E2E, host serialization fixtures, and full-renderer
+  migration examples remain open.
+
+Fake bridge contracts and a browser island do not demonstrate a desktop-runtime
+migration.
+
 ## Goal
 
 Provide a low-risk migration path from existing Electron and Tauri applications

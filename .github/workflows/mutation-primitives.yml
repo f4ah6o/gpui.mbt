@@ -49,7 +49,8 @@ jobs:
             if python3 scripts/check_turtles_report.py \
               --report _build/mutation/report.json \
               --output _build/mutation/summary.json \
-              --survivor-dir _build/mutation/turtles/survivors; then
+              --survivor-dir _build/mutation/turtles/survivors \
+              --baseline mutation-baselines/primitives.json; then
               audit_status=0
             else
               audit_status=$?

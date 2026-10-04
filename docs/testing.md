@@ -169,33 +169,26 @@ The repository pins `turtles` 0.3.0 in
 [`mutation-primitives.yml`](../.github/workflows/mutation-primitives.yml) and
 selects the stable primitives core in [`turtles.toml`](../turtles.toml). The
 job runs the normal deterministic and fixed-seed property tests in turtles'
-isolated copy and retains schema-2 JSON plus survivor/timeout diffs. The first
-baseline is explicitly non-blocking (`--fail-under 0`): unresolved mutants are
-reported for review while turtles setup failures and the independent report
-audit remain fatal. The audit rejects empty/unviable-only results, wrong scope,
-missing operator groups, skipped source files, inconsistent scores, and missing
-survivor diffs. This first scope is limited to `primitives/` and five configured
-operators. Pinned turtles 0.3.0 does not expose the target-selection option
-documented by current upstream main, so the job uses Moon's default test target.
-No reviewed per-package/operator baseline or all-target mutation result has
-been accepted; the release ledger stays pending.
+isolated copy, retains schema-2 JSON plus survivor/timeout diffs, and audits the
+report before applying the checked-in
+[`primitives` ratchet baseline](../mutation-baselines/primitives.json).
 
-The first local observation classified 145 viable mutants: 115 killed, 30
-survived, and no timeouts or unviable mutants (79.310%). It ran at revision
-`731981259efe3815de06d3420163f3b842e854a0` from a dirty shared worktree; the
-audited source-manifest digest is
-`cd6c3cec88c5fcba97ec2325a798fe5cc47141f99c45d467bf6b45d6c353d6f1`. This is a
-pre-commit observation, not an accepted score ratchet; the 30 survivors remain
-unreviewed and the release gate stays pending.
+The accepted initial baseline comes from hosted PR #14 run `37202065139` at
+head `0dac8f5e9141a960cf0d85e23da81c30e04f26dd`: 140 of 145 viable mutants
+were killed (96.552%), with five survivors and zero timeouts. The operator
+floors are arithmetic 20/20, boolean 25/28, comparison 37/37, condition 54/56,
+and literal 4/4. CI compares exact killed/viable fractions using integer
+cross-products rather than rounded percentages. The job fails if the overall
+fraction regresses, any operator fraction regresses, or timeout count rises
+above the recorded baseline. Scope, turtles version, target, and test-scope
+metadata must also match, so a toolchain/scope change cannot silently inherit
+the old threshold.
 
-The hosted [PR mutation run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37186910719)
-also completed successfully. It reported 145 viable mutants, 115 killed,
-30 survived, no timeouts or unviable mutants, and a 79.310% score; the schema-2
-report audit passed. The run was for PR head
-`c9a119c0f4f501d1146d4f9932551f3d446296f4`, checked out as GitHub's synthetic
-merge commit `d29982bedcd51839c9da00c37e0a0b3a5870642a`. The 30 survivors remain
-unreviewed. This is a hosted observation, not a reviewed or repeated score
-ratchet or clean release-candidate baseline; the release gate stays pending.
+This completes the first blocking `primitives/` mutation ratchet on Moon's
+default test target. It does not complete the broader release mutation gate:
+the five current survivors still need either stronger tests or reviewed
+equivalent/redundant classifications, and all-target mutation plus additional
+critical packages remain open. The release ledger therefore remains pending.
 
 ## CI split
 

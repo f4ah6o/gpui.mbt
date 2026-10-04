@@ -1,8 +1,29 @@
 # Platform, rendering, and native-boundary roadmap
 
-Status: design only
+Status: in progress — shared contracts and experimental backend slices; production gates remain open
 Model: gpt-6-luna
 Updated: 2026-10-04
+
+## Current-head acceptance triage — 2026-10-04
+
+Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
+
+- [x] The platform-neutral host/window/event contracts and R0 SceneSnapshot v1
+  subset are implemented and exercised by headless tests in the hosted
+  [contracts/core run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649283).
+- [x] Experimental first native/browser slices now exist for macOS, Ubuntu,
+  Windows, and the JS Canvas2D host. Hosted evidence is bounded to the macOS
+  build, Ubuntu Wayland E2E, Windows one-window E2E, and Chromium browser smoke:
+  [contracts/core](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649283),
+  [Ubuntu](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649294),
+  [Windows](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649277),
+  and [browser](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282).
+- [ ] Full scene/rendering, text and IME, native accessibility, complete
+  renderer recovery, performance baselines, and Tier 1 platform gates remain
+  open under this roadmap and child packets 0006–0008.
+
+No platform support tier is promoted by these incremental proofs.
 
 ## M0 resolution
 
@@ -42,7 +63,7 @@ definitions.
 ## Additional terminal surface
 
 Terminal UI is tracked separately in
-[0015 — TUI backend](0015-tui-backend.md). It reuses the portable application,
+[0017 — TUI backend](0017-tui-backend.md). It reuses the portable application,
 action, focus, scheduling, and semantic-capability layers where meaningful, but
 owns a terminal-native cell scene and host boundary. It is not an ANSI renderer
 for graphical `SceneSnapshot` data and does not change native GUI platform

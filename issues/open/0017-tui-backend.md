@@ -2,7 +2,7 @@
 
 Status: open
 Parent: [0001-product-charter-and-compatibility.md](0001-product-charter-and-compatibility.md)
-Related: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md), [0012-semantic-capability-model.md](0012-semantic-capability-model.md)
+Related: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md), [0012-semantic-capability-model.md](../closed/0012-semantic-capability-model.md)
 Updated: 2026-10-04
 
 ## Goal

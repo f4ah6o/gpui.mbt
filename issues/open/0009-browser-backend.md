@@ -4,6 +4,25 @@ Status: open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
 Updated: 2026-10-04
 
+## Current-head acceptance triage — 2026-10-04
+
+Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
+
+- [x] The JS Canvas2D host presents the shared MoonBit scene and event model.
+  The hosted [browser run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282)
+  passed Vite+ checks/build, dev-watch/source-map checks, and real Chromium
+  input/focus/DPR/lifecycle smoke.
+- [x] Chromium verifies GUI, direct API, and in-process MCP mutations redraw
+  the observed counter; it also covers wheel input and legacy-island focus
+  ownership and teardown.
+- [ ] Wasm/WasmGC browser targets, WebGPU, broad text/Japanese IME, general
+  accessibility, clipboard/cursor services, worker commands, and production
+  browser evidence remain open.
+
+The Chromium run proves the experimental JS slice only; it does not promote
+browser support.
+
 ## Goal
 
 Run the same gpui.mbt application model in a web browser without replacing the

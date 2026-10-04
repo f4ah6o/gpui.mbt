@@ -21,6 +21,9 @@ test "geometry constructors reject invalid and unrepresentable values" {
   assert_true(
     @primitives.Rect::new(1.0e16, 0.0, 1.0, 1.0) is Err(BoundsNotRepresentable),
   )
+  assert_true(
+    @primitives.Rect::new(0.0, 1.0e16, 1.0, 1.0) is Err(BoundsNotRepresentable),
+  )
 }
 
 ///|
@@ -72,6 +75,10 @@ test "geometry scale round trips and rejects overflow" {
     Ok(enlarged) => {
       assert_true(enlarged.scaled(0.5) is Ok(restored) && restored == point)
       assert_true(point.scaled(@double.infinity) is Err(NonFiniteValue))
+      assert_true(
+        test_point(0.0, 0.0).scaled(@double.infinity) is Err(NonFiniteValue),
+      )
+      assert_true(point.scaled(@double.not_a_number) is Err(NonFiniteValue))
     }
     Err(_) => fail("finite scale was rejected")
   }
@@ -94,6 +101,73 @@ test "geometry scale round trips and rejects overflow" {
     Err(_) => fail("finite negative scale was rejected")
   }
   assert_true(rect.scaled(1.0e308) is Err(BoundsOverflow))
+}
+
+///|
+test "point and rectangle translations apply the requested signed offset" {
+  let point = test_point(10.0, -3.0)
+  let offset = test_point(-2.0, 4.0)
+  match point.translated(offset) {
+    Ok(moved) => assert_true(moved.x() == 8.0 && moved.y() == 1.0)
+    Err(_) => fail("finite point translation was rejected")
+  }
+
+  let rect = test_rect(10.0, 20.0, 3.0, 4.0)
+  match rect.translated(offset) {
+    Ok(moved) => {
+      assert_true(moved.left() == 8.0 && moved.top() == 24.0)
+      assert_true(moved.size().width() == 3.0 && moved.size().height() == 4.0)
+    }
+    Err(_) => fail("finite rectangle translation was rejected")
+  }
+}
+
+///|
+test "rectangle containment rejects a child crossing each individual edge" {
+  let outer = test_rect(0.0, 0.0, 10.0, 10.0)
+  assert_false(outer.contains_rect(test_rect(-1.0, 2.0, 5.0, 5.0)))
+  assert_false(outer.contains_rect(test_rect(5.0, 2.0, 6.0, 5.0)))
+  assert_false(outer.contains_rect(test_rect(2.0, -1.0, 5.0, 5.0)))
+  assert_false(outer.contains_rect(test_rect(2.0, 5.0, 5.0, 6.0)))
+}
+
+///|
+test "rectangle intersection is absent when either axis is separated" {
+  let left = test_rect(0.0, 0.0, 2.0, 2.0)
+  let right = test_rect(3.0, 0.0, 2.0, 2.0)
+  let above = test_rect(0.0, 3.0, 2.0, 2.0)
+  assert_true(left.intersection(right) is None)
+  assert_true(left.intersection(above) is None)
+}
+
+///|
+test "rectangle scaling reports non-finite factors and overflowing extents" {
+  let ordinary = test_rect(1.0, 2.0, 3.0, 4.0)
+  assert_true(ordinary.scaled(@double.infinity) is Err(NonFiniteValue))
+  assert_true(ordinary.scaled(@double.not_a_number) is Err(NonFiniteValue))
+
+  let width_overflow = test_rect(-8.0e307, 0.0, 1.6e308, 0.0)
+  let height_overflow = test_rect(0.0, -8.0e307, 0.0, 1.6e308)
+  assert_true(width_overflow.scaled(1.5) is Err(BoundsOverflow))
+  assert_true(height_overflow.scaled(1.5) is Err(BoundsOverflow))
+}
+
+///|
+test "rectangle union rejects a rounded bound that would exclude an input" {
+  let left = test_rect(-1.0e16, 0.0, 0.0, 0.0)
+  let right = test_rect(1.0, 0.0, 0.0, 0.0)
+  assert_true(left.union(right) is Err(BoundsNotRepresentable))
+}
+
+///|
+test "clamping preserves interior points and clamps each outside edge" {
+  let rect = test_rect(0.0, 0.0, 10.0, 10.0)
+  let center = test_point(5.0, 5.0)
+  assert_true(rect.clamp_point(center) == center)
+  assert_true(rect.clamp_point(test_point(-1.0, 5.0)) == test_point(0.0, 5.0))
+  assert_true(rect.clamp_point(test_point(11.0, 5.0)) == test_point(10.0, 5.0))
+  assert_true(rect.clamp_point(test_point(5.0, -1.0)) == test_point(5.0, 0.0))
+  assert_true(rect.clamp_point(test_point(5.0, 11.0)) == test_point(5.0, 10.0))
 }
 
 ///|
@@ -190,6 +264,18 @@ test "input values preserve keys modifiers pointer coordinates and text" {
 }
 
 ///|
+test "modifier emptiness matches every combination of modifier bits" {
+  for mask in 0..<16 {
+    let shift = mask % 2 == 1
+    let control = mask / 2 % 2 == 1
+    let alt = mask / 4 % 2 == 1
+    let meta = mask / 8 % 2 == 1
+    let modifiers = @primitives.Modifiers::new(shift~, control~, alt~, meta~)
+    assert_true(modifiers.is_empty() == (mask == 0))
+  }
+}
+
+///|
 test "rect containment, union, and scaling hold over deterministic values" {
   let starts : Array[Double] = [-100.0, -3.0, 0.0, 0.5, 8.0, 128.0]
   let extents : Array[Double] = [0.0, 0.25, 1.0, 7.5, 32.0]
@@ -228,5 +314,26 @@ fn unwrap_point(
   match result {
     Ok(value) => value
     Err(_) => fail("bounded point scale was rejected")
+  }
+}
+
+///|
+fn test_point(x : Double, y : Double) -> @primitives.Point raise {
+  match @primitives.Point::new(x, y) {
+    Ok(value) => value
+    Err(_) => fail("finite test point was rejected")
+  }
+}
+
+///|
+fn test_rect(
+  x : Double,
+  y : Double,
+  width : Double,
+  height : Double,
+) -> @primitives.Rect raise {
+  match @primitives.Rect::new(x, y, width, height) {
+    Ok(value) => value
+    Err(_) => fail("valid test rectangle was rejected")
   }
 }

@@ -1,10 +1,12 @@
 import {
+  "moonbitlang/core/json",
   "f4ah6o/gpui/capability",
   "f4ah6o/gpui/diagnostics",
 }
 
 import {
   "moonbitlang/core/quickcheck",
+  "moonbitlang/core/json",
   "f4ah6o/gpui/core",
   "f4ah6o/gpui/mcp",
   "f4ah6o/gpui/capability",

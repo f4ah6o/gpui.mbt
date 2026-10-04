@@ -1,8 +1,27 @@
 # gpui.mbt product charter and compatibility goal
 
-Status: design only
+Status: in progress — deterministic core and partial element/scene foundations
 Model: gpt-6-luna
 Updated: 2026-10-03
+
+## Current-head acceptance triage — 2026-10-04
+
+Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`, produced
+from PR #13 head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
+
+- [x] M0 contracts and M1 deterministic core are present and pass the hosted
+  contracts/core workflow: [run 37195649283](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649283)
+  reports 112 tests on wasm, wasm-gc, and JS, and 122 on native.
+- [x] Headless M2 lifecycle and recursive layout plus the current SceneSnapshot
+  v1 subset have implementation and test coverage in `element/`, `layout/`,
+  and `scene/`; the same hosted workflow passes all four targets.
+- [ ] M2/M3 remain incomplete: invalidation, text/path/image scene content,
+  full renderer submission, and broader upstream conformance are pending.
+- [ ] M4–M7 remain open: native runtime evidence is experimental, text/IME and
+  accessibility are incomplete, and no support tier or 1.0 gate is promoted.
+
+The compatibility matrix is still mostly `planned`; this triage records the
+implemented slices without making a global GPUI compatibility claim.
 
 ## Goal
 

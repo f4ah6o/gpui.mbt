@@ -12,12 +12,32 @@ Implemented in PR #12:
   unavailable/stale state, domain failure, and closed adapter lifecycle
 - headless MCP-enabled fixture without renderer/window dependencies
 
-Still required before this packet is complete:
+## Stdio MCP host progress — 2026-10-04
 
-- concrete MCP wire framing/transport host and protocol-version negotiation
-- cancellation/disconnect handling around in-flight operations
-- browser/native topology smoke for an actual MCP transport endpoint
-- generated artifact drift policy beyond in-memory canonical snapshots
+The adapter now has an optional Node stdio host around a compiled MoonBit
+fixture. Its protocol layer pins MCP revision `2026-07-28`, validates the
+request metadata, and serves discovery, tools, and resources through the shared
+capability registry. The host frames newline-delimited JSON over stdin/stdout,
+keeps diagnostics off protocol stdout, accepts CRLF and a final unterminated
+line, bounds each request to 1 MiB, and reports malformed UTF-8 without losing
+the next request. Notifications produce no response; cancellation notifications
+are currently explicit no-ops and do not imply interruption of in-flight work.
+
+Validation on implementation commit `60aabcd19c5d3326965f9f4dcee3e820f51638c5`
+passed:
+
+- `moon fmt --check`
+- `moon check mcp capability examples/mcp_stdio --target all --deny-warn`
+- `moon test mcp --target all --deny-warn`: 23/23 on native, wasm, wasm-gc,
+  and js
+- `MOON_BIN=/workspace/scratch/a927aede33e9/moonbit-pinned/bin/moon sh scripts/test_mcp_stdio.sh`:
+  compiled MoonBit JS release build, Node stdio endpoint 4/4, and generated
+  inventory drift check
+- Python tests 47/47 and `python3 scripts/check_contracts.py`
+
+The remaining endpoint work is asynchronous cancellation/disconnect and real
+native/browser host topology coverage, tracked in child 0016. The stdio adapter
+does not claim cancellation for synchronous handlers.
 
 ## In-process adapter and request replay update — 2026-10-04
 
@@ -32,18 +52,55 @@ execution, and large outcomes. This is bounded in-process behavior; it does not
 provide durable or cross-process exactly-once execution, and synchronous
 handlers cannot be interrupted after starting.
 
-Inventory/schema JSON remains transport-neutral metadata. The current adapter
-does not implement MCP wire framing or negotiation; scalar capability schemas
-must be wrapped into MCP's object-shaped wire inputs by a future host adapter.
-Protocol framing, connection cancellation, actual MCP endpoint smoke, and
-generated artifact drift checks remain open.
+The in-process request-ID replay contract remains session-local and bounded; it
+does not provide durable or cross-process exactly-once execution. Host transport
+cancellation and native/browser endpoint topology remain outside this adapter
+slice and are tracked in 0016.
 
 # Generated API and MCP adapters from semantic capabilities
 
 Status: open
-Parent: [0012-semantic-capability-model.md](0012-semantic-capability-model.md)
+Parent: [0012-semantic-capability-model.md](../closed/0012-semantic-capability-model.md)
 Related: [0009-browser-backend.md](0009-browser-backend.md), [0011-electron-tauri-migration.md](0011-electron-tauri-migration.md)
 Updated: 2026-10-04
+Child: [0016-mcp-endpoint-lifecycle-conformance.md](0016-mcp-endpoint-lifecycle-conformance.md)
+
+## Current implementation acceptance triage — 2026-10-04
+
+Baseline: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`. The stdio implementation
+was committed in `60aabcd19c5d3326965f9f4dcee3e820f51638c5` and passed the
+commands recorded above.
+
+- [x] Packet A: transport-neutral manifest generation, stable enumeration,
+  deterministic external-name mapping, and collision checks are implemented
+  in `capability/registry.mbt` and tested in `capability/capability_test.mbt`.
+- [x] Packet B: the optional adapter derives a default-safe tools/resources
+  inventory, omits unexposed capabilities, keeps prompts unadvertised, and
+  serializes deterministic schema metadata; tests cover registration-order
+  independence in `mcp/adapter_test.mbt`.
+- [x] Packet C's in-process dispatch path routes through the shared registry;
+  read/write, invalid input, policy denial, stale state, teardown, request
+  conflicts, and bounded result retention have headless tests.
+- [x] Packet D's portable capability layer and optional `mcp/` package remain
+  separate; the browser fixture is headless-testable without a native window.
+- [x] The optional stdio host serves the compiled headless MoonBit fixture over
+  a real Node process. Endpoint tests cover protocol revision discovery,
+  tools/resources, shared GUI/direct/MCP state, EOF, no-response notifications,
+  byte-bounded framing, malformed UTF-8, and recovery at the next request.
+- [x] The committed generated tools inventory is checked against the registry
+  output by `scripts/check_mcp_stdio_inventory.sh --check`.
+- [ ] Asynchronous cancellation/disconnect and native/browser endpoint
+  topology are still open in child 0016; current cancellation notifications
+  are explicit no-ops.
+
+The hosted [contracts/core run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649283)
+and [browser run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282)
+passed at PR #13 head. The base adapter, stdio wire host, and drift gate are
+implemented and tested. Native/browser topology and asynchronous lifecycle
+remain assigned to child 0016; semantic schema breadth and the mutation gate
+remain in 0014. This issue stays open until the parent close review after those
+packets is complete.
 
 ## Goal
 

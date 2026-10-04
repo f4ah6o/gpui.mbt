@@ -230,11 +230,214 @@ def validate_scope_configuration(config_path: Path, report: dict[str, Any]) -> N
         raise ValueError("report turtles.toml fingerprint does not match the checked-in scope")
 
 
+def _baseline_counts(row: Any, label: str) -> tuple[int, int, int, int]:
+    if not isinstance(row, dict):
+        raise ValueError(f"{label} must be an object")
+    values: dict[str, int] = {}
+    for field in ("killed", "survived", "timeout", "viable"):
+        value = row.get(field)
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{label}.{field} must be a non-negative integer")
+        values[field] = value
+    if values["viable"] <= 0:
+        raise ValueError(f"{label}.viable must be positive")
+    if values["killed"] + values["survived"] + values["timeout"] != values["viable"]:
+        raise ValueError(
+            f"{label} must satisfy killed + survived + timeout == viable"
+        )
+    return (
+        values["killed"],
+        values["survived"],
+        values["timeout"],
+        values["viable"],
+    )
+
+
+def _score_percent(killed: int, viable: int) -> float:
+    return round(killed * 100.0 / viable, 3)
+
+
+def _require_no_ratio_regression(
+    label: str,
+    current_killed: int,
+    current_viable: int,
+    baseline_killed: int,
+    baseline_viable: int,
+) -> None:
+    if current_viable <= 0:
+        raise ValueError(f"{label} has no viable mutants in the current report")
+    if current_killed * baseline_viable < baseline_killed * current_viable:
+        raise ValueError(
+            f"{label} mutation score regressed: "
+            f"current {current_killed}/{current_viable} "
+            f"({_score_percent(current_killed, current_viable):.3f}%) < "
+            f"baseline {baseline_killed}/{baseline_viable} "
+            f"({_score_percent(baseline_killed, baseline_viable):.3f}%)"
+        )
+
+
+def enforce_ratchet(
+    summary: dict[str, Any],
+    baseline: dict[str, Any],
+) -> dict[str, Any]:
+    if baseline.get("schema_version") != 1:
+        raise ValueError("mutation ratchet baseline must use schema_version 1")
+    if baseline.get("kind") != "turtles-mutation-ratchet":
+        raise ValueError("mutation ratchet baseline has the wrong kind")
+    if baseline.get("scope") != EXPECTED_INCLUDE[0]:
+        raise ValueError(
+            f"mutation ratchet baseline scope must be {EXPECTED_INCLUDE[0]!r}"
+        )
+    for field in ("turtles_version", "target", "test_scope"):
+        if baseline.get(field) != summary.get(field):
+            raise ValueError(
+                f"mutation ratchet baseline {field} does not match the current report"
+            )
+
+    source = baseline.get("source")
+    if not isinstance(source, dict):
+        raise ValueError("mutation ratchet baseline must record source provenance")
+    if not isinstance(source.get("head_sha"), str) or not source["head_sha"]:
+        raise ValueError("mutation ratchet baseline source.head_sha is required")
+    if type(source.get("workflow_run_id")) is not int or source["workflow_run_id"] <= 0:
+        raise ValueError("mutation ratchet baseline source.workflow_run_id is required")
+    manifest = source.get("source_manifest_sha256")
+    if not isinstance(manifest, str) or re.fullmatch(r"[0-9a-f]{64}", manifest) is None:
+        raise ValueError(
+            "mutation ratchet baseline source.source_manifest_sha256 must be sha256"
+        )
+
+    baseline_overall = _baseline_counts(baseline.get("overall"), "baseline.overall")
+    baseline_by_operator = baseline.get("by_operator")
+    if not isinstance(baseline_by_operator, dict):
+        raise ValueError("mutation ratchet baseline must contain by_operator")
+    if set(baseline_by_operator) != EXPECTED_OPERATORS:
+        raise ValueError(
+            "mutation ratchet baseline operator groups differ from the configured scope"
+        )
+
+    baseline_rows: dict[str, tuple[int, int, int, int]] = {}
+    for operator in sorted(EXPECTED_OPERATORS):
+        baseline_rows[operator] = _baseline_counts(
+            baseline_by_operator[operator],
+            f"baseline.by_operator.{operator}",
+        )
+    if (
+        sum(row[0] for row in baseline_rows.values()) != baseline_overall[0]
+        or sum(row[1] for row in baseline_rows.values()) != baseline_overall[1]
+        or sum(row[2] for row in baseline_rows.values()) != baseline_overall[2]
+        or sum(row[3] for row in baseline_rows.values()) != baseline_overall[3]
+    ):
+        raise ValueError(
+            "mutation ratchet baseline overall counts do not equal by_operator totals"
+        )
+
+    current_counts = summary.get("mutation_counts")
+    if not isinstance(current_counts, dict):
+        raise ValueError("audited summary is missing mutation_counts")
+    current_killed = current_counts.get("killed")
+    current_survived = current_counts.get("survived")
+    current_timeout = current_counts.get("timeout")
+    if any(type(value) is not int or value < 0 for value in (
+        current_killed,
+        current_survived,
+        current_timeout,
+    )):
+        raise ValueError("audited summary has invalid mutation counts")
+    current_viable = current_killed + current_survived + current_timeout
+    _require_no_ratio_regression(
+        "overall",
+        current_killed,
+        current_viable,
+        baseline_overall[0],
+        baseline_overall[3],
+    )
+    if current_timeout > baseline_overall[2]:
+        raise ValueError(
+            "overall timeout count regressed: "
+            f"current {current_timeout} > baseline {baseline_overall[2]}"
+        )
+
+    current_by_operator = summary.get("by_operator")
+    if not isinstance(current_by_operator, dict):
+        raise ValueError("audited summary is missing by_operator")
+    operator_results: dict[str, dict[str, Any]] = {}
+    for operator in sorted(EXPECTED_OPERATORS):
+        current = current_by_operator.get(operator)
+        if not isinstance(current, dict):
+            raise ValueError(f"audited summary is missing operator {operator}")
+        values = [current.get(name) for name in ("killed", "survived", "timeout")]
+        if any(type(value) is not int or value < 0 for value in values):
+            raise ValueError(f"audited summary has invalid counts for {operator}")
+        op_killed, op_survived, op_timeout = values
+        op_viable = op_killed + op_survived + op_timeout
+        base_killed, _, base_timeout, base_viable = baseline_rows[operator]
+        _require_no_ratio_regression(
+            f"operator {operator}",
+            op_killed,
+            op_viable,
+            base_killed,
+            base_viable,
+        )
+        if op_timeout > base_timeout:
+            raise ValueError(
+                f"operator {operator} timeout count regressed: "
+                f"current {op_timeout} > baseline {base_timeout}"
+            )
+        operator_results[operator] = {
+            "current": {
+                "killed": op_killed,
+                "viable": op_viable,
+                "score_percent": _score_percent(op_killed, op_viable),
+                "timeout": op_timeout,
+            },
+            "baseline": {
+                "killed": base_killed,
+                "viable": base_viable,
+                "score_percent": _score_percent(base_killed, base_viable),
+                "timeout": base_timeout,
+            },
+        }
+
+    return {
+        "status": "pass",
+        "baseline_source": source,
+        "overall": {
+            "current": {
+                "killed": current_killed,
+                "viable": current_viable,
+                "score_percent": _score_percent(current_killed, current_viable),
+                "timeout": current_timeout,
+            },
+            "baseline": {
+                "killed": baseline_overall[0],
+                "viable": baseline_overall[3],
+                "score_percent": _score_percent(
+                    baseline_overall[0], baseline_overall[3]
+                ),
+                "timeout": baseline_overall[2],
+            },
+        },
+        "by_operator": operator_results,
+    }
+
+
+def _read_baseline(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read mutation ratchet baseline {path}: {error}") from error
+    if not isinstance(value, dict):
+        raise ValueError("mutation ratchet baseline must be a JSON object")
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--survivor-dir", type=Path, required=True)
+    parser.add_argument("--baseline", type=Path)
     args = parser.parse_args()
     report_path = args.report.resolve()
     repo_root = Path(__file__).resolve().parents[1]
@@ -246,16 +449,34 @@ def main() -> int:
         report = _read_report(report_path)
         validate_scope_configuration(repo_root / "turtles.toml", report)
         summary = audit_report(report, _revision(repo_root), survivor_dir)
+        if args.baseline is not None:
+            baseline_path = args.baseline
+            if not baseline_path.is_absolute():
+                baseline_path = repo_root / baseline_path
+            summary["ratchet"] = enforce_ratchet(
+                summary,
+                _read_baseline(baseline_path),
+            )
+            summary["baseline_state"] = "ratchet_enforced"
     except (OSError, ValueError, TypeError, KeyError) as error:
         print(f"turtles report audit failed: {error}", file=sys.stderr)
         return 2
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(
-        "turtles baseline observed: "
-        f"{summary['score_percent']:.3f}% ({summary['mutation_counts']}); "
-        "release mutation gate remains pending"
-    )
+    if "ratchet" in summary:
+        current = summary["ratchet"]["overall"]["current"]
+        baseline = summary["ratchet"]["overall"]["baseline"]
+        print(
+            "turtles mutation ratchet passed: "
+            f"{current['score_percent']:.3f}% >= {baseline['score_percent']:.3f}% "
+            "overall; every operator floor and timeout ceiling held"
+        )
+    else:
+        print(
+            "turtles baseline observed: "
+            f"{summary['score_percent']:.3f}% ({summary['mutation_counts']}); "
+            "release mutation gate remains pending"
+        )
     print(f"audited summary: {output}")
     return 0
 

@@ -1,6 +1,6 @@
 # Architecture and dependency contract
 
-Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; experimental macOS, Ubuntu/Wayland/GLES, and Windows native slices are present; the JS browser proof includes an in-process capability/MCP seam; complete native, browser, and wire-protocol services remain planned.
+Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; experimental macOS, Ubuntu/Wayland/GLES, and Windows native slices are present; the JS browser proof includes an in-process capability/MCP seam; a separate Node stdio fixture exercises the stateless MCP wire adapter; native and browser MCP endpoint topology remains planned.
 
 This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, `element/`, `capability/`, and optional `mcp/`, plus native and example adapters. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
 
@@ -72,12 +72,14 @@ The facade is a re-export surface; it must not contain a second implementation o
 
 The current runtime edges include `primitives -> stdlib`, `diagnostics -> stdlib`, `core -> stdlib + diagnostics`, `capability -> diagnostics`, `mcp -> capability + diagnostics`, and `migration/host_services -> capability + diagnostics`; the executable allowlist also records current layout, scene, element, native, and example edges. The browser app fixture is portable and can use the semantic registry plus an in-process optional MCP dispatch seam; the JS host adapter remains a leaf above it. The host-service bridge queues bounded JSON-compatible requests and completions over copied framework values; browser/Electron/Tauri adapters must enforce their own permission and host allowlists before acting. The executable dependency check covers these boundaries and test-only imports; new runtime packages still require an explicit layer entry and reject unlisted edges. The dependency direction must remain acyclic; cross-cutting code belongs in a lower-level contract rather than a reverse import.
 
-The optional MCP package currently generates transport-neutral inventory and
-routes in-process tool/resource calls back through the registry. It has no wire
-framing or protocol negotiation. Its scalar input schemas are not directly
-wire-ready MCP tool schemas; a future host must wrap inputs as MCP objects and
-unwrap them before registry dispatch, while preserving the declared semantic
-schema at the boundary.
+The optional MCP package generates transport inventory, projects each schema
+to the modern MCP object-shaped tool contract, and routes wire calls back
+through the same typed registry and domain handlers. Its stateless protocol
+router implements discovery, tools, and query resources for MCP revision
+`2026-07-28`. The checked JavaScript stdio fixture hosts that router as a
+newline-delimited JSON-RPC subprocess; native and browser transport hosts,
+prompts, legacy initialization, and interruption of running synchronous
+handlers remain outside this adapter slice. See the [MCP adapter guide](mcp-adapter.md).
 
 ## Async and application scheduling
 

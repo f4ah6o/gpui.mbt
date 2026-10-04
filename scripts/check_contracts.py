@@ -663,6 +663,7 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "examples/browser": {
             "examples/browser_app", "diagnostics", "platform", "primitives",
         },
+        "examples/mcp_stdio": {"capability", "diagnostics", "mcp"},
     }
     required_runtime_packages = {
         "primitives",

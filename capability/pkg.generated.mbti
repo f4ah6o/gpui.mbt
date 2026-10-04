@@ -1,0 +1,158 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/capability"
+
+import {
+  "f4ah6o/gpui/diagnostics",
+}
+
+// Values
+pub fn effect_label(EffectClass) -> String
+
+pub fn json_escape(String) -> String
+
+pub fn operation_kind_label(OperationKind) -> String
+
+// Errors
+
+// Types and methods
+pub struct Descriptor {
+  // private fields
+}
+pub fn Descriptor::description(Self) -> String
+pub fn Descriptor::effect(Self) -> EffectClass
+pub fn Descriptor::exposure(Self) -> Exposure
+pub fn Descriptor::external_name(Self) -> String
+pub fn Descriptor::id(Self) -> String
+pub fn Descriptor::input_schema(Self) -> Schema
+pub fn Descriptor::is_idempotent(Self) -> Bool
+pub fn Descriptor::kind(Self) -> OperationKind
+pub fn Descriptor::new(String, String, String, OperationKind, Schema, Schema, EffectClass, Bool, Exposure, String?, Int) -> Result[Self, @diagnostics.FrameworkError]
+pub fn Descriptor::output_schema(Self) -> Schema
+pub fn Descriptor::title(Self) -> String
+pub fn Descriptor::version(Self) -> Int
+
+pub(all) enum EffectClass {
+  ReadOnly
+  StateChange
+  ExternalSideEffect
+} derive(Eq)
+pub fn EffectClass::equal(Self, Self) -> Bool
+pub fn EffectClass::not_equal(Self, Self) -> Bool
+
+pub(all) enum Exposure {
+  Internal
+  Local
+  External
+} derive(Eq)
+pub fn Exposure::equal(Self, Self) -> Bool
+pub fn Exposure::not_equal(Self, Self) -> Bool
+
+pub struct GuiBinding[I, O] {
+  // private fields
+}
+pub fn[I, O] GuiBinding::is_enabled(Self[I, O]) -> Bool
+pub fn[I, O] GuiBinding::trigger(Self[I, O], I) -> Result[O, @diagnostics.FrameworkError]
+
+pub(all) enum InvocationOrigin {
+  Gui
+  Direct
+  LocalAutomation
+  RemoteMcp
+} derive(Eq)
+pub fn InvocationOrigin::equal(Self, Self) -> Bool
+pub fn InvocationOrigin::not_equal(Self, Self) -> Bool
+
+pub(all) enum OperationKind {
+  Command
+  Query
+  Workflow
+} derive(Eq)
+pub fn OperationKind::equal(Self, Self) -> Bool
+pub fn OperationKind::not_equal(Self, Self) -> Bool
+
+pub struct Registry {
+  // private fields
+}
+pub fn Registry::authorize_external(Self, String, InvocationOrigin) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Registry::descriptors(Self) -> Array[Descriptor]
+pub fn Registry::external_descriptors(Self) -> Array[Descriptor]
+pub fn Registry::external_manifest_json(Self) -> String
+pub fn Registry::invoke(Self, String, InvocationOrigin, Value) -> Result[Value, @diagnostics.FrameworkError]
+pub fn Registry::invoke_external(Self, String, InvocationOrigin, Value) -> Result[Value, @diagnostics.FrameworkError]
+pub fn Registry::is_alive(Self) -> Bool
+pub fn Registry::new() -> Self
+pub fn[I, O] Registry::register(Self, TypedCapability[I, O]) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Registry::teardown(Self) -> Unit
+
+pub struct Schema {
+  // private fields
+}
+pub fn Schema::accepts(Self, Value) -> Bool
+pub fn Schema::array(Self) -> Self
+pub fn Schema::bool() -> Self
+pub fn Schema::canonical_json(Self) -> String
+pub fn Schema::int() -> Self
+pub fn Schema::is_object(Self) -> Bool
+pub fn Schema::is_unit(Self) -> Bool
+pub fn Schema::number() -> Self
+pub fn Schema::optional(Self) -> Self
+pub fn Schema::record(Array[SchemaField]) -> Result[Self, @diagnostics.FrameworkError]
+pub fn Schema::string() -> Self
+pub fn Schema::tagged(String, Array[SchemaVariant]) -> Result[Self, @diagnostics.FrameworkError]
+pub fn Schema::unit() -> Self
+
+pub struct SchemaField {
+  // private fields
+}
+pub fn SchemaField::is_required(Self) -> Bool
+pub fn SchemaField::name(Self) -> String
+pub fn SchemaField::new(String, Schema, Bool) -> Result[Self, @diagnostics.FrameworkError]
+pub fn SchemaField::schema(Self) -> Schema
+
+pub struct SchemaVariant {
+  // private fields
+}
+pub fn SchemaVariant::new(String, Schema) -> Result[Self, @diagnostics.FrameworkError]
+pub fn SchemaVariant::schema(Self) -> Schema
+pub fn SchemaVariant::tag(Self) -> String
+
+pub struct TypedCapability[I, O] {
+  // private fields
+}
+pub fn[I, O] TypedCapability::descriptor(Self[I, O]) -> Descriptor
+pub fn[I, O] TypedCapability::gui_binding(Self[I, O]) -> GuiBinding[I, O]
+pub fn[I, O] TypedCapability::invoke(Self[I, O], InvocationOrigin, I) -> Result[O, @diagnostics.FrameworkError]
+pub fn[I, O] TypedCapability::new(Descriptor, (Value) -> Result[I, @diagnostics.FrameworkError], (O) -> Result[Value, @diagnostics.FrameworkError], (I) -> Result[O, @diagnostics.FrameworkError], () -> Result[Unit, @diagnostics.FrameworkError], (InvocationOrigin) -> Result[Unit, @diagnostics.FrameworkError]) -> Self[I, O]
+pub fn[I, O] TypedCapability::new_with_validation(Descriptor, (Value) -> Result[I, @diagnostics.FrameworkError], (O) -> Result[Value, @diagnostics.FrameworkError], (I) -> Result[Unit, @diagnostics.FrameworkError], (O) -> Result[Unit, @diagnostics.FrameworkError], (I) -> Result[O, @diagnostics.FrameworkError], () -> Result[Unit, @diagnostics.FrameworkError], (InvocationOrigin) -> Result[Unit, @diagnostics.FrameworkError]) -> Self[I, O]
+
+pub(all) enum Value {
+  UnitValue
+  BoolValue(Bool)
+  IntValue(Int)
+  NumberValue(Double)
+  StringValue(String)
+  ArrayValue(Array[Value])
+  ObjectValue(Array[(String, Value)])
+}
+pub fn Value::array(Array[Self]) -> Self
+pub fn Value::as_array(Self) -> Result[Array[Self], @diagnostics.FrameworkError]
+pub fn Value::as_bool(Self) -> Result[Bool, @diagnostics.FrameworkError]
+pub fn Value::as_int(Self) -> Result[Int, @diagnostics.FrameworkError]
+pub fn Value::as_number(Self) -> Result[Double, @diagnostics.FrameworkError]
+pub fn Value::as_object(Self) -> Result[Array[(String, Self)], @diagnostics.FrameworkError]
+pub fn Value::as_string(Self) -> Result[String, @diagnostics.FrameworkError]
+pub fn Value::bool(Bool) -> Self
+pub fn Value::canonical_json(Self) -> String
+pub fn Value::clone(Self) -> Self
+pub fn Value::int(Int) -> Self
+pub fn Value::number(Double) -> Self
+pub fn Value::object(Array[(String, Self)]) -> Self
+pub fn Value::string(String) -> Self
+pub fn Value::try_canonical_json(Self) -> Result[String, @diagnostics.FrameworkError]
+pub fn Value::try_clone_transport(Self) -> Result[Self, @diagnostics.FrameworkError]
+pub fn Value::unit() -> Self
+pub fn Value::validate_transport(Self) -> Result[Unit, @diagnostics.FrameworkError]
+
+// Type aliases
+
+// Traits

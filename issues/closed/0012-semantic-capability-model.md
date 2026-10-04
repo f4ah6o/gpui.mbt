@@ -1,9 +1,40 @@
 # Semantic capability model for GUI / API / MCP parity
 
-Status: open
-Parent: [0001-product-charter-and-compatibility.md](0001-product-charter-and-compatibility.md)
-Related: [0003-testing-pbt-mutation-and-visual-validation.md](0003-testing-pbt-mutation-and-visual-validation.md), [0009-browser-backend.md](0009-browser-backend.md)
+Status: closed
+Closed: 2026-10-04
+Parent: [0001-product-charter-and-compatibility.md](../open/0001-product-charter-and-compatibility.md)
+Related: [0003-testing-pbt-mutation-and-visual-validation.md](../open/0003-testing-pbt-mutation-and-visual-validation.md), [0009-browser-backend.md](../open/0009-browser-backend.md)
 Updated: 2026-10-04
+Child: [0015-capability-owner-lifecycle.md](../open/0015-capability-owner-lifecycle.md)
+
+## Current-head acceptance triage — 2026-10-04
+
+Baseline: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`. Close review followed the
+stdio adapter at `60aabcd` and the 0014 all-target schema/wire conformance run
+(26/26 on native, wasm, wasm-gc, and js; Node endpoint 4/4; inventory drift
+check passed). Hosted CI on candidate PR head `0ce1a26` passed contracts/core,
+stdio, macOS build, Ubuntu, Windows, and browser workflows.
+
+- [x] Headless and real Chromium-hosted examples register one write capability
+  and expose it through the GUI binding and typed direct API.
+- [x] The GUI binding, direct call, and MCP adapter reach the same handler;
+  normalized traces compare state, results, revisions, notifications, and
+  committed side effects in `mcp/adapter_test.mbt`.
+- [x] A semantic query reads the resulting state; the hosted
+  [browser run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282)
+  verifies GUI, direct, and MCP changes redraw the observed Chromium canvas.
+- [x] Schema/name output is deterministic and collision-checked; unexposed
+  capabilities are omitted by default, and the portable `capability/` package
+  does not depend on MCP types.
+- [x] Explicit registry/adapter teardown and stale-capability rejection have
+  headless tests. Automatic binding of arbitrary registries to their owning
+  `App` lifecycle is split into child packet 0015.
+
+The seven-point core acceptance gate is complete. This packet was closed after
+the ordered 0013 → 0014 review. Automatic application-owner lifetime wiring is
+tracked separately in open packet 0015; native/browser endpoint topology and
+asynchronous cancellation are tracked in open packet 0016.
 
 ## Goal
 
@@ -55,12 +86,18 @@ Implemented in PR #12:
 - semantic `GuiBinding` that calls the same typed handler as direct invocation
 - headless state/notification tests for GUI, direct, and erased registry invocation
 
-Still required before this packet is complete:
+Follow-up work after core closure:
 
-- broader schema coverage for optional/record/tagged values in application fixtures
-- application-owner teardown wiring beyond explicit registry teardown
-- an observed browser host smoke proving rendered redraw for GUI, direct, and MCP fixture calls
-- release/compatibility evidence for the final public API
+- [x] Supported-schema and wire round-trips are covered by the 0014 conformance
+  suite; broader application-domain fixture coverage remains with 0014.
+- [ ] Automatic application-owner teardown for arbitrary registries is tracked
+  in child packet 0015; explicit registry/adapter teardown and stale rejection
+  are tested at this head.
+- [x] The browser host smoke now proves GUI, direct, and MCP mutations repaint
+  the observed value in real Chromium:
+  [run 37195649282](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282).
+- [ ] Pinned-upstream compatibility and release evidence for the public API
+  remain in packets 0001 and 0005.
 
 ## Shared typed-domain validation update — 2026-10-04
 
@@ -73,12 +110,15 @@ graphs over 10,000 nodes, and canonical JSON over 1 MiB before schema walks or
 copies. The checked serializer counts UTF-16 code units and has exact boundary
 coverage.
 
-The browser fixture now renders one observed counter capability through GUI,
-direct, and in-process MCP dispatch over the same app state; the JavaScript
-host remains below the portable fixture. MCP dispatch here is a conformance
-seam, not a network protocol. Registry-owner lifecycle wiring, broader record
-and tagged-value application fixtures, compatibility review, and a real browser
-host run remain open.
+The browser fixture renders one observed counter capability through GUI,
+direct, and in-process MCP dispatch over the same app state. The real Chromium
+host smoke for that path passed in PR #13
+([run 37195649282](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282));
+it proves browser presentation and semantic redraw, not an MCP network
+protocol. Supported schema/value round-trips and wire parity are covered by
+0014; broader application-domain fixtures and its mutation gate remain there.
+Automatic owner-lifecycle wiring is in 0015, and compatibility/release
+evidence is in 0001/0005.
 
 
 ## Non-goals
