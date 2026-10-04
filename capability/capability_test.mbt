@@ -128,6 +128,42 @@ test "schema projection is deterministic and validates closed records" {
 }
 
 ///|
+test "tagged schemas reserve payload key and number JSON stays valid" {
+  let variant = match
+    @capability.SchemaVariant::new("ok", @capability.Schema::string()) {
+    Ok(value) => value
+    Err(_) => fail("valid variant rejected")
+  }
+  assert_true(@capability.Schema::tagged("value", [variant]) is Err(_))
+
+  let numbers = @capability.Schema::number()
+  let nan = 0.0 / 0.0
+  let positive_infinity = 1.0 / 0.0
+  let negative_infinity = -1.0 / 0.0
+  assert_true(!numbers.accepts(@capability.Value::number(nan)))
+  assert_true(!numbers.accepts(@capability.Value::number(positive_infinity)))
+  assert_true(!numbers.accepts(@capability.Value::number(negative_infinity)))
+  assert_eq(@capability.Value::number(nan).canonical_json(), "\"NaN\"")
+  assert_eq(
+    @capability.Value::number(positive_infinity).canonical_json(),
+    "\"Infinity\"",
+  )
+  assert_eq(
+    @capability.Value::number(negative_infinity).canonical_json(),
+    "\"-Infinity\"",
+  )
+}
+
+///|
+test "canonical JSON escapes every control character" {
+  let controls : String = ['\u{0}', '\b', '\u{c}', '\u{1f}']
+  assert_eq(
+    @capability.Value::string(controls).canonical_json(),
+    "\"\\u0000\\u0008\\u000c\\u001f\"",
+  )
+}
+
+///|
 test "registry enumeration and manifest ignore registration order" {
   let app = running_capability_app()
   let entity = match app.create_entity(0) {
@@ -248,7 +284,7 @@ test "registry rejects collisions invalid values policy and stale handles" {
       @capability.RemoteMcp,
       @capability.Value::string("wrong"),
     ) {
-    Err(error) => assert_true(error.code() is @diagnostics.ConversionFailed)
+    Err(error) => assert_true(error.code() is @diagnostics.InvalidInput)
     Ok(_) => fail("invalid external value must fail")
   }
 
