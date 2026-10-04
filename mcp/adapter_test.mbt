@@ -69,7 +69,7 @@ fn install_fixture(
     Ok(value) => value
     Err(_) => abort("observer entity creation should succeed")
   }
-  assert_true(
+  match
     app.update(owner, context => {
       match
         context.subscribe(entity, event => {
@@ -81,9 +81,10 @@ fn install_fixture(
         Ok(_) => Ok(())
         Err(error) => Err(error)
       }
-    })
-    is Ok(_),
-  )
+    }) {
+    Ok(_) => ()
+    Err(_) => abort("fixture subscription should succeed")
+  }
   let command = @capability.TypedCapability::new(
     mcp_command_descriptor("document.rename", @capability.External),
     value => value.as_int(),
@@ -134,8 +135,14 @@ fn install_fixture(
     _origin => Ok(()),
   )
   let registry = @capability.Registry::new()
-  assert_true(registry.register(command) is Ok(_))
-  assert_true(registry.register(query) is Ok(_))
+  match registry.register(command) {
+    Ok(_) => ()
+    Err(_) => abort("command registration should succeed")
+  }
+  match registry.register(query) {
+    Ok(_) => ()
+    Err(_) => abort("query registration should succeed")
+  }
   (registry, command, query)
 }
 
