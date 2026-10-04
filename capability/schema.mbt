@@ -102,11 +102,12 @@ pub fn Schema::number() -> Schema {
   {
     canonical: "{\"type\":\"number\"}",
     unit_like: false,
-    validate: value =>
+    validate: value => {
       match value {
         NumberValue(number) => finite_number(number)
         _ => false
-      },
+      }
+    },
   }
 }
 
