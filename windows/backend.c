@@ -139,6 +139,7 @@ typedef struct gpui_windows_host {
   gpui_windows_api api;
   int32_t token;
   int32_t window_id;
+  int32_t last_destroyed_window;
   DWORD owner_thread;
   volatile LONG state; /* 0 running, 1 quiescing, 2 stopped */
   volatile LONG error;
@@ -1370,9 +1371,11 @@ int32_t gpui_windows_destroy(int32_t token, int32_t window) {
   int32_t status = check_host(token, TRUE);
   if (status != GPUI_WINDOWS_OK)
     return status;
-  if (window > 0 && window < g_next_window && g_host.window_id != window)
+  if (window <= 0)
+    return GPUI_WINDOWS_STALE;
+  if (window == g_host.last_destroyed_window)
     return GPUI_WINDOWS_OK;
-  if (!window || g_host.window_id != window || !g_host.hwnd)
+  if (g_host.window_id != window || !g_host.hwnd)
     return GPUI_WINDOWS_STALE;
   HWND hwnd = g_host.hwnd;
   g_host.destroying = TRUE;
@@ -1383,6 +1386,7 @@ int32_t gpui_windows_destroy(int32_t token, int32_t window) {
     return GPUI_WINDOWS_NATIVE;
   }
   emit_event_for(&g_host, window, 4, 0, 0, 0, 0);
+  g_host.last_destroyed_window = window;
   g_host.hwnd = NULL;
   g_host.window_id = 0;
   g_host.destroying = FALSE;

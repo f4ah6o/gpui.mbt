@@ -138,7 +138,7 @@ a desktop frame-rate claim.
 
 | Evidence path | Distro / compositor | Graphics / session | Evidence state |
 | --- | --- | --- | --- |
-| Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Hosted rerun 2026-10-04: MoonBit E2E passed 4/4 with 24 window cycles; C E2E passed lifecycle, readback, input-order, scale, recovery and resource checks at both scales, emitting 30 timing samples per scale. Report collection failed when merged stderr split a sample record; the collector now keeps stderr in a sidecar log and parses stdout separately. Reporter rerun pending |
+| Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Hosted run 2026-10-04 passed MoonBit E2E (4/4), C lifecycle/render/recovery checks at both scales, and 30 timing samples per scale. Measurement report completed with `no_baseline`; see [run and diagnostic results](performance.md#hosted-ubuntu-observation-2026-10-04). |
 | Local implementation validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Strict C compile and clipboard transfer helper passed; Weston headless launch blocked | Full native E2E unrun: the runner observed Weston fail to add its socket with `No such file or directory`; a separate AF_UNIX bind diagnostic was denied with `EPERM` in this environment |
 | Real Ubuntu desktop | Ubuntu 24.04 GNOME Wayland/Mutter | Desktop GPU, IME and assistive technology | Pending |
 

@@ -45,7 +45,8 @@ Acceptance:
 
 - a MoonBit native executable opens one visible Windows window
 - wake/request-exit semantics match the common host contract
-- destroy is idempotent from the framework view
+- repeating destruction of the most recently destroyed window in the same
+  host generation succeeds; other stale window handles are rejected
 - callbacks/messages for destroyed generations cannot revive stale state
 
 ### B. Native GPU surface and first frame
@@ -178,10 +179,14 @@ one-window assertion, now checked after creating the primary HWND. The next run
 progressed through readback, clipboard, and resize, then exposed that the pump's
 message-availability probe removed the first queued message before dispatch.
 The probe now uses `PM_NOREMOVE`; the `CloseRequested` assertion remains
-required. The singleton-host E2E and conformance checks run in separate filtered
-processes, and wake/exit messages carry their originating host token. A
-successful hosted rerun is still required; native E2E and app-smoke evidence
-remain pending.
+required. The latest run reached teardown and found an off-by-one in repeated
+destruction of the most recently destroyed window. The backend now records that
+handle as a per-host tombstone, making only that repeat idempotent; the E2E
+keeps its duplicate-destroy, exactly-one-`Destroyed`, older-same-host-stale, and
+previous-generation-stale checks. The singleton-host E2E and conformance checks
+run in separate filtered processes, and wake/exit messages carry their
+originating host token. A successful hosted rerun is still required; native E2E
+and app-smoke evidence remain pending.
 
 The one-HWND limit remains. Multi-window behavior, physical multi-monitor DPI
 transitions, Japanese IME/text shaping, accessibility, menus, renderer/device

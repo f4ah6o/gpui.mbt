@@ -349,6 +349,18 @@ test "Windows D3D11 HWND renders and reads back first frame" {
       Err(error) => assert_eq(error.code().label(), "stale_handle")
       Ok(_) => fail("stale title operation succeeded")
     }
+    let next_window = required(
+      host.create_window(64, 48, "next window generation"),
+    )
+    required(host.destroy_window(next_window))
+    required(host.destroy_window(next_window))
+    let next_destroyed_events = required(host.dispatch(0))
+    assert_eq(next_destroyed_events.length(), 1)
+    assert_true(next_destroyed_events[0].kind() is @platform.Destroyed)
+    match host.destroy_window(window) {
+      Err(error) => assert_eq(error.code().label(), "stale_handle")
+      Ok(_) => fail("older destroyed window handle was accepted")
+    }
     required(host.request_exit())
     assert_true(host.state() == Quiescing)
     required(outcome(native_wake_stop_race(host.token), "wake_stop_race"))
@@ -357,6 +369,10 @@ test "Windows D3D11 HWND renders and reads back first frame" {
     for _ in 0..<2 {
       let restarted = required(Host::start())
       assert_true(restarted.state() == Running)
+      match restarted.destroy_window(window) {
+        Err(error) => assert_eq(error.code().label(), "stale_handle")
+        Ok(_) => fail("previous-generation window handle was accepted")
+      }
       let queued_events = required(restarted.dispatch(0))
       assert_true(
         !queued_events.any(event => {

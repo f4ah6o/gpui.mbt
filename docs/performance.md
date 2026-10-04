@@ -83,6 +83,27 @@ The workflow stores it with the native E2E logs. By default the comparison state
 is `no_baseline`; a successful measurement only means the workload ran and
 produced all samples.
 
+### Hosted Ubuntu observation — 2026-10-04
+
+The [hosted Ubuntu CI run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37188934281)
+passed the MoonBit E2E (4/4), C lifecycle, pixel readback, input-order, scale,
+recovery, and resource checks at scales 1x and 2x, and collected 30 timing
+samples per scale. The tested PR head was
+`087e54cb9fde48b56ed5d6d50d564b43c42fa803`, checked out as synthetic merge
+`871fb17` into base `731981259efe3815de06d3420163f3b842e854a0`. The
+[uploaded E2E and benchmark artifact](https://github.com/f4ah6o/gpui.mbt/actions/runs/37188934281/artifacts/11297353573)
+contains the report and raw samples. Its measurement status is `complete`, while
+its comparison status is `no_baseline`.
+
+| Output scale | Samples | p50 | p95 |
+| --- | ---: | ---: | ---: |
+| 1x | 30 | 15,792,972 ns | 16,103,329 ns |
+| 2x | 30 | 11,881,812 ns | 13,629,623 ns |
+
+This is one diagnostic run on hosted Ubuntu 24.04, Weston 13 and Mesa llvmpipe.
+It confirms that the workload and report complete; it is not a reviewed
+performance baseline or a performance pass.
+
 The comparator rejects reports with missing environment details, different
 runner/renderer/toolchain/workload signatures, fewer than 30 samples, or
 summaries inconsistent with the raw samples. An optional comparison requires

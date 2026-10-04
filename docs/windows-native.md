@@ -36,9 +36,12 @@ found an ordering error in the smoke's one-window assertion, now checked after
 the primary HWND is created. The next run progressed through readback,
 clipboard, and resize, then exposed a message-pump bug: its availability probe
 removed the first queued message before dispatch. The probe now uses
-`PM_NOREMOVE`, leaving the close event for the normal dispatch loop. A
-successful hosted run is still required before this counts as Windows runtime
-evidence.
+`PM_NOREMOVE`, leaving the close event for the normal dispatch loop. The latest
+run reached teardown and found an off-by-one in duplicate destruction of the
+most recently destroyed window. The backend now tracks that tombstone per host,
+so only that repeated destroy is idempotent; older same-host and prior-host
+handles remain stale. A successful hosted run is still required before this
+counts as Windows runtime evidence.
 
 The example opens one visible 640 by 400 logical-pixel window and paints a dark
 background with a blue quad. Press Escape or use the system close button to
@@ -49,9 +52,10 @@ WARP software driver when hardware device creation fails.
 ## Implemented slice
 
 - One process-wide host and at most one live HWND at a time. Window IDs are
-  monotonic; repeated destruction of an already-destroyed generation is
-  harmless, and later host starts are supported when the process already has
-  the required per-monitor-v2 DPI context.
+  monotonic; repeating destruction of the most recently destroyed window in
+  the same host generation is harmless, while other stale handles remain
+  invalid. Later host starts are supported when the process already has the
+  required per-monitor-v2 DPI context.
 - An owner-thread message pump, posted wake and exit messages, typed errors,
   close-request versus destroy events, title changes, client-size changes, and
   idempotent stop. Wake and exit posting remain safe while stop releases the
