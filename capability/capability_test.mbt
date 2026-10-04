@@ -150,10 +150,14 @@ test "registry enumeration and manifest ignore registration order" {
   assert_eq(first_descriptors[0].id(), second_descriptors[0].id())
   assert_eq(first_descriptors[1].id(), second_descriptors[1].id())
   assert_true(
-    (first_descriptors[0].id() == "document.current" &&
-      first_descriptors[1].id() == "document.rename") ||
-    (first_descriptors[0].id() == "document.rename" &&
-      first_descriptors[1].id() == "document.current"),
+    (
+      first_descriptors[0].id() == "document.current" &&
+      first_descriptors[1].id() == "document.rename"
+    ) ||
+    (
+      first_descriptors[0].id() == "document.rename" &&
+      first_descriptors[1].id() == "document.current"
+    ),
   )
 }
 
