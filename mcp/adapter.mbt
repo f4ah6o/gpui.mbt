@@ -195,10 +195,20 @@ pub fn Adapter::call_tool(
   if !self.state.val.open {
     return Err({ code: AdapterClosed, message: "adapter is closed", })
   }
-  match self.registry.invoke_external(name, @capability.RemoteMcp, input) {
-    Ok(value) => Ok(value)
-    Err(error) => Err(map_error(error))
+  let inventory = match self.inventory() {
+    Err(error) => return Err(error)
+    Ok(value) => value
   }
+  for tool in inventory.tools {
+    if tool.name == name {
+      match
+        self.registry.invoke(tool.semantic_id, @capability.RemoteMcp, input) {
+        Ok(value) => return Ok(value)
+        Err(error) => return Err(map_error(error))
+      }
+    }
+  }
+  Err({ code: UnknownOperation, message: "unknown tool: \{name}", })
 }
 
 ///|
@@ -268,7 +278,8 @@ fn resource_json(resource : Resource) -> String {
 fn map_error(error : @diagnostics.FrameworkError) -> AdapterError {
   let code = match error.code() {
     @diagnostics.UnsupportedCapability => UnknownOperation
-    @diagnostics.InvalidInput | @diagnostics.ConversionFailed => InvalidInput
+    @diagnostics.InvalidInput => InvalidInput
+    @diagnostics.ConversionFailed => DomainFailure
     @diagnostics.PermissionDenied => PermissionDenied
     @diagnostics.EntityNotLive | @diagnostics.StaleHandle => Stale
     @diagnostics.AppNotRunning | @diagnostics.Busy => Unavailable
