@@ -6,6 +6,13 @@ constructing an `Adapter` and `ProtocolServer`. Calls still enter the same
 registry and invoke the registered typed handler; the protocol layer does not
 own application state or duplicate domain behavior.
 
+For app-owned operations, create the semantic registry with
+`Registry::new_owned(app)` or adopt it with `registry.attach_owner(app)` before
+exposing the adapter. App stop invalidates direct/GUI calls, tool/resource calls,
+request-ID replays, and late completions without a separate registry teardown.
+The adapter reports `Stale` after owner shutdown; calls before app start report
+`Unavailable`. See the [owner lifecycle contract](capability-lifecycle.md).
+
 The router implements the stateless modern MCP revision `2026-07-28`: every
 request supplies `_meta["io.modelcontextprotocol/protocolVersion"]` and
 `_meta["io.modelcontextprotocol/clientCapabilities"]`. `clientInfo` is optional.

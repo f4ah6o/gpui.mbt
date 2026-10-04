@@ -244,7 +244,7 @@ class RuntimeDependencyTests(unittest.TestCase):
 
     def test_capability_and_mcp_edges_are_explicit_and_bounded(self) -> None:
         for package, content in {
-            "capability": 'import { "f4ah6o/gpui/diagnostics" }\n',
+            "capability": 'import { "f4ah6o/gpui/core", "f4ah6o/gpui/diagnostics" }\n',
             "mcp": (
                 'import { "f4ah6o/gpui/capability", '
                 '"f4ah6o/gpui/diagnostics" }\n'
@@ -256,7 +256,7 @@ class RuntimeDependencyTests(unittest.TestCase):
         self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
 
         (self.root / "capability/moon.pkg").write_text(
-            'import { "f4ah6o/gpui/core" }\n',
+            'import { "f4ah6o/gpui/mcp" }\n',
             encoding="utf-8",
         )
         self.assertTrue(
@@ -280,6 +280,26 @@ class RuntimeDependencyTests(unittest.TestCase):
                 for error in checker.validate_runtime_dependencies(self.root)
             )
         )
+
+    def test_capability_lifecycle_edge_has_no_reverse_or_platform_dependency(self) -> None:
+        directory = self.root / "capability"
+        directory.mkdir()
+        manifest = directory / "moon.pkg"
+        manifest.write_text('import { "f4ah6o/gpui/core" }\n', encoding="utf-8")
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+        (self.root / "core/moon.pkg").write_text(
+            'import { "f4ah6o/gpui/capability" }\n', encoding="utf-8"
+        )
+        self.assertTrue(any(
+            "core/: forbidden runtime package edge" in error
+            for error in checker.validate_runtime_dependencies(self.root)
+        ))
+        (self.root / "core/moon.pkg").write_text('', encoding="utf-8")
+        manifest.write_text('import { "f4ah6o/gpui/platform" }\n', encoding="utf-8")
+        self.assertTrue(any(
+            "capability/: forbidden runtime package edge" in error
+            for error in checker.validate_runtime_dependencies(self.root)
+        ))
 
     def test_approved_headless_example_runtime_edges_are_allowed(self) -> None:
         directory = self.root / "examples/headless"

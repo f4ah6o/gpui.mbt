@@ -16,6 +16,12 @@ The CI suite checks portable MoonBit packages across configured targets, builds 
 
 `Entity[T]` relies on immutable or copy-on-write payload discipline. MoonBit cannot deeply copy an arbitrary `T`, so mutating a retained `Array`, `Map`, `Ref`, or other mutable alias outside `App::update` can bypass revision and notification tracking.
 
+Application-owned capability registries now share the app's portable lifetime.
+Stop invalidates direct/GUI/adapter handles and rejects cached or late results.
+The synchronous API does not interrupt or roll back a handler already running;
+reference dropping has no destructor guarantee. See
+[capability owner lifecycle](capability-lifecycle.md).
+
 ### Rendering
 
 The shared scene path currently centers on quads, rectangle clip chains, affine transforms, opacity, and canonical snapshots. Rich text, path, image, and broader resource rendering are not yet complete across the backends.

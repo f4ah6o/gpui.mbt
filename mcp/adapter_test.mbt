@@ -241,9 +241,45 @@ test "generated inventory is deterministic and default-safe" {
   assert_true(first.register(internal) is Ok(_))
 
   let second = @capability.Registry::new()
-  assert_true(second.register(query) is Ok(_))
-  assert_true(second.register(internal) is Ok(_))
-  assert_true(second.register(command) is Ok(_))
+  assert_true(
+    second.register(
+      @capability.TypedCapability::new(
+        query.descriptor(),
+        _value => Ok(()),
+        value => Ok(@capability.Value::int(value)),
+        _value => Ok(0),
+        () => Ok(()),
+        _origin => Ok(()),
+      ),
+    )
+    is Ok(_),
+  )
+  assert_true(
+    second.register(
+      @capability.TypedCapability::new(
+        internal.descriptor(),
+        value => value.as_int(),
+        value => Ok(@capability.Value::int(value)),
+        value => Ok(value),
+        () => Ok(()),
+        _origin => Ok(()),
+      ),
+    )
+    is Ok(_),
+  )
+  assert_true(
+    second.register(
+      @capability.TypedCapability::new(
+        command.descriptor(),
+        value => value.as_int(),
+        value => Ok(@capability.Value::int(value)),
+        value => Ok(value),
+        () => Ok(()),
+        _origin => Ok(()),
+      ),
+    )
+    is Ok(_),
+  )
 
   let first_inventory = match @mcp.Adapter::new(first).inventory() {
     Ok(value) => value

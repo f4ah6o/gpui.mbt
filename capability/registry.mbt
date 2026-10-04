@@ -179,6 +179,7 @@ pub fn Descriptor::version(self : Descriptor) -> Int {
 /// A strongly typed capability. Only the erased registry edge uses Value.
 pub struct TypedCapability[I, O] {
   priv descriptor : Descriptor
+  priv lifetime : Ref[RegistryLifetime?]
   priv decode : (Value) -> Result[I, @diagnostics.FrameworkError]
   priv encode : (O) -> Result[Value, @diagnostics.FrameworkError]
   priv validate_input : (I) -> Result[Unit, @diagnostics.FrameworkError]
@@ -225,6 +226,7 @@ pub fn[I, O] TypedCapability::new_with_validation(
 ) -> TypedCapability[I, O] {
   {
     descriptor,
+    lifetime: Ref(None),
     decode,
     encode,
     validate_input,
@@ -281,7 +283,12 @@ fn[I, O] TypedCapability::invoke_value(
               ),
             )
           } else {
-            match (self.decode)(owned_input) {
+            let decoded = (self.decode)(owned_input)
+            match self.complete_stage(Ok(())) {
+              Err(error) => return Err(error)
+              Ok(_) => ()
+            }
+            match decoded {
               Err(error) =>
                 Err(
                   boundary_conversion_error(
@@ -311,13 +318,17 @@ fn[I, O] TypedCapability::invoke_typed(
   self : TypedCapability[I, O],
   input : I,
 ) -> Result[O, @diagnostics.FrameworkError] {
-  match (self.validate_input)(input) {
+  match self.complete_stage(Ok(())) {
+    Err(error) => return Err(error)
+    Ok(_) => ()
+  }
+  match self.complete_stage((self.validate_input)(input)) {
     Err(error) => Err(error)
     Ok(_) =>
-      match (self.handler)(input) {
+      match self.complete_stage((self.handler)(input)) {
         Err(error) => Err(error)
         Ok(output) =>
-          match (self.validate_output)(output) {
+          match self.complete_stage((self.validate_output)(output)) {
             Err(error) => Err(error)
             Ok(_) => Ok(output)
           }
@@ -330,7 +341,12 @@ fn[I, O] TypedCapability::encode_output_value(
   self : TypedCapability[I, O],
   output : O,
 ) -> Result[Value, @diagnostics.FrameworkError] {
-  match (self.encode)(output) {
+  let encoded = (self.encode)(output)
+  match self.complete_stage(Ok(())) {
+    Err(error) => return Err(error)
+    Ok(_) => ()
+  }
+  match encoded {
     Err(error) =>
       Err(
         projection_error(
@@ -370,6 +386,10 @@ fn[I, O] TypedCapability::check(
   self : TypedCapability[I, O],
   origin : InvocationOrigin,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
+  match self.complete_stage(Ok(())) {
+    Err(error) => return Err(error)
+    Ok(_) => ()
+  }
   match exposure_allows(self.descriptor.exposure, origin) {
     false =>
       Err(
@@ -380,9 +400,26 @@ fn[I, O] TypedCapability::check(
         ),
       )
     true =>
-      match (self.availability)() {
+      match self.complete_stage((self.availability)()) {
         Err(error) => Err(error)
-        Ok(_) => (self.policy)(origin)
+        Ok(_) => self.complete_stage((self.policy)(origin))
+      }
+  }
+}
+
+///|
+/// Application callbacks can synchronously stop their owner. Check after each
+/// callback before running the next stage or publishing its result/error.
+fn[I, O, T] TypedCapability::complete_stage(
+  self : TypedCapability[I, O],
+  result : Result[T, @diagnostics.FrameworkError],
+) -> Result[T, @diagnostics.FrameworkError] {
+  match self.lifetime.val {
+    None => result
+    Some(lifetime) =>
+      match lifetime.check("invoke") {
+        Err(error) => Err(error)
+        Ok(_) => result
       }
   }
 }
@@ -425,8 +462,43 @@ priv struct RegistryEntry {
 
 ///|
 priv struct RegistryState {
-  mut alive : Bool
   entries : Array[RegistryEntry]
+}
+
+///|
+priv struct RegistryLifetime {
+  alive : Ref[Bool]
+  owner : Ref[@core.AppLifetime?]
+}
+
+///|
+fn RegistryLifetime::is_alive(self : RegistryLifetime) -> Bool {
+  self.alive.val &&
+  (match self.owner.val {
+    None => true
+    Some(owner) => owner.is_alive()
+  })
+}
+
+///|
+fn RegistryLifetime::check(
+  self : RegistryLifetime,
+  operation : String,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  if !self.is_alive() {
+    return Err(stale_registry_error(operation))
+  }
+  match self.owner.val {
+    Some(owner) if !owner.is_running() =>
+      Err(
+        capability_error(
+          @diagnostics.AppNotRunning,
+          "registry.\{operation}",
+          "capability owner has not started",
+        ),
+      )
+    _ => Ok(())
+  }
 }
 
 ///|
@@ -434,16 +506,59 @@ priv struct RegistryState {
 /// so enumeration and manifests do not depend on registration order.
 pub struct Registry {
   priv state : Ref[RegistryState]
+  priv lifetime : RegistryLifetime
 }
 
 ///|
 pub fn Registry::new() -> Registry {
-  { state: Ref({ alive: true, entries: [], }), }
+  {
+    state: Ref({ entries: [], }),
+    lifetime: { alive: Ref(true), owner: Ref(None), },
+  }
 }
 
 ///|
 pub fn Registry::is_alive(self : Registry) -> Bool {
-  self.state.val.alive
+  self.lifetime.is_alive()
+}
+
+///|
+/// Construct a registry owned by an app. Configuration is allowed before
+/// start; stopping the owner revokes all registry and typed/GUI handles.
+pub fn Registry::new_owned(
+  owner : @core.App,
+) -> Result[Registry, @diagnostics.FrameworkError] {
+  let registry = Registry::new()
+  match registry.attach_owner(owner) {
+    Err(error) => Err(error)
+    Ok(_) => Ok(registry)
+  }
+}
+
+///|
+/// Adopt an existing registry, including handles already registered with it.
+/// Ownership is irreversible; reattaching the same live owner is idempotent.
+pub fn Registry::attach_owner(
+  self : Registry,
+  owner : @core.App,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  if !self.is_alive() || !owner.lifetime().is_alive() {
+    return Err(stale_registry_error("attach_owner"))
+  }
+  match self.lifetime.owner.val {
+    Some(current) if current.app_id() != owner.id() =>
+      Err(
+        capability_error(
+          @diagnostics.InvalidInput,
+          "registry.attach_owner",
+          "registry already belongs to another app",
+        ),
+      )
+    _ => {
+      self.lifetime.owner.val = Some(owner.lifetime())
+      Ok(())
+    }
+  }
 }
 
 ///|
@@ -451,7 +566,7 @@ pub fn[I, O] Registry::register(
   self : Registry,
   capability : TypedCapability[I, O],
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  if !self.state.val.alive {
+  if !self.is_alive() {
     return Err(stale_registry_error("register"))
   }
   let descriptor = capability.descriptor()
@@ -477,6 +592,16 @@ pub fn[I, O] Registry::register(
       )
     }
   }
+  if capability.lifetime.val is Some(_) {
+    return Err(
+      capability_error(
+        @diagnostics.InvalidInput,
+        "registry.register",
+        "capability already belongs to a registry",
+      ),
+    )
+  }
+  capability.lifetime.val = Some(self.lifetime)
   let erased = RegistryEntry::{
     descriptor,
     authorize: origin => capability.check(origin),
@@ -489,7 +614,7 @@ pub fn[I, O] Registry::register(
 ///|
 pub fn Registry::descriptors(self : Registry) -> Array[Descriptor] {
   let values : Array[Descriptor] = []
-  if self.state.val.alive {
+  if self.is_alive() {
     for entry in self.state.val.entries {
       values.push(entry.descriptor)
     }
@@ -500,7 +625,7 @@ pub fn Registry::descriptors(self : Registry) -> Array[Descriptor] {
 ///|
 pub fn Registry::external_descriptors(self : Registry) -> Array[Descriptor] {
   let values : Array[Descriptor] = []
-  if self.state.val.alive {
+  if self.is_alive() {
     for entry in self.state.val.entries {
       if entry.descriptor.exposure is External {
         values.push(entry.descriptor)
@@ -517,8 +642,9 @@ pub fn Registry::invoke(
   origin : InvocationOrigin,
   input : Value,
 ) -> Result[Value, @diagnostics.FrameworkError] {
-  if !self.state.val.alive {
-    return Err(stale_registry_error("invoke"))
+  match self.lifetime.check("invoke") {
+    Err(error) => return Err(error)
+    Ok(_) => ()
   }
   for entry in self.state.val.entries {
     if entry.descriptor.id == id {
@@ -541,8 +667,9 @@ pub fn Registry::invoke_external(
   origin : InvocationOrigin,
   input : Value,
 ) -> Result[Value, @diagnostics.FrameworkError] {
-  if !self.state.val.alive {
-    return Err(stale_registry_error("invoke_external"))
+  match self.lifetime.check("invoke_external") {
+    Err(error) => return Err(error)
+    Ok(_) => ()
   }
   for entry in self.state.val.entries {
     if entry.descriptor.exposure is External &&
@@ -567,8 +694,9 @@ pub fn Registry::authorize_external(
   external_name : String,
   origin : InvocationOrigin,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  if !self.state.val.alive {
-    return Err(stale_registry_error("authorize_external"))
+  match self.lifetime.check("authorize_external") {
+    Err(error) => return Err(error)
+    Ok(_) => ()
   }
   for entry in self.state.val.entries {
     if entry.descriptor.exposure is External &&
@@ -586,10 +714,10 @@ pub fn Registry::authorize_external(
 }
 
 ///|
-/// Invalidate every adapter-facing registry handle. Typed capabilities may still
-/// exist, but their owner-specific availability closure remains authoritative.
+/// Invalidate all registry, typed, GUI, and adapter-facing handles. Revocation
+/// is permanent and repeated teardown is harmless.
 pub fn Registry::teardown(self : Registry) -> Unit {
-  self.state.val.alive = false
+  self.lifetime.alive.val = false
   self.state.val.entries.clear()
 }
 
@@ -599,7 +727,7 @@ pub fn Registry::external_manifest_json(self : Registry) -> String {
   let builder = StringBuilder()
   builder.write_string("{\"schema_version\":1,\"capabilities\":[")
   let mut emitted = 0
-  if self.state.val.alive {
+  if self.is_alive() {
     for descriptor in self.external_descriptors() {
       if emitted > 0 {
         builder.write_string(",")
