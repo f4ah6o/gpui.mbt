@@ -1,3 +1,25 @@
+## Implementation progress
+
+Implemented in PR #12:
+
+- deterministic transport-neutral external capability manifest
+- deterministic external-name derivation with collision checks
+- optional `mcp/` package above the portable capability layer
+- generated tool inventory and unit-input query resources from external descriptors
+- default-deny omission of non-external capabilities
+- MCP tool/resource dispatch routed back through the common semantic registry
+- distinct adapter error mapping for unknown input, invalid input, policy denial,
+  unavailable/stale state, domain failure, and closed adapter lifecycle
+- headless MCP-enabled fixture without renderer/window dependencies
+
+Still required before this packet is complete:
+
+- concrete MCP wire framing/transport host and protocol-version negotiation
+- cancellation/disconnect handling around in-flight operations
+- explicit retry/de-duplication contract where supported
+- browser/native topology smoke for an actual MCP transport endpoint
+- generated artifact drift policy beyond in-memory canonical snapshots
+
 # Generated API and MCP adapters from semantic capabilities
 
 Status: open
