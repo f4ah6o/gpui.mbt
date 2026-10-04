@@ -94,7 +94,7 @@ pub fn Schema::bool() -> Schema {
 ///|
 pub fn Schema::int() -> Schema {
   {
-    canonical: "{\"type\":\"integer\"}",
+    canonical: "{\"type\":\"integer\",\"minimum\":-2147483648,\"maximum\":2147483647}",
     unit_like: false,
     object_like: false,
     validate: value => value is IntValue(_),

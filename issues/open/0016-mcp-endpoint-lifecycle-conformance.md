@@ -5,6 +5,16 @@ Parent: [0013-generated-api-and-mcp-adapters.md](0013-generated-api-and-mcp-adap
 Depends on: [0013-generated-api-and-mcp-adapters.md](0013-generated-api-and-mcp-adapters.md)
 Related: [0014-gui-api-mcp-equivalence-conformance.md](0014-gui-api-mcp-equivalence-conformance.md), [0009-browser-backend.md](0009-browser-backend.md), [0011-electron-tauri-migration.md](0011-electron-tauri-migration.md)
 
+## Progress — 2026-10-04
+
+The headless endpoint acceptance is complete in implementation commit
+`60aabcd19c5d3326965f9f4dcee3e820f51638c5`. The compiled MoonBit fixture is
+served by a real Node stdio process; the endpoint suite passes 4/4 and checks
+request framing bounds, malformed UTF-8 recovery, no-response notifications,
+shared semantic state, and shutdown on stdin EOF. The remaining acceptance is
+native/browser topology, genuinely asynchronous cancellation/disconnect, and
+CI-retained lifecycle artifacts.
+
 ## Goal
 
 Prove that the adapter supplied by 0013 can be hosted in the supported
@@ -31,7 +41,7 @@ this packet must exercise that host rather than add another framing layer.
 
 ## Acceptance
 
-- [ ] A headless reference app can serve and close the 0013 adapter through its
+- [x] A headless reference app can serve and close the 0013 adapter through its
   documented endpoint, with bounded request and shutdown behavior.
 - [ ] At least one native topology and the browser topology are exercised end
   to end; each routes through the shared capability registry and respects

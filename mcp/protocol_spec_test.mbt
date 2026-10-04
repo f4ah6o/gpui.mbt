@@ -156,6 +156,14 @@ test "2026-07-28 responses follow the published result and schema envelope" {
       assert_true(
         protocol_spec_member(value_schema, "type") is Json::String("integer"),
       )
+      assert_true(
+        protocol_spec_member(value_schema, "minimum")
+        is Json::Number(-2147483648.0, ..),
+      )
+      assert_true(
+        protocol_spec_member(value_schema, "maximum")
+        is Json::Number(2147483647.0, ..),
+      )
       match protocol_spec_member(input_schema, "required") {
         Json::Array(required) => {
           assert_true(required.length() == 1)

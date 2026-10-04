@@ -1,7 +1,7 @@
 # Capability registry owner lifecycle
 
 Status: open
-Parent: [0012-semantic-capability-model.md](0012-semantic-capability-model.md)
+Parent: [0012-semantic-capability-model.md](../closed/0012-semantic-capability-model.md)
 Related: [0013-generated-api-and-mcp-adapters.md](0013-generated-api-and-mcp-adapters.md), [0014-gui-api-mcp-equivalence-conformance.md](0014-gui-api-mcp-equivalence-conformance.md)
 
 ## Goal
