@@ -378,7 +378,7 @@ pub fn[I, O] Registry::register(
     descriptor,
     invoke: (origin, input) => capability.invoke_value(origin, input),
   }
-  insert_entry_sorted(self.state.val.entries, erased)
+  self.state.val.entries.push(erased)
   Ok(())
 }
 
@@ -390,7 +390,7 @@ pub fn Registry::descriptors(self : Registry) -> Array[Descriptor] {
       values.push(entry.descriptor)
     }
   }
-  values
+  sort_descriptors(values)
 }
 
 ///|
@@ -403,7 +403,7 @@ pub fn Registry::external_descriptors(self : Registry) -> Array[Descriptor] {
       }
     }
   }
-  values
+  sort_descriptors(values)
 }
 
 ///|
@@ -470,14 +470,12 @@ pub fn Registry::external_manifest_json(self : Registry) -> String {
   builder.write_string("{\"schema_version\":1,\"capabilities\":[")
   let mut emitted = 0
   if self.state.val.alive {
-    for entry in self.state.val.entries {
-      if entry.descriptor.exposure is External {
-        if emitted > 0 {
-          builder.write_string(",")
-        }
-        builder.write_string(descriptor_manifest_json(entry.descriptor))
-        emitted += 1
+    for descriptor in self.external_descriptors() {
+      if emitted > 0 {
+        builder.write_string(",")
       }
+      builder.write_string(descriptor_manifest_json(descriptor))
+      emitted += 1
     }
   }
   builder.write_string("]}")
@@ -506,19 +504,29 @@ fn derive_external_name(id : String) -> String {
 }
 
 ///|
-fn insert_entry_sorted(
-  entries : Array[RegistryEntry],
-  entry : RegistryEntry,
-) -> Unit {
-  entries.push(entry)
-  let mut cursor = entries.length() - 1
-  while cursor > 0 &&
-        entries[cursor].descriptor.id < entries[cursor - 1].descriptor.id {
-    let previous = entries[cursor - 1]
-    entries[cursor - 1] = entries[cursor]
-    entries[cursor] = previous
-    cursor -= 1
+fn sort_descriptors(values : Array[Descriptor]) -> Array[Descriptor] {
+  let sorted : Array[Descriptor] = []
+  for value in values {
+    sorted.push(value)
   }
+  let mut index = 0
+  while index < sorted.length() {
+    let mut minimum = index
+    let mut candidate = index + 1
+    while candidate < sorted.length() {
+      if sorted[candidate].id < sorted[minimum].id {
+        minimum = candidate
+      }
+      candidate += 1
+    }
+    if minimum != index {
+      let previous = sorted[index]
+      sorted[index] = sorted[minimum]
+      sorted[minimum] = previous
+    }
+    index += 1
+  }
+  sorted
 }
 
 ///|
