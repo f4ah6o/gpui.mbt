@@ -202,8 +202,11 @@ and evidence are in [docs/ubuntu.md](../../docs/ubuntu.md).
   2026-10-04 started Weston GL and passed native helper checks, then exposed an
   E2E assumption that optional clipboard/cursor services must exist. The test
   now validates typed unsupported results and records service status while
-  retaining the window/render/recovery gates; a corrected hosted rerun and real
-  GNOME/Mutter, Japanese IME, accessibility and production gates remain pending.
+  retaining the window/render/recovery gates. The next run passed the MoonBit
+  E2E 4/4, including 24 window cycles, but the C harness repeated the capability
+  assumption and stopped before its 40-cycle/timing checks. The C harness now
+  records typed service status too; a full corrected rerun and real GNOME/Mutter,
+  Japanese IME, accessibility and production gates remain pending.
 
 Local execution used Debian 13 / Weston 14.0.2; it does not establish Ubuntu
 support. No X11/XWayland, Tier 1 or general Linux support claim is made.
@@ -216,11 +219,12 @@ requirement for writes, plus arrow/hand/text cursors gated on pointer-enter
 focus. Details are in [docs/ubuntu.md](../../docs/ubuntu.md). Helper and
 portable tests pass locally; the Weston native E2E could not run in this
 environment because the headless compositor failed to create its socket. The
-first Ubuntu CI run then confirmed Weston 13 starts and the transfer helper
-passes, but its MoonBit E2E failed on unconditional clipboard/cursor capability
-requirements. The E2E now treats those services as optional, checks typed
-unsupported results, and records availability while continuing core native
-gates. A rerun is pending; local Debian evidence is not an Ubuntu support claim.
+first Ubuntu CI run confirmed Weston 13 starts and the transfer helper
+passes, but MoonBit E2E failed on unconditional clipboard/cursor capability
+requirements. Its next run passed MoonBit E2E 4/4, then exposed the same
+assumption in the C harness before the 40-cycle and timing gates. Both E2E layers
+now check typed optional-service status and continue core native gates. A full
+corrected rerun is pending; local Debian evidence is not an Ubuntu support claim.
 
 Still open are cross-client clipboard roundtrip and visible cursor smoke,
 fractional scaling/public display metadata, Japanese IME/text shaping,

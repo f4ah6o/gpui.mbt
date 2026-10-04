@@ -227,6 +227,9 @@ test "Windows D3D11 HWND renders and reads back first frame" {
         fail("second native host should be busy")
       }
     }
+    let window = required(
+      host.create_window(128, 96, "gpui.mbt Windows 日本語"),
+    )
     match host.create_window(32, 32, "second window") {
       Err(error) => assert_eq(error.code().label(), "busy")
       Ok(second) => {
@@ -234,9 +237,6 @@ test "Windows D3D11 HWND renders and reads back first frame" {
         fail("second native window should be busy")
       }
     }
-    let window = required(
-      host.create_window(128, 96, "gpui.mbt Windows 日本語"),
-    )
     let events = required(host.dispatch(0))
     let mut created = false
     let mut last_sequence : Int64 = 0

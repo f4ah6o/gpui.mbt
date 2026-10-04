@@ -173,12 +173,13 @@ per-monitor-v2 logical sizing, WARP fallback, basic pointer/keyboard/focus,
 Unicode clipboard, cursors, D3D readback, and synchronized cross-thread
 wake/exit posting during host teardown. Portable MoonBit tests and strict
 MinGW syntax compilation pass locally. The first MSVC/Windows workflow compiled
-the shim and passed the portable tests, but its opted-in E2E run failed before
-the lifecycle conformance gate could start. The singleton-host E2E and
-conformance checks now run sequentially in separate filtered test processes.
-Wake and exit messages carry their originating host token so queued messages
-from a stopped host cannot reach a restart. A successful hosted rerun is still
-required; native E2E and app-smoke evidence remain pending.
+the shim and passed the portable tests, but the opted-in E2E failed because its
+second-window Busy assertion ran before the primary window existed. The smoke
+now creates the primary HWND first. The singleton-host E2E and conformance
+checks also run sequentially in separate filtered test processes. Wake and exit
+messages carry their originating host token so queued messages from a stopped
+host cannot reach a restart. A successful hosted rerun is still required;
+native E2E and app-smoke evidence remain pending.
 
 The one-HWND limit remains. Multi-window behavior, physical multi-monitor DPI
 transitions, Japanese IME/text shaping, accessibility, menus, renderer/device

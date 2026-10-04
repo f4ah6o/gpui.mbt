@@ -32,8 +32,10 @@ conformance checks run sequentially in separate test processes because both
 exercise the process-wide host. Wake and exit messages carry the host token, so
 messages queued during teardown cannot affect a later host generation. The
 first hosted attempt built the shim and passed the portable tests, then exposed
-an E2E lifecycle failure; the corrected workflow still needs a successful
-hosted run before this counts as Windows runtime evidence.
+an ordering error in the native smoke: it expected a second window to be busy
+before creating the primary window. The smoke now creates the primary HWND
+before checking the one-window limit. The corrected workflow still needs a
+successful hosted run before this counts as Windows runtime evidence.
 
 The example opens one visible 640 by 400 logical-pixel window and paints a dark
 background with a blue quad. Press Escape or use the system close button to

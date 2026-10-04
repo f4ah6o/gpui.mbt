@@ -136,15 +136,15 @@ claim.
 
 | Evidence path | Distro / compositor | Graphics / session | Evidence state |
 | --- | --- | --- | --- |
-| Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | First hosted run observed 2026-10-04: Weston GL and native helper passed; MoonBit E2E exposed an incorrect assumption that optional clipboard/cursor services must exist. The E2E now records typed optional-service status and continues core lifecycle/render gates; corrected hosted rerun pending |
+| Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Hosted rerun 2026-10-04: Weston GL and transfer helper passed; MoonBit E2E passed 4/4 with 24 window cycles. The C harness then exposed the same optional clipboard/cursor assumption and stopped before its 40-cycle and timing checks. The harness now records typed service status; corrected full rerun pending |
 | Local implementation validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Strict C compile and clipboard transfer helper passed; Weston headless launch blocked | Full native E2E unrun: the runner observed Weston fail to add its socket with `No such file or directory`; a separate AF_UNIX bind diagnostic was denied with `EPERM` in this environment |
 | Real Ubuntu desktop | Ubuntu 24.04 GNOME Wayland/Mutter | Desktop GPU, IME and assistive technology | Pending |
 
 CI pins the distro and MoonBit release; Ubuntu archive package patch versions
 are recorded by `dpkg-query` on each run, not frozen. CI's Weston package major
 is 13. The headless kiosk compositor does not provide automated physical input;
-clipboard/cursor availability is reported by the E2E instead of assumed. A
-successful headless GL
+MoonBit and C E2E report clipboard/cursor availability instead of assuming
+those seat services exist. A successful headless GL
 software rendering does not prove physical GPU performance or real desktop
 IME/accessibility behavior. File descriptor stability and owned-object checks
 do not prove bounded driver memory in a sustained production run.

@@ -84,10 +84,26 @@ sampled Canvas 2D pixel changes before it checks the app value. The app's
 observer updates before the host's next animation-frame paint, so waiting only
 for the semantic value could inspect the old pixels.
 
-The first hosted run of the expanded smoke (`37186910745`) reached Chromium
-but failed this redraw assertion because the test checked the model update
-before the scheduled paint. The smoke now waits on the actual canvas pixel;
-the corrected hosted rerun is pending, so no hosted pass is claimed yet.
+The first hosted run of the expanded smoke
+([37186910745](https://github.com/f4ah6o/gpui.mbt/actions/runs/37186910745))
+reached Chromium but failed the direct-counter redraw assertion because the
+test checked the model update before the scheduled paint. The smoke now waits
+on the actual canvas pixel. The corrected run
+([37187979407](https://github.com/f4ah6o/gpui.mbt/actions/runs/37187979407))
+at head [`1dfad6a`](https://github.com/f4ah6o/gpui.mbt/commit/1dfad6a) passed
+the full verify-and-package job, including the
+all-target checks/tests, Vite+ checks, dev-watch/source-map exercise, production
+build, Chromium install and real-browser smoke. The smoke passed Canvas2D
+snapshot rendering, DPR updates, pointer/wheel/focus input, GUI/direct/MCP
+redraw, ARIA and island focus ownership, resize and hidden-page scheduling,
+context-loss handling, and repeated teardown. The Pages artifact was packaged;
+deployment was skipped for the pull request.
+
+This is browser execution evidence for the experimental JavaScript Canvas 2D
+slice. WasmGC and Wasm browser targets, WebGPU, Japanese IME and broader text
+input, a general accessibility adapter, clipboard and cursor services,
+renderer recovery, native/backend conformance, worker commands, and production
+browser support remain open.
 
 For initial repository setup, enable GitHub Pages with **Build and deployment →
 Source: GitHub Actions**. The workflow uses the `github-pages` environment and

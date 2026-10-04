@@ -423,11 +423,25 @@ operation/command grants. Contract tests use fake IPC/invoke functions; no real
 Electron main process or Tauri runtime is part of this change. The expanded
 Chromium smoke is configured to check pointer/wheel/focus, visible redraw from
 GUI/direct/MCP calls, island focus ownership and teardown, DPR/lifecycle, and
-repeated remount. Hosted run `37186910745` installed Chromium and completed the
-Vite build and watcher check, then failed the direct-counter pixel assertion.
-The failure was a test timing race: it observed the synchronous app-model
-update before the scheduled animation-frame paint. The smoke now waits for the
-actual sampled canvas pixel to change before checking both direct and MCP
-redraws. The corrected hosted rerun is pending, so this extension has no hosted
-smoke pass recorded yet. WasmGC/Wasm, WebGPU, Japanese IME, general
-accessibility, and production browser support remain open.
+repeated remount. Its first hosted run
+([37186910745](https://github.com/f4ah6o/gpui.mbt/actions/runs/37186910745))
+installed Chromium and completed the Vite build and watcher check, then failed
+the direct-counter pixel assertion. This was a test timing race: it observed
+the synchronous app-model update before the scheduled animation-frame paint.
+The smoke now waits for the actual sampled canvas pixel to change before
+checking both direct and MCP redraws. Corrected run
+([37187979407](https://github.com/f4ah6o/gpui.mbt/actions/runs/37187979407))
+at head [`1dfad6a`](https://github.com/f4ah6o/gpui.mbt/commit/1dfad6a) passed
+the `verify-and-package` job, including all-target
+checks/tests, Vite+ checks, dev-watch and source-map exercise, browser build,
+and the real Chromium smoke. The smoke passed Canvas2D snapshot rendering,
+DPR updates, pointer/wheel/focus input, GUI/direct/MCP redraw, ARIA and island
+focus ownership, resize and hidden-page scheduling, context-loss handling, and
+repeated teardown. It packaged the Pages artifact; the deploy job was skipped
+for the pull request.
+
+This is execution evidence for the experimental JavaScript Canvas 2D slice,
+not production browser support. WasmGC/Wasm browser targets, WebGPU, Japanese
+IME and broader text input, general accessibility, clipboard/cursor services,
+renderer recovery, native/backend conformance, and worker commands remain
+open.
