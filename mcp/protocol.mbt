@@ -512,7 +512,7 @@ fn json_to_schema_value(
         _ => return Err("Object input schema has no properties")
       }
       match json_member(schema, "required") {
-        Some(Json::Array(required)) => {
+        Some(Json::Array(required)) =>
           for required_field in required {
             match required_field {
               Json::String(name) =>
@@ -520,10 +520,10 @@ fn json_to_schema_value(
                   Some(_) => ()
                   None => return Err("Missing required input field")
                 }
-              _ => return Err("Object input schema has invalid required entries")
+              _ =>
+                return Err("Object input schema has invalid required entries")
             }
           }
-        }
         Some(_) => return Err("Object input schema has invalid required list")
         None => ()
       }
