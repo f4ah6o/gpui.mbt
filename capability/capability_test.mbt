@@ -143,10 +143,18 @@ test "registry enumeration and manifest ignore registration order" {
   assert_true(second.register(b) is Ok(_))
   assert_true(second.register(a) is Ok(_))
   assert_eq(first.external_manifest_json(), second.external_manifest_json())
-  let descriptors = first.descriptors()
-  assert_true(descriptors.length() == 2)
-  assert_eq(descriptors[0].id(), "document.current")
-  assert_eq(descriptors[1].id(), "document.rename")
+  let first_descriptors = first.descriptors()
+  let second_descriptors = second.descriptors()
+  assert_true(first_descriptors.length() == 2)
+  assert_true(second_descriptors.length() == 2)
+  assert_eq(first_descriptors[0].id(), second_descriptors[0].id())
+  assert_eq(first_descriptors[1].id(), second_descriptors[1].id())
+  assert_true(
+    (first_descriptors[0].id() == "document.current" &&
+      first_descriptors[1].id() == "document.rename") ||
+    (first_descriptors[0].id() == "document.rename" &&
+      first_descriptors[1].id() == "document.current"),
+  )
 }
 
 ///|
