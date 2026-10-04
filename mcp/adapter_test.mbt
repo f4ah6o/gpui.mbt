@@ -88,7 +88,7 @@ fn install_fixture(
     mcp_command_descriptor("document.rename", @capability.External),
     value => value.as_int(),
     value => Ok(@capability.Value::int(value)),
-    value =>
+    value => {
       match
         app.update(entity, context => {
           match context.set(value) {
@@ -98,8 +98,9 @@ fn install_fixture(
         }) {
         Err(error) => Err(error)
         Ok(_) => app.read(entity, current => current)
-      },
-    () =>
+      }
+    },
+    () => {
       if entity.is_live() {
         Ok(())
       } else {
@@ -109,7 +110,8 @@ fn install_fixture(
             "document.rename",
           ),
         )
-      },
+      }
+    },
     _origin => Ok(()),
   )
   let query = @capability.TypedCapability::new(
@@ -117,7 +119,7 @@ fn install_fixture(
     _value => Ok(()),
     value => Ok(@capability.Value::int(value)),
     _unit => app.read(entity, current => current),
-    () =>
+    () => {
       if entity.is_live() {
         Ok(())
       } else {
@@ -127,7 +129,8 @@ fn install_fixture(
             "document.current",
           ),
         )
-      },
+      }
+    },
     _origin => Ok(()),
   )
   let registry = @capability.Registry::new()
@@ -159,10 +162,7 @@ fn run_lane(lane : Int, value : Int) -> (Int, Int, Int) raise {
     _ => {
       let adapter = @mcp.Adapter::new(registry)
       match
-        adapter.call_tool(
-          "document_rename",
-          @capability.Value::int(value),
-        ) {
+        adapter.call_tool("document_rename", @capability.Value::int(value)) {
         Ok(@capability.IntValue(actual)) => actual
         _ => fail("MCP lane failed")
       }
@@ -262,10 +262,7 @@ test "MCP boundary preserves invalid input policy and lifecycle failures" {
   let adapter = @mcp.Adapter::new(registry)
 
   match
-    adapter.call_tool(
-      "document_rename",
-      @capability.Value::string("wrong"),
-    ) {
+    adapter.call_tool("document_rename", @capability.Value::string("wrong")) {
     Err(error) => assert_true(error.code() is @mcp.InvalidInput)
     Ok(_) => fail("invalid input must fail before domain execution")
   }
@@ -280,7 +277,7 @@ test "MCP boundary preserves invalid input policy and lifecycle failures" {
     value => Ok(@capability.Value::int(value)),
     value => Ok(value),
     () => Ok(()),
-    origin =>
+    origin => {
       if origin is @capability.RemoteMcp {
         Err(
           @diagnostics.FrameworkError::new(
@@ -290,25 +287,18 @@ test "MCP boundary preserves invalid input policy and lifecycle failures" {
         )
       } else {
         Ok(())
-      },
+      }
+    },
   )
   assert_true(registry.register(denied) is Ok(_))
-  match
-    adapter.call_tool(
-      "document_remote_denied",
-      @capability.Value::int(1),
-    ) {
+  match adapter.call_tool("document_remote_denied", @capability.Value::int(1)) {
     Err(error) => assert_true(error.code() is @mcp.PermissionDenied)
     Ok(_) => fail("remote policy denial must cross the adapter boundary")
   }
 
   assert_true(app.destroy_entity(entity) is Ok(_))
   assert_true(app.run_ready(16) is Ok(_))
-  match
-    adapter.call_tool(
-      "document_rename",
-      @capability.Value::int(2),
-    ) {
+  match adapter.call_tool("document_rename", @capability.Value::int(2)) {
     Err(error) => assert_true(error.code() is @mcp.Stale)
     Ok(_) => fail("released owner must not remain callable")
   }
@@ -344,14 +334,10 @@ fn sequence_parity(commands : Array[Int]) -> Bool {
   let direct_notifications = Ref(0)
   let remote_notifications = Ref(0)
   let (_direct_registry, direct_command, direct_query) = install_fixture(
-    direct_app,
-    direct_entity,
-    direct_notifications,
+    direct_app, direct_entity, direct_notifications,
   )
   let (remote_registry, _remote_command, _remote_query) = install_fixture(
-    remote_app,
-    remote_entity,
-    remote_notifications,
+    remote_app, remote_entity, remote_notifications,
   )
   let adapter = @mcp.Adapter::new(remote_registry)
 
@@ -382,10 +368,11 @@ fn sequence_parity(commands : Array[Int]) -> Bool {
         _ => return false
       }
     }
-    match (
-      direct_app.read(direct_entity, current => current),
-      remote_app.read(remote_entity, current => current),
-    ) {
+    match
+      (
+        direct_app.read(direct_entity, current => current),
+        remote_app.read(remote_entity, current => current),
+      ) {
       (Ok(left), Ok(right)) if left == right => ()
       _ => return false
     }
