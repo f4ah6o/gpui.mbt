@@ -230,20 +230,36 @@ fn[I, O] TypedCapability::invoke_value(
       if !self.descriptor.input_schema.accepts(input) {
         Err(
           capability_error(
-            @diagnostics.ConversionFailed,
+            @diagnostics.InvalidInput,
             self.descriptor.id,
             "input does not satisfy the declared schema",
           ),
         )
       } else {
         match (self.decode)(input) {
-          Err(error) => Err(error)
+          Err(error) =>
+            Err(
+              boundary_conversion_error(
+                @diagnostics.InvalidInput,
+                self.descriptor.id,
+                "input conversion failed",
+                error,
+              ),
+            )
           Ok(typed_input) =>
             match (self.handler)(typed_input) {
               Err(error) => Err(error)
               Ok(output) =>
                 match (self.encode)(output) {
-                  Err(error) => Err(error)
+                  Err(error) =>
+                    Err(
+                      boundary_conversion_error(
+                        @diagnostics.ConversionFailed,
+                        self.descriptor.id,
+                        "output conversion failed",
+                        error,
+                      ),
+                    )
                   Ok(encoded) =>
                     if self.descriptor.output_schema.accepts(encoded) {
                       Ok(encoded)
@@ -559,6 +575,20 @@ fn stale_registry_error(operation : String) -> @diagnostics.FrameworkError {
     "registry.\{operation}",
     "capability registry has been torn down",
   )
+}
+
+///|
+fn boundary_conversion_error(
+  code : @diagnostics.ErrorCode,
+  operation : String,
+  prefix : String,
+  error : @diagnostics.FrameworkError,
+) -> @diagnostics.FrameworkError {
+  let detail = match error.message() {
+    Some(message) => "\{prefix}: \{message}"
+    None => prefix
+  }
+  capability_error(code, operation, detail)
 }
 
 ///|
