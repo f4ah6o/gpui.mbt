@@ -1097,7 +1097,10 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
   case WM_CAPTURECHANGED:
     host->mouse_capture_change_count++;
     host->mouse_capture_change_target = (HWND)lparam;
-    host->mouse_buttons = 0;
+    /* WM_CAPTURECHANGED names the new owner in lParam. A same-window
+     * notification leaves capture held here, so it is not a loss. */
+    if ((HWND)lparam != hwnd)
+      host->mouse_buttons = 0;
     return 0;
   case WM_CLOSE:
     emit_event(host, 3, 0, 0, 0, 0);
@@ -1126,7 +1129,8 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
   case WM_XBUTTONDOWN: {
     host->mouse_buttons =
         update_mouse_buttons(host->mouse_buttons, message, wparam);
-    host->api.set_capture(hwnd);
+    if (host->api.get_capture() != hwnd)
+      host->api.set_capture(hwnd);
     int32_t button = message == WM_LBUTTONDOWN ? 0
                      : message == WM_RBUTTONDOWN ? 1
                      : message == WM_MBUTTONDOWN ? 2

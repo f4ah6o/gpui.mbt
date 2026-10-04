@@ -395,6 +395,9 @@ test "Windows D3D11 HWND renders and reads back first frame" {
     } else {
       "mouse_capture_probe stage=\{mouse_stage}(\{mouse_diagnostic[0]}) expected_buttons=\{mouse_diagnostic[1]} actual_buttons=\{mouse_diagnostic[2]} expected_capture=\{mouse_diagnostic[3]} actual_capture=\{mouse_diagnostic[4]} message=\{mouse_diagnostic[5]} wparam_low=\{mouse_diagnostic[6]} wparam_high=\{mouse_diagnostic[7]} capture_change_count=\{mouse_diagnostic[8]} last_capture_target=\{mouse_diagnostic[9]}"
     }
+    if mouse_status != 0 {
+      println(mouse_operation)
+    }
     required(outcome(mouse_status, mouse_operation))
     let mouse_events = required(host.dispatch(0))
     let expected_buttons = [
