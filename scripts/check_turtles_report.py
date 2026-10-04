@@ -289,10 +289,26 @@ def _require_no_ratio_regression(
         )
 
 
+def _moon_build_identity(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ValueError("semantic baseline requires a Moon build identity")
+    # turtles records `moon version`, which may append an absolute or ~/ installation
+    # path. Preserve version, commit and date; reject unfamiliar output formats.
+    match = re.fullmatch(
+        r"(moon [0-9][0-9A-Za-z.+-]* \([0-9a-f]{7,40} [0-9]{4}-[0-9]{2}-[0-9]{2}\))"
+        r"(?: (?:/|~/|[A-Za-z]:[\\/])[^\r\n]+)?", value.strip(),
+    )
+    if match is None:
+        raise ValueError("invalid Moon build identity in semantic baseline or report")
+    return match.group(1)
+
+
 def _enforce_survivor_review(
     summary: dict[str, Any], baseline: dict[str, Any], scope: str,
 ) -> dict[str, Any]:
     """Critical semantic scopes cannot trade an unexplained survivor for kills."""
+    if _moon_build_identity(baseline.get("moon_version")) != _moon_build_identity(summary.get("moon_version")):
+        raise ValueError("semantic baseline Moon build identity does not match the report")
     reviews = baseline.get("survivor_reviews")
     if not isinstance(reviews, list):
         raise ValueError("semantic baseline must contain survivor_reviews")

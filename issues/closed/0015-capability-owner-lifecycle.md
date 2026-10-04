@@ -3,7 +3,7 @@
 Status: closed
 Closed: 2026-10-04
 Parent: [0012-semantic-capability-model.md](0012-semantic-capability-model.md)
-Related: [0013-generated-api-and-mcp-adapters.md](../open/0013-generated-api-and-mcp-adapters.md), [0014-gui-api-mcp-equivalence-conformance.md](../open/0014-gui-api-mcp-equivalence-conformance.md)
+Related: [0013-generated-api-and-mcp-adapters.md](../open/0013-generated-api-and-mcp-adapters.md), [0014-gui-api-mcp-equivalence-conformance.md](0014-gui-api-mcp-equivalence-conformance.md)
 
 ## Goal
 

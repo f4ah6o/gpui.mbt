@@ -109,6 +109,8 @@ def valid_ratchet_baseline() -> dict:
 def semantic_ratchet_pair() -> tuple[dict, dict]:
     summary, baseline = valid_ratchet_summary(), valid_ratchet_baseline()
     summary["scope"] = baseline["scope"] = "capability/"
+    summary["moon_version"] = "moon 0.1.20260920 (914d7da 2026-09-20) /tmp/moon/bin/moon"
+    baseline["moon_version"] = "moon 0.1.20260920 (914d7da 2026-09-20)"
     reviews = [
         {
             "id": f"survivor-{operator}", "path": "capability/schema.mbt",
@@ -388,6 +390,28 @@ class TurtlesReportAuditTests(unittest.TestCase):
         summary, baseline = semantic_ratchet_pair()
         summary["unresolved"] = []
         with self.assertRaisesRegex(ValueError, "unresolved count"):
+            checker.enforce_ratchet(summary, baseline, "capability/")
+
+
+    def test_semantic_baseline_pins_moon_build_but_not_installation_path(self) -> None:
+        summary, baseline = semantic_ratchet_pair()
+        checker.enforce_ratchet(summary, baseline, "capability/")
+        summary["moon_version"] = "moon 0.1.20260920 (914d7da 2026-09-20) ~/.moon/bin/moon"
+        checker.enforce_ratchet(summary, baseline, "capability/")
+        summary["moon_version"] = "moon 0.1.20260920 (914d7da 2026-09-20) C:\\tools\\moon.exe"
+        checker.enforce_ratchet(summary, baseline, "capability/")
+        for changed in (
+            "moon 0.2.0 (914d7da 2026-09-20)",
+            "moon 0.1.20260920 (abcdef0 2026-09-20)",
+            "moon 0.1.20260920 (914d7da 2026-10-04)",
+            "unknown", "", "moon 0.1.20260920 (914d7da 2026-09-20) relative/path",
+        ):
+            summary["moon_version"] = changed
+            with self.subTest(changed=changed):
+                with self.assertRaisesRegex(ValueError, "Moon build identity"):
+                    checker.enforce_ratchet(summary, baseline, "capability/")
+        baseline.pop("moon_version")
+        with self.assertRaisesRegex(ValueError, "Moon build identity"):
             checker.enforce_ratchet(summary, baseline, "capability/")
 
 

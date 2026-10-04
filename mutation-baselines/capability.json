@@ -1,0 +1,232 @@
+{
+  "schema_version": 1,
+  "kind": "turtles-mutation-ratchet",
+  "scope": "capability/",
+  "turtles_version": "0.3.0",
+  "target": "moon-default",
+  "test_scope": "module",
+  "moon_version": "moon 0.1.20260920 (914d7da 2026-09-20)",
+  "source": {
+    "head_sha": "ac89b8e24a71209a21223a445b125c5a420fceac",
+    "merge_sha": "6d18b844167259c258f5ec9fef8e443b4c3a134a",
+    "workflow_run_id": 37241489153,
+    "workflow_run_url": "https://github.com/gpui-mbt/gpui.mbt/actions/runs/37241489153",
+    "artifact_id": 11317679053,
+    "artifact_sha256": "b0aeca1246513ab05770feef192de2d45ca75654ad82482f4719914c43bb064c",
+    "observed_at": "2026-10-04",
+    "source_manifest_sha256": "32246350ad52f3906c70c64ec3392242463dc2aaec99e7c9dd03c30e4fbfe1be"
+  },
+  "overall": {
+    "killed": 271,
+    "survived": 12,
+    "timeout": 0,
+    "viable": 283
+  },
+  "by_operator": {
+    "arithmetic": {
+      "killed": 17,
+      "survived": 0,
+      "timeout": 0,
+      "viable": 17
+    },
+    "boolean": {
+      "killed": 12,
+      "survived": 0,
+      "timeout": 0,
+      "viable": 12
+    },
+    "comparison": {
+      "killed": 73,
+      "survived": 0,
+      "timeout": 0,
+      "viable": 73
+    },
+    "condition": {
+      "killed": 128,
+      "survived": 12,
+      "timeout": 0,
+      "viable": 140
+    },
+    "literal": {
+      "killed": 41,
+      "survived": 0,
+      "timeout": 0,
+      "viable": 41
+    }
+  },
+  "survivor_reviews": [
+    {
+      "id": "m-154e60261d5984e5",
+      "path": "capability/value.mbt",
+      "line": 274,
+      "operator": "condition",
+      "original": "number == 0.0",
+      "replacement": "false",
+      "classification": "equivalent",
+      "rationale": "Removing signed-zero normalization from transport_stats leaves the counted length unchanged because the pinned Double formatter already renders either sign of zero as \"0\".",
+      "review_detail": "equivalent_under_pinned_double_formatter",
+      "column": 29,
+      "guarding_invariant": "Pinned core builtin/double.mbt:291 and its Show implementation guarantee the same string and length for +/-0.0. Public exact-boundary JSON tests include a -0.0 array element.",
+      "remaining_resource_bound": "No resource-bound difference; exact and over-limit JSON classifications are unchanged.",
+      "observability_caveat": "Reassess if the pinned core or Double formatter changes."
+    },
+    {
+      "id": "m-4b34506227efd43b",
+      "path": "capability/registry.mbt",
+      "line": 730,
+      "operator": "condition",
+      "original": "self.is_alive()",
+      "replacement": "true",
+      "classification": "redundant",
+      "rationale": "Forcing the manifest outer liveness branch true still emits no descriptors for a dead registry. external_descriptors independently checks is_alive; standalone teardown additionally clears entries. Thus a stopped owner or torn-down registry still produces the empty manifest.",
+      "review_detail": "redundant_liveness_guard",
+      "column": 6,
+      "guarding_invariant": "external_manifest_json obtains entries only from external_descriptors, which returns an empty array when the same registry lifetime is not alive. No user callback runs in this projection.",
+      "remaining_resource_bound": "No added traversal of retained descriptors for a dead owner; external_descriptors exits its enumeration path on its own liveness guard."
+    },
+    {
+      "id": "m-4e4f6304e7ca90f4",
+      "path": "capability/value.mbt",
+      "line": 217,
+      "operator": "condition",
+      "original": "value > 1.7976931348623157e+308",
+      "replacement": "false",
+      "classification": "equivalent",
+      "rationale": "The mutated positive-infinity fallback is in private canonical_json_unchecked. Transport validation rejects numbers above the maximum finite Double before this branch can be reached.",
+      "review_detail": "inaccessible_after_public_validation",
+      "column": 17,
+      "guarding_invariant": "All NumberValue payloads reaching unchecked serialization are <=1.7976931348623157e+308 and finite.",
+      "remaining_resource_bound": "Unchanged transport validation bounds and positive-infinity rejection."
+    },
+    {
+      "id": "m-530877c0299e1ab1",
+      "path": "capability/value.mbt",
+      "line": 215,
+      "operator": "condition",
+      "original": "value != value",
+      "replacement": "false",
+      "classification": "equivalent",
+      "rationale": "The mutated NaN fallback is in private canonical_json_unchecked. Public serialization first validates the entire graph; finite_number rejects NaN before unchecked serialization or recursive serialization starts.",
+      "review_detail": "inaccessible_after_public_validation",
+      "column": 10,
+      "guarding_invariant": "All NumberValue payloads reaching canonical_json_unchecked are finite, so value != value is false. No user callback runs between validation and serialization.",
+      "remaining_resource_bound": "Unchanged transport validation bounds and non-finite rejection. No invalid-input white-box serialization test is needed."
+    },
+    {
+      "id": "m-6214b2c0dcfd12c6",
+      "path": "capability/value.mbt",
+      "line": 222,
+      "operator": "condition",
+      "original": "value == 0.0",
+      "replacement": "false",
+      "classification": "equivalent",
+      "rationale": "Removing explicit signed-zero normalization does not change JSON on the pinned MoonBit runtime: Double.to_string already renders -0.0 as \"0\". Other finite values are unchanged by either version.",
+      "review_detail": "equivalent_under_pinned_double_formatter",
+      "column": 29,
+      "guarding_invariant": "Pinned core builtin/double.mbt:291 documents (-0.0).to_string() == \"0\"; Show for Double delegates to Double.to_string at lines 302-303. Public signed-zero canonical-equality regression passes on wasm, wasm-gc, JS and native.",
+      "remaining_resource_bound": "No resource-bound difference; identical formatted output length.",
+      "observability_caveat": "Reassess if the pinned core or Double formatter changes; this is a toolchain-specific equivalence."
+    },
+    {
+      "id": "m-6dd08a2af53097a9",
+      "path": "capability/registry.mbt",
+      "line": 780,
+      "operator": "condition",
+      "original": "minimum != index",
+      "replacement": "true",
+      "classification": "equivalent",
+      "rationale": "Forcing the selection-sort swap branch true only adds a self-swap when minimum == index. The same descriptor is stored back in the same array slot, leaving values and order unchanged.",
+      "review_detail": "equivalent_self_swap",
+      "column": 8,
+      "guarding_invariant": "When minimum != index both versions perform the identical swap; when minimum == index, previous, sorted[index] and sorted[minimum] denote the same descriptor value.",
+      "remaining_resource_bound": "At most two redundant array assignments per already-positioned element; same bounded sorting loops and result."
+    },
+    {
+      "id": "m-77c842cc7a6ed911",
+      "path": "capability/value.mbt",
+      "line": 173,
+      "operator": "condition",
+      "original": "nodes > 10_000",
+      "replacement": "false",
+      "classification": "redundant",
+      "rationale": "Disabling the outer node-count check cannot accept an oversized graph: recursive transport_stats already rejects every array/object aggregate over 10000 nodes before returning Ok, and scalar branches return one node.",
+      "review_detail": "redundant_postcondition_check",
+      "column": 10,
+      "guarding_invariant": "Every successful transport_stats(value, 0) result has 1 <= nodes <= 10000. Array branches check nodes after each child; object branches count each field name plus child nodes and perform the same check.",
+      "remaining_resource_bound": "Unchanged: recursive depth <=32, successful aggregate nodes <=10000, object fields <=1024, successful JSON characters <=1048576. The new white-box exact/+1 node tests preserve the guarding postcondition."
+    },
+    {
+      "id": "m-88ed5fc8e417cb2b",
+      "path": "capability/value.mbt",
+      "line": 288,
+      "operator": "condition",
+      "original": "values.length() > 9_999",
+      "replacement": "false",
+      "classification": "redundant",
+      "rationale": "The upfront array child-count check is redundant for accepted values and finite bounded rejection: every child contributes at least one node, so the remaining cumulative node guard rejects an array with 10000 or more children. It prevents acceptance of oversized arrays without depending on the outer wrapper.",
+      "review_detail": "redundant_bounded_array_fast_path",
+      "column": 10,
+      "guarding_invariant": "With the fast path removed, nodes begins at one and is checked after every child. At most 10000 immediate child visits occur before node overflow of the 10000-node budget is detected; each recursively inspected child is independently depth/node/character bounded.",
+      "remaining_resource_bound": "Depth <=32; each child successful result <=10000 nodes and <=1048576 JSON characters; cumulative root checking remains. Worst-case rejection changes from an O(1) length check to a finite bounded scan, and malformed earlier children can fail sooner.",
+      "observability_caveat": "Not strictly equivalent across all diagnostics or runtime cost: an oversized all-scalar array changes from \"array exceeds the 10000 node limit\" to \"value exceeds the 10000 node limit\"; earlier malformed children may report another InvalidInput detail. Independent review must explicitly accept these non-contractual diagnostic/fast-path differences before baselining. No diagnostic-string-only test was added."
+    },
+    {
+      "id": "m-b4ba90c8f17e7f33",
+      "path": "capability/value.mbt",
+      "line": 390,
+      "operator": "condition",
+      "original": "length > 1_048_576",
+      "replacement": "false",
+      "classification": "redundant",
+      "rationale": "Removing early exit from escaped-length counting leaves public outcomes unchanged. The surviving raw-length precheck caps scanned input at 1048576 UTF-16 code units; exact larger escaped counts are still rejected by the string or object caller.",
+      "review_detail": "redundant_bounded_escaped_length_fast_path",
+      "column": 8,
+      "guarding_invariant": "For input above 1048576 UTF-16 code units, the precheck returns the oversize sentinel without scanning. Otherwise at most 1048576 scalar iterations occur and each contributes at most six output characters, so the returned count is at most 6291458 and cannot overflow Int32.",
+      "remaining_resource_bound": "Input scan <=1048576 iterations and intermediate count <=6291458. Every caller rejects any count >1048576; successful sizes remain exact.",
+      "observability_caveat": "On escaped oversized text, the private helper may return an exact oversized count instead of 1048577, and may scan more characters. Its callers only test against the bound, so externally visible JSON/error outcomes and safety bounds remain unchanged."
+    },
+    {
+      "id": "m-e52a6c9bacca8db7",
+      "path": "capability/value.mbt",
+      "line": 175,
+      "operator": "condition",
+      "original": "json_chars > 1_048_576",
+      "replacement": "false",
+      "classification": "redundant",
+      "rationale": "Disabling the outer JSON-character check cannot accept oversized JSON: each recursive string/array/object branch rejects a count above 1048576 before returning Ok. Other scalar representations are smaller than the limit.",
+      "review_detail": "redundant_postcondition_check",
+      "column": 17,
+      "guarding_invariant": "Every successful transport_stats(value, 0) result has json_chars <=1048576. String validation and cumulative array/object checks enforce this recursively.",
+      "remaining_resource_bound": "Unchanged recursive node, depth and JSON budgets. New white-box scalar/array/object exact/+1 JSON tests preserve the guarding postcondition."
+    },
+    {
+      "id": "m-e7a7fdbd6fa6c2ee",
+      "path": "capability/value.mbt",
+      "line": 219,
+      "operator": "condition",
+      "original": "value < -1.7976931348623157e+308",
+      "replacement": "false",
+      "classification": "equivalent",
+      "rationale": "The mutated negative-infinity fallback is in private canonical_json_unchecked. Transport validation rejects numbers below the minimum finite Double before this branch can be reached.",
+      "review_detail": "inaccessible_after_public_validation",
+      "column": 17,
+      "guarding_invariant": "All NumberValue payloads reaching unchecked serialization are >=-1.7976931348623157e+308 and finite.",
+      "remaining_resource_bound": "Unchanged transport validation bounds and negative-infinity rejection."
+    },
+    {
+      "id": "m-e80beadd239d51c8",
+      "path": "capability/value.mbt",
+      "line": 372,
+      "operator": "condition",
+      "original": "text.length() > 1_048_576",
+      "replacement": "false",
+      "classification": "redundant",
+      "rationale": "Removing the raw UTF-16 length precheck does not change accepted values, rejected values or the returned oversize sentinel. The escaped-length loop still returns 1048577 immediately after its count first exceeds 1048576.",
+      "review_detail": "redundant_bounded_string_fast_path",
+      "column": 6,
+      "guarding_invariant": "length starts at two and increases by at least one per iterated Unicode scalar; the surviving per-character guard exits once length >1048576. Therefore no more than 1048575 scalar iterations are required before oversized text is rejected.",
+      "remaining_resource_bound": "The scan remains bounded independently of an arbitrarily large raw input; the same 1048577 sentinel drives identical caller rejection.",
+      "observability_caveat": "Oversized raw text loses its O(1) rejection shortcut but retains the explicit bounded scan. Runtime cost is not identical."
+    }
+  ]
+}

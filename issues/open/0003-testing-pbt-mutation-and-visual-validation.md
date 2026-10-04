@@ -1,12 +1,15 @@
 # Testing: property-based, mutation, and visual validation
 
-Status: in progress — deterministic/PBT coverage and blocking primitives mutation ratchet; broader gates pending
+Status: in progress — blocking primitives ratchet and reviewed semantic baselines; broader gates pending
 
 ## Current-head acceptance triage — 2026-10-04
 
 Basis: PR #14 hosted mutation observation at head
 `0dac8f5e9141a960cf0d85e23da81c30e04f26dd`, followed by the checked-in
-ratchet implementation on the same PR branch.
+ratchet implementation on the same PR branch. The capability/MCP update below
+uses PR #17 observation run `37241489153` at head
+`ac89b8e24a71209a21223a445b125c5a420fceac`. Final-head hosted baseline
+stability and required CI are explicit merge gates for the semantic ratchet.
 
 - [x] Deterministic tests, fixed-seed geometry/entity/layout/event/focus/scene
   properties, and the entity reference-model suite run in hosted CI.
@@ -19,13 +22,27 @@ ratchet implementation on the same PR branch.
   killed/viable fraction regresses, any configured operator fraction regresses,
   or timeout count rises. Scope, turtles version, target, and test-scope drift
   also fail closed instead of silently reusing the baseline.
-- [ ] The five remaining primitives survivors, all-target mutation,
-  capability/MCP and other critical-package mutation coverage, scene/raster
-  goldens, vlmkit artifacts, expanded stress jobs, and broad
-  native/performance evidence remain open.
+- [x] Independent capability/MCP scopes now have audited observations and
+  reviewed baselines: capability 271/283 killed, with 12 reviewed survivors;
+  MCP 262/271 killed, with nine reviewed survivors. Both observations have
+  zero timeouts, unviable mutants, or in-scope parser skips. The semantic
+  ratchet checks reviewed survivor identity as well as score/operator floors.
+- [ ] The five remaining primitives survivors, all-target mutation, other
+  critical-package mutation coverage, scene/raster goldens, vlmkit artifacts,
+  expanded stress jobs, and broad native/performance evidence remain open.
+
+The semantic source observation failed only at the deliberately missing-baseline
+step; its audit is not a passing stability run. A successful hosted baseline
+stability rerun and all required checks on the final candidate must precede
+verified merge, with exact successful run links recorded in PR #17's merge
+evidence. See the [semantic mutation contract](../../docs/semantic-mutation.md).
 
 The first `primitives/` mutation ratchet is now a blocking quality gate, while
-the broader mutation release gate remains incomplete.
+the broader mutation release gate remains incomplete. The capability/MCP work
+supports [0014's merge-gated closure](../closed/0014-gui-api-mcp-equivalence-conformance.md);
+it does not close this testing packet or promote the release ledger. Dated
+progress entries below describe their original observations and may have since
+been superseded by this triage.
 
 ## Goal
 

@@ -10,9 +10,11 @@ implemented versioned `SceneSnapshot` v1 subset. It includes deterministic
 value and lifecycle cases, two seeded rectangle properties, a seeded entity
 lifecycle reference-model property, seeded flex-line and flex-tree geometry/order
 properties, and exact element lifecycle, hit-test/dispatch/focus/scene-order tests.
-Full-schema scene golden fixtures, text/path/image rendering, mutation coverage
-beyond `primitives/`, and broader native integration assertions remain
-unimplemented. Bounded recursive auto container sizing is now included in the
+Mutation coverage now includes independently scoped `capability/` and `mcp/`
+observations with reviewed baselines and a final-head stability/CI merge gate
+as recorded below. Full-schema scene golden fixtures,
+text/path/image rendering, mutation coverage of other critical packages, and
+broader native integration assertions remain unimplemented. Bounded recursive auto container sizing is now included in the
 active layout test surface.
 Event/focus PBT exercises route reversal, global
 stop-propagation, and focus normalization after subtree removal; scene PBT
@@ -190,6 +192,39 @@ the five current survivors still need either stronger tests or reviewed
 equivalent/redundant classifications, and all-target mutation plus additional
 critical packages remain open. The release ledger therefore remains pending.
 
+### Capability and MCP semantic ratchets
+
+The separate [`mutation-capability-mcp.yml`](../.github/workflows/mutation-capability-mcp.yml)
+matrix runs turtles 0.3.0 over exactly `capability/` or `mcp/`, using full-module
+tests on Moon's default target. The audited PR #17
+[observation run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37241489153)
+killed 271/283 capability mutants and 262/271 MCP mutants. Its 12 and nine
+respective survivors have independently reviewed equivalent/redundant
+rationales; neither scope had timeouts, unviable mutants, or in-scope parser
+skips. The observations led to 41 deterministic regression tests and the
+checked-in [capability](../mutation-baselines/capability.json) and
+[MCP](../mutation-baselines/mcp.json) baselines.
+
+The semantic gate compares exact overall and per-operator killed/viable
+fractions, permits no timeouts, rejects any unreviewed survivor or identity/diff
+swap, and checks the Moon driver build identity. Compiler/core pins remain in
+the workflow; the report does not independently attest those two hashes. CI
+retains observation JSON, ratchet JSON when enforcement succeeds, raw reports,
+console logs, and survivor diffs for 14 days on PRs and 30 days otherwise.
+
+The source observation deliberately failed only because the reviewed baseline
+files were not yet present. A successful hosted baseline stability rerun and
+all required checks on the final candidate are explicit merge gates; exact
+successful run links must be recorded in PR #17's merge evidence. The source
+observation alone is not a green stability result. See
+[semantic mutation evidence and review caveats](semantic-mutation.md) for exact
+operator floors and provenance. Closure of
+[0014](../issues/closed/0014-gui-api-mcp-equivalence-conformance.md) takes effect
+only with that verified merge,
+while [0016](../issues/open/0016-mcp-endpoint-lifecycle-conformance.md) retains
+asynchronous cancellation/disconnect and native/browser endpoint topology.
+The broader mutation and production release gates stay pending.
+
 ## CI split
 
 Future expanded/nightly jobs add larger PBT budgets, full turtles, all supported
@@ -199,14 +234,16 @@ lifecycle, large text/layout fixtures, and renderer recovery.
 
 The contracts workflow runs the Python contract-validator unit tests,
 document/ledger validation, `moon fmt --check`, and warning-denied all-target
-MoonBit checks and tests. A separate PR mutation workflow runs the selected
-primitives scope and retains its JSON and survivor diffs. The Ubuntu native
-workflow also retains an opt-in recovery-to-first-frame timing report. These
+MoonBit checks and tests. Independent mutation workflows run the selected
+primitives scope and the capability/MCP scope matrix, retaining JSON and
+survivor diffs; the semantic baseline stability merge gate is recorded above.
+The Ubuntu native workflow also retains an opt-in recovery-to-first-frame timing report. These
 jobs do not cover expanded PBT, renderer goldens, broad stress workloads, or a
 comparable Tier 1 performance baseline and cannot satisfy production release
 gates. See [`contracts.yml`](../.github/workflows/contracts.yml),
-[`mutation-primitives.yml`](../.github/workflows/mutation-primitives.yml), and
-[`ubuntu-native.yml`](../.github/workflows/ubuntu-native.yml) for exact commands.
+[`mutation-primitives.yml`](../.github/workflows/mutation-primitives.yml),
+[`mutation-capability-mcp.yml`](../.github/workflows/mutation-capability-mcp.yml),
+and [`ubuntu-native.yml`](../.github/workflows/ubuntu-native.yml) for exact commands.
 
 
 ## Event/focus and clip invariant implementation update — 2026-10-03
