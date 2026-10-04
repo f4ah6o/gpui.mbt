@@ -124,7 +124,7 @@ pub fn Value::canonical_json(self : Value) -> String {
     UnitValue => "null"
     BoolValue(value) => if value { "true" } else { "false" }
     IntValue(value) => "\{value}"
-    NumberValue(value) => {
+    NumberValue(value) =>
       if value != value {
         "\"NaN\""
       } else if value > 1.7976931348623157e+308 {
@@ -135,7 +135,6 @@ pub fn Value::canonical_json(self : Value) -> String {
         let normalized = if value == 0.0 { 0.0 } else { value }
         "\{normalized}"
       }
-    }
     StringValue(value) => "\"\{json_escape(value)}\""
     ArrayValue(values) => {
       let builder = StringBuilder()
