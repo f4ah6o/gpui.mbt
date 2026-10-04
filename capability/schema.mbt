@@ -102,7 +102,11 @@ pub fn Schema::number() -> Schema {
   {
     canonical: "{\"type\":\"number\"}",
     unit_like: false,
-    validate: value => value is NumberValue(_),
+    validate: value =>
+      match value {
+        NumberValue(number) => finite_number(number)
+        _ => false
+      },
   }
 }
 
@@ -210,6 +214,9 @@ pub fn Schema::tagged(
   if discriminator.length() == 0 {
     return Err(schema_error("variant discriminator must not be empty"))
   }
+  if discriminator == "value" {
+    return Err(schema_error("variant discriminator must not be value"))
+  }
   let sorted = sorted_schema_variants(variants)
   if sorted.length() == 0 {
     return Err(schema_error("tagged schema requires at least one variant"))
@@ -260,6 +267,13 @@ pub fn Schema::is_unit(self : Schema) -> Bool {
 ///|
 pub fn Schema::accepts(self : Schema, value : Value) -> Bool {
   (self.validate)(value)
+}
+
+///|
+fn finite_number(value : Double) -> Bool {
+  value == value &&
+  value <= 1.7976931348623157e+308 &&
+  value >= -1.7976931348623157e+308
 }
 
 ///|
