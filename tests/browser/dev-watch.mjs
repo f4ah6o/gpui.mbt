@@ -22,6 +22,10 @@ const sourceMapPath = `${compiledJsPath}.map`;
 const originalSource = readFileSync(fixturePath, "utf8");
 const initialMarker = "watch-v1";
 const updatedMarker = "watch-v2";
+const watchdog = setTimeout(() => {
+  console.error("Vite+ dev-watch watchdog expired.");
+  process.exit(124);
+}, 90_000);
 
 assert.equal(
   originalSource.split(initialMarker).length - 1,
@@ -52,6 +56,7 @@ if (initialBuild.status !== 0) {
 
 assert.ok(existsSync(sourceMapPath), "MoonBit JS build must emit a source map");
 const initialSourceMap = JSON.parse(readFileSync(sourceMapPath, "utf8"));
+console.log("dev-watch: initial debug source map exists");
 assert.ok(
   Array.isArray(initialSourceMap.sources) &&
     initialSourceMap.sources.some(
@@ -72,6 +77,7 @@ const server = spawn(
     cwd: repoRoot,
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
+    detached: process.platform !== "win32",
   },
 );
 server.stdout.on("data", (chunk) => serverLog.push(chunk.toString()));
@@ -124,16 +130,32 @@ async function waitForCompiledMarker(expected) {
   );
 }
 
+function signalServer(signal) {
+  if (server.exitCode !== null) return;
+  if (process.platform === "win32") {
+    server.kill(signal);
+    return;
+  }
+  try {
+    process.kill(-server.pid, signal);
+  } catch {
+    server.kill(signal);
+  }
+}
+
 async function stopServer() {
   if (server.exitCode !== null) return;
-  server.kill("SIGTERM");
+  signalServer("SIGTERM");
   const stopped = await Promise.race([
     serverExit.then(() => true),
     new Promise((resolveDelay) => setTimeout(() => resolveDelay(false), 5_000)),
   ]);
   if (!stopped && server.exitCode === null) {
-    server.kill("SIGKILL");
-    await serverExit;
+    signalServer("SIGKILL");
+    await Promise.race([
+      serverExit,
+      new Promise((resolveDelay) => setTimeout(resolveDelay, 5_000)),
+    ]);
   }
 }
 
@@ -141,6 +163,7 @@ let browser;
 let fixtureChanged = false;
 try {
   await waitForServer();
+  console.log("dev-watch: Vite+ server ready");
 
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
@@ -158,6 +181,7 @@ try {
     await page.locator("#dev-watch-marker").textContent(),
     initialMarker,
   );
+  console.log("dev-watch: Chromium observed watch-v1");
 
   writeFileSync(
     fixturePath,
@@ -165,8 +189,10 @@ try {
     "utf8",
   );
   fixtureChanged = true;
+  console.log("dev-watch: MoonBit source changed to watch-v2");
 
   await waitForCompiledMarker(updatedMarker);
+  console.log("dev-watch: plugin watch emitted watch-v2 JS");
 
   // Open a fresh Vite entry after the plugin-owned MoonBit watch has rebuilt
   // the fixture. The entry imports a unique mbt: module id so Vite must resolve
@@ -175,6 +201,7 @@ try {
     waitUntil: "load",
     timeout: 30_000,
   });
+  console.log("dev-watch: Vite served updated acceptance entry");
   await page.waitForFunction(
     (expected) => document.body.dataset.devWatchMarker === expected,
     updatedMarker,
@@ -186,6 +213,7 @@ try {
     "browser must observe the MoonBit watch rebuild through Vite",
   );
   assert.deepEqual(pageErrors, [], "dev-watch browser page must stay error-free");
+  console.log("dev-watch: Chromium observed watch-v2");
 
   const rebuiltSourceMap = JSON.parse(readFileSync(sourceMapPath, "utf8"));
   assert.ok(
@@ -199,6 +227,7 @@ try {
     "rebuilt source map must retain the MoonBit source reference",
   );
 
+  console.log("dev-watch: rebuilt source map retains .mbt reference");
   console.log(
     "Vite+ dev-watch passed: MoonBit edit rebuilt through vite-plugin-moonbit, Vite served watch-v2 to Chromium, and the source map references the .mbt fixture.",
   );
@@ -211,4 +240,5 @@ try {
   await browser?.close();
   await stopServer();
   if (fixtureChanged) writeFileSync(fixturePath, originalSource, "utf8");
+  clearTimeout(watchdog);
 }
