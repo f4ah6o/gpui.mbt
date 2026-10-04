@@ -14,18 +14,18 @@ pub(all) enum ErrorCode {
 pub extend ErrorCode with Eq::{not_equal, equal}
 
 ///|
-pub struct Error {
+pub struct AdapterError {
   priv code : ErrorCode
   priv message : String
 }
 
 ///|
-pub fn Error::code(self : Error) -> ErrorCode {
+pub fn AdapterError::code(self : AdapterError) -> ErrorCode {
   self.code
 }
 
 ///|
-pub fn Error::message(self : Error) -> String {
+pub fn AdapterError::message(self : AdapterError) -> String {
   self.message
 }
 
@@ -102,17 +102,17 @@ pub fn Inventory::resources(self : Inventory) -> Array[Resource] {
 }
 
 ///|
-pub fn Inventory::supports_tools(self : Inventory) -> Bool {
+pub fn Inventory::supports_tools(_self : Inventory) -> Bool {
   true
 }
 
 ///|
-pub fn Inventory::supports_resources(self : Inventory) -> Bool {
+pub fn Inventory::supports_resources(_self : Inventory) -> Bool {
   true
 }
 
 ///|
-pub fn Inventory::supports_prompts(self : Inventory) -> Bool {
+pub fn Inventory::supports_prompts(_self : Inventory) -> Bool {
   false
 }
 
@@ -166,7 +166,7 @@ pub fn Adapter::close(self : Adapter) -> Unit {
 }
 
 ///|
-pub fn Adapter::inventory(self : Adapter) -> Result[Inventory, Error] {
+pub fn Adapter::inventory(self : Adapter) -> Result[Inventory, AdapterError] {
   if !self.state.val.open {
     return Err({ code: AdapterClosed, message: "adapter is closed", })
   }
@@ -191,7 +191,7 @@ pub fn Adapter::call_tool(
   self : Adapter,
   name : String,
   input : @capability.Value,
-) -> Result[@capability.Value, Error] {
+) -> Result[@capability.Value, AdapterError] {
   if !self.state.val.open {
     return Err({ code: AdapterClosed, message: "adapter is closed", })
   }
@@ -205,7 +205,7 @@ pub fn Adapter::call_tool(
 pub fn Adapter::read_resource(
   self : Adapter,
   uri : String,
-) -> Result[@capability.Value, Error] {
+) -> Result[@capability.Value, AdapterError] {
   if !self.state.val.open {
     return Err({ code: AdapterClosed, message: "adapter is closed", })
   }
@@ -265,7 +265,7 @@ fn resource_json(resource : Resource) -> String {
 }
 
 ///|
-fn map_error(error : @diagnostics.FrameworkError) -> Error {
+fn map_error(error : @diagnostics.FrameworkError) -> AdapterError {
   let code = match error.code() {
     @diagnostics.UnsupportedCapability => UnknownOperation
     @diagnostics.InvalidInput | @diagnostics.ConversionFailed => InvalidInput
