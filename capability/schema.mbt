@@ -121,7 +121,7 @@ pub fn Schema::array(item : Schema) -> Schema {
   {
     canonical: "{\"type\":\"array\",\"items\":\{item.canonical_json()}}",
     unit_like: false,
-    validate: value =>
+    validate: value => {
       match value {
         ArrayValue(values) => {
           let mut accepted = true
@@ -133,7 +133,8 @@ pub fn Schema::array(item : Schema) -> Schema {
           accepted
         }
         _ => false
-      },
+      }
+    },
   }
 }
 
@@ -143,11 +144,12 @@ pub fn Schema::optional(item : Schema) -> Schema {
   {
     canonical: "{\"anyOf\":[\{item.canonical_json()},{\"type\":\"null\"}]}",
     unit_like: false,
-    validate: value =>
+    validate: value => {
       match value {
         UnitValue => true
         _ => item_schema.accepts(value)
-      },
+      }
+    },
   }
 }
 
@@ -225,9 +227,7 @@ pub fn Schema::tagged(
     if variant_index > 0 {
       builder.write_string(",")
     }
-    builder.write_string(
-      "{\"type\":\"object\",\"properties\":{\"",
-    )
+    builder.write_string("{\"type\":\"object\",\"properties\":{\"")
     builder.write_string(json_escape(discriminator))
     builder.write_string("\":{\"const\":\"")
     builder.write_string(json_escape(variant.tag))
@@ -243,8 +243,7 @@ pub fn Schema::tagged(
   Ok({
     canonical: builder.to_string(),
     unit_like: false,
-    validate: value =>
-      tagged_accepts(captured_discriminator, captured, value),
+    validate: value => tagged_accepts(captured_discriminator, captured, value),
   })
 }
 
@@ -338,10 +337,7 @@ fn record_accepts(fields : Array[SchemaField], value : Value) -> Bool {
       }
       for field in fields {
         match lookup_value_field(values, field.name) {
-          None =>
-            if field.required {
-              return false
-            }
+          None => if field.required { return false }
           Some(candidate) =>
             if !field.schema.accepts(candidate) {
               return false
@@ -397,10 +393,7 @@ fn tagged_accepts(
 }
 
 ///|
-fn lookup_value_field(
-  fields : Array[(String, Value)],
-  name : String,
-) -> Value? {
+fn lookup_value_field(fields : Array[(String, Value)], name : String) -> Value? {
   for field in fields {
     let (candidate, value) = field
     if candidate == name {
