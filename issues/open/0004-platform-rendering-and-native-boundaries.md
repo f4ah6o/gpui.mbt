@@ -2,7 +2,7 @@
 
 Status: in progress — shared contracts and experimental backend slices; production gates remain open
 Model: gpt-6-luna
-Updated: 2026-10-03
+Updated: 2026-10-04
 
 ## Current-head acceptance triage — 2026-10-04
 
@@ -59,6 +59,15 @@ Each packet owns its native window/event-loop, rendering surface, input,
 text/IME, accessibility, teardown/recovery, and OS-specific E2E evidence.
 This parent issue continues to own the cross-platform contracts and support-tier
 definitions.
+
+## Additional terminal surface
+
+Terminal UI is tracked separately in
+[0017 — TUI backend](0017-tui-backend.md). It reuses the portable application,
+action, focus, scheduling, and semantic-capability layers where meaningful, but
+owns a terminal-native cell scene and host boundary. It is not an ANSI renderer
+for graphical `SceneSnapshot` data and does not change native GUI platform
+support tiers.
 
 ## Goal
 
