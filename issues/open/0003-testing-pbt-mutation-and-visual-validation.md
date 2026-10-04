@@ -344,3 +344,16 @@ a clean candidate baseline. The local Ubuntu benchmark attempt could not create
 the Wayland AF_UNIX socket, so it produced no timing samples or performance
 score. Full turtles coverage, all-target mutation, visual goldens, vlmkit
 artifacts, and broader native/performance evidence remain open.
+
+
+## Hosted mutation observation — 2026-10-04
+
+The [PR mutation workflow](https://github.com/f4ah6o/gpui.mbt/actions/runs/37186910719)
+completed successfully for PR head
+`c9a119c0f4f501d1146d4f9932551f3d446296f4`, checked out as synthetic merge
+`d29982bedcd51839c9da00c37e0a0b3a5870642a`. The hosted result classified 145
+viable mutants: 115 killed, 30 survived, zero timed out or was unviable
+(79.310%); the schema-2 audit passed. The 30 survivors are still unreviewed.
+This is one hosted observation, not a reviewed/repeated baseline, score
+ratchet, or clean release-candidate result. The mutation and broader test
+evidence packet remains open.

@@ -85,7 +85,11 @@ backend is not a native macOS/Windows build target.
   arrow, pointing-hand and text cursors. Applying a cursor requires a current
   pointer-enter serial; absent theme assets or pointer focus are reported as
   `UnsupportedCapability`. The standard Ubuntu Adwaita cursor theme is used by
-  the headless E2E image.
+  the headless E2E image. Clipboard and cursor are optional seat services: a
+  headless compositor may not expose a seat, data device, or pointer. The E2E
+  records each service as available or unsupported and checks that unavailable
+  services fail with `UnsupportedCapability`; this does not skip window,
+  rendering, resize, recovery, or lifecycle checks.
 - Explicit `recover_renderer` recreates EGL resources without replacing the
   logical window. Surface/device errors are typed. Automatic three-attempt
   recovery and compositor reconnection remain pending. A display disconnect is
@@ -132,13 +136,15 @@ claim.
 
 | Evidence path | Distro / compositor | Graphics / session | Evidence state |
 | --- | --- | --- | --- |
-| Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Workflow added; hosted CI result not yet observed |
+| Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | First hosted run observed 2026-10-04: Weston GL and native helper passed; MoonBit E2E exposed an incorrect assumption that optional clipboard/cursor services must exist. The E2E now records typed optional-service status and continues core lifecycle/render gates; corrected hosted rerun pending |
 | Local implementation validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Strict C compile and clipboard transfer helper passed; Weston headless launch blocked | Full native E2E unrun: the runner observed Weston fail to add its socket with `No such file or directory`; a separate AF_UNIX bind diagnostic was denied with `EPERM` in this environment |
 | Real Ubuntu desktop | Ubuntu 24.04 GNOME Wayland/Mutter | Desktop GPU, IME and assistive technology | Pending |
 
 CI pins the distro and MoonBit release; Ubuntu archive package patch versions
 are recorded by `dpkg-query` on each run, not frozen. CI's Weston package major
-is 13. Headless GL
+is 13. The headless kiosk compositor does not provide automated physical input;
+clipboard/cursor availability is reported by the E2E instead of assumed. A
+successful headless GL
 software rendering does not prove physical GPU performance or real desktop
 IME/accessibility behavior. File descriptor stability and owned-object checks
 do not prove bounded driver memory in a sustained production run.

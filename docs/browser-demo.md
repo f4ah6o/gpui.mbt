@@ -79,6 +79,15 @@ dispatches the browser's `visibilitychange` event to exercise the suspension
 path. It does not claim to validate operating-system tab switching behavior.
 The DPR check changes viewport dimensions and device scale together to produce
 a real browser resize signal; the smoke does not isolate DPR-only changes.
+For direct and in-process MCP counter mutations, the smoke waits until the
+sampled Canvas 2D pixel changes before it checks the app value. The app's
+observer updates before the host's next animation-frame paint, so waiting only
+for the semantic value could inspect the old pixels.
+
+The first hosted run of the expanded smoke (`37186910745`) reached Chromium
+but failed this redraw assertion because the test checked the model update
+before the scheduled paint. The smoke now waits on the actual canvas pixel;
+the corrected hosted rerun is pending, so no hosted pass is claimed yet.
 
 For initial repository setup, enable GitHub Pages with **Build and deployment →
 Source: GitHub Actions**. The workflow uses the `github-pages` environment and

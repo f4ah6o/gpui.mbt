@@ -198,8 +198,12 @@ and evidence are in [docs/ubuntu.md](../../docs/ubuntu.md).
   recreation, stale generations, FD stability, and terminal compositor disconnect
   checks implemented. Full fault/recovery and sustained GPU memory gates pending.
 - G: Ubuntu 24.04 x86-64 / Weston 13 / Mesa llvmpipe CI configured at integer
-  scales 1 and 2, with MoonBit 0.10.14+7d59c7ec9. Hosted Ubuntu evidence and
-  real GNOME/Mutter, Japanese IME, accessibility and production gates pending.
+  scales 1 and 2, with MoonBit 0.10.14+7d59c7ec9. The first hosted run on
+  2026-10-04 started Weston GL and passed native helper checks, then exposed an
+  E2E assumption that optional clipboard/cursor services must exist. The test
+  now validates typed unsupported results and records service status while
+  retaining the window/render/recovery gates; a corrected hosted rerun and real
+  GNOME/Mutter, Japanese IME, accessibility and production gates remain pending.
 
 Local execution used Debian 13 / Weston 14.0.2; it does not establish Ubuntu
 support. No X11/XWayland, Tier 1 or general Linux support claim is made.
@@ -212,8 +216,11 @@ requirement for writes, plus arrow/hand/text cursors gated on pointer-enter
 focus. Details are in [docs/ubuntu.md](../../docs/ubuntu.md). Helper and
 portable tests pass locally; the Weston native E2E could not run in this
 environment because the headless compositor failed to create its socket. The
-configured Ubuntu CI result remains pending, and local Debian evidence is not
-an Ubuntu support claim.
+first Ubuntu CI run then confirmed Weston 13 starts and the transfer helper
+passes, but its MoonBit E2E failed on unconditional clipboard/cursor capability
+requirements. The E2E now treats those services as optional, checks typed
+unsupported results, and records availability while continuing core native
+gates. A rerun is pending; local Debian evidence is not an Ubuntu support claim.
 
 Still open are cross-client clipboard roundtrip and visible cursor smoke,
 fractional scaling/public display metadata, Japanese IME/text shaping,

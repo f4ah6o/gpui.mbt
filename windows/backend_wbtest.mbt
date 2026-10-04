@@ -354,6 +354,15 @@ test "Windows D3D11 HWND renders and reads back first frame" {
     required(host.stop())
     for _ in 0..<2 {
       let restarted = required(Host::start())
+      assert_true(restarted.state() == Running)
+      let queued_events = required(restarted.dispatch(0))
+      assert_true(
+        !queued_events.any(event => {
+          event.kind() is @platform.Wake ||
+          event.kind() is @platform.ExitRequested
+        }),
+      )
+      assert_true(restarted.state() == Running)
       let repeated_window = required(
         restarted.create_window(96, 72, "restart smoke 日本語"),
       )

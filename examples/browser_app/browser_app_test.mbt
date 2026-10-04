@@ -15,6 +15,19 @@ fn create_browser_demo() -> @browser_app.BrowserDemo {
 }
 
 ///|
+fn counter_indicator_width(snapshot : @scene.SceneSnapshot) -> Double {
+  let mut width = 0.0
+  for item in snapshot.items() {
+    if item.id() == 92 {
+      match item {
+        @scene.QuadItem(bounds~, ..) => width = bounds.size().width()
+      }
+    }
+  }
+  width
+}
+
+///|
 test "portable browser app preserves logical dimensions across DPR changes" {
   let demo = create_browser_demo()
   assert_true(
@@ -82,7 +95,11 @@ test "browser GUI direct and MCP adapter calls share one observed capability" {
 
   assert_true(@browser_app.BrowserDemo::invoke_counter_direct(demo, 3) is Ok(3))
   assert_true(@browser_app.BrowserDemo::query_counter(demo) is Ok(3))
-  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  let direct_frame = match @browser_app.BrowserDemo::render_frame(demo) {
+    Ok(value) => value
+    Err(_) => abort("direct counter update failed to build a scene")
+  }
+  assert_true(counter_indicator_width(direct_frame) == 20.0)
   assert_true(
     @browser_app.BrowserDemo::status_json(demo).contains(
       "\"capabilityValue\":3",
@@ -91,7 +108,11 @@ test "browser GUI direct and MCP adapter calls share one observed capability" {
 
   assert_true(@browser_app.BrowserDemo::invoke_counter_mcp(demo, 2) is Ok(5))
   assert_true(@browser_app.BrowserDemo::query_counter(demo) is Ok(5))
-  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  let mcp_frame = match @browser_app.BrowserDemo::render_frame(demo) {
+    Ok(value) => value
+    Err(_) => abort("MCP counter update failed to build a scene")
+  }
+  assert_true(counter_indicator_width(mcp_frame) == 28.0)
   assert_true(
     @browser_app.BrowserDemo::status_json(demo).contains(
       "\"capabilityValue\":5",
@@ -120,16 +141,7 @@ test "browser GUI direct and MCP adapter calls share one observed capability" {
       "\"capabilityValue\":6",
     ),
   )
-  let mut has_visible_counter_indicator = false
-  for item in frame.items() {
-    if item.id() == 92 {
-      match item {
-        @scene.QuadItem(bounds~, ..) =>
-          has_visible_counter_indicator = bounds.size().width() == 32.0
-      }
-    }
-  }
-  assert_true(has_visible_counter_indicator)
+  assert_true(counter_indicator_width(frame) == 32.0)
   @browser_app.BrowserDemo::dispose(demo)
 }
 

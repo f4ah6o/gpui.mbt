@@ -1252,7 +1252,7 @@ int32_t gpui_windows_wake(int32_t token) {
   int32_t status = check_host_locked(token, FALSE);
   if (status == GPUI_WINDOWS_OK &&
       !g_host.api.post_thread_message_w(g_host.owner_thread,
-                                        GPUI_WAKE_MESSAGE, 0, 0))
+                                        GPUI_WAKE_MESSAGE, (WPARAM)token, 0))
     status = GPUI_WINDOWS_NATIVE;
   ReleaseSRWLockShared(&g_host_lifecycle_lock);
   return status;
@@ -1264,7 +1264,8 @@ int32_t gpui_windows_exit(int32_t token) {
   if (status == GPUI_WINDOWS_OK) {
     InterlockedCompareExchange(&g_host.state, 1, 0);
     if (!g_host.api.post_thread_message_w(g_host.owner_thread,
-                                          GPUI_EXIT_MESSAGE, 0, 0))
+                                          GPUI_EXIT_MESSAGE, (WPARAM)token,
+                                          0))
       status = GPUI_WINDOWS_NATIVE;
   }
   ReleaseSRWLockShared(&g_host_lifecycle_lock);
@@ -1541,10 +1542,14 @@ static int32_t dispatch_messages(gpui_windows_host *host, int32_t timeout_ms) {
       continue;
     }
     if (message.message == GPUI_WAKE_MESSAGE) {
+      if (message.wParam != (WPARAM)host->token)
+        continue;
       emit_event(host, 13, 0, 0, 0, 0);
       continue;
     }
     if (message.message == GPUI_EXIT_MESSAGE) {
+      if (message.wParam != (WPARAM)host->token)
+        continue;
       emit_event(host, 14, 0, 0, 0, 0);
       continue;
     }

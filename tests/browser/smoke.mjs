@@ -228,19 +228,36 @@ try {
     const scale = window.devicePixelRatio || 1;
     return Array.from(context.getImageData(Math.round(logicalX * scale), Math.round(115 * scale), 1, 1).data);
   }, x);
+  const waitForCounterPixelChange = async (x, previousPixel) => {
+    await page.waitForFunction(({ logicalX, previous }) => {
+      const canvas = document.querySelector("#gpui-viewport");
+      const context = canvas?.getContext("2d");
+      if (!canvas || !context) return false;
+      const scale = window.devicePixelRatio || 1;
+      const current = Array.from(context.getImageData(
+        Math.round(logicalX * scale), Math.round(115 * scale), 1, 1,
+      ).data);
+      return current.some((channel, index) => channel !== previous[index]);
+    }, { logicalX: x, previous: previousPixel }, { polling: "raf" });
+  };
   const directSampleBefore = await counterSample(46);
   const directCounterValue = await page.evaluate(() => window.__gpuiDirectCounter(2));
   assert.equal(directCounterValue, guiCounterValue + 2);
-  await page.waitForFunction((value) => window.__gpuiSmokeStatus().capabilityValue === value, directCounterValue);
+  // The app observer updates synchronously, while the host paints on its next
+  // requestAnimationFrame. Wait for the sampled canvas pixel so this assertion
+  // proves the scheduled frame actually presented the direct API update.
+  await waitForCounterPixelChange(46, directSampleBefore);
   assert.equal(await page.evaluate(() => window.__gpuiReadCounter()), directCounterValue);
+  assert.equal((await page.evaluate(() => window.__gpuiSmokeStatus())).capabilityValue, directCounterValue);
   const directSampleAfter = await counterSample(46);
   assert.notDeepEqual(directSampleAfter, directSampleBefore, "direct API mutation redraws the observed counter quad in Chromium");
 
   const mcpSampleBefore = await counterSample(56);
   const mcpCounterValue = await page.evaluate(() => window.__gpuiMcpCounter(3));
   assert.equal(mcpCounterValue, directCounterValue + 3);
-  await page.waitForFunction((value) => window.__gpuiSmokeStatus().capabilityValue === value, mcpCounterValue);
+  await waitForCounterPixelChange(56, mcpSampleBefore);
   assert.equal(await page.evaluate(() => window.__gpuiReadCounter()), mcpCounterValue);
+  assert.equal((await page.evaluate(() => window.__gpuiSmokeStatus())).capabilityValue, mcpCounterValue);
   const mcpSampleAfter = await counterSample(56);
   assert.notDeepEqual(mcpSampleAfter, mcpSampleBefore, "in-process MCP adapter mutation redraws the same observed counter quad");
 

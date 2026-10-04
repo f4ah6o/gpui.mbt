@@ -273,3 +273,16 @@ attempt could not create the Wayland AF_UNIX socket and produced no measurements
 These observations do not establish reviewed mutation or performance passes;
 the release ledger remains pending until comparable successful evidence is
 available and reviewed.
+
+
+## Hosted mutation observation — 2026-10-04
+
+The [PR mutation run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37186910719)
+completed successfully for PR head
+`c9a119c0f4f501d1146d4f9932551f3d446296f4`; Actions tested synthetic merge
+`d29982bedcd51839c9da00c37e0a0b3a5870642a`. It reported 145 viable mutants,
+115 killed, 30 survived, zero timeouts or unviable mutants (79.310%), and a
+passing schema-2 report audit. The survivors have not yet been reviewed. This
+single observation is not a reviewed/repeated mutation baseline or clean
+release-candidate result; mutation and all production release gates remain
+pending.

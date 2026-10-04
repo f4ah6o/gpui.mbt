@@ -40,7 +40,7 @@ Invoke-CheckedCommand -Program "moon" -Arguments @("check", "--package-path", "e
 
 Remove-Item Env:GPUI_WINDOWS_E2E -ErrorAction SilentlyContinue
 Remove-Item Env:GPUI_WINDOWS_READBACK -ErrorAction SilentlyContinue
-Invoke-CheckedCommand -Program "moon" -Arguments @("test", "--package", "f4ah6o/gpui/windows", "--target", "native", "--deny-warn") -LogName "portable-tests.log"
+Invoke-CheckedCommand -Program "moon" -Arguments @("test", "--package", "f4ah6o/gpui/windows", "--target", "native", "--deny-warn", "--no-parallelize") -LogName "portable-tests.log"
 
 if ($PortableOnly) {
   exit 0
@@ -51,7 +51,16 @@ if (-not $IsWindows) {
 
 $env:GPUI_WINDOWS_E2E = "1"
 $env:GPUI_WINDOWS_READBACK = "1"
-Invoke-CheckedCommand -Program "moon" -Arguments @("test", "--package", "f4ah6o/gpui/windows", "--target", "native", "--deny-warn") -LogName "windows-e2e.log"
+Invoke-CheckedCommand -Program "moon" -Arguments @(
+  "test", "--package", "f4ah6o/gpui/windows", "--target", "native",
+  "--deny-warn", "--no-parallelize", "--filter",
+  "Windows D3D11 HWND renders and reads back first frame"
+) -LogName "windows-e2e.log"
+Invoke-CheckedCommand -Program "moon" -Arguments @(
+  "test", "--package", "f4ah6o/gpui/windows", "--target", "native",
+  "--deny-warn", "--no-parallelize", "--filter",
+  "shared backend lifecycle conformance on Windows"
+) -LogName "windows-conformance.log"
 
 Remove-Item Env:GPUI_WINDOWS_E2E -ErrorAction SilentlyContinue
 Remove-Item Env:GPUI_WINDOWS_READBACK -ErrorAction SilentlyContinue

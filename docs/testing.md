@@ -188,6 +188,15 @@ audited source-manifest digest is
 pre-commit observation, not an accepted score ratchet; the 30 survivors remain
 unreviewed and the release gate stays pending.
 
+The hosted [PR mutation run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37186910719)
+also completed successfully. It reported 145 viable mutants, 115 killed,
+30 survived, no timeouts or unviable mutants, and a 79.310% score; the schema-2
+report audit passed. The run was for PR head
+`c9a119c0f4f501d1146d4f9932551f3d446296f4`, checked out as GitHub's synthetic
+merge commit `d29982bedcd51839c9da00c37e0a0b3a5870642a`. The 30 survivors remain
+unreviewed. This is a hosted observation, not a reviewed or repeated score
+ratchet or clean release-candidate baseline; the release gate stays pending.
+
 ## CI split
 
 Future expanded/nightly jobs add larger PBT budgets, full turtles, all supported
