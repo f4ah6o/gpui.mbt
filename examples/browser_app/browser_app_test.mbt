@@ -15,6 +15,19 @@ fn create_browser_demo() -> @browser_app.BrowserDemo {
 }
 
 ///|
+fn counter_indicator_width(snapshot : @scene.SceneSnapshot) -> Double {
+  let mut width = 0.0
+  for item in snapshot.items() {
+    if item.id() == 92 {
+      match item {
+        @scene.QuadItem(bounds~, ..) => width = bounds.size().width()
+      }
+    }
+  }
+  width
+}
+
+///|
 test "portable browser app preserves logical dimensions across DPR changes" {
   let demo = create_browser_demo()
   assert_true(
@@ -68,6 +81,93 @@ test "portable browser app preserves logical dimensions across DPR changes" {
   assert_true(status.contains("\"hover\":4"))
   assert_true(status.contains("\"events\":4"))
   assert_true(status.contains("\"lastSequence\":5"))
+  @browser_app.BrowserDemo::dispose(demo)
+}
+
+///|
+test "browser GUI direct and MCP adapter calls share one observed capability" {
+  let demo = create_browser_demo()
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains(
+      "\"capabilityValue\":0",
+    ),
+  )
+
+  assert_true(@browser_app.BrowserDemo::invoke_counter_direct(demo, 3) is Ok(3))
+  assert_true(@browser_app.BrowserDemo::query_counter(demo) is Ok(3))
+  let direct_frame = match @browser_app.BrowserDemo::render_frame(demo) {
+    Ok(value) => value
+    Err(_) => abort("direct counter update failed to build a scene")
+  }
+  assert_true(counter_indicator_width(direct_frame) == 20.0)
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains(
+      "\"capabilityValue\":3",
+    ),
+  )
+
+  assert_true(@browser_app.BrowserDemo::invoke_counter_mcp(demo, 2) is Ok(5))
+  assert_true(@browser_app.BrowserDemo::query_counter(demo) is Ok(5))
+  let mcp_frame = match @browser_app.BrowserDemo::render_frame(demo) {
+    Ok(value) => value
+    Err(_) => abort("MCP counter update failed to build a scene")
+  }
+  assert_true(counter_indicator_width(mcp_frame) == 28.0)
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains(
+      "\"capabilityValue\":5",
+    ),
+  )
+
+  ignore(
+    @browser_app.BrowserDemo::enqueue_event(
+      demo,
+      @platform.Input(
+        @primitives.PointerButtonPressed(
+          position=browser_test_point(120.0, 238.0),
+          button=@primitives.Primary,
+          modifiers=@primitives.Modifiers::none(),
+        ),
+      ),
+    ),
+  )
+  let frame = match @browser_app.BrowserDemo::render_frame(demo) {
+    Ok(value) => value
+    Err(_) => abort("semantic capability GUI action failed to render")
+  }
+  assert_true(@browser_app.BrowserDemo::query_counter(demo) is Ok(6))
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains(
+      "\"capabilityValue\":6",
+    ),
+  )
+  assert_true(counter_indicator_width(frame) == 32.0)
+  @browser_app.BrowserDemo::dispose(demo)
+}
+
+///|
+test "browser host layout exposes semantics and a measured legacy island" {
+  let demo = create_browser_demo()
+  let layout = @browser_app.BrowserDemo::host_layout_json(demo)
+  assert_true(layout.contains("\"role\":\"button\""))
+  assert_true(layout.contains("Alpine cyan action"))
+  assert_true(layout.contains("\"kind\":\"legacy-island\""))
+  assert_true(layout.contains("\"id\":8"))
+
+  assert_true(
+    @browser_app.BrowserDemo::focus_semantic_node(demo, 7, false) is Ok(_),
+  )
+  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains("\"focus\":7"),
+  )
+  assert_true(
+    @browser_app.BrowserDemo::focus_semantic_node(demo, 4, true) is Ok(_),
+  )
+  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains("\"focus\":4"),
+  )
   @browser_app.BrowserDemo::dispose(demo)
 }
 

@@ -1,0 +1,5 @@
+# The first mutation scope is the platform-independent primitives core. Keep
+# production/runtime packages and QuickCheck imports unchanged; turtles runs
+# the existing tests and fixed-seed properties in an isolated module copy.
+include = ["primitives/"]
+operators = ["comparison", "boolean", "arithmetic", "literal", "condition"]

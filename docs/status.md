@@ -4,11 +4,11 @@ This document keeps project-state, support boundaries, and future work out of th
 
 ## Current position
 
-The module version is `0.1.0`. The repository already contains usable headless UI foundations plus native macOS and Ubuntu/Wayland slices and a browser proof, but it does not currently make a production-support claim for any platform.
+The module version is `0.1.0`. The repository contains usable headless UI foundations, experimental native slices for macOS, Ubuntu/Wayland, and Windows, and a browser proof. It does not currently make a production-support claim for any platform.
 
 The portable codebase provides application/entity lifetimes, deterministic scheduling, flex layout, element trees, hit testing, capture/bubble event dispatch, focus, quad scene generation, clip validation, transforms, opacity, and canonical scene snapshots. The native/browser examples exercise subsets of that shared model.
 
-Current main CI checks the portable MoonBit packages across configured targets, builds the macOS native bundle and native test runner, runs the Ubuntu 24.04 Wayland/Weston native workflow, and runs the real-Chromium browser proof.
+The CI suite checks portable MoonBit packages across configured targets, builds the macOS native bundle and test runner, runs the Ubuntu 24.04 Wayland/Weston workflow, and runs the real-Chromium browser proof. The hosted Ubuntu workflow has passed its configured compositor checks. The experimental Windows slice also has a successful [Windows Server 2025 run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37189457500) for PR head `a1f6e523dc41317064c5657179baa20456dcf6b1`; its scope and remaining support limits are recorded in [the Windows guide](windows-native.md).
 
 ## Current limits
 
@@ -22,20 +22,29 @@ The shared scene path currently centers on quads, rectangle clip chains, affine 
 
 ### Native services
 
-The macOS and Ubuntu backends implement useful native window/render/input slices, but production text shaping, Japanese IME coverage, semantic accessibility, automated renderer recovery, sustained-resource evidence, and production performance gates remain incomplete.
+The macOS and Ubuntu backends implement native window/render/input slices. macOS also has clipboard, cursor, and renderer surface recovery/rebuild/rebind paths, but recovery is not advertised until a real Metal end-to-end run verifies it. Ubuntu now has bounded nonblocking clipboard and cursor services, and its configured Wayland/Weston checks pass in hosted CI. Local Wayland end-to-end verification remains blocked by AF_UNIX socket availability. Production text shaping, Japanese IME coverage, semantic accessibility, sustained-resource evidence, and production performance gates remain incomplete.
 
-macOS currently has the broader service slice, including clipboard and cursors. Ubuntu still has narrower service coverage; its detailed boundary is tracked in [the Ubuntu guide](ubuntu.md).
+macOS currently has the broader service slice, including clipboard and cursors. Ubuntu's clipboard and cursor APIs have bounded buffers and typed failure paths; see [the Ubuntu guide](ubuntu.md) for the host boundary and validation status.
 
 ### Browser
 
-The browser implementation is a JavaScript-target proof hosted by Canvas 2D. It shares the MoonBit application/layout/event/scene model, but it is not a complete browser backend. WebGPU, text/IME, accessibility, clipboard/cursor services, worker command support, and production browser gates remain future work.
+The browser implementation is a JavaScript-target proof hosted by Canvas 2D. It shares the MoonBit application/layout/event/scene model, normalizes pointer/keyboard/wheel input, schedules only requested frames, and has a fixture-specific semantic DOM focus/action layer plus a legacy DOM island with explicit focus ownership. The browser counter's GUI, direct, and in-process MCP calls update the same observed state and are checked through a canvas redraw seam. These fixtures are not a general accessibility bridge or MCP transport. WebGPU, text/IME, full accessibility, clipboard/cursor services, worker command support, renderer recovery, and production browser gates remain future work.
+
+### Electron and Tauri migration
+
+The portable `migration/host_services/` package now defines bounded service
+requests/completions, per-service default-deny grants, logical scopes,
+cancellation, stale-completion dropping, and copied transport-safe values. JS
+leaf adapters and fake-host tests exercise the envelope. No real Electron or
+Tauri application has been migrated or launched; focus/input ownership and
+host-specific security integration remain open.
 
 ### Platform coverage
 
 - macOS: native AppKit/Metal slice implemented; production gates remain open.
 - Ubuntu / Wayland: native Wayland/EGL/GLES2 slice implemented and exercised in hosted CI; production desktop gates remain open.
 - Browser / JavaScript: Canvas 2D proof implemented and exercised in Chromium.
-- Windows: no native backend yet.
+- Windows: experimental one-window Win32/D3D11 hardware-or-WARP slice and example implemented; the hosted Windows Server 2025 run passed the MSVC shim build, portable tests, native GPU E2E, shared backend conformance, and example smoke. See [the Windows guide](windows-native.md); this does not establish a support tier or production claim.
 - X11 / XWayland: no backend yet.
 
 These statements describe implementation and evidence, not a compatibility or support tier unless the release evidence ledger explicitly assigns one.
@@ -52,9 +61,9 @@ The project is independently implemented. Provenance rules and the pinned upstre
 | --- | --- | --- |
 | M0 | Product, architecture, compatibility, dependency, testing and release contracts | Delivered |
 | M1 | Deterministic App/Entity/Context core and scheduler | Implemented |
-| M2 | Element system, layout, hit testing, event dispatch and focus | In progress; substantial headless foundation implemented |
+| M2 | Element system, layout, hit testing, event dispatch and focus | Bounded recursive flex layout and headless Render/IntoElement request-layout/prepaint/paint lifecycle implemented; invalidation and broader style/text behavior remain open |
 | M3 | Stable scene data, primitives and renderer abstraction | In progress; quad/clip/transform/opacity snapshot slice implemented |
-| M4 | First native platform slices | In progress; macOS and Ubuntu/Wayland slices implemented |
+| M4 | First native platform slices | macOS and Ubuntu/Wayland slices implemented; experimental Windows slice added; initial Ubuntu and Windows hosted checks pass, while broader service and production evidence remain incomplete |
 | M5 | Text and interaction completeness | Planned |
 | M6 | Multi-platform support gates, including Windows | Planned |
 | M7 | Production-ready 1.0 gates and sustained non-demo use | Planned |

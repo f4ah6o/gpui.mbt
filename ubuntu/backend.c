@@ -5,27 +5,53 @@
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <math.h>
 #include <poll.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/eventfd.h>
 #include <sys/mman.h>
+#include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
+#include <wayland-cursor.h>
 #include <wayland-egl.h>
 #include <xkbcommon/xkbcommon.h>
 
 #define QUEUE_CAPACITY 1024
 #define OUTPUT_CAPACITY 16
+#define CLIPBOARD_LIMIT (16 * 1024 * 1024)
+#define CLIPBOARD_TIMEOUT_MS 3000
+#define SOURCE_TRANSFER_CAPACITY 8
 #define UNUSED(x) (void)(x)
+struct host;
+struct clipboard_source {
+  struct host *host;
+  struct wl_data_source *proxy;
+  uint8_t *bytes;
+  size_t length, transfers;
+  int cancelled;
+  struct clipboard_source *next;
+};
+struct source_transfer {
+  struct clipboard_source *source;
+  int fd;
+  size_t offset;
+};
 struct output {
   struct wl_output *proxy;
   uint32_t name;
   int scale, entered;
+};
+enum input_serial_origin {
+  INPUT_SERIAL_NONE,
+  INPUT_SERIAL_POINTER,
+  INPUT_SERIAL_KEYBOARD
 };
 struct host {
   int token, window, state, wake_fd, error;
@@ -34,10 +60,29 @@ struct host {
   struct wl_registry *registry;
   struct wl_compositor *compositor;
   struct xdg_wm_base *shell;
-  uint32_t compositor_name, shell_name;
+  struct wl_shm *shm;
+  struct wl_data_device_manager *data_manager;
+  struct wl_data_device *data_device;
+  struct wl_data_offer *selection_offer, *pending_offer;
+  uint32_t compositor_name, shell_name, shm_name, data_manager_name;
+  uint32_t seat_name;
   struct wl_seat *seat;
   struct wl_pointer *pointer;
   struct wl_keyboard *keyboard;
+  uint32_t pointer_serial, input_serial;
+  int input_serial_window;
+  enum input_serial_origin input_serial_origin;
+  int pointer_inside, pointer_focus_current, keyboard_focus_current;
+  struct wl_cursor_theme *cursor_theme;
+  struct wl_cursor *cursors[3];
+  struct wl_surface *cursor_surface;
+  int cursor_kind, cursor_scale;
+  int clipboard_has_utf8, clipboard_has_plain;
+  int pending_has_utf8, pending_has_plain;
+  uint8_t *clipboard_result;
+  size_t clipboard_result_length;
+  struct clipboard_source *sources;
+  struct source_transfer transfers[SOURCE_TRANSFER_CAPACITY];
   struct xkb_context *xkb;
   struct xkb_keymap *keymap;
   struct xkb_state *keys;
@@ -63,6 +108,37 @@ static struct host *active;
 static pthread_mutex_t registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int next_host = 1;
 static int next_window = 1;
+static void flush_transfers(struct host *h);
+static void collect_source(struct clipboard_source *source);
+static void remember_input_serial(struct host *h, uint32_t serial,
+                                  enum input_serial_origin origin) {
+  int focused = origin == INPUT_SERIAL_POINTER
+                    ? h->pointer_focus_current
+                    : (origin == INPUT_SERIAL_KEYBOARD
+                           ? h->keyboard_focus_current
+                           : 0);
+  if (!serial || !focused || !h->seat_name)
+    return;
+  h->input_serial = serial;
+  h->input_serial_window = h->window;
+  h->input_serial_origin = origin;
+}
+static void invalidate_input_serial(struct host *h,
+                                    enum input_serial_origin origin) {
+  if (origin == INPUT_SERIAL_NONE || h->input_serial_origin == origin) {
+    h->input_serial = 0;
+    h->input_serial_window = 0;
+    h->input_serial_origin = INPUT_SERIAL_NONE;
+  }
+}
+static int has_input_serial(const struct host *h) {
+  return h->seat_name && h->window && h->input_serial &&
+         h->input_serial_window == h->window &&
+         ((h->input_serial_origin == INPUT_SERIAL_POINTER &&
+           h->pointer_focus_current) ||
+          (h->input_serial_origin == INPUT_SERIAL_KEYBOARD &&
+           h->keyboard_focus_current));
+}
 static int valid_size(int w, int h, int scale) {
   return w > 0 && h > 0 && scale > 0 && w <= 16384 / scale &&
          h <= 16384 / scale;
@@ -106,6 +182,286 @@ static void event(struct host *h, int kind, double detail, double x, double y) {
   e[7] = y;
   e[8] = detail;
   e[9] = h->modifiers;
+}
+static ssize_t write_without_sigpipe(int fd, const void *bytes, size_t length) {
+  sigset_t blocked, old_mask, pending;
+  sigemptyset(&blocked);
+  sigaddset(&blocked, SIGPIPE);
+  if (pthread_sigmask(SIG_BLOCK, &blocked, &old_mask) != 0) {
+    errno = EINVAL;
+    return -1;
+  }
+  int had_pending = sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE);
+  ssize_t written = write(fd, bytes, length);
+  int saved_errno = errno;
+  if (written < 0 && saved_errno == EPIPE && !had_pending) {
+    struct timespec zero = {0, 0};
+    while (sigtimedwait(&blocked, NULL, &zero) < 0 && errno == EINTR) {
+    }
+  }
+  pthread_sigmask(SIG_SETMASK, &old_mask, NULL);
+  errno = saved_errno;
+  return written;
+}
+static void finish_transfer(struct source_transfer *transfer) {
+  struct clipboard_source *source = transfer->source;
+  if (transfer->fd >= 0)
+    close(transfer->fd);
+  transfer->fd = -1;
+  transfer->offset = 0;
+  transfer->source = NULL;
+  if (source) {
+    if (source->transfers)
+      --source->transfers;
+    collect_source(source);
+  }
+}
+static void flush_transfer(struct source_transfer *transfer) {
+  struct clipboard_source *source = transfer->source;
+  if (!source || transfer->fd < 0)
+    return;
+  while (transfer->offset < source->length) {
+    ssize_t count = write_without_sigpipe(
+        transfer->fd, source->bytes + transfer->offset,
+        source->length - transfer->offset);
+    if (count > 0) {
+      transfer->offset += (size_t)count;
+      continue;
+    }
+    if (count < 0 && (errno == EINTR))
+      continue;
+    if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+      return;
+    finish_transfer(transfer);
+    return;
+  }
+  finish_transfer(transfer);
+}
+static void flush_transfers(struct host *h) {
+  for (int i = 0; i < SOURCE_TRANSFER_CAPACITY; ++i)
+    if (h->transfers[i].fd >= 0)
+      flush_transfer(&h->transfers[i]);
+}
+static void unlink_source(struct clipboard_source *source) {
+  struct clipboard_source **item = &source->host->sources;
+  while (*item && *item != source)
+    item = &(*item)->next;
+  if (*item == source)
+    *item = source->next;
+  free(source->bytes);
+  free(source);
+}
+static void collect_source(struct clipboard_source *source) {
+  if (source->cancelled && source->transfers == 0)
+    unlink_source(source);
+}
+static void source_target(void *d, struct wl_data_source *proxy,
+                          const char *mime) {
+  UNUSED(d);
+  UNUSED(proxy);
+  UNUSED(mime);
+}
+static void source_send(void *d, struct wl_data_source *proxy, const char *mime,
+                        int32_t fd) {
+  UNUSED(proxy);
+  struct clipboard_source *source = d;
+  if (!source || source->cancelled ||
+      (strcmp(mime, "text/plain;charset=utf-8") &&
+       strcmp(mime, "text/plain"))) {
+    close(fd);
+    return;
+  }
+  int flags = fcntl(fd, F_GETFL);
+  if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+    close(fd);
+    return;
+  }
+  struct source_transfer *transfer = NULL;
+  for (int i = 0; i < SOURCE_TRANSFER_CAPACITY; ++i)
+    if (source->host->transfers[i].fd < 0) {
+      transfer = &source->host->transfers[i];
+      break;
+    }
+  if (!transfer) {
+    close(fd);
+    return;
+  }
+  transfer->source = source;
+  transfer->fd = fd;
+  transfer->offset = 0;
+  ++source->transfers;
+  flush_transfer(transfer);
+}
+static void source_cancelled(void *d, struct wl_data_source *proxy) {
+  struct clipboard_source *source = d;
+  if (!source)
+    return;
+  if (source->proxy == proxy) {
+    source->proxy = NULL;
+    wl_data_source_destroy(proxy);
+  }
+  source->cancelled = 1;
+  collect_source(source);
+}
+static const struct wl_data_source_listener source_listener = {
+    .target = source_target,
+    .send = source_send,
+    .cancelled = source_cancelled};
+static void reset_pending_mime_types(struct host *h) {
+  h->pending_has_utf8 = 0;
+  h->pending_has_plain = 0;
+}
+static void note_pending_mime_type(struct host *h, const char *mime) {
+  if (!strcmp(mime, "text/plain;charset=utf-8"))
+    h->pending_has_utf8 = 1;
+  else if (!strcmp(mime, "text/plain"))
+    h->pending_has_plain = 1;
+}
+static void commit_pending_mime_types(struct host *h) {
+  h->clipboard_has_utf8 = h->pending_has_utf8;
+  h->clipboard_has_plain = h->pending_has_plain;
+}
+static void clear_selection_mime_types(struct host *h) {
+  h->clipboard_has_utf8 = 0;
+  h->clipboard_has_plain = 0;
+}
+static void offer_mime(void *d, struct wl_data_offer *offer, const char *mime) {
+  struct host *h = d;
+  if (offer != h->pending_offer)
+    return;
+  note_pending_mime_type(h, mime);
+}
+static const struct wl_data_offer_listener offer_listener = {.offer =
+                                                                  offer_mime};
+static void data_offer(void *d, struct wl_data_device *device,
+                       struct wl_data_offer *offer) {
+  UNUSED(device);
+  struct host *h = d;
+  if (h->pending_offer && h->pending_offer != h->selection_offer)
+    wl_data_offer_destroy(h->pending_offer);
+  h->pending_offer = offer;
+  reset_pending_mime_types(h);
+  wl_data_offer_add_listener(offer, &offer_listener, h);
+}
+static void data_enter(void *d, struct wl_data_device *device,
+                       uint32_t serial, struct wl_surface *surface,
+                       wl_fixed_t x, wl_fixed_t y,
+                       struct wl_data_offer *offer) {
+  UNUSED(d);
+  UNUSED(device);
+  UNUSED(serial);
+  UNUSED(surface);
+  UNUSED(x);
+  UNUSED(y);
+  UNUSED(offer);
+}
+static void data_leave(void *d, struct wl_data_device *device) {
+  UNUSED(d);
+  UNUSED(device);
+}
+static void data_motion(void *d, struct wl_data_device *device, uint32_t time,
+                        wl_fixed_t x, wl_fixed_t y) {
+  UNUSED(d);
+  UNUSED(device);
+  UNUSED(time);
+  UNUSED(x);
+  UNUSED(y);
+}
+static void data_drop(void *d, struct wl_data_device *device) {
+  UNUSED(d);
+  UNUSED(device);
+}
+static void data_selection(void *d, struct wl_data_device *device,
+                           struct wl_data_offer *offer) {
+  UNUSED(device);
+  struct host *h = d;
+  struct wl_data_offer *previous = h->selection_offer;
+  struct wl_data_offer *pending = h->pending_offer;
+  if (previous && previous != offer)
+    wl_data_offer_destroy(previous);
+  if (offer && offer == pending) {
+    /* The data_offer MIME events may describe a drag-and-drop offer rather
+     * than the clipboard selection. Publish staged types only when the
+     * compositor identifies this offer as the selection. */
+    commit_pending_mime_types(h);
+  } else if (offer == previous) {
+    /* A repeated selection notification keeps the selected offer's MIME
+     * types. Discard staged types from any intervening drag offer. */
+    h->pending_has_utf8 = h->clipboard_has_utf8;
+    h->pending_has_plain = h->clipboard_has_plain;
+  } else {
+    clear_selection_mime_types(h);
+    reset_pending_mime_types(h);
+  }
+  h->selection_offer = offer;
+  h->pending_offer = offer;
+  if (!offer) {
+    h->pending_has_utf8 = 0;
+    h->pending_has_plain = 0;
+  }
+}
+static const struct wl_data_device_listener data_device_listener = {
+    .data_offer = data_offer,
+    .enter = data_enter,
+    .leave = data_leave,
+    .motion = data_motion,
+    .drop = data_drop,
+    .selection = data_selection};
+static void maybe_create_data_device(struct host *h) {
+  if (!h->data_device && h->data_manager && h->seat) {
+    h->data_device =
+        wl_data_device_manager_get_data_device(h->data_manager, h->seat);
+    if (h->data_device)
+      wl_data_device_add_listener(h->data_device, &data_device_listener, h);
+    else
+      h->error = GPUI_RESOURCE;
+  }
+}
+static struct wl_cursor *find_cursor(struct wl_cursor_theme *theme,
+                                     const char *first, const char *second,
+                                     const char *third) {
+  struct wl_cursor *cursor = wl_cursor_theme_get_cursor(theme, first);
+  if (!cursor && second)
+    cursor = wl_cursor_theme_get_cursor(theme, second);
+  if (!cursor && third)
+    cursor = wl_cursor_theme_get_cursor(theme, third);
+  return cursor;
+}
+static int load_cursors(struct host *h) {
+  if (!h->shm || !h->compositor)
+    return GPUI_UNSUPPORTED;
+  h->cursor_theme = wl_cursor_theme_load(NULL, 24, h->shm);
+  if (!h->cursor_theme)
+    return GPUI_RESOURCE;
+  h->cursors[0] = find_cursor(h->cursor_theme, "left_ptr", "default", NULL);
+  h->cursors[1] = find_cursor(h->cursor_theme, "pointer", "hand2", "hand1");
+  h->cursors[2] = find_cursor(h->cursor_theme, "text", "xterm", NULL);
+  if (!h->cursors[0] || !h->cursors[1] || !h->cursors[2])
+    return GPUI_UNSUPPORTED;
+  h->cursor_surface = wl_compositor_create_surface(h->compositor);
+  if (!h->cursor_surface)
+    return GPUI_RESOURCE;
+  h->cursor_kind = 0;
+  return GPUI_OK;
+}
+static int apply_cursor(struct host *h, int kind) {
+  if (!h->pointer || !h->pointer_inside || !h->pointer_serial ||
+      !h->cursor_surface || kind < 0 || kind >= 3)
+    return GPUI_UNSUPPORTED;
+  struct wl_cursor *cursor = h->cursors[kind];
+  if (!cursor || cursor->image_count == 0)
+    return GPUI_UNSUPPORTED;
+  struct wl_cursor_image *image = cursor->images[0];
+  struct wl_buffer *buffer = wl_cursor_image_get_buffer(image);
+  if (!buffer)
+    return GPUI_RESOURCE;
+  wl_pointer_set_cursor(h->pointer, h->pointer_serial, h->cursor_surface,
+                        image->hotspot_x, image->hotspot_y);
+  wl_surface_attach(h->cursor_surface, buffer, 0, 0);
+  wl_surface_damage(h->cursor_surface, 0, 0, image->width, image->height);
+  wl_surface_commit(h->cursor_surface);
+  h->cursor_kind = kind;
+  return GPUI_OK;
 }
 static void apply_size(struct host *h) {
   if (!valid_size(h->width, h->height, h->scale)) {
@@ -230,18 +586,26 @@ static void pointer_enter(void *d, struct wl_pointer *p, uint32_t serial,
                           struct wl_surface *s, wl_fixed_t x, wl_fixed_t y) {
   UNUSED(p);
   UNUSED(serial);
-  UNUSED(s);
   struct host *h = d;
+  invalidate_input_serial(h, INPUT_SERIAL_POINTER);
+  h->pointer_serial = serial;
+  h->pointer_inside = 1;
+  h->pointer_focus_current = h->surface && s == h->surface;
   h->px = wl_fixed_to_double(x);
   h->py = wl_fixed_to_double(y);
+  if (h->cursor_surface)
+    (void)apply_cursor(h, h->cursor_kind);
   event(h, 7, 0, h->px, h->py);
 }
 static void pointer_leave(void *d, struct wl_pointer *p, uint32_t serial,
                           struct wl_surface *s) {
-  UNUSED(d);
   UNUSED(p);
-  UNUSED(serial);
   UNUSED(s);
+  struct host *h = d;
+  h->pointer_inside = 0;
+  h->pointer_focus_current = 0;
+  h->pointer_serial = serial;
+  invalidate_input_serial(h, INPUT_SERIAL_POINTER);
 }
 static void pointer_motion(void *d, struct wl_pointer *p, uint32_t time,
                            wl_fixed_t x, wl_fixed_t y) {
@@ -255,9 +619,10 @@ static void pointer_motion(void *d, struct wl_pointer *p, uint32_t time,
 static void pointer_button(void *d, struct wl_pointer *p, uint32_t serial,
                            uint32_t time, uint32_t button, uint32_t state) {
   UNUSED(p);
-  UNUSED(serial);
   UNUSED(time);
   struct host *h = d;
+  if (state == WL_POINTER_BUTTON_STATE_PRESSED)
+    remember_input_serial(h, serial, INPUT_SERIAL_POINTER);
   if (button >= 0x110 && button <= 0x114)
     event(h, state ? 8 : 9, button - 0x110, h->px, h->py);
 }
@@ -311,9 +676,11 @@ static void keyboard_enter(void *d, struct wl_keyboard *k, uint32_t serial,
                            struct wl_surface *s, struct wl_array *keys) {
   UNUSED(k);
   UNUSED(serial);
-  UNUSED(s);
   UNUSED(keys);
-  event(d, 6, 1, 0, 0);
+  struct host *h = d;
+  invalidate_input_serial(h, INPUT_SERIAL_KEYBOARD);
+  h->keyboard_focus_current = h->surface && s == h->surface;
+  event(h, 6, 1, 0, 0);
 }
 static void keyboard_leave(void *d, struct wl_keyboard *k, uint32_t serial,
                            struct wl_surface *s) {
@@ -322,14 +689,17 @@ static void keyboard_leave(void *d, struct wl_keyboard *k, uint32_t serial,
   UNUSED(s);
   struct host *h = d;
   h->modifiers = 0;
+  h->keyboard_focus_current = 0;
+  invalidate_input_serial(h, INPUT_SERIAL_KEYBOARD);
   event(h, 6, 0, 0, 0);
 }
 static void keyboard_key(void *d, struct wl_keyboard *k, uint32_t serial,
                          uint32_t time, uint32_t key, uint32_t state) {
   UNUSED(k);
-  UNUSED(serial);
   UNUSED(time);
   struct host *h = d;
+  if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
+    remember_input_serial(h, serial, INPUT_SERIAL_KEYBOARD);
   if (!h->keys)
     return;
   xkb_keysym_t sym = xkb_state_key_get_one_sym(h->keys, key + 8);
@@ -372,17 +742,29 @@ static void seat_caps(void *d, struct wl_seat *s, uint32_t caps) {
   if ((caps & WL_SEAT_CAPABILITY_POINTER) && !h->pointer) {
     h->pointer = wl_seat_get_pointer(s);
     wl_pointer_add_listener(h->pointer, &pointer_listener, h);
-  } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && h->pointer) {
-    wl_pointer_destroy(h->pointer);
-    h->pointer = NULL;
+    h->pointer_inside = 0;
+    h->pointer_serial = 0;
+  } else if (!(caps & WL_SEAT_CAPABILITY_POINTER)) {
+    invalidate_input_serial(h, INPUT_SERIAL_POINTER);
+    h->pointer_focus_current = 0;
+    if (h->pointer) {
+      h->pointer_inside = 0;
+      h->pointer_serial = 0;
+      wl_pointer_destroy(h->pointer);
+      h->pointer = NULL;
+    }
   }
   if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !h->keyboard) {
     h->keyboard = wl_seat_get_keyboard(s);
     wl_keyboard_add_listener(h->keyboard, &keyboard_listener, h);
-  } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && h->keyboard) {
-    event(h, 6, 0, 0, 0);
-    wl_keyboard_destroy(h->keyboard);
-    h->keyboard = NULL;
+  } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD)) {
+    invalidate_input_serial(h, INPUT_SERIAL_KEYBOARD);
+    h->keyboard_focus_current = 0;
+    if (h->keyboard) {
+      event(h, 6, 0, 0, 0);
+      wl_keyboard_destroy(h->keyboard);
+      h->keyboard = NULL;
+    }
   }
 }
 static const struct wl_seat_listener seat_listener = {.capabilities =
@@ -399,7 +781,18 @@ static void global(void *d, struct wl_registry *r, uint32_t name,
     xdg_wm_base_add_listener(h->shell, &shell_listener, h);
   } else if (!strcmp(interface, "wl_seat") && !h->seat) {
     h->seat = wl_registry_bind(r, name, &wl_seat_interface, 1);
+    h->seat_name = name;
     wl_seat_add_listener(h->seat, &seat_listener, h);
+    maybe_create_data_device(h);
+  } else if (!strcmp(interface, "wl_shm") && !h->shm) {
+    h->shm = wl_registry_bind(r, name, &wl_shm_interface, 1);
+    h->shm_name = name;
+  } else if (!strcmp(interface, "wl_data_device_manager") &&
+             !h->data_manager) {
+    h->data_manager = wl_registry_bind(
+        r, name, &wl_data_device_manager_interface, 1);
+    h->data_manager_name = name;
+    maybe_create_data_device(h);
   } else if (!strcmp(interface, "wl_output") && version >= 2) {
     for (int i = 0; i < OUTPUT_CAPACITY; ++i)
       if (!h->outputs[i].proxy) {
@@ -417,6 +810,19 @@ static void global_remove(void *d, struct wl_registry *r, uint32_t name) {
   struct host *h = d;
   if (name == h->compositor_name || name == h->shell_name)
     h->error = GPUI_NATIVE;
+  if (name == h->shm_name) {
+    h->shm_name = 0;
+  }
+  if (name == h->data_manager_name) {
+    h->data_manager_name = 0;
+  }
+  if (h->seat_name && name == h->seat_name) {
+    h->seat_name = 0;
+    invalidate_input_serial(h, INPUT_SERIAL_NONE);
+    h->pointer_inside = 0;
+    h->pointer_focus_current = 0;
+    h->keyboard_focus_current = 0;
+  }
   for (int i = 0; i < OUTPUT_CAPACITY; ++i)
     if (h->outputs[i].name == name) {
       wl_output_destroy(h->outputs[i].proxy);
@@ -453,6 +859,9 @@ static void release_renderer(struct host *h, int terminate_display) {
  * to the externally owned wl_display alive for the host lifetime. */
 static void release_gpu(struct host *h) { release_renderer(h, 0); }
 static void release_window(struct host *h) {
+  invalidate_input_serial(h, INPUT_SERIAL_NONE);
+  h->pointer_focus_current = 0;
+  h->keyboard_focus_current = 0;
   if (h->frame) {
     wl_callback_destroy(h->frame);
     h->frame = NULL;
@@ -475,6 +884,35 @@ static void release_window(struct host *h) {
 static void release_host(struct host *h) {
   release_window(h);
   release_renderer(h, 1);
+  for (int i = 0; i < SOURCE_TRANSFER_CAPACITY; ++i) {
+    if (h->transfers[i].fd >= 0)
+      close(h->transfers[i].fd);
+    h->transfers[i].fd = -1;
+    h->transfers[i].source = NULL;
+  }
+  while (h->sources) {
+    struct clipboard_source *source = h->sources;
+    h->sources = source->next;
+    if (source->proxy)
+      wl_data_source_destroy(source->proxy);
+    free(source->bytes);
+    free(source);
+  }
+  free(h->clipboard_result);
+  if (h->selection_offer)
+    wl_data_offer_destroy(h->selection_offer);
+  if (h->pending_offer && h->pending_offer != h->selection_offer)
+    wl_data_offer_destroy(h->pending_offer);
+  if (h->data_device)
+    wl_data_device_destroy(h->data_device);
+  if (h->data_manager)
+    wl_data_device_manager_destroy(h->data_manager);
+  if (h->cursor_surface)
+    wl_surface_destroy(h->cursor_surface);
+  if (h->cursor_theme)
+    wl_cursor_theme_destroy(h->cursor_theme);
+  if (h->shm)
+    wl_shm_destroy(h->shm);
   if (h->pointer)
     wl_pointer_destroy(h->pointer);
   if (h->keyboard)
@@ -519,12 +957,21 @@ static int display_failure(struct host *h, const char *where) {
 static int pump(struct host *h, int timeout) {
   if (h->error)
     return h->error;
+  for (int i = 0; i < SOURCE_TRANSFER_CAPACITY; ++i)
+    if (h->transfers[i].fd >= 0 && timeout > 16)
+      timeout = 16;
   while (wl_display_prepare_read(h->display) != 0) {
     if (wl_display_dispatch_pending(h->display) < 0)
       return display_failure(h, "dispatch_pending/prepare");
     if (h->error)
       return h->error;
+    flush_transfers(h);
   }
+  /* Dispatching pending source callbacks above can add a transfer after the
+   * initial timeout check. Bound the next wake so nonblocking writes resume. */
+  for (int i = 0; i < SOURCE_TRANSFER_CAPACITY; ++i)
+    if (h->transfers[i].fd >= 0 && timeout > 16)
+      timeout = 16;
   int flush = wl_display_flush(h->display);
   if (flush < 0 && errno != EAGAIN) {
     wl_display_cancel_read(h->display);
@@ -569,6 +1016,7 @@ static int pump(struct host *h, int timeout) {
   }
   if (wl_display_dispatch_pending(h->display) < 0)
     return display_failure(h, "dispatch_pending");
+  flush_transfers(h);
   return h->error;
 }
 static int settle_frame(struct host *h) {
@@ -704,6 +1152,8 @@ static int32_t start_impl(int32_t abi) {
   h->egl = EGL_NO_DISPLAY;
   h->context = EGL_NO_CONTEXT;
   h->egl_surface = EGL_NO_SURFACE;
+  for (int i = 0; i < SOURCE_TRANSFER_CAPACITY; ++i)
+    h->transfers[i].fd = -1;
   h->display = wl_display_connect(NULL);
   h->wake_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   h->xkb = xkb_context_new(0);
@@ -720,6 +1170,9 @@ static int32_t start_impl(int32_t abi) {
     release_host(h);
     return -(s ? s : GPUI_UNSUPPORTED);
   }
+  /* Cursor assets are optional compositor services. A missing theme does not
+   * prevent windows from starting; require_capability reports the absence. */
+  (void)load_cursors(h);
   h->token = next_host++;
   active = h;
   return h->token;
@@ -1062,4 +1515,198 @@ int32_t gpui_recover(int32_t token, int32_t window) {
   if (s)
     release_gpu(h);
   return s;
+}
+int32_t gpui_capability(int32_t token, int32_t capability) {
+  struct host *h;
+  int s = check(token, &h);
+  if (s)
+    return s;
+  if (capability == 1)
+    return h->data_device && h->data_manager ? GPUI_OK : GPUI_UNSUPPORTED;
+  if (capability == 2)
+    return h->pointer && h->cursor_surface && h->cursors[0] && h->cursors[1] &&
+                   h->cursors[2]
+               ? GPUI_OK
+               : GPUI_UNSUPPORTED;
+  return GPUI_UNSUPPORTED;
+}
+static int64_t monotonic_milliseconds(void) {
+  struct timespec now;
+  if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+    return -1;
+  return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+}
+int32_t gpui_read_clipboard(int32_t token) {
+  struct host *h;
+  int s = check(token, &h);
+  if (s)
+    return s;
+  free(h->clipboard_result);
+  h->clipboard_result = NULL;
+  h->clipboard_result_length = 0;
+  if (!h->window || !h->data_device || !h->selection_offer)
+    return GPUI_UNSUPPORTED;
+  const char *mime = h->clipboard_has_utf8
+                         ? "text/plain;charset=utf-8"
+                         : (h->clipboard_has_plain ? "text/plain" : NULL);
+  if (!mime)
+    return GPUI_UNSUPPORTED;
+  int descriptors[2];
+  if (pipe(descriptors) != 0)
+    return GPUI_RESOURCE;
+  if (fcntl(descriptors[0], F_SETFD, FD_CLOEXEC) < 0 ||
+      fcntl(descriptors[1], F_SETFD, FD_CLOEXEC) < 0) {
+    close(descriptors[0]);
+    close(descriptors[1]);
+    return GPUI_NATIVE;
+  }
+  int flags = fcntl(descriptors[0], F_GETFL);
+  if (flags < 0 || fcntl(descriptors[0], F_SETFL, flags | O_NONBLOCK) < 0) {
+    close(descriptors[0]);
+    close(descriptors[1]);
+    return GPUI_NATIVE;
+  }
+  wl_data_offer_receive(h->selection_offer, mime, descriptors[1]);
+  close(descriptors[1]);
+  if (wl_display_flush(h->display) < 0 && errno != EAGAIN) {
+    close(descriptors[0]);
+    return display_failure(h, "clipboard_flush");
+  }
+  uint8_t *bytes = malloc((size_t)CLIPBOARD_LIMIT + 1);
+  if (!bytes) {
+    close(descriptors[0]);
+    return GPUI_RESOURCE;
+  }
+  int64_t start = monotonic_milliseconds();
+  if (start < 0) {
+    free(bytes);
+    close(descriptors[0]);
+    return GPUI_NATIVE;
+  }
+  size_t length = 0;
+  int complete = 0;
+  while (!complete) {
+    for (;;) {
+      ssize_t count = read(descriptors[0], bytes + length,
+                           (size_t)CLIPBOARD_LIMIT + 1 - length);
+      if (count > 0) {
+        length += (size_t)count;
+        if (length > CLIPBOARD_LIMIT) {
+          close(descriptors[0]);
+          free(bytes);
+          return GPUI_RESOURCE;
+        }
+      } else if (count == 0) {
+        complete = 1;
+        break;
+      } else if (errno == EINTR) {
+        continue;
+      } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        break;
+      } else {
+        close(descriptors[0]);
+        free(bytes);
+        return GPUI_NATIVE;
+      }
+    }
+    if (complete)
+      break;
+    int64_t now = monotonic_milliseconds();
+    if (now < 0 || now - start >= CLIPBOARD_TIMEOUT_MS) {
+      close(descriptors[0]);
+      free(bytes);
+      return GPUI_BUSY;
+    }
+    s = pump(h, 10);
+    if (s) {
+      close(descriptors[0]);
+      free(bytes);
+      return s;
+    }
+  }
+  close(descriptors[0]);
+  h->clipboard_result = bytes;
+  h->clipboard_result_length = length;
+  return GPUI_OK;
+}
+int32_t gpui_clipboard_length(int32_t token) {
+  struct host *h;
+  int s = check(token, &h);
+  if (s)
+    return -s;
+  if (!h->clipboard_result || h->clipboard_result_length > INT_MAX)
+    return -GPUI_STALE;
+  return (int32_t)h->clipboard_result_length;
+}
+int32_t gpui_clipboard_copy(int32_t token, uint8_t *bytes, int32_t capacity) {
+  struct host *h;
+  int s = check(token, &h);
+  if (s)
+    return s;
+  if (!h->clipboard_result || capacity < 0 ||
+      (size_t)capacity < h->clipboard_result_length ||
+      (h->clipboard_result_length && !bytes))
+    return GPUI_INVALID;
+  if (h->clipboard_result_length)
+    memcpy(bytes, h->clipboard_result, h->clipboard_result_length);
+  return GPUI_OK;
+}
+int32_t gpui_write_clipboard(int32_t token, const uint8_t *bytes,
+                             int32_t length) {
+  struct host *h;
+  int s = check(token, &h);
+  if (s)
+    return s;
+  if (h->state)
+    return GPUI_STOPPING;
+  if (!h->window || !h->data_device || !h->data_manager)
+    return GPUI_UNSUPPORTED;
+  if (!has_input_serial(h))
+    return GPUI_UNSUPPORTED;
+  if (length < 0 || length > CLIPBOARD_LIMIT || (length && !bytes) ||
+      (length && memchr(bytes, 0, (size_t)length)))
+    return length > CLIPBOARD_LIMIT ? GPUI_RESOURCE : GPUI_INVALID;
+  size_t source_count = 0;
+  for (struct clipboard_source *item = h->sources; item; item = item->next)
+    ++source_count;
+  if (source_count >= 16)
+    return GPUI_BUSY;
+  struct clipboard_source *source = calloc(1, sizeof(*source));
+  if (!source)
+    return GPUI_RESOURCE;
+  source->bytes = malloc(length ? (size_t)length : 1);
+  if (!source->bytes) {
+    free(source);
+    return GPUI_RESOURCE;
+  }
+  if (length)
+    memcpy(source->bytes, bytes, (size_t)length);
+  source->length = (size_t)length;
+  source->host = h;
+  source->proxy = wl_data_device_manager_create_data_source(h->data_manager);
+  if (!source->proxy) {
+    free(source->bytes);
+    free(source);
+    return GPUI_RESOURCE;
+  }
+  wl_data_source_add_listener(source->proxy, &source_listener, source);
+  wl_data_source_offer(source->proxy, "text/plain;charset=utf-8");
+  wl_data_source_offer(source->proxy, "text/plain");
+  source->next = h->sources;
+  h->sources = source;
+  wl_data_device_set_selection(h->data_device, source->proxy, h->input_serial);
+  if (wl_display_flush(h->display) < 0 && errno != EAGAIN)
+    return display_failure(h, "clipboard_set_selection");
+  return GPUI_OK;
+}
+int32_t gpui_set_cursor(int32_t token, int32_t cursor) {
+  struct host *h;
+  int s = check(token, &h);
+  if (s)
+    return s;
+  if (!h->window)
+    return GPUI_UNSUPPORTED;
+  if (cursor < 0 || cursor >= 3)
+    return GPUI_INVALID;
+  return apply_cursor(h, cursor);
 }

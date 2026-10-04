@@ -16,9 +16,27 @@ Still required before this packet is complete:
 
 - concrete MCP wire framing/transport host and protocol-version negotiation
 - cancellation/disconnect handling around in-flight operations
-- explicit retry/de-duplication contract where supported
 - browser/native topology smoke for an actual MCP transport endpoint
 - generated artifact drift policy beyond in-memory canonical snapshots
+
+## In-process adapter and request replay update — 2026-10-04
+
+The optional adapter now provides session-local `call_tool_with_request_id`
+duplicate suppression. It fingerprints a validated owned input snapshot,
+reserves IDs before synchronous handler execution, rejects conflicting and
+reentrant duplicates, rechecks registry liveness/availability/policy before
+every replay, and retains at most 128 outcomes with a 256 KiB result cap.
+Large successful results keep a no-reexecution tombstone. Tests cover policy
+revocation, teardown, mutable input aliasing, nested same-ID calls, close during
+execution, and large outcomes. This is bounded in-process behavior; it does not
+provide durable or cross-process exactly-once execution, and synchronous
+handlers cannot be interrupted after starting.
+
+Inventory/schema JSON remains transport-neutral metadata. The current adapter
+does not implement MCP wire framing or negotiation; scalar capability schemas
+must be wrapped into MCP's object-shaped wire inputs by a future host adapter.
+Protocol framing, connection cancellation, actual MCP endpoint smoke, and
+generated artifact drift checks remain open.
 
 # Generated API and MCP adapters from semantic capabilities
 

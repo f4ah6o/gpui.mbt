@@ -3,7 +3,7 @@
 Status: open
 Model: unknown
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-03
+Updated: 2026-10-04
 
 ## Goal
 
@@ -194,3 +194,19 @@ coordinates, resize, close policy, wrong-thread/stale rejection and churn.
 MoonBit smoke verifies two GPU frames, resize and clean close. This is local
 evidence; new CI workflows have not yet run. No support tier or production
 release gate has been promoted.
+
+## Implementation progress — 2026-10-04
+
+The implemented boundary and open evidence are summarized in
+[docs/macos-native.md](../../docs/macos-native.md). The native E2E source now
+also injects renderer resource loss, exercises explicit Metal device/queue/
+pipeline recreation and layer rebinding, then checks the following frame by
+pixel readback. The manual self-hosted Metal workflow is configured, but its
+runtime result has not been observed; renderer recovery remains unadvertised.
+
+Native clipboard and cursor APIs are implemented, while clipboard/cursor smoke,
+real multi-display DPI movement, Japanese IME/text shaping, accessibility,
+menus, cross-thread command completion, full multi-window focus/display E2E,
+sustained resource-growth evidence, and performance evidence remain open. No
+support tier or release gate is promoted by source tests or workflow
+configuration alone.

@@ -2,7 +2,7 @@
 
 Status: open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-03
+Updated: 2026-10-04
 
 ## Goal
 
@@ -385,8 +385,9 @@ flex-tree layout, element hit testing, focus, common event ingress, and
 `SceneSnapshot` v1 quad data. The host owns the canvas, CSS-pixel/DPR measurement,
 pointer and keyboard callbacks, focus/visibility/lifecycle listeners, and
 on-demand `requestAnimationFrame` presentation. Its current capability report
-keeps native top-level windows, clipboard, cursor, IME, accessibility, renderer
-recovery, and worker commands unavailable.
+keeps native top-level windows, clipboard, cursor, IME, a general accessibility
+bridge, renderer recovery, and worker commands unavailable; it separately
+reports the fixture-only ARIA adapter.
 
 The local build and all-target check/test suites pass. A pinned Chromium smoke
 test covers rendered Canvas 2D output, pointer/focus input, live viewport/DPR
@@ -402,3 +403,45 @@ This is the first JavaScript proof slice only. This packet remains open for CI
 browser evidence, WasmGC and Wasm browser targets, broader input and text
 services, WebGPU, accessibility, renderer recovery, native/backend conformance,
 and the production gates above.
+
+## Browser migration bridge slice — 2026-10-04
+
+The browser proof now includes wheel-to-scroll event translation, a
+fixture-specific ARIA proxy for the app-provided button descriptions, and a
+migration-only DOM editor placed from the app's reserved logical region. The
+island host reports input ownership, preserves legacy ownership while focus
+moves between its controls, and returns focus to the canvas when hidden or
+disposed. The app fixture registers one External counter write; GUI, direct,
+and in-process MCP adapter calls reach that same typed handler and app-owned
+entity, while the normal `Context.observe` path updates the rendered counter
+quad. The MCP call is only a local semantic adapter seam, not wire transport.
+
+The portable host-service package and JS Electron/Tauri adapters are default
+deny, use decimal-string request/scope IDs, validate copied bounded values, and
+discard stale/cancelled completions. Electron and Tauri examples have empty
+operation/command grants. Contract tests use fake IPC/invoke functions; no real
+Electron main process or Tauri runtime is part of this change. The expanded
+Chromium smoke is configured to check pointer/wheel/focus, visible redraw from
+GUI/direct/MCP calls, island focus ownership and teardown, DPR/lifecycle, and
+repeated remount. Its first hosted run
+([37186910745](https://github.com/f4ah6o/gpui.mbt/actions/runs/37186910745))
+installed Chromium and completed the Vite build and watcher check, then failed
+the direct-counter pixel assertion. This was a test timing race: it observed
+the synchronous app-model update before the scheduled animation-frame paint.
+The smoke now waits for the actual sampled canvas pixel to change before
+checking both direct and MCP redraws. Corrected run
+([37187979407](https://github.com/f4ah6o/gpui.mbt/actions/runs/37187979407))
+at head [`1dfad6a`](https://github.com/f4ah6o/gpui.mbt/commit/1dfad6a) passed
+the `verify-and-package` job, including all-target
+checks/tests, Vite+ checks, dev-watch and source-map exercise, browser build,
+and the real Chromium smoke. The smoke passed Canvas2D snapshot rendering,
+DPR updates, pointer/wheel/focus input, GUI/direct/MCP redraw, ARIA and island
+focus ownership, resize and hidden-page scheduling, context-loss handling, and
+repeated teardown. It packaged the Pages artifact; the deploy job was skipped
+for the pull request.
+
+This is execution evidence for the experimental JavaScript Canvas 2D slice,
+not production browser support. WasmGC/Wasm browser targets, WebGPU, Japanese
+IME and broader text input, general accessibility, clipboard/cursor services,
+renderer recovery, native/backend conformance, and worker commands remain
+open.

@@ -4,14 +4,17 @@ Status: M1 core plus M2 layout/element and M3 scene foundation tests; current he
 
 The current test coverage exercises the headless `primitives` value layer,
 core app/entity/scheduler lifecycle, deterministic flex-line and recursive
-flex-tree layout, the flat `element` tree, ordered `scene` commands, and the
+flex-tree layout, the flat `element` tree, a declarative Render/IntoElement and
+request-layout/prepaint/paint path, ordered `scene` commands, and the
 implemented versioned `SceneSnapshot` v1 subset. It includes deterministic
 value and lifecycle cases, two seeded rectangle properties, a seeded entity
 lifecycle reference-model property, seeded flex-line and flex-tree geometry/order
-properties, and exact hit-test/dispatch/focus/scene-order tests. Recursive auto
-container sizing, Render/IntoElement lifecycle, full-schema scene golden
-fixtures, render/text, mutation testing, and native integration tests remain
-unimplemented. Event/focus PBT exercises route reversal, global
+properties, and exact element lifecycle, hit-test/dispatch/focus/scene-order tests.
+Full-schema scene golden fixtures, text/path/image rendering, mutation coverage
+beyond `primitives/`, and broader native integration assertions remain
+unimplemented. Bounded recursive auto container sizing is now included in the
+active layout test surface.
+Event/focus PBT exercises route reversal, global
 stop-propagation, and focus normalization after subtree removal; scene PBT
 exercises strict clip-stack nesting and rejects unclosed stacks before snapshots
 are emitted. Deterministic callback tests cover capture/bubble execution and
@@ -162,10 +165,37 @@ The ratchet is:
    critical core packages. Report property-only kills separately and convert
    useful shrunk witnesses into permanent regression examples.
 
-No mutation tool or baseline is active in M1. The source is now sufficient for
-an initial primitives mutation study, but the release ledger remains pending
-until a deterministic report, baseline revision, and reviewed survivor list
-exist.
+The repository pins `turtles` 0.3.0 in
+[`mutation-primitives.yml`](../.github/workflows/mutation-primitives.yml) and
+selects the stable primitives core in [`turtles.toml`](../turtles.toml). The
+job runs the normal deterministic and fixed-seed property tests in turtles'
+isolated copy and retains schema-2 JSON plus survivor/timeout diffs. The first
+baseline is explicitly non-blocking (`--fail-under 0`): unresolved mutants are
+reported for review while turtles setup failures and the independent report
+audit remain fatal. The audit rejects empty/unviable-only results, wrong scope,
+missing operator groups, skipped source files, inconsistent scores, and missing
+survivor diffs. This first scope is limited to `primitives/` and five configured
+operators. Pinned turtles 0.3.0 does not expose the target-selection option
+documented by current upstream main, so the job uses Moon's default test target.
+No reviewed per-package/operator baseline or all-target mutation result has
+been accepted; the release ledger stays pending.
+
+The first local observation classified 145 viable mutants: 115 killed, 30
+survived, and no timeouts or unviable mutants (79.310%). It ran at revision
+`731981259efe3815de06d3420163f3b842e854a0` from a dirty shared worktree; the
+audited source-manifest digest is
+`cd6c3cec88c5fcba97ec2325a798fe5cc47141f99c45d467bf6b45d6c353d6f1`. This is a
+pre-commit observation, not an accepted score ratchet; the 30 survivors remain
+unreviewed and the release gate stays pending.
+
+The hosted [PR mutation run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37186910719)
+also completed successfully. It reported 145 viable mutants, 115 killed,
+30 survived, no timeouts or unviable mutants, and a 79.310% score; the schema-2
+report audit passed. The run was for PR head
+`c9a119c0f4f501d1146d4f9932551f3d446296f4`, checked out as GitHub's synthetic
+merge commit `d29982bedcd51839c9da00c37e0a0b3a5870642a`. The 30 survivors remain
+unreviewed. This is a hosted observation, not a reviewed or repeated score
+ratchet or clean release-candidate baseline; the release gate stays pending.
 
 ## CI split
 
@@ -174,13 +204,16 @@ target builds, raster goldens, and native E2E. Future scheduled stress rotates
 and records seeds for long command sequences, resource churn, repeated window
 lifecycle, large text/layout fixtures, and renderer recovery.
 
-The PR workflow runs the Python contract-validator unit tests, document and
-ledger validation, `moon fmt --check`, and warning-denied all-target MoonBit
-checks and tests. It covers the present M1 core and M2/M3 headless foundation
-packages. It does not run expanded
-PBT, turtles, native integration, visual goldens, stress suites, or performance
-baselines, and it cannot satisfy any production release gate. Check the exact
-workflow commands in [`contracts.yml`](../.github/workflows/contracts.yml).
+The contracts workflow runs the Python contract-validator unit tests,
+document/ledger validation, `moon fmt --check`, and warning-denied all-target
+MoonBit checks and tests. A separate PR mutation workflow runs the selected
+primitives scope and retains its JSON and survivor diffs. The Ubuntu native
+workflow also retains an opt-in recovery-to-first-frame timing report. These
+jobs do not cover expanded PBT, renderer goldens, broad stress workloads, or a
+comparable Tier 1 performance baseline and cannot satisfy production release
+gates. See [`contracts.yml`](../.github/workflows/contracts.yml),
+[`mutation-primitives.yml`](../.github/workflows/mutation-primitives.yml), and
+[`ubuntu-native.yml`](../.github/workflows/ubuntu-native.yml) for exact commands.
 
 
 ## Event/focus and clip invariant implementation update — 2026-10-03

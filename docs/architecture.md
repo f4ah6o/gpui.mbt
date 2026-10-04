@@ -1,6 +1,6 @@
 # Architecture and dependency contract
 
-Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; the shared platform contract and first Ubuntu/Wayland/GLES native slice are implemented; a JS browser proof of concept is in progress; complete native and browser services remain planned.
+Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; experimental macOS, Ubuntu/Wayland/GLES, and Windows native slices are present; the JS browser proof includes an in-process capability/MCP seam; complete native, browser, and wire-protocol services remain planned.
 
 This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, `element/`, `capability/`, and optional `mcp/`, plus native and example adapters. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
 
@@ -33,6 +33,7 @@ application API / facade
 
 semantic capability ──> diagnostics
 optional MCP adapter ──> semantic capability + diagnostics
+migration host-service bridge ──> semantic capability + diagnostics
 
 target backend ──> platform API + renderer API + scene
 target FFI     ──> native OS / graphics / text APIs
@@ -59,14 +60,24 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `scene/` | stable, platform-neutral paint commands and ordering | `primitives/` | live GPU handles or backend resource objects |
 | `capability/` | typed semantic operation descriptors, schema/value projection, registry, GUI binding, deterministic manifest generation | `diagnostics/` | renderer/native/MCP transport state, host handles, duplicated domain handlers |
 | `mcp/` | optional MCP-facing inventory/dispatch adapter over semantic capabilities | `capability/`, `diagnostics/` | application state ownership, domain handlers, privileged host APIs |
+| `migration/host_services/` | portable service requests/completions, logical scopes, cancellation, bounded queues, and default-deny service policy for Electron/Tauri migration | `capability/`, `diagnostics/` | DOM, process APIs, native handles, or direct privileged service execution |
 | `renderer API` | render submission and resource-lifetime contract | `scene/`, `primitives/` | a concrete renderer vocabulary in public app APIs |
 | `platform API` | window, input, display, text, clipboard, timer, accessibility contracts | `core/`, `diagnostics/`, `primitives/`, renderer API | platform-specific types in core/facade signatures |
 | `platform/` (first slice) | shared Backend trait, logical window IDs, copied ordered events | `scene/`, `diagnostics/`, `primitives/` | native pointers or OS types |
 | `ubuntu/` | Wayland host/window, integer scale, basic input, EGL/GLES quad renderer | `platform/`, `scene/`, `diagnostics/`, `primitives/`, system native APIs | native handles in public application signatures |
 | `examples/ubuntu/` | native executable consuming the shared scene/window contracts | `ubuntu/`, `platform/`, `scene/`, `diagnostics/`, `primitives/`, standard env | private backend tokens |
+| `windows/` | Win32 window/event loop, scale events, basic input, D3D11 hardware-or-WARP quad presentation | `platform/`, `scene/`, `diagnostics/`, `primitives/`, Windows system APIs | native handles in public application signatures |
+| `examples/windows/` | native executable consuming the shared scene/window contracts | `windows/`, `platform/`, `scene/`, `diagnostics/`, `primitives/`, standard env | private backend tokens |
 | target backend / FFI | event loop and native resources/adapters | platform and renderer APIs; native APIs | types that leak upward through the public facade |
 
-The current runtime edges include `primitives -> stdlib`, `diagnostics -> stdlib`, `core -> stdlib + diagnostics`, `capability -> diagnostics`, and `mcp -> capability + diagnostics`; the executable allowlist also records the current layout, scene, element, native, and example edges. The browser app fixture is portable and the JS host adapter is a leaf above it. The executable dependency check covers these boundaries and test-only imports; new runtime packages still require an explicit layer entry and reject unlisted edges. The dependency direction must remain acyclic; cross-cutting code belongs in a lower-level contract rather than a reverse import.
+The current runtime edges include `primitives -> stdlib`, `diagnostics -> stdlib`, `core -> stdlib + diagnostics`, `capability -> diagnostics`, `mcp -> capability + diagnostics`, and `migration/host_services -> capability + diagnostics`; the executable allowlist also records current layout, scene, element, native, and example edges. The browser app fixture is portable and can use the semantic registry plus an in-process optional MCP dispatch seam; the JS host adapter remains a leaf above it. The host-service bridge queues bounded JSON-compatible requests and completions over copied framework values; browser/Electron/Tauri adapters must enforce their own permission and host allowlists before acting. The executable dependency check covers these boundaries and test-only imports; new runtime packages still require an explicit layer entry and reject unlisted edges. The dependency direction must remain acyclic; cross-cutting code belongs in a lower-level contract rather than a reverse import.
+
+The optional MCP package currently generates transport-neutral inventory and
+routes in-process tool/resource calls back through the registry. It has no wire
+framing or protocol negotiation. Its scalar input schemas are not directly
+wire-ready MCP tool schemas; a future host must wrap inputs as MCP objects and
+unwrap them before registry dispatch, while preserving the declared semantic
+schema at the boundary.
 
 ## Async and application scheduling
 
@@ -84,7 +95,7 @@ The current executor uses an in-repository FIFO and deterministic timer list. Na
 
 ## Initial layout boundary
 
-The first layout engine supports a deliberately bounded flex subset. It does not claim CSS or full GPUI style compatibility. The initial `layout/` package now implements deterministic layout for one definite row/column flex line, including points/percent/auto child dimensions, gap, padding/border, grow/shrink, one-pass min/max clamping, justification/alignment, stable child order, and explicit overflow reporting. Recursive auto-sized containers, intrinsic measure callbacks, element-tree integration, and the broader style surface remain pending.
+The first layout engine supports a deliberately bounded flex subset. It does not claim CSS or full GPUI style compatibility. The initial `layout/` package implements deterministic layout for one definite row/column flex line, including points/percent/auto child dimensions, gap, padding/border, grow/shrink, one-pass min/max clamping, justification/alignment, stable child order, and explicit overflow reporting. Recursive flex-tree layout is available beneath a definite root viewport. The `element/` package exposes immutable element builders, open `Render` and `IntoElement` traits, and a headless request-layout → prepaint → paint path: request-layout resolves the recursive boxes, prepaint builds the live hit-test tree, and paint emits the current quad scene. Nested auto-sized containers in this subset measure their flow axis from child bases and gaps, and their cross axis from the maximum child size; insets and min/max bounds are applied. Percentages against an auto-measured axis are rejected as indefinite, while orthogonal percentages against a definite axis remain supported. Element nesting is bounded at 64. The current recursive algorithm repeatedly scans its flat pre-order input and nested auto measurement can rescan descendants, giving quadratic worst-case work in node count; the depth bound protects stack use only, and performance has not been benchmarked. Intrinsic measurement callbacks, invalidation, and the broader style surface remain pending.
 
 ### Inputs and outputs
 
@@ -143,6 +154,12 @@ separate renderer interface is deferred. No reverse edge from core, element,
 layout, or scene to a backend is permitted. Native OS dependencies and ABI
 ownership are documented in [macos-native.md](macos-native.md).
 
+The first Windows package uses checked edges `windows -> platform/scene/diagnostics/primitives`
+and `examples/windows -> windows/platform/scene/diagnostics/primitives`. Its
+Win32/D3D11 calls remain in the native backend and C shim; this experimental
+slice does not establish a Windows support tier. Its native dependency and
+smoke boundaries are documented in [windows-native.md](windows-native.md).
+
 ## JavaScript browser proof edges
 
-The browser proof adds `examples/browser_app -> core/diagnostics/element/layout/platform/primitives/scene` and `examples/browser -> examples/browser_app/diagnostics/platform/primitives`. The first package is host-neutral and compiles on all configured targets; the second is JavaScript-only. Its DOM and Canvas implementation remains in the static host bootstrap, below the adapter boundary. The package audit has a regression test for this one-way direction; see the [browser proof guide](browser-demo.md) for scope and limits.
+The browser proof adds `examples/browser_app -> core/diagnostics/element/layout/platform/primitives/scene/capability/mcp` and `examples/browser -> examples/browser_app/diagnostics/platform/primitives`. The first package is host-neutral and compiles on all configured targets; its MCP seam is in-process dispatch through the registry, not MCP wire transport. The second is JavaScript-only. Its DOM and Canvas implementation remains in the static host bootstrap, below the adapter boundary. The package audit has a regression test for this one-way direction; see the [browser proof guide](browser-demo.md) for scope and limits.

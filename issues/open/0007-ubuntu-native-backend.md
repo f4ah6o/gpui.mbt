@@ -2,7 +2,7 @@
 
 Status: in progress — first native slice implemented; remaining gates open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-03
+Updated: 2026-10-04
 
 ## Goal
 
@@ -198,8 +198,41 @@ and evidence are in [docs/ubuntu.md](../../docs/ubuntu.md).
   recreation, stale generations, FD stability, and terminal compositor disconnect
   checks implemented. Full fault/recovery and sustained GPU memory gates pending.
 - G: Ubuntu 24.04 x86-64 / Weston 13 / Mesa llvmpipe CI configured at integer
-  scales 1 and 2, with MoonBit 0.10.14+7d59c7ec9. Hosted Ubuntu evidence and
-  real GNOME/Mutter, Japanese IME, accessibility and production gates pending.
+  scales 1 and 2, with MoonBit 0.10.14+7d59c7ec9. The [hosted Ubuntu run
+  37188934281](https://github.com/f4ah6o/gpui.mbt/actions/runs/37188934281)
+  passed MoonBit E2E (4/4), C lifecycle, pixel-readback, input-order, scale,
+  recovery and resource checks at both scales, and collected 30 timing samples
+  per scale. PR head
+  `087e54cb9fde48b56ed5d6d50d564b43c42fa803` was tested as synthetic merge
+  `871fb17` into `731981259efe3815de06d3420163f3b842e854a0`. The report completed
+  with comparison `no_baseline`; this is diagnostic evidence, not a reviewed
+  performance baseline or pass. Real GNOME/Mutter, Japanese IME, accessibility
+  and production gates remain pending.
 
 Local execution used Debian 13 / Weston 14.0.2; it does not establish Ubuntu
 support. No X11/XWayland, Tier 1 or general Linux support claim is made.
+
+## Implementation progress — 2026-10-04
+
+The first slice now also implements Wayland data-device UTF-8 clipboard read
+and write, with bounded nonblocking pipe transfer and a real input-serial
+requirement for writes, plus arrow/hand/text cursors gated on pointer-enter
+focus. Details are in [docs/ubuntu.md](../../docs/ubuntu.md). Helper and
+portable tests pass locally; the Weston native E2E could not run in this
+environment because the headless compositor failed to create its socket. The
+first Ubuntu CI run confirmed Weston 13 starts and the transfer helper
+passes, but MoonBit E2E failed on unconditional clipboard/cursor capability
+requirements. A subsequent run passed MoonBit E2E 4/4, then exposed the same
+assumption in the C harness. Both E2E layers now check typed optional-service
+status. The latest run [37188934281](https://github.com/f4ah6o/gpui.mbt/actions/runs/37188934281)
+passed native E2E at both scales and produced a complete 30-sample-per-scale
+report with `no_baseline`. It tested PR head
+`087e54cb9fde48b56ed5d6d50d564b43c42fa803` as synthetic merge `871fb17`; this
+single headless run is not a reviewed performance baseline. Local Debian
+evidence is not an Ubuntu support claim.
+
+Still open are cross-client clipboard roundtrip and visible cursor smoke,
+fractional scaling/public display metadata, Japanese IME/text shaping,
+accessibility, menus, cross-thread enqueue, automatic recovery/reconnect and
+sustained resource/performance evidence. X11/XWayland, real Ubuntu desktop
+validation, and all Tier 1 gates remain pending.

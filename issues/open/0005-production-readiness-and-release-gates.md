@@ -246,3 +246,43 @@ No production release ledger gate is promoted by this work. Full
 Render/IntoElement lifecycle, complete scene schema, text, native Tier 1,
 mutation, visual, performance, stability, security-boundary, supply-chain, and
 clean-consumer evidence remain pending. This issue therefore remains open.
+
+
+## Mutation and Ubuntu timing diagnostics — 2026-10-04
+
+The repository now has a pinned `turtles` 0.3.0 job for the selected
+`primitives/` scope. It uses `--fail-under 0` for the initial non-blocking
+observation, while a separate audit requires a non-empty valid schema-2 report,
+the configured operator coverage, consistent outcome counts/score, source
+fingerprints, and survivor/timeout diffs. Setup failures and audit failures
+remain fatal. The first complete local run passed turtles' pristine `moon check`
+and baseline tests, then classified 145 viable mutants: 115 killed, 30 survived,
+zero timeouts or unviable mutants, for an observed score of 79.310%. Operator
+results were arithmetic 16/20, boolean 16/28, comparison 34/37, condition
+45/56, and literal 4/4. The report audit verified counts and retained all 30
+survivor diffs. It was captured at HEAD
+`731981259efe3815de06d3420163f3b842e854a0` from a dirty shared worktree with
+audited source-manifest SHA-256
+`cd6c3cec88c5fcba97ec2325a798fe5cc47141f99c45d467bf6b45d6c353d6f1`. This
+single observation does not establish a reviewed mutation ratchet; the release
+mutation gate remains pending.
+
+Ubuntu CI now emits recovery-to-first-frame samples and stores raw values plus
+runner, renderer, toolchain, source-tree, and fixture provenance. The local
+attempt could not create the Wayland AF_UNIX socket and produced no measurements.
+These observations do not establish reviewed mutation or performance passes;
+the release ledger remains pending until comparable successful evidence is
+available and reviewed.
+
+
+## Hosted mutation observation — 2026-10-04
+
+The [PR mutation run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37186910719)
+completed successfully for PR head
+`c9a119c0f4f501d1146d4f9932551f3d446296f4`; Actions tested synthetic merge
+`d29982bedcd51839c9da00c37e0a0b3a5870642a`. It reported 145 viable mutants,
+115 killed, 30 survived, zero timeouts or unviable mutants (79.310%), and a
+passing schema-2 report audit. The survivors have not yet been reviewed. This
+single observation is not a reviewed/repeated mutation baseline or clean
+release-candidate result; mutation and all production release gates remain
+pending.

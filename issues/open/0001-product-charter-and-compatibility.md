@@ -218,3 +218,32 @@ and renderer integration remain open.
 unfixed because their MoonBit API shape is still undecided. Native platform,
 text, accessibility, renderer, mutation/visual evidence, and production gates
 also remain open, so this issue stays in `issues/open`.
+
+
+## M2 element lifecycle update — 2026-10-04
+
+The element package now defines open MoonBit `Render` and `IntoElement` traits,
+an immutable declarative element builder, and an executable headless lifecycle:
+`Element::request_layout(viewport)` resolves a recursive flex tree,
+`RequestedLayout::prepaint()` creates an absolute-bounds `ElementTree` ready for
+hit testing, and `Prepainted::paint()` emits the existing platform-neutral quad
+scene. `Prepainted::paint_snapshot(scale)` freezes those quads into the current
+versioned SceneSnapshot v1 subset. Element traversal is iterative and rejects
+nesting deeper than 64 before calling the recursive layout engine. A
+deterministic test covers a custom `Render` view through bounds, hit testing,
+ordered paint output, and snapshot validation.
+
+This closes the API-shape decision for the current bounded slice; it does not
+claim upstream conformance or complete M2/M3. The root viewport remains
+definite. Auto container dimensions now derive the main-axis sum of child
+bases and gaps and the cross-axis maximum, adding container insets; min/max
+constraints bound measured child sizes, and percentages on an auto-measured
+axis fail as indefinite. A seeded 256-case property covers nested row/column
+auto sizing. Invalidation, text/path/image painting, renderer submission, full
+scene v1 content, and native rendering remain open. Compatibility stays
+`planned` pending pinned-upstream comparison.
+
+The recursive layout path currently scans the flat preorder node array for
+each container, and nested intrinsic sizing can scan it repeatedly. Its
+worst-case work is quadratic in node count; the 64-level nesting cap protects
+stack usage but does not bound node count or runtime cost.

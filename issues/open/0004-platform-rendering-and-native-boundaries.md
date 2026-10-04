@@ -299,3 +299,27 @@ This does not complete the contracted v1 scene. Quad border/corner data, path
 clips, paths, images, text runs and their resources are still pending, as are
 R1/R2/R3 renderer work, native surfaces/backends, text/IME, accessibility,
 device-loss recovery, and every platform support gate. No platform tier changes.
+
+
+## Headless element lifecycle update — 2026-10-04
+
+The portable element package now supplies a bounded `Render`/`IntoElement`
+surface and an executable request-layout → prepaint → paint sequence. Layout
+uses the recursive flex tree under a definite root viewport and measures auto
+container dimensions from child bases, gaps, min/max constraints, and insets;
+percentages on an auto-measured axis are rejected as indefinite. Prepaint
+builds the live hit-test tree with absolute logical bounds; paint returns the
+platform-neutral quad scene. `paint_snapshot(scale)` freezes those quads into
+the current SceneSnapshot v1 subset for a renderer boundary. The lifecycle
+contains no backend or GPU type and does not change any platform support tier.
+
+The current layout tree has an explicit maximum nesting depth of 64. The
+renderer interface/implementation, non-quad scene items and resources,
+invalidation/damage, software raster oracle, GPU surfaces/recovery, and native
+platform conformance remain pending. The lifecycle and rendering compatibility
+rows remain `planned` until the behavior is compared with the pinned GPUI
+revision and the renderer gates have evidence.
+
+The recursive layout path scans the flat preorder node array per container and
+may repeat scans while measuring nested auto dimensions. Worst-case work grows
+quadratically with node count; the depth limit protects stack use only.

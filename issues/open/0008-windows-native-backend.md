@@ -2,7 +2,7 @@
 
 Status: open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-03
+Updated: 2026-10-04
 
 ## Goal
 
@@ -45,7 +45,8 @@ Acceptance:
 
 - a MoonBit native executable opens one visible Windows window
 - wake/request-exit semantics match the common host contract
-- destroy is idempotent from the framework view
+- repeating destruction of the most recently destroyed window in the same
+  host generation succeeds; other stale window handles are rejected
 - callbacks/messages for destroyed generations cannot revive stale state
 
 ### B. Native GPU surface and first frame
@@ -163,3 +164,25 @@ Do not block first-window success on:
 - Tier 1 production support
 
 Those require separate evidence before support claims are promoted.
+
+## Implementation progress — 2026-10-04
+
+An experimental one-window Win32/DXGI/D3D11 backend and runnable example now
+exist; the implementation and evidence boundary are in
+[docs/windows-native.md](../../docs/windows-native.md). The slice includes
+per-monitor-v2 logical sizing, WARP fallback, basic pointer/keyboard/focus,
+Unicode clipboard, cursors, D3D readback, and synchronized cross-thread
+wake/exit posting during host teardown. Portable MoonBit tests and strict
+MinGW syntax compilation pass locally. The hosted [Windows Server 2025 run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37189457500)
+for PR head `a1f6e523dc41317064c5657179baa20456dcf6b1` passed the MSVC shim build,
+portable tests (6/6), native GPU E2E (1/1), shared backend conformance (1/1),
+and example app smoke. This verifies the experimental one-HWND slice on that
+hosted configuration. The one-window limit and implementation details remain
+as described in the guide; no Windows support tier or production claim is
+promoted by this run.
+
+The one-HWND limit remains. Multi-window behavior, physical multi-monitor DPI
+transitions, Japanese IME/text shaping, accessibility, menus, renderer/device
+loss recovery, external clipboard interoperability, sustained resource
+lifetime, physical-GPU coverage, and performance remain open. No Windows
+support tier or production claim is promoted.

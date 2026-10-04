@@ -272,6 +272,27 @@ pub fn FlexItem::id(self : FlexItem) -> UInt64 {
 }
 
 ///|
+/// Replace the intrinsic fallback used for auto dimensions while preserving
+/// the item's flex factors and min/max constraints.
+pub fn FlexItem::with_intrinsic(
+  self : FlexItem,
+  intrinsic : @primitives.Size,
+) -> FlexItem {
+  {
+    id: self.id,
+    main: self.main,
+    cross: self.cross,
+    intrinsic,
+    grow: self.grow,
+    shrink: self.shrink,
+    min_main: self.min_main,
+    max_main: self.max_main,
+    min_cross: self.min_cross,
+    max_cross: self.max_cross,
+  }
+}
+
+///|
 pub fn FlexItem::with_flex(
   self : FlexItem,
   grow : Double,
@@ -346,8 +367,9 @@ pub fn FlexItem::with_cross_limits(
 }
 
 ///|
-/// A definite flex container. Auto container sizing is deliberately left for
-/// the later recursive tree layer; percent child dimensions are resolvable here.
+/// A definite flex container. Percent child dimensions are resolved against
+/// its definite inner dimensions; recursive auto containers are measured by the
+/// flex-tree layer before this line engine is called.
 pub struct FlexContainer {
   direction : FlowDirection
   size : @primitives.Size

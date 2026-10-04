@@ -92,6 +92,34 @@ extern "C" fn native_present(
 extern "C" fn native_recover(host : Int, window : Int) -> Int = "gpui_recover"
 
 ///|
+#borrow(text)
+extern "C" fn native_write_clipboard(
+  host : Int,
+  text : Bytes,
+  length : Int,
+) -> Int = "gpui_write_clipboard"
+
+///|
+extern "C" fn native_read_clipboard(host : Int) -> Int = "gpui_read_clipboard"
+
+///|
+extern "C" fn native_clipboard_length(host : Int) -> Int = "gpui_clipboard_length"
+
+///|
+#borrow(bytes)
+extern "C" fn native_clipboard_copy(
+  host : Int,
+  bytes : Bytes,
+  capacity : Int,
+) -> Int = "gpui_clipboard_copy"
+
+///|
+extern "C" fn native_set_cursor(host : Int, cursor : Int) -> Int = "gpui_set_cursor"
+
+///|
+extern "C" fn native_capability(host : Int, capability : Int) -> Int = "gpui_capability"
+
+///|
 fn backend_error(
   status : Int,
   operation : String,
@@ -524,7 +552,7 @@ pub fn Host::present(
 
 ///|
 pub fn Host::require_capability(
-  _self : Host,
+  self : Host,
   capability : @platform.Capability,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
   match capability {
@@ -532,32 +560,67 @@ pub fn Host::require_capability(
     | @platform.QuadFrames
     | @platform.PointerKeyboard
     | @platform.RendererRecovery => Ok(())
+    @platform.Clipboard =>
+      outcome(native_capability(self.token, 1), "require_capability")
+    @platform.Cursor =>
+      outcome(native_capability(self.token, 2), "require_capability")
     _ => Err(backend_error(1, "require_capability"))
   }
 }
 
 ///|
-/// Capabilities absent from this first native slice fail observably.
+/// Read the active UTF-8 selection. The Wayland offer is consumed through a
+/// bounded pipe transfer on the owner thread; no process-local cache is used.
 pub fn Host::read_clipboard(
-  _self : Host,
+  self : Host,
 ) -> Result[String, @diagnostics.FrameworkError] {
-  Err(backend_error(1, "read_clipboard"))
+  match outcome(native_read_clipboard(self.token), "read_clipboard") {
+    Err(error) => return Err(error)
+    Ok(_) => ()
+  }
+  let length = native_clipboard_length(self.token)
+  if length < 0 {
+    return Err(backend_error(-length, "read_clipboard"))
+  }
+  if length > 16 * 1024 * 1024 {
+    return Err(backend_error(8, "read_clipboard"))
+  }
+  let bytes = Bytes::makei(length, _ => (0).to_byte())
+  match
+    outcome(native_clipboard_copy(self.token, bytes, length), "read_clipboard") {
+    Err(error) => Err(error)
+    Ok(_) =>
+      try @utf8.decode(bytes) catch {
+        _ => Err(backend_error(2, "read_clipboard"))
+      } noraise {
+        text => Ok(text)
+      }
+  }
 }
 
 ///|
 pub fn Host::write_clipboard(
-  _self : Host,
-  _text : String,
+  self : Host,
+  text : String,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  Err(backend_error(1, "write_clipboard"))
+  let bytes = @utf8.encode(text)
+  outcome(
+    native_write_clipboard(self.token, bytes, bytes.length()),
+    "write_clipboard",
+  )
 }
 
 ///|
 pub fn Host::set_cursor(
-  _self : Host,
-  _cursor : String,
+  self : Host,
+  cursor : @platform.Cursor,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  Err(backend_error(1, "set_cursor"))
+  let tag = match cursor {
+    @platform.Arrow => 0
+    @platform.PointingHand => 1
+    @platform.Text => 2
+  }
+  outcome(native_set_cursor(self.token, tag), "set_cursor")
 }
 
 ///|

@@ -1,13 +1,16 @@
 # Performance measurement contract
 
-Status: M1 methodology; no benchmark suite, runtime baseline, or pass/fail result exists yet.
+Status: M1 methodology plus an Ubuntu native recovery-to-first-frame diagnostic;
+no comparable release baseline or production performance pass exists yet.
 
 Performance claims require a reproducible workload, a named environment, and a
-recorded baseline. M1 currently provides headless point, size, rectangle, color,
-and input values; it has no representative scene, layout, text, renderer, or
-lifecycle workload. No absolute latency or throughput claim is made. The 1.0
-performance gate remains pending until each Tier 1 platform has a committed
-method, baseline, and reviewed regression threshold.
+recorded baseline. The current implementation has no comparable scene, layout,
+text, steady-rendering, or lifecycle-memory baseline. Ubuntu CI can collect a
+native recovery-to-first-frame timing workload, but it uses a headless Weston
+compositor and the renderer reported by the active GL context. This diagnostic
+does not establish absolute latency or throughput claims. The 1.0 performance
+gate remains pending until each Tier 1 platform has a committed method,
+comparable baseline, and reviewed regression threshold.
 
 ## Representative workloads
 
@@ -60,7 +63,52 @@ environment, raw samples, summary statistics, baseline revision, threshold,
 and pass/fail result. Retain the report and workload manifest as release-gate
 evidence. A performance pass without a comparable Tier 1 baseline is invalid.
 
-Performance suite implementation begins with headless scene/layout/text
-benchmarks, then adds native present timing and input latency once a backend
-exists. This ordering keeps scene semantics measurable before a GPU backend is
-available while leaving platform-dependent costs explicit.
+The next performance work should add headless scene/layout/text workloads and
+steady native present/input timing. The recovery diagnostic below measures a
+specific platform boundary, not those missing workloads.
+
+## Active Ubuntu recovery diagnostic
+
+[`scripts/benchmark_ubuntu.py`](../scripts/benchmark_ubuntu.py) runs the existing
+Wayland native E2E with `GPUI_BENCH_UBUNTU=1`. The C test warms up through the
+first five recovery cycles, then records 30 samples at each advertised integer
+scale (1x and 2x). Each sample uses `CLOCK_MONOTONIC` from renderer recovery to
+the next Wayland frame callback. This is a recovery-to-first-frame measure; it
+does not represent steady-state frame pacing or physical-GPU behavior.
+
+The JSON report includes every raw duration, nearest-rank p95, median p50,
+minimum/maximum, test-fixture checksum, `HEAD`, dirty-worktree flag and digest,
+Moon/compiler versions, runner/CPU, actual GL renderer, and a unique run ID.
+The workflow stores it with the native E2E logs. By default the comparison state
+is `no_baseline`; a successful measurement only means the workload ran and
+produced all samples.
+
+### Hosted Ubuntu observation — 2026-10-04
+
+The [hosted Ubuntu CI run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37188934281)
+passed the MoonBit E2E (4/4), C lifecycle, pixel readback, input-order, scale,
+recovery, and resource checks at scales 1x and 2x, and collected 30 timing
+samples per scale. The tested PR head was
+`087e54cb9fde48b56ed5d6d50d564b43c42fa803`, checked out as synthetic merge
+`871fb17` into base `731981259efe3815de06d3420163f3b842e854a0`. The
+[uploaded E2E and benchmark artifact](https://github.com/f4ah6o/gpui.mbt/actions/runs/37188934281/artifacts/11297353573)
+contains the report and raw samples. Its measurement status is `complete`, while
+its comparison status is `no_baseline`.
+
+| Output scale | Samples | p50 | p95 |
+| --- | ---: | ---: | ---: |
+| 1x | 30 | 15,792,972 ns | 16,103,329 ns |
+| 2x | 30 | 11,881,812 ns | 13,629,623 ns |
+
+This is one diagnostic run on hosted Ubuntu 24.04, Weston 13 and Mesa llvmpipe.
+It confirms that the workload and report complete; it is not a reviewed
+performance baseline or a performance pass.
+
+The comparator rejects reports with missing environment details, different
+runner/renderer/toolchain/workload signatures, fewer than 30 samples, or
+summaries inconsistent with the raw samples. An optional comparison requires
+two distinct live runs on the same candidate revision and worktree. It reports
+a confirmed regression only when p50 or p95 exceeds the threshold in both runs;
+one-run spikes remain inconclusive. Replayed logs are marked unverified and
+cannot serve as performance evidence. CI does not currently compare against a
+reviewed baseline, so this report does not promote the release ledger.

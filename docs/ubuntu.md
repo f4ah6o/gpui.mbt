@@ -13,7 +13,8 @@ On Ubuntu 24.04 x86-64, install the system toolchain:
 ```sh
 sudo apt-get update
 sudo apt-get install -y build-essential pkg-config libwayland-dev wayland-protocols \
-  libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri weston
+  libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri \
+  adwaita-icon-theme weston
 sh scripts/prepare_ubuntu.sh
 moon run examples/ubuntu --target native
 ```
@@ -74,18 +75,34 @@ backend is not a native macOS/Windows build target.
   output and does not claim broader desktop coverage.
 - Bounded 1024-event FIFO. Overflow returns `ResourceExhausted` and quiesces the
   host instead of silently losing input. Sequence exhaustion also fails closed.
+- Clipboard uses the core Wayland data-device protocol for UTF-8 plain text.
+  Reading consumes the compositor's current selection through a bounded
+  nonblocking pipe transfer (16 MiB, three-second timeout); writing requires a
+  real pointer-button or keyboard-press serial from this seat. Missing offers,
+  unsupported MIME types, or a missing recent input serial return
+  `UnsupportedCapability`. No process-local clipboard cache is used.
+- Cursor selection uses `libwayland-cursor` and the installed Xcursor theme for
+  arrow, pointing-hand and text cursors. Applying a cursor requires a current
+  pointer-enter serial; absent theme assets or pointer focus are reported as
+  `UnsupportedCapability`. The standard Ubuntu Adwaita cursor theme is used by
+  the headless E2E image. Clipboard and cursor are optional seat services: a
+  headless compositor may not expose a seat, data device, or pointer. The E2E
+  records each service as available or unsupported and checks that unavailable
+  services fail with `UnsupportedCapability`; this does not skip window,
+  rendering, resize, recovery, or lifecycle checks.
 - Explicit `recover_renderer` recreates EGL resources without replacing the
   logical window. Surface/device errors are typed. Automatic three-attempt
   recovery and compositor reconnection remain pending. A display disconnect is
   terminal for that host: dispatch reports `NativeFailure`, quiesces, and the
   caller stops it and can start a new host once a session is available.
 
-Clipboard reads/writes, cursor selection and candidate positioning currently
-return `UnsupportedCapability`. Text-input/IME, semantic accessibility, menus,
-background enqueue, timers, fractional scaling and complete service capability
-negotiation remain roadmap work. Native handles and borrowed buffers do not
-escape the backend. Call `stop` explicitly; dropping a MoonBit Host is not an
-implicit native shutdown.
+Text-input/IME, semantic accessibility, menus, background enqueue, timers,
+fractional scaling, and broader service capability negotiation remain roadmap
+work. Native clipboard and cursor protocols are implemented, while a
+cross-client clipboard roundtrip and visible cursor smoke under an input-capable
+desktop remain unverified. Native handles and borrowed buffers do not escape
+the backend. Call `stop` explicitly; dropping a MoonBit Host is not an implicit
+native shutdown.
 
 ## Test and support matrix
 
@@ -99,23 +116,37 @@ The runner starts isolated Weston GL headless sessions at integer scales 1 and
 2, runs opt-in MoonBit E2E plus the native executable, and runs a strict-warning
 C harness. The harness verifies GPU pixels before swap for paint order,
 translation, clip exclusion and opacity, input source ordering, wrong-thread
-rejection, 40 window cycles, resize rejection, renderer recreation, stable file
+rejection, clipboard transfer chunking and closed-reader handling, clipboard
+and cursor protocol discovery, typed clipboard rejection before an input
+serial, 40 window cycles, resize rejection, renderer recreation, stable file
 descriptor counts after warmup, injected surface loss, bounded input-storm
-overflow, and compositor termination handling. The MoonBit
+overflow, and compositor termination handling. It does not claim an actual
+external clipboard selection/read roundtrip or visible cursor change; the
+headless compositor has no automated physical input source. The MoonBit
 E2E performs 24 window cycles and resize bursts plus the reusable shared host
 conformance gate in `testing/backend/`. Normal `moon test` does not run native
 E2E unless `GPUI_UBUNTU_E2E=1`; its pass count alone is not E2E evidence. Logs are
 written to `_build/ubuntu-e2e/`.
 
+Set `GPUI_BENCH_UBUNTU=1` when invoking the runner to emit 30
+`GPUI_BENCH_SAMPLE` records per scale. They measure first-frame completion after
+injected EGL renderer recovery, with the current `GL_RENDERER` value included;
+the reporter parses test stdout separately and stores test stderr in a sidecar
+log referenced by the JSON report. This keeps compositor diagnostics out of the
+strict sample records. The samples measure a headless llvmpipe recovery path, not
+a desktop frame-rate claim.
+
 | Evidence path | Distro / compositor | Graphics / session | Evidence state |
 | --- | --- | --- | --- |
-| Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Workflow added; hosted CI result not yet observed |
-| Local implementation validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Same isolated Wayland/GLES path; llvmpipe; integer scales 1/2 | Native test runner and GPU readback passed |
+| Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Hosted run 2026-10-04 passed MoonBit E2E (4/4), C lifecycle/render/recovery checks at both scales, and 30 timing samples per scale. Measurement report completed with `no_baseline`; see [run and diagnostic results](performance.md#hosted-ubuntu-observation-2026-10-04). |
+| Local implementation validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Strict C compile and clipboard transfer helper passed; Weston headless launch blocked | Full native E2E unrun: the runner observed Weston fail to add its socket with `No such file or directory`; a separate AF_UNIX bind diagnostic was denied with `EPERM` in this environment |
 | Real Ubuntu desktop | Ubuntu 24.04 GNOME Wayland/Mutter | Desktop GPU, IME and assistive technology | Pending |
 
 CI pins the distro and MoonBit release; Ubuntu archive package patch versions
 are recorded by `dpkg-query` on each run, not frozen. CI's Weston package major
-is 13; the runner also works with the locally tested Weston 14. Headless GL
+is 13. The headless kiosk compositor does not provide automated physical input;
+MoonBit and C E2E report clipboard/cursor availability instead of assuming
+those seat services exist. A successful headless GL
 software rendering does not prove physical GPU performance or real desktop
 IME/accessibility behavior. File descriptor stability and owned-object checks
 do not prove bounded driver memory in a sustained production run.
@@ -136,7 +167,7 @@ imports. Generated protocol code inherits the installed protocol XML's license.
 
 | Library / API | License | Purpose | Upgrade source / failure behavior |
 | --- | --- | --- | --- |
-| Wayland client, wayland-egl, xdg-shell | MIT | Display, native window, EGL window wrapper | Ubuntu libwayland/wayland-protocols; typed startup/dispatch errors |
+| Wayland client, wayland-cursor, wayland-egl, xdg-shell | MIT | Display, native window, cursor assets, EGL window wrapper | Ubuntu libwayland/wayland-protocols and installed Xcursor theme; typed startup/dispatch/service errors |
 | EGL, GLESv2 dispatch; Mesa implementation | MIT / Mesa component licenses | GPU context, surface, quad draw and swap | Ubuntu GLVND/Mesa; typed SurfaceLost/DeviceLost, explicit recreation |
 | xkbcommon | MIT | System keymap and logical key/modifier translation | Ubuntu libxkbcommon; typed map/allocation errors |
 | libc, pthread, poll, eventfd, mmap | LGPL-2.1-or-later (glibc) | Owned buffers, owner-thread checks, loop wake and keymap mapping | Ubuntu glibc; typed NativeFailure/ResourceExhausted |

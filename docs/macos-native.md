@@ -34,7 +34,10 @@ builds return `UnsupportedCapability`; portable tests do not load AppKit.
 
 `platform.Backend` is the portable initial interface. `platform/macos.Host`
 implements it, with a target-specific startup factory. `require_capability` returns UnsupportedCapability for text input, accessibility,
-menus, renderer recovery, and cross-thread commands. Core, element, layout,
+menus, renderer recovery, and cross-thread commands. A target-specific
+`recover_renderer` operation can rebuild Metal device/queue/pipeline state and
+rebind live layers; recovery capability remains unadvertised until hosted Metal
+E2E confirms the path. Core, element, layout,
 scene, and application event values contain no OS or GPU pointers.
 
 | Operation | Behavior |
@@ -47,13 +50,15 @@ scene, and application event values contain no OS or GPU pointers.
 | present | SceneSnapshot v1 quads, affine transforms, opacity, ordered rectangle clip chains, paint order and alpha blending. Resources and unknown item kinds return UnsupportedCapability. |
 | metrics | Current logical size and backing scale; sampled before presenting to avoid using old queued resize metadata for a current drawable. |
 | clipboard / cursor | UTF-8 string clipboard and arrow/pointing-hand/text cursors. Clipboard busy/conversion failures are typed. |
+| renderer recovery | Explicitly rebuilds the shared Metal device, queue and pipeline and rebinds every live `CAMetalLayer`, preserving logical window identities. Automatic recovery remains unimplemented. |
 
 Geometry remains logical until the native boundary. `CAMetalLayer.drawableSize`
 is logical size multiplied by backing scale; clips become device-pixel scissors.
 Each frame uses an autorelease pool. This initial renderer waits for command
 completion and has at most one synchronous frame in flight. A missing drawable
 returns `SurfaceLost`; absent renderer resources or failed commands return
-`DeviceLost`. No automatic recovery or performance claim is made.
+`DeviceLost`. Explicit recovery recreates shared GPU objects and rebinds active
+windows; no automatic recovery or performance claim is made.
 
 ## Native ownership and ABI
 
@@ -92,14 +97,18 @@ close policy, wrong-thread rejection, failed initialization payloads, restart
 and stale-host checks, stale callback rejection, and 32 create/destroy cycles.
 A test-only Metal blit reads frame pixels to verify transform/clip/alpha/paint
 order and backing-pixel dimensions. Fault injection verifies DeviceLost reporting.
-It does not establish production recovery or bounded memory over sustained churn.
+The test source also removes device/queue/pipeline state, invokes explicit
+recovery and checks the following frame through pixel readback. Hosted execution
+of this path remains pending, so capability negotiation stays disabled. The
+tests do not establish bounded memory over sustained churn.
 
 The MoonBit smoke executable uses the portable Backend interface and checks
 creation, two completed GPU frames, resize, close request, destruction and event
 sequence ordering. Headless tests verify portable key and error adapters on all
 four MoonBit targets. Clipboard/cursor smoke, real display movement, Japanese
-IME, accessibility, text shaping, cross-thread command completion, automated
-renderer recovery, sustained resource growth and performance remain pending.
+IME, accessibility, text shaping, cross-thread command completion, hosted
+automated renderer recovery, sustained resource growth and performance remain
+pending.
 
 Hosted macOS CI builds the app/E2E runner and executes headless tests. The
 manual `macos-native-e2e.yml` workflow requires a logged-in self-hosted desktop

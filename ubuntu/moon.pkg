@@ -19,7 +19,7 @@ options(
     "native": {
       "cc": "cc",
       "cc-flags": "-O2",
-      "cc-link-flags": "-lwayland-client -lwayland-egl -lEGL -lGLESv2 -lxkbcommon -lpthread -lm",
+      "cc-link-flags": "-lwayland-client -lwayland-cursor -lwayland-egl -lEGL -lGLESv2 -lxkbcommon -lpthread -lm",
       "stub-cc": "cc",
       "stub-cc-flags": "-std=c11 -Wall -Wextra",
     },

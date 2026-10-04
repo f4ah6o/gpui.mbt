@@ -26,6 +26,9 @@ struct DemoModel {
   mut focused : Bool
   mut visible : Bool
   mut clicks : Int
+  mut capability_value : Int
+  mut scroll_x : Double
+  mut scroll_y : Double
   mut processed_events : Int
   mut last_sequence : Int64
   mut last_event : String
@@ -33,13 +36,23 @@ struct DemoModel {
 }
 
 ///|
+priv struct CounterState {
+  value : Int
+}
+
+///|
 pub struct BrowserDemo {
   app : @core.App
   model : @core.Entity[DemoModel]
+  counter_command : @capability.TypedCapability[Int, Int]
+  counter_query : @capability.TypedCapability[Unit, Int]
+  counter_gui_binding : @capability.GuiBinding[Int, Int]
+  mcp_adapter : @mcp.Adapter
   ingress : @platform.EventIngress
   mut host_width : Double
   mut host_height : Double
   mut host_scale : Double
+  mut queued_focus_id : UInt64?
   mut stopped : Bool
 }
 
@@ -57,11 +70,220 @@ fn initial_model() -> DemoModel {
     focused: false,
     visible: true,
     clicks: 0,
+    capability_value: 0,
+    scroll_x: 0.0,
+    scroll_y: 0.0,
     processed_events: 0,
     last_sequence: 0,
     last_event: "ready",
     last_key: "—",
   }
+}
+
+///|
+fn capability_error(
+  code : @diagnostics.ErrorCode,
+  operation : String,
+  message : String,
+) -> @diagnostics.FrameworkError {
+  @diagnostics.FrameworkError::new(
+    code,
+    operation,
+    subsystem="browser-demo-capability",
+    message~,
+  )
+}
+
+///|
+fn counter_availability(
+  app : @core.App,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  if app.lifecycle() is @core.Running {
+    Ok(())
+  } else {
+    Err(
+      capability_error(
+        @diagnostics.AppNotRunning,
+        "demo.counter",
+        "the browser demo app is no longer running",
+      ),
+    )
+  }
+}
+
+///|
+fn local_counter_policy(
+  origin : @capability.InvocationOrigin,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  match origin {
+    @capability.Gui | @capability.Direct | @capability.RemoteMcp => Ok(())
+    _ =>
+      Err(
+        capability_error(
+          @diagnostics.PermissionDenied,
+          "demo.counter",
+          "this browser fixture accepts GUI, direct, and one in-process MCP adapter invocation",
+        ),
+      )
+  }
+}
+
+///|
+fn counter_descriptor(
+  id : String,
+  title : String,
+  description : String,
+  kind : @capability.OperationKind,
+  input : @capability.Schema,
+  output : @capability.Schema,
+  effect : @capability.EffectClass,
+  idempotent : Bool,
+  exposure : @capability.Exposure,
+  external_name : String?,
+) -> Result[@capability.Descriptor, @diagnostics.FrameworkError] {
+  @capability.Descriptor::new(
+    id, title, description, kind, input, output, effect, idempotent, exposure, external_name,
+    1,
+  )
+}
+
+///|
+fn make_counter_command(
+  app : @core.App,
+  state : @core.Entity[CounterState],
+  projection : Ref[Int],
+) -> Result[@capability.TypedCapability[Int, Int], @diagnostics.FrameworkError] {
+  match
+    counter_descriptor(
+      "demo.counter.increment",
+      "Increment the browser demo counter",
+      "Change one app-owned value and notify the observing browser view.",
+      @capability.Command,
+      @capability.Schema::int(),
+      @capability.Schema::int(),
+      @capability.StateChange,
+      false,
+      @capability.External,
+      Some("demo_counter_increment"),
+    ) {
+    Err(error) => Err(error)
+    Ok(descriptor) => {
+      let counter_app = app
+      let counter_state = state
+      let counter_projection = projection
+      Ok(
+        @capability.TypedCapability::new(
+          descriptor,
+          value => value.as_int(),
+          value => Ok(@capability.IntValue(value)),
+          delta => {
+            if delta < 1 || delta > 10 {
+              return Err(
+                capability_error(
+                  @diagnostics.InvalidInput,
+                  "demo.counter.increment",
+                  "increment must be between one and ten",
+                ),
+              )
+            }
+            let current_value = match
+              counter_app.read(counter_state, current => current.value) {
+              Err(error) => return Err(error)
+              Ok(value) => value
+            }
+            if current_value > 1_000_000 - delta {
+              return Err(
+                capability_error(
+                  @diagnostics.ResourceExhausted,
+                  "demo.counter.increment",
+                  "the browser demo counter reached its fixture limit",
+                ),
+              )
+            }
+            let next_value = current_value + delta
+            match
+              counter_app.update(counter_state, context => {
+                match context.set({ value: next_value, }) {
+                  Err(error) => Err(error)
+                  Ok(_) => context.notify()
+                }
+              }) {
+              Err(error) => Err(error)
+              Ok(_) => {
+                counter_projection.val = next_value
+                Ok(next_value)
+              }
+            }
+          },
+          () => counter_availability(app),
+          origin => local_counter_policy(origin),
+        ),
+      )
+    }
+  }
+}
+
+///|
+fn make_counter_query(
+  app : @core.App,
+  state : @core.Entity[CounterState],
+) -> Result[@capability.TypedCapability[Unit, Int], @diagnostics.FrameworkError] {
+  match
+    counter_descriptor(
+      "demo.counter.read",
+      "Read the browser demo counter",
+      "Read the same app-owned value shown by the observing browser view.",
+      @capability.Query,
+      @capability.Schema::unit(),
+      @capability.Schema::int(),
+      @capability.ReadOnly,
+      true,
+      @capability.Local,
+      None,
+    ) {
+    Err(error) => Err(error)
+    Ok(descriptor) => {
+      let counter_state = state
+      Ok(
+        @capability.TypedCapability::new(
+          descriptor,
+          _ => Ok(()),
+          value => Ok(@capability.IntValue(value)),
+          _ => app.read(counter_state, current => current.value),
+          () => counter_availability(app),
+          origin => local_counter_policy(origin),
+        ),
+      )
+    }
+  }
+}
+
+///|
+fn install_counter_observer(
+  app : @core.App,
+  model : @core.Entity[DemoModel],
+  source : @core.Entity[CounterState],
+  projection : Ref[Int],
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  let observed_projection = projection
+  app.update(model, context => {
+    match
+      context.observe(source, observer => {
+        match observer.get() {
+          Err(error) => Err(error)
+          Ok(current) => {
+            current.capability_value = observed_projection.val
+            match observer.set(current) {
+              Err(error) => Err(error)
+              Ok(_) => observer.notify()
+            }
+          }
+        }
+      }) {
+      Err(error) => Err(error)
+      Ok(_) => Ok(())
+    }
+  })
 }
 
 ///|
@@ -176,7 +398,13 @@ fn apply_event(model : DemoModel, event : @platform.Event) -> DemoModel {
           updated.last_event = "key up"
         }
         @primitives.TextInput(..) => updated.last_event = "text input"
-        @primitives.Scroll(..) => updated.last_event = "scroll"
+        @primitives.Scroll(position~, delta~, ..) => {
+          updated.pointer_x = Some(position.x())
+          updated.pointer_y = Some(position.y())
+          updated.scroll_x += delta.x()
+          updated.scroll_y += delta.y()
+          updated.last_event = "scroll"
+        }
       }
     @platform.Wake => ()
     @platform.Moved(..) => updated.last_event = "host moved"
@@ -195,6 +423,39 @@ fn apply_event(model : DemoModel, event : @platform.Event) -> DemoModel {
 ///|
 fn is_focusable_id(id : UInt64) -> Bool {
   id >= 4 && id <= 7
+}
+
+///|
+fn semantic_name(id : UInt64) -> String {
+  match id {
+    4 => "Alpine cyan action"
+    5 => "Ocean blue action"
+    6 => "Copper amber action"
+    7 => "Violet dusk action"
+    _ => "Unknown action"
+  }
+}
+
+///|
+fn event_activates_counter(
+  event : @platform.Event,
+  focused : UInt64?,
+  width : Double,
+  height : Double,
+) -> Bool {
+  match event.kind() {
+    @platform.Input(input) =>
+      match input {
+        @primitives.PointerButtonPressed(position~, button~, ..) =>
+          button is @primitives.Primary &&
+          hit_test(width, height, position.x(), position.y()) == Some(4)
+        @primitives.KeyPressed(key~, ..) =>
+          focused == Some(4) &&
+          (key is @primitives.Enter || key is @primitives.Space)
+        _ => false
+      }
+    _ => false
+  }
 }
 
 ///|
@@ -561,6 +822,29 @@ fn scene_snapshot(
             }
             _ => ()
           }
+          let counter_steps = if model.capability_value > 48 {
+            48
+          } else {
+            model.capability_value
+          }
+          let counter_width = 8.0 + counter_steps.to_double() * 4.0
+          let counter_transform = match
+            @scene.AffineTransform::new(1.0, 0.0, 0.0, 1.0, 30.0, 112.0) {
+            Ok(value) => value
+            Err(_) => return Err(SceneSnapshotFailed)
+          }
+          match
+            @scene.SceneItem::quad(
+              92,
+              rect(counter_width, 6.0),
+              color(112, 231, 219),
+              counter_transform,
+              1.0,
+              Some(0),
+            ) {
+            Ok(value) => items.push(value)
+            Err(_) => return Err(SceneSnapshotFailed)
+          }
           let clip = @scene.ClipChain::new(0, [viewport])
           match
             @scene.SceneSnapshot::new(viewport, model.scale, [], [clip], items) {
@@ -605,19 +889,54 @@ pub fn BrowserDemo::new() -> Result[BrowserDemo, @diagnostics.FrameworkError] {
         Ok(_) =>
           match app.create_entity(initial_model()) {
             Err(error) => Err(error)
-            Ok(model) => {
-              let demo : BrowserDemo = {
-                app,
-                model,
-                ingress: @platform.EventIngress::new(@platform.WindowId::new(1)),
-                host_width: 800.0,
-                host_height: 480.0,
-                host_scale: 1.0,
-                stopped: false,
+            Ok(model) =>
+              match app.create_entity({ value: 0, }) {
+                Err(error) => Err(error)
+                Ok(counter_state) => {
+                  let projection = Ref(0)
+                  match
+                    (
+                      make_counter_command(app, counter_state, projection),
+                      make_counter_query(app, counter_state),
+                    ) {
+                    (Err(error), _) => Err(error)
+                    (_, Err(error)) => Err(error)
+                    (Ok(counter_command), Ok(counter_query)) =>
+                      match
+                        install_counter_observer(
+                          app, model, counter_state, projection,
+                        ) {
+                        Err(error) => Err(error)
+                        Ok(_) => {
+                          let registry = @capability.Registry::new()
+                          match registry.register(counter_command) {
+                            Err(error) => Err(error)
+                            Ok(_) => {
+                              let demo : BrowserDemo = {
+                                app,
+                                model,
+                                counter_gui_binding: counter_command.gui_binding(),
+                                counter_command,
+                                counter_query,
+                                mcp_adapter: @mcp.Adapter::new(registry),
+                                ingress: @platform.EventIngress::new(
+                                  @platform.WindowId::new(1),
+                                ),
+                                host_width: 800.0,
+                                host_height: 480.0,
+                                host_scale: 1.0,
+                                queued_focus_id: None,
+                                stopped: false,
+                              }
+                              ignore(enqueue(demo, @platform.Created, 1.0))
+                              Ok(demo)
+                            }
+                          }
+                        }
+                      }
+                  }
+                }
               }
-              ignore(enqueue(demo, @platform.Created, 1.0))
-              Ok(demo)
-            }
           }
       }
   }
@@ -684,6 +1003,25 @@ pub fn BrowserDemo::render_frame(
     Err(Stopped)
   } else {
     for event in self.ingress.drain() {
+      match current_model(self) {
+        Err(error) => return Err(error)
+        Ok(model) =>
+          if event_activates_counter(
+              event,
+              model.focus_id,
+              self.host_width,
+              self.host_height,
+            ) {
+            match self.counter_gui_binding.trigger(1) {
+              Err(_) => return Err(ModelUpdateFailed)
+              Ok(_) =>
+                match self.app.run_ready(64) {
+                  Err(_) => return Err(ModelUpdateFailed)
+                  Ok(_) => ()
+                }
+            }
+          }
+      }
       match
         self.app.update(self.model, context => {
           match context.get() {
@@ -708,6 +1046,10 @@ pub fn BrowserDemo::render_frame(
       }
     }
     match current_model(self) {
+      Err(error) => return Err(error)
+      Ok(model) => self.queued_focus_id = model.focus_id
+    }
+    match current_model(self) {
       Err(error) => Err(error)
       Ok(model) => scene_snapshot(model)
     }
@@ -723,7 +1065,7 @@ pub fn BrowserDemo::status_json(self : BrowserDemo) -> String {
       let hover = id_json(model.hover_id)
       let focus = id_json(model.focus_id)
       let target = id_json(model.last_target)
-      "{\"active\":\{!self.stopped},\"logicalWidth\":\{model.width},\"logicalHeight\":\{model.height},\"dpr\":\{model.scale},\"hover\":\{hover},\"focus\":\{focus},\"target\":\{target},\"clicks\":\{model.clicks},\"events\":\{model.processed_events},\"lastSequence\":\{model.last_sequence},\"lastEvent\":\{json_quote(model.last_event)},\"lastKey\":\{json_quote(model.last_key)},\"focused\":\{model.focused},\"visible\":\{model.visible}}"
+      "{\"active\":\{!self.stopped},\"logicalWidth\":\{model.width},\"logicalHeight\":\{model.height},\"dpr\":\{model.scale},\"hover\":\{hover},\"focus\":\{focus},\"target\":\{target},\"clicks\":\{model.clicks},\"capabilityValue\":\{model.capability_value},\"scrollX\":\{model.scroll_x},\"scrollY\":\{model.scroll_y},\"events\":\{model.processed_events},\"lastSequence\":\{model.last_sequence},\"lastEvent\":\{json_quote(model.last_event)},\"lastKey\":\{json_quote(model.last_key)},\"focused\":\{model.focused},\"visible\":\{model.visible}}"
     }
   }
 }
@@ -734,6 +1076,7 @@ pub fn BrowserDemo::status_json(self : BrowserDemo) -> String {
 pub fn BrowserDemo::dispose(self : BrowserDemo) -> Unit {
   if !self.stopped {
     self.stopped = true
+    self.mcp_adapter.close()
     self.ingress.close()
     ignore(self.app.request_stop())
     ignore(self.app.run_ready(64))
@@ -743,6 +1086,239 @@ pub fn BrowserDemo::dispose(self : BrowserDemo) -> Unit {
 ///|
 pub fn BrowserDemo::is_stopped(self : BrowserDemo) -> Bool {
   self.stopped
+}
+
+///|
+/// Invoke the same local semantic command used by the fixture's GUI binding.
+/// The observer notification updates the render model before the next frame.
+pub fn BrowserDemo::invoke_counter_direct(
+  self : BrowserDemo,
+  delta : Int,
+) -> Result[Int, @diagnostics.FrameworkError] {
+  match self.counter_command.invoke(@capability.Direct, delta) {
+    Err(error) => Err(error)
+    Ok(value) =>
+      match self.app.run_ready(64) {
+        Err(error) => Err(error)
+        Ok(_) => Ok(value)
+      }
+  }
+}
+
+///|
+/// Route the fixture's single externally exposed write through the portable
+/// MCP adapter. This is an in-process adapter call used to prove shared
+/// capability semantics; it does not create a network transport.
+pub fn BrowserDemo::invoke_counter_mcp(
+  self : BrowserDemo,
+  delta : Int,
+) -> Result[Int, @diagnostics.FrameworkError] {
+  let output = match
+    self.mcp_adapter.call_tool(
+      "demo_counter_increment",
+      @capability.Value::int(delta),
+    ) {
+    Err(error) =>
+      return Err(
+        capability_error(
+          match error.code() {
+            @mcp.InvalidInput => @diagnostics.InvalidInput
+            @mcp.PermissionDenied => @diagnostics.PermissionDenied
+            @mcp.Stale => @diagnostics.StaleHandle
+            @mcp.Unavailable => @diagnostics.Busy
+            _ => @diagnostics.CallbackFailure
+          },
+          "demo.counter.mcp",
+          error.message(),
+        ),
+      )
+    Ok(value) => value
+  }
+  let value = match output {
+    @capability.IntValue(value) => value
+    _ =>
+      return Err(
+        capability_error(
+          @diagnostics.ConversionFailed,
+          "demo.counter.mcp",
+          "the counter adapter returned a non-integer output",
+        ),
+      )
+  }
+  match self.app.run_ready(64) {
+    Err(error) => Err(error)
+    Ok(_) => Ok(value)
+  }
+}
+
+///|
+/// Query the command's source entity through its Local semantic query.
+pub fn BrowserDemo::query_counter(
+  self : BrowserDemo,
+) -> Result[Int, @diagnostics.FrameworkError] {
+  self.counter_query.invoke(@capability.Direct, ())
+}
+
+///|
+/// Synchronize a browser accessibility proxy with the fixture's normal tab
+/// order. The resulting key events enter the same deterministic event queue.
+pub fn BrowserDemo::focus_semantic_node(
+  self : BrowserDemo,
+  id : Int,
+  backwards : Bool,
+) -> Result[Unit, BrowserDemoError] {
+  if self.stopped {
+    Err(Stopped)
+  } else if id < 4 || id > 7 {
+    Err(ElementTreeInvalid)
+  } else {
+    match current_model(self) {
+      Err(error) => Err(error)
+      Ok(model) => {
+        let current_focus = match self.queued_focus_id {
+          Some(value) => Some(value)
+          None => model.focus_id
+        }
+        let current_index = match current_focus {
+          None => -1
+          Some(4) => 0
+          Some(5) => 1
+          Some(6) => 2
+          Some(7) => 3
+          Some(_) => -1
+        }
+        let target_index = id - 4
+        let steps = if backwards {
+          if current_index < 0 {
+            4 - target_index
+          } else if target_index < current_index {
+            current_index - target_index
+          } else if target_index > current_index {
+            current_index + 4 - target_index
+          } else {
+            0
+          }
+        } else if current_index < 0 {
+          target_index + 1
+        } else if target_index > current_index {
+          target_index - current_index
+        } else if target_index < current_index {
+          4 - current_index + target_index
+        } else {
+          0
+        }
+        let modifiers = @primitives.Modifiers::new(
+          shift=backwards,
+          control=false,
+          alt=false,
+          meta=false,
+        )
+        for _ in 0..<steps {
+          match
+            enqueue(
+              self,
+              @platform.Input(
+                @primitives.KeyPressed(
+                  key=@primitives.Tab,
+                  modifiers~,
+                  repeat=false,
+                ),
+              ),
+              self.host_scale,
+            ) {
+            Err(error) => return Err(error)
+            Ok(_) => ()
+          }
+        }
+        let target_id : UInt64 = match id {
+          4 => 4
+          5 => 5
+          6 => 6
+          _ => 7
+        }
+        self.queued_focus_id = Some(target_id)
+        Ok(())
+      }
+    }
+  }
+}
+
+///|
+pub fn BrowserDemo::activate_semantic_node(
+  self : BrowserDemo,
+  id : Int,
+) -> Result[Unit, BrowserDemoError] {
+  match self.focus_semantic_node(id, false) {
+    Err(error) => Err(error)
+    Ok(_) => {
+      let modifiers = @primitives.Modifiers::none()
+      match
+        enqueue(
+          self,
+          @platform.Input(
+            @primitives.KeyPressed(
+              key=@primitives.Enter,
+              modifiers~,
+              repeat=false,
+            ),
+          ),
+          self.host_scale,
+        ) {
+        Err(error) => Err(error)
+        Ok(_) => Ok(())
+      }
+    }
+  }
+}
+
+///|
+/// Host-layout DTO from the portable demo's flex layout and element fixture.
+/// Semantic nodes are test-fixture data, not a general accessibility API.
+pub fn BrowserDemo::host_layout_json(self : BrowserDemo) -> String {
+  match current_model(self) {
+    Err(_) => "{\"version\":1,\"nodes\":[],\"regions\":[]}"
+    Ok(model) =>
+      match demo_layout(model.width, model.height) {
+        Err(_) => "{\"version\":1,\"nodes\":[],\"regions\":[]}"
+        Ok(layout) => {
+          let builder = StringBuilder()
+          builder.write_string("{\"version\":1,\"nodes\":[")
+          let mut emitted = 0
+          for item in layout.items() {
+            let id = item.id()
+            if id >= 4 && id <= 7 {
+              if emitted > 0 {
+                builder.write_string(",")
+              }
+              let name = semantic_name(id)
+              let bounds = item.bounds()
+              builder.write_string(
+                "{\"id\":\{id},\"role\":\"button\",\"name\":\{json_quote(name)},\"value\":null,\"disabled\":false,\"focused\":\{model.focus_id == Some(id)},\"bounds\":{\"x\":\{bounds.left()},\"y\":\{bounds.top()},\"width\":\{bounds.size().width()},\"height\":\{bounds.size().height()}}}",
+              )
+              emitted += 1
+            }
+          }
+          builder.write_string("],\"regions\":[")
+          let mut has_region = false
+          for item in layout.items() {
+            if item.id() == 8 {
+              let bounds = item.bounds()
+              builder.write_string(
+                "{\"id\":8,\"kind\":\"legacy-island\",\"name\":\"Legacy web notes\",\"bounds\":{\"x\":\{bounds.left()},\"y\":\{bounds.top()},\"width\":\{bounds.size().width()},\"height\":\{bounds.size().height()}}}",
+              )
+              has_region = true
+            }
+          }
+          if !has_region {
+            builder.write_string(
+              "{\"id\":8,\"kind\":\"legacy-island\",\"name\":\"Legacy web notes\",\"bounds\":{\"x\":0,\"y\":0,\"width\":0,\"height\":0}}",
+            )
+          }
+          builder.write_string("]}")
+          builder.to_string()
+        }
+      }
+  }
 }
 
 ///|

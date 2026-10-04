@@ -1,8 +1,10 @@
 import {
+  "f4ah6o/gpui/capability",
   "f4ah6o/gpui/core",
   "f4ah6o/gpui/diagnostics",
   "f4ah6o/gpui/element",
   "f4ah6o/gpui/layout",
+  "f4ah6o/gpui/mcp",
   "f4ah6o/gpui/platform",
   "f4ah6o/gpui/primitives",
   "f4ah6o/gpui/scene",

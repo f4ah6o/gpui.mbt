@@ -643,16 +643,22 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "examples/native_macos": {"platform/macos", "platform", "primitives", "diagnostics", "scene"},
         "ubuntu": {"platform", "primitives", "diagnostics", "scene"},
         "examples/ubuntu": {"ubuntu", "platform", "primitives", "diagnostics", "scene"},
+        "windows": {"platform", "primitives", "diagnostics", "scene"},
+        "examples/windows": {"windows", "platform", "primitives", "diagnostics", "scene"},
         "element": {"core", "primitives", "layout", "scene"},
         # Semantic capabilities are portable application-facing contracts. The
         # optional MCP adapter is a leaf above them and owns no domain state.
         "capability": {"diagnostics"},
         "mcp": {"capability", "diagnostics"},
+        # Electron/Tauri migrations use a portable request/completion contract;
+        # the host transport remains in target-specific leaf adapters.
+        "migration/host_services": {"capability", "diagnostics"},
         "examples/headless": {"core", "diagnostics", "primitives"},
         # Portable browser fixture consumes framework layers only. Browser host
         # code is a target-specific leaf above that fixture and shared values.
         "examples/browser_app": {
             "core", "diagnostics", "element", "layout", "platform", "primitives", "scene",
+            "capability", "mcp",
         },
         "examples/browser": {
             "examples/browser_app", "diagnostics", "platform", "primitives",

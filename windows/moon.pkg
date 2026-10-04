@@ -1,0 +1,19 @@
+import {
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/scene",
+  "moonbitlang/core/encoding/utf8",
+}
+
+supported_targets = "native"
+
+import {
+  "moonbitlang/core/env",
+  "f4ah6o/gpui/testing/backend" @conformance,
+} for "wbtest"
+
+options(
+  "native-stub": [ "backend.c" ],
+  "max-concurrent-tests": 1,
+)
