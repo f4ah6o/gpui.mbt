@@ -4,6 +4,7 @@
 pub struct Schema {
   priv canonical : String
   priv unit_like : Bool
+  priv object_like : Bool
   priv validate : (Value) -> Bool
 }
 
@@ -75,6 +76,7 @@ pub fn Schema::unit() -> Schema {
   {
     canonical: "{\"type\":\"null\"}",
     unit_like: true,
+    object_like: false,
     validate: value => value is UnitValue,
   }
 }
@@ -84,6 +86,7 @@ pub fn Schema::bool() -> Schema {
   {
     canonical: "{\"type\":\"boolean\"}",
     unit_like: false,
+    object_like: false,
     validate: value => value is BoolValue(_),
   }
 }
@@ -93,6 +96,7 @@ pub fn Schema::int() -> Schema {
   {
     canonical: "{\"type\":\"integer\"}",
     unit_like: false,
+    object_like: false,
     validate: value => value is IntValue(_),
   }
 }
@@ -102,6 +106,7 @@ pub fn Schema::number() -> Schema {
   {
     canonical: "{\"type\":\"number\"}",
     unit_like: false,
+    object_like: false,
     validate: value => {
       match value {
         NumberValue(number) => finite_number(number)
@@ -116,6 +121,7 @@ pub fn Schema::string() -> Schema {
   {
     canonical: "{\"type\":\"string\"}",
     unit_like: false,
+    object_like: false,
     validate: value => value is StringValue(_),
   }
 }
@@ -126,6 +132,7 @@ pub fn Schema::array(item : Schema) -> Schema {
   {
     canonical: "{\"type\":\"array\",\"items\":\{item.canonical_json()}}",
     unit_like: false,
+    object_like: false,
     validate: value => {
       match value {
         ArrayValue(values) => {
@@ -149,6 +156,7 @@ pub fn Schema::optional(item : Schema) -> Schema {
   {
     canonical: "{\"anyOf\":[\{item.canonical_json()},{\"type\":\"null\"}]}",
     unit_like: false,
+    object_like: false,
     validate: value => {
       match value {
         UnitValue => true
@@ -201,6 +209,7 @@ pub fn Schema::record(
   Ok({
     canonical: builder.to_string(),
     unit_like: false,
+    object_like: true,
     validate: value => record_accepts(captured, value),
   })
 }
@@ -251,6 +260,7 @@ pub fn Schema::tagged(
   Ok({
     canonical: builder.to_string(),
     unit_like: false,
+    object_like: true,
     validate: value => tagged_accepts(captured_discriminator, captured, value),
   })
 }
@@ -263,6 +273,14 @@ pub fn Schema::canonical_json(self : Schema) -> String {
 ///|
 pub fn Schema::is_unit(self : Schema) -> Bool {
   self.unit_like
+}
+
+///|
+/// Whether values accepted by this schema use an object representation. MCP
+/// tool inputs always have an object-shaped JSON schema, so adapters use this
+/// to preserve record/tagged values directly and wrap scalar values explicitly.
+pub fn Schema::is_object(self : Schema) -> Bool {
+  self.object_like
 }
 
 ///|

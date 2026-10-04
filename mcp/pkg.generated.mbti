@@ -1,0 +1,93 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/mcp"
+
+import {
+  "f4ah6o/gpui/capability",
+}
+
+// Values
+pub const MCP_PROTOCOL_VERSION : String = "2026-07-28"
+
+pub fn validate_unique_json_keys(String) -> Bool
+
+// Errors
+
+// Types and methods
+pub struct Adapter {
+  // private fields
+}
+pub fn Adapter::call_tool(Self, String, @capability.Value) -> Result[@capability.Value, AdapterError]
+pub fn Adapter::call_tool_with_request_id(Self, String, String, @capability.Value) -> Result[@capability.Value, AdapterError]
+pub fn Adapter::close(Self) -> Unit
+pub fn Adapter::inventory(Self) -> Result[Inventory, AdapterError]
+pub fn Adapter::is_open(Self) -> Bool
+pub fn Adapter::new(@capability.Registry) -> Self
+pub fn Adapter::read_resource(Self, String) -> Result[@capability.Value, AdapterError]
+
+pub struct AdapterError {
+  // private fields
+}
+pub fn AdapterError::code(Self) -> ErrorCode
+pub fn AdapterError::message(Self) -> String
+
+pub(all) enum ErrorCode {
+  UnknownOperation
+  InvalidInput
+  PermissionDenied
+  Unavailable
+  Stale
+  DomainFailure
+  ProjectionFailed
+  RequestConflict
+  RequestInProgress
+  OutcomeNotRetained
+  AdapterClosed
+} derive(Eq)
+pub fn ErrorCode::equal(Self, Self) -> Bool
+pub fn ErrorCode::not_equal(Self, Self) -> Bool
+
+pub struct Inventory {
+  // private fields
+}
+pub fn Inventory::canonical_json(Self) -> String
+pub fn Inventory::resources(Self) -> Array[Resource]
+pub fn Inventory::supports_prompts(Self) -> Bool
+pub fn Inventory::supports_resources(Self) -> Bool
+pub fn Inventory::supports_tools(Self) -> Bool
+pub fn Inventory::tools(Self) -> Array[Tool]
+
+pub struct ProtocolServer {
+  // private fields
+}
+pub fn ProtocolServer::close(Self) -> Unit
+pub fn ProtocolServer::handle_line(Self, String) -> String?
+pub fn ProtocolServer::new(Adapter) -> Self
+pub fn ProtocolServer::new_with_identity(Adapter, String, String) -> Self
+pub fn ProtocolServer::tools_list_result_json(Self) -> Result[String, AdapterError]
+
+pub struct Resource {
+  // private fields
+}
+pub fn Resource::description(Self) -> String
+pub fn Resource::name(Self) -> String
+pub fn Resource::output_schema_json(Self) -> String
+pub fn Resource::semantic_id(Self) -> String
+pub fn Resource::uri(Self) -> String
+
+pub struct Tool {
+  // private fields
+}
+pub fn Tool::description(Self) -> String
+pub fn Tool::input_is_object(Self) -> Bool
+pub fn Tool::input_is_unit(Self) -> Bool
+pub fn Tool::input_schema_json(Self) -> String
+pub fn Tool::is_idempotent(Self) -> Bool
+pub fn Tool::is_read_only(Self) -> Bool
+pub fn Tool::name(Self) -> String
+pub fn Tool::output_schema_json(Self) -> String
+pub fn Tool::semantic_id(Self) -> String
+pub fn Tool::title(Self) -> String
+
+// Type aliases
+
+// Traits

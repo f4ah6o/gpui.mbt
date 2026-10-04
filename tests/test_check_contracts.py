@@ -321,6 +321,29 @@ class RuntimeDependencyTests(unittest.TestCase):
             any("forbidden runtime package edge" in error for error in errors)
         )
 
+    def test_mcp_stdio_host_is_a_leaf_above_the_mcp_adapter(self) -> None:
+        directory = self.root / "examples/mcp_stdio"
+        directory.mkdir(parents=True)
+        manifest = directory / "moon.pkg"
+        manifest.write_text(
+            'import { "f4ah6o/gpui/capability", '
+            '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/mcp" }\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+        manifest.write_text(
+            'import { "f4ah6o/gpui/core" }\n',
+            encoding="utf-8",
+        )
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(
+            any(
+                "examples/mcp_stdio/: forbidden runtime package edge" in error
+                for error in errors
+            )
+        )
+
     def test_approved_example_still_rejects_third_party_runtime_edges(self) -> None:
         directory = self.root / "examples/headless"
         directory.mkdir(parents=True)

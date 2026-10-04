@@ -44,6 +44,36 @@ Status: open
 Parent: [0012-semantic-capability-model.md](0012-semantic-capability-model.md)
 Related: [0009-browser-backend.md](0009-browser-backend.md), [0011-electron-tauri-migration.md](0011-electron-tauri-migration.md)
 Updated: 2026-10-04
+Child: [0016-mcp-endpoint-lifecycle-conformance.md](0016-mcp-endpoint-lifecycle-conformance.md)
+
+## Current-head acceptance triage — 2026-10-04
+
+Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
+
+- [x] Packet A: transport-neutral manifest generation, stable enumeration,
+  deterministic external-name mapping, and collision checks are implemented
+  in `capability/registry.mbt` and tested in `capability/capability_test.mbt`.
+- [x] Packet B: the optional adapter derives a default-safe tools/resources
+  inventory, omits unexposed capabilities, keeps prompts unadvertised, and
+  serializes deterministic schema metadata; tests cover registration-order
+  independence in `mcp/adapter_test.mbt`.
+- [x] Packet C's in-process dispatch path routes through the shared registry;
+  read/write, invalid input, policy denial, stale state, teardown, request
+  conflicts, and bounded result retention have headless tests.
+- [x] Packet D's portable capability layer and optional `mcp/` package remain
+  separate; the browser fixture is headless-testable without a native window.
+- [ ] At this audited head the adapter has no actual MCP wire endpoint. The
+  0013 implementation follow-up owns the optional stdio host; 0016 tracks
+  browser/native topology smoke and asynchronous cancellation/disconnect.
+- [ ] Checked/reproducible generated-artifact drift checks are not present.
+  Canonical in-memory serialization tests do not by themselves check a
+  committed artifact against its source descriptors.
+
+The hosted [contracts/core run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649283)
+and [browser run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282)
+passed at PR #13 head. This packet remains open for the wire host and drift
+gate.
 
 ## Goal
 

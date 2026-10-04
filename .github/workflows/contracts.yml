@@ -43,6 +43,24 @@ jobs:
       - name: Test all targets with warnings denied
         run: moon test --target all --deny-warn
 
+  mcp-stdio-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hustcer/setup-moonbit@1522f9aef02a8ca0187dfc00a41f5dd6b16750f7 # v1.23
+        with:
+          version: 0.10.14+7d59c7ec9
+          core-version: 0.10.14+7d59c7ec9
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.11.0
+      - name: Build and test MoonBit MCP stdio endpoint and check generated inventory
+        run: |
+          moon version --all
+          node --version
+          sh scripts/test_mcp_stdio.sh
+
   macos-native-build:
     runs-on: macos-14
     timeout-minutes: 20

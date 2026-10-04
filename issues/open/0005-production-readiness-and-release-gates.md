@@ -1,6 +1,23 @@
 # Production readiness and release gates
 
-Status: design only
+Status: in progress — release ledger and evidence validator implemented; all 1.0 gates remain pending
+
+## Current-head acceptance triage — 2026-10-04
+
+Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
+
+- [x] The release ledger and document/evidence validators are implemented and
+  pass the hosted [contracts/core workflow](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649283).
+- [ ] All 12 1.0 gates in `docs/release-gates.json` remain `pending`; no
+  candidate revision or evidence manifests are accepted.
+- [ ] Current native, browser, and mutation workflows provide incremental test
+  evidence only. Ubuntu performance reports have `no_baseline`; macOS runtime,
+  complete text/accessibility, sustained stability, and clean-consumer release
+  evidence remain open.
+
+The ledger correctly prevents successful contract CI from being treated as
+production readiness.
 
 ## Purpose
 

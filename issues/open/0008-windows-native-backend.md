@@ -4,6 +4,23 @@ Status: open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
 Updated: 2026-10-04
 
+## Current-head acceptance triage — 2026-10-04
+
+Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
+
+- [x] The experimental one-HWND Win32/D3D11 hardware-or-WARP path has current
+  hosted evidence. The [Windows run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649277)
+  passed the MSVC shim build, portable tests (6/6), native GPU/lifecycle E2E
+  (1/1), shared backend conformance, and example smoke.
+- [x] Regressions cover minimize/restore sizing, independent mouse-button
+  tracking, actual capture ownership, focus/capture loss, and teardown.
+- [ ] Multiple windows, physical multi-monitor DPI, Japanese IME/text shaping,
+  accessibility, menus, device-loss recovery, external clipboard
+  interoperability, sustained resource lifetime, and performance remain open.
+
+The successful one-window run does not promote a Windows support tier.
+
 ## Goal
 
 Provide a real native gpui.mbt desktop backend for Windows using the same core,

@@ -1,0 +1,37 @@
+{
+  "resultType": "complete",
+  "tools": [
+    {
+      "name": "counter_add",
+      "title": "Add to the demo counter",
+      "description": "Add a non-negative integer to the shared reference counter.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "integer"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "idempotentHint": false
+      }
+    }
+  ],
+  "ttlMs": 0,
+  "cacheScope": "private",
+  "_meta": {
+    "io.modelcontextprotocol/serverInfo": {
+      "name": "gpui-mbt-stdio-fixture",
+      "version": "0.1.0"
+    }
+  }
+}

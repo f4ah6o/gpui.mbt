@@ -9,7 +9,7 @@ Build GPUI-style user interfaces in MoonBit.
 - **Application state** — `App`, typed `Entity[T]`, scoped updates, subscriptions, explicit notifications, deterministic queued work, and manually advanced timers.
 - **Layout and interaction** — deterministic row/column flex layout, recursive layout trees, hit testing, capture/bubble pointer dispatch, stop-propagation, and focus state.
 - **Scene data** — ordered quads, rectangle clip chains, affine transforms, opacity, and canonical `SceneSnapshot` data.
-- **Semantic capabilities** — one typed operation can be bound to GUI actions, direct MoonBit calls, and optional in-process MCP dispatch with shared domain validation.
+- **Semantic capabilities** — one typed operation can be bound to GUI actions, direct MoonBit calls, and optional MCP dispatch with shared domain validation. A checked JavaScript stdio fixture exercises the pinned stateless MCP wire adapter.
 - **macOS** — an AppKit + Metal native host with windows, input, clipboard/cursors, scale/resize events, quad presentation, and an experimental renderer-recovery path.
 - **Ubuntu / Wayland** — a Wayland + EGL/OpenGL ES 2 native host with window lifecycle, input, clipboard/cursor services, scale handling, and quad presentation.
 - **Windows** — an experimental one-window Win32/D3D11 hardware-or-WARP slice with basic input and quad presentation. For prior HEAD `0f7bdfd`, the hosted [Windows Server 2025/MSVC run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37189793257) passed portable checks (6/6), native GPU E2E (1/1), shared backend conformance (1/1), and the example smoke. This is evidence for the experimental slice, not a Windows support-tier or production claim; see the [Windows native guide](docs/windows-native.md).
@@ -60,6 +60,17 @@ vp dev
 
 Open the URL printed by Vite+. The browser proof uses the shared MoonBit app, flex-tree layout, element hit testing/focus, event ingress, and `SceneSnapshot` data. Use `vp build` for the production artifact in `_build/browser-site`. See [the browser guide](docs/browser-demo.md).
 
+### MCP stdio adapter
+
+Run the compiled MoonBit reference server and its endpoint/drift checks with:
+
+```sh
+sh scripts/run_mcp_stdio.sh
+sh scripts/test_mcp_stdio.sh
+```
+
+See [the MCP adapter guide](docs/mcp-adapter.md) for the supported wire surface and lifecycle limits.
+
 ## MoonBit programming model
 
 The headless API can be used independently of a native window backend. This is the same entity update used by the checked example:
@@ -97,9 +108,9 @@ Subscriptions are explicitly canceled with `unsubscribe`. Deterministic timer te
 | `ubuntu/` | Ubuntu Wayland/EGL/GLES2 native backend |
 | `windows/` | Experimental Win32/D3D11 WARP backend slice |
 | `capability/` | Typed semantic capabilities, validation, schema projection, and registry |
-| `mcp/` | Optional transport-neutral inventory and in-process MCP dispatch adapter |
+| `mcp/` | Optional modern MCP inventory, schema projection, stateless wire router, and in-process dispatch adapter |
 | `migration/host_services/` | Bounded portable service requests/completions and default-deny host-service policy |
-| `examples/` | Headless, macOS, Ubuntu, Windows, and browser programs |
+| `examples/` | Headless, macOS, Ubuntu, Windows, browser, and MCP stdio fixtures |
 
 ## Documentation
 
@@ -110,6 +121,7 @@ Subscriptions are explicitly canceled with `unsubscribe`. Deterministic timer te
 - [macOS native host](docs/macos-native.md)
 - [Ubuntu / Wayland host](docs/ubuntu.md)
 - [Browser proof](docs/browser-demo.md)
+- [MCP adapter and stdio fixture](docs/mcp-adapter.md)
 - [Testing strategy and gates](docs/testing.md)
 - [Open implementation packets](issues/open/)
 

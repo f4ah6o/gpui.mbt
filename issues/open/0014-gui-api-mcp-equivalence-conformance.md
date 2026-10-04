@@ -46,6 +46,35 @@ Parent: [0012-semantic-capability-model.md](0012-semantic-capability-model.md)
 Depends on: [0013-generated-api-and-mcp-adapters.md](0013-generated-api-and-mcp-adapters.md)
 Related: [0003-testing-pbt-mutation-and-visual-validation.md](0003-testing-pbt-mutation-and-visual-validation.md)
 Updated: 2026-10-04
+Child: [0016-mcp-endpoint-lifecycle-conformance.md](0016-mcp-endpoint-lifecycle-conformance.md)
+
+## Current-head acceptance triage — 2026-10-04
+
+Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
+
+- [x] A normalized CRUD trace compares create, rename, and delete through GUI,
+  direct, and MCP lanes, including state, result, revisions, notifications,
+  and committed side-effect records.
+- [x] Availability, invalid input, policy denial, stale owners, duplicate and
+  conflicting request IDs, reentrant calls, teardown ambiguity, and oversized
+  outcome behavior have negative/no-reexecution coverage.
+- [x] A seeded direct-versus-MCP operation-sequence property and deterministic
+  generated inventory/schema tests pass in the hosted
+  [contracts/core run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649283).
+- [x] Real Chromium smoke verifies GUI/direct/MCP mutations reach the same
+  app-owned value and repaint the canvas; see the hosted
+  [browser run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282).
+- [ ] Broad generated schema round-trips and reference operations beyond the
+  current fixtures are incomplete.
+- [ ] Cancellation/disconnect timing for a genuinely long-running request and
+  browser/native endpoint topology smoke are split to packet 0016; no wire
+  transport cancellation is proven by the in-process adapter tests.
+- [ ] A reviewed capability-layer mutation baseline is still required after
+  the API and adapter behavior settle.
+
+The browser redraw gate is complete; the transport lifecycle, schema breadth,
+and mutation gates keep this conformance packet open.
 
 ## Goal
 

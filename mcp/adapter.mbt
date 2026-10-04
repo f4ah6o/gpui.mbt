@@ -46,6 +46,8 @@ pub struct Tool {
   priv description : String
   priv input_schema_json : String
   priv output_schema_json : String
+  priv input_is_unit : Bool
+  priv input_is_object : Bool
   priv read_only : Bool
   priv idempotent : Bool
 }
@@ -61,8 +63,43 @@ pub fn Tool::semantic_id(self : Tool) -> String {
 }
 
 ///|
+pub fn Tool::title(self : Tool) -> String {
+  self.title
+}
+
+///|
+pub fn Tool::description(self : Tool) -> String {
+  self.description
+}
+
+///|
+pub fn Tool::input_schema_json(self : Tool) -> String {
+  self.input_schema_json
+}
+
+///|
+pub fn Tool::output_schema_json(self : Tool) -> String {
+  self.output_schema_json
+}
+
+///|
+pub fn Tool::input_is_unit(self : Tool) -> Bool {
+  self.input_is_unit
+}
+
+///|
+pub fn Tool::input_is_object(self : Tool) -> Bool {
+  self.input_is_object
+}
+
+///|
 pub fn Tool::is_read_only(self : Tool) -> Bool {
   self.read_only
+}
+
+///|
+pub fn Tool::is_idempotent(self : Tool) -> Bool {
+  self.idempotent
 }
 
 ///|
@@ -82,6 +119,21 @@ pub fn Resource::uri(self : Resource) -> String {
 ///|
 pub fn Resource::semantic_id(self : Resource) -> String {
   self.semantic_id
+}
+
+///|
+pub fn Resource::name(self : Resource) -> String {
+  self.name
+}
+
+///|
+pub fn Resource::description(self : Resource) -> String {
+  self.description
+}
+
+///|
+pub fn Resource::output_schema_json(self : Resource) -> String {
+  self.output_schema_json
 }
 
 ///|
@@ -428,6 +480,8 @@ fn tool_from_descriptor(descriptor : @capability.Descriptor) -> Tool {
     description: descriptor.description(),
     input_schema_json: descriptor.input_schema().canonical_json(),
     output_schema_json: descriptor.output_schema().canonical_json(),
+    input_is_unit: descriptor.input_schema().is_unit(),
+    input_is_object: descriptor.input_schema().is_object(),
     read_only: descriptor.effect() is @capability.ReadOnly,
     idempotent: descriptor.is_idempotent(),
   }

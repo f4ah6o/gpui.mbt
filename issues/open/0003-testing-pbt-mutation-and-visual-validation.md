@@ -1,6 +1,27 @@
 # Testing: property-based, mutation, and visual validation
 
-Status: design only
+Status: in progress — deterministic/PBT coverage and non-blocking primitive mutation reporting; ratchet pending
+
+## Current-head acceptance triage — 2026-10-04
+
+Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
+head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
+
+- [x] Deterministic tests, fixed-seed geometry/entity/layout/event/focus/scene
+  properties, and the entity reference-model suite pass the hosted
+  [contracts/core run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649283)
+  (112 tests on wasm, wasm-gc, and JS; 122 on native).
+- [x] A pinned `turtles` 0.3.0 primitives job and schema-2 report audit run in
+  CI; the hosted [mutation run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649324)
+  classified 145 viable mutants and retained the report/survivor diffs.
+- [ ] The mutation result is observational only: 115 killed, 30 survived,
+  79.310%, with `--fail-under 0`. The survivors are unreviewed, and no stable,
+  repeated per-package/operator baseline or blocking ratchet has been accepted.
+- [ ] All-target mutation, scene/raster goldens, vlmkit artifacts, expanded
+  stress jobs, and broad native/performance evidence remain open.
+
+The successful mutation workflow is a report-generation pass, not a mutation
+quality-gate pass.
 
 ## Goal
 
@@ -237,7 +258,7 @@ A red gate must be diagnosable without reproducing locally first.
 
 Model: gpt-6-luna
 Updated: 2026-10-03
-Status: design with partial M1/M2 implementation evidence
+Status: in progress; M1–M3 deterministic/PBT evidence is active, while the mutation ratchet and visual/native release layers remain open
 
 The initial M1 quality path is now concrete: [docs/testing.md](../../docs/testing.md)
 records active versus planned coverage, exact geometry property seeds and PR
