@@ -132,9 +132,7 @@ fn endpoint_has_json_member(value : Json, key : String) -> Bool {
 fn endpoint_assert_invalid_params(value : Json) -> Unit raise {
   assert_true(!endpoint_has_json_member(value, "result"))
   let error = endpoint_json_member(value, "error")
-  assert_true(
-    endpoint_json_member(error, "code") is Json::Number(-32602.0, ..),
-  )
+  assert_true(endpoint_json_member(error, "code") is Json::Number(-32602.0, ..))
 }
 
 ///|
