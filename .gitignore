@@ -1,5 +1,6 @@
 _build/
 .moon/
+/node_modules/
 /tests/browser/node_modules/
 __pycache__/
 *.pyc

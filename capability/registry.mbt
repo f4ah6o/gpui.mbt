@@ -181,6 +181,8 @@ pub struct TypedCapability[I, O] {
   priv descriptor : Descriptor
   priv decode : (Value) -> Result[I, @diagnostics.FrameworkError]
   priv encode : (O) -> Result[Value, @diagnostics.FrameworkError]
+  priv validate_input : (I) -> Result[Unit, @diagnostics.FrameworkError]
+  priv validate_output : (O) -> Result[Unit, @diagnostics.FrameworkError]
   priv handler : (I) -> Result[O, @diagnostics.FrameworkError]
   priv availability : () -> Result[Unit, @diagnostics.FrameworkError]
   priv policy : (InvocationOrigin) -> Result[Unit, @diagnostics.FrameworkError]
@@ -195,7 +197,42 @@ pub fn[I, O] TypedCapability::new(
   availability : () -> Result[Unit, @diagnostics.FrameworkError],
   policy : (InvocationOrigin) -> Result[Unit, @diagnostics.FrameworkError],
 ) -> TypedCapability[I, O] {
-  { descriptor, decode, encode, handler, availability, policy, }
+  TypedCapability::new_with_validation(
+    descriptor,
+    decode,
+    encode,
+    _input => Ok(()),
+    _output => Ok(()),
+    handler,
+    availability,
+    policy,
+  )
+}
+
+///|
+/// Add shared domain validators without routing internal typed values through
+/// the transport projection. Erased callers decode first, then use these same
+/// validators and handler as direct and GUI callers.
+pub fn[I, O] TypedCapability::new_with_validation(
+  descriptor : Descriptor,
+  decode : (Value) -> Result[I, @diagnostics.FrameworkError],
+  encode : (O) -> Result[Value, @diagnostics.FrameworkError],
+  validate_input : (I) -> Result[Unit, @diagnostics.FrameworkError],
+  validate_output : (O) -> Result[Unit, @diagnostics.FrameworkError],
+  handler : (I) -> Result[O, @diagnostics.FrameworkError],
+  availability : () -> Result[Unit, @diagnostics.FrameworkError],
+  policy : (InvocationOrigin) -> Result[Unit, @diagnostics.FrameworkError],
+) -> TypedCapability[I, O] {
+  {
+    descriptor,
+    decode,
+    encode,
+    validate_input,
+    validate_output,
+    handler,
+    availability,
+    policy,
+  }
 }
 
 ///|
@@ -206,7 +243,9 @@ pub fn[I, O] TypedCapability::descriptor(
 }
 
 ///|
-/// Direct typed invocation without transport-value conversion.
+/// Invoke the typed domain operation without forcing its values through a
+/// transport representation. External schema validation remains at the erased
+/// boundary; domain validators and the handler are shared by all entry paths.
 pub fn[I, O] TypedCapability::invoke(
   self : TypedCapability[I, O],
   origin : InvocationOrigin,
@@ -214,7 +253,7 @@ pub fn[I, O] TypedCapability::invoke(
 ) -> Result[O, @diagnostics.FrameworkError] {
   match self.check(origin) {
     Err(error) => Err(error)
-    Ok(_) => (self.handler)(input)
+    Ok(_) => self.invoke_typed(input)
   }
 }
 
@@ -224,57 +263,104 @@ fn[I, O] TypedCapability::invoke_value(
   origin : InvocationOrigin,
   input : Value,
 ) -> Result[Value, @diagnostics.FrameworkError] {
-  match self.check(origin) {
+  // Own the public mutable arrays before any user-supplied authorization or
+  // decoder closure runs; otherwise its aliases could change the request
+  // after validation and before schema projection.
+  match input.try_clone_transport() {
     Err(error) => Err(error)
-    Ok(_) =>
-      if !self.descriptor.input_schema.accepts(input) {
-        Err(
-          capability_error(
-            @diagnostics.InvalidInput,
-            self.descriptor.id,
-            "input does not satisfy the declared schema",
-          ),
-        )
-      } else {
-        match (self.decode)(input) {
-          Err(error) =>
+    Ok(owned_input) =>
+      match self.check(origin) {
+        Err(error) => Err(error)
+        Ok(_) =>
+          if !self.descriptor.input_schema.accepts(owned_input) {
             Err(
-              boundary_conversion_error(
+              capability_error(
                 @diagnostics.InvalidInput,
                 self.descriptor.id,
-                "input conversion failed",
-                error,
+                "input does not satisfy the declared schema",
               ),
             )
-          Ok(typed_input) =>
-            match (self.handler)(typed_input) {
-              Err(error) => Err(error)
-              Ok(output) =>
-                match (self.encode)(output) {
-                  Err(error) =>
-                    Err(
-                      boundary_conversion_error(
-                        @diagnostics.ConversionFailed,
-                        self.descriptor.id,
-                        "output conversion failed",
-                        error,
-                      ),
-                    )
-                  Ok(encoded) =>
-                    if self.descriptor.output_schema.accepts(encoded) {
-                      Ok(encoded)
-                    } else {
-                      Err(
-                        capability_error(
-                          @diagnostics.ConversionFailed,
-                          self.descriptor.id,
-                          "output does not satisfy the declared schema",
-                        ),
-                      )
+          } else {
+            match (self.decode)(owned_input) {
+              Err(error) =>
+                Err(
+                  boundary_conversion_error(
+                    @diagnostics.InvalidInput,
+                    self.descriptor.id,
+                    "input conversion failed",
+                    error,
+                  ),
+                )
+              Ok(typed_input) =>
+                match self.invoke_typed(typed_input) {
+                  Err(error) => Err(error)
+                  Ok(output) =>
+                    match self.encode_output_value(output) {
+                      Ok(encoded) => Ok(encoded)
+                      Err(error) => Err(error)
                     }
                 }
             }
-        }
+          }
+      }
+  }
+}
+
+///|
+fn[I, O] TypedCapability::invoke_typed(
+  self : TypedCapability[I, O],
+  input : I,
+) -> Result[O, @diagnostics.FrameworkError] {
+  match (self.validate_input)(input) {
+    Err(error) => Err(error)
+    Ok(_) =>
+      match (self.handler)(input) {
+        Err(error) => Err(error)
+        Ok(output) =>
+          match (self.validate_output)(output) {
+            Err(error) => Err(error)
+            Ok(_) => Ok(output)
+          }
+      }
+  }
+}
+
+///|
+fn[I, O] TypedCapability::encode_output_value(
+  self : TypedCapability[I, O],
+  output : O,
+) -> Result[Value, @diagnostics.FrameworkError] {
+  match (self.encode)(output) {
+    Err(error) =>
+      Err(
+        projection_error(
+          self.descriptor.id,
+          "output conversion failed",
+          Some(error),
+        ),
+      )
+    Ok(encoded) =>
+      match encoded.validate_transport() {
+        Err(error) =>
+          Err(
+            projection_error(
+              self.descriptor.id,
+              "output is outside the transport-safe value subset",
+              Some(error),
+            ),
+          )
+        Ok(_) =>
+          if self.descriptor.output_schema.accepts(encoded) {
+            Ok(encoded)
+          } else {
+            Err(
+              projection_error(
+                self.descriptor.id,
+                "output does not satisfy the declared schema",
+                None,
+              ),
+            )
+          }
       }
   }
 }
@@ -330,6 +416,7 @@ pub fn[I, O] GuiBinding::is_enabled(self : GuiBinding[I, O]) -> Bool {
 ///|
 priv struct RegistryEntry {
   descriptor : Descriptor
+  authorize : (InvocationOrigin) -> Result[Unit, @diagnostics.FrameworkError]
   invoke : (InvocationOrigin, Value) -> Result[
     Value,
     @diagnostics.FrameworkError,
@@ -392,6 +479,7 @@ pub fn[I, O] Registry::register(
   }
   let erased = RegistryEntry::{
     descriptor,
+    authorize: origin => capability.check(origin),
     invoke: (origin, input) => capability.invoke_value(origin, input),
   }
   self.state.val.entries.push(erased)
@@ -466,6 +554,32 @@ pub fn Registry::invoke_external(
     capability_error(
       @diagnostics.UnsupportedCapability,
       "registry.invoke_external",
+      "unknown external capability: \{external_name}",
+    ),
+  )
+}
+
+///|
+/// Re-check liveness, availability, and origin policy without running the
+/// capability handler. Adapters use this before replaying a cached response.
+pub fn Registry::authorize_external(
+  self : Registry,
+  external_name : String,
+  origin : InvocationOrigin,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  if !self.state.val.alive {
+    return Err(stale_registry_error("authorize_external"))
+  }
+  for entry in self.state.val.entries {
+    if entry.descriptor.exposure is External &&
+      entry.descriptor.external_name == external_name {
+      return (entry.authorize)(origin)
+    }
+  }
+  Err(
+    capability_error(
+      @diagnostics.UnsupportedCapability,
+      "registry.authorize_external",
       "unknown external capability: \{external_name}",
     ),
   )
@@ -589,6 +703,28 @@ fn boundary_conversion_error(
     None => prefix
   }
   capability_error(code, operation, detail)
+}
+
+///|
+fn projection_error(
+  operation : String,
+  prefix : String,
+  error : @diagnostics.FrameworkError?,
+) -> @diagnostics.FrameworkError {
+  let detail = match error {
+    Some(cause) =>
+      match cause.message() {
+        Some(message) => "\{prefix}: \{message}"
+        None => prefix
+      }
+    None => prefix
+  }
+  @diagnostics.FrameworkError::new(
+    @diagnostics.ConversionFailed,
+    operation,
+    subsystem="capability_projection",
+    message=detail,
+  )
 }
 
 ///|

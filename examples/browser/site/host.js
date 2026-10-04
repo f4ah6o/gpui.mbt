@@ -1,4 +1,5 @@
 import * as gpui from "mbt:f4ah6o/gpui/examples/browser";
+import { createLegacyIsland } from "../../migration/legacy-island.js";
 
 const elements = {
   frame: document.querySelector("#canvas-frame"),
@@ -11,6 +12,7 @@ const elements = {
   target: document.querySelector("#hit-target"),
   focus: document.querySelector("#focus-target"),
   activations: document.querySelector("#activation-count"),
+  capabilityValue: document.querySelector("#capability-value"),
   lastEvent: document.querySelector("#last-event"),
   diagnostic: document.querySelector("#diagnostic"),
   diagnosticTitle: document.querySelector("#diagnostic-title"),
@@ -18,6 +20,8 @@ const elements = {
   diagnosticCode: document.querySelector("#diagnostic-code"),
   capabilities: document.querySelector("#capabilities"),
   remount: document.querySelector("#remount"),
+  returnFramework: document.querySelector("#return-framework"),
+  hostInputOwner: document.querySelector("#host-input-owner"),
 };
 
 const capabilityRows = [
@@ -29,6 +33,7 @@ const capabilityRows = [
   ["Cursor control", "cursor"],
   ["IME bridge", "textInputIme"],
   ["Accessibility bridge", "accessibility"],
+  ["Migration ARIA fixture", "accessibilityFixture"],
   ["Renderer recovery", "rendererRecovery"],
   ["Worker commands", "crossThreadCommands"],
 ];
@@ -46,6 +51,14 @@ let logicalHeight = 0;
 let deviceScale = 0;
 let listeners = [];
 const activePointerButtons = new Map();
+const accessibilityButtons = new Map();
+let accessibilityLayer = null;
+let legacySurface = null;
+let legacyEditor = null;
+let legacySave = null;
+let legacyIsland = null;
+let currentHostLayout = null;
+let legacyRequestedVisible = true;
 
 class FrameworkHostError extends Error {
   constructor(diagnostic) {
@@ -198,7 +211,146 @@ function refreshStatus() {
   elements.target.textContent = status.target == null ? "—" : `#${status.target}`;
   elements.focus.textContent = status.focus == null ? "—" : `#${status.focus}`;
   elements.activations.textContent = String(status.clicks ?? 0);
+  elements.capabilityValue.textContent = String(status.capabilityValue ?? 0);
   elements.lastEvent.textContent = status.lastEvent || "Viewport ready";
+}
+
+function currentFocusedSemanticId() {
+  const active = document.activeElement;
+  if (active?.dataset?.semanticNode) return Number(active.dataset.semanticNode);
+  const status = JSON.parse(gpui.gpui_browser_status());
+  return status.focus == null ? null : Number(status.focus);
+}
+
+function navigateSemanticFocus(from, backwards) {
+  const current = from ?? currentFocusedSemanticId();
+  let target;
+  if (current == null) target = backwards ? 7 : 4;
+  else if (backwards) target = current <= 4 ? 7 : current - 1;
+  else target = current >= 7 ? 4 : current + 1;
+  const button = accessibilityButtons.get(target);
+  if (!button) {
+    queueInput("gpui_browser_key", "Tab", true, false, backwards, false, false, false);
+    return;
+  }
+  call("gpui_browser_accessibility_focus", target, backwards);
+  scheduleFrame();
+  button.focus({ preventScroll: true });
+}
+
+function createAccessibilityLayer() {
+  accessibilityLayer = document.createElement("div");
+  accessibilityLayer.id = "gpui-accessibility-bridge";
+  accessibilityLayer.className = "accessibility-bridge";
+  accessibilityLayer.setAttribute("role", "group");
+  accessibilityLayer.setAttribute("aria-label", "Canvas actions");
+  elements.frame.appendChild(accessibilityLayer);
+  listen(accessibilityLayer, "focusout", (event) => {
+    if (legacySurface?.contains(event.relatedTarget)) {
+      queueInput("gpui_browser_key", "Escape", true, false, false, false, false, false);
+    }
+  });
+}
+
+function ensureAccessibilityButton(node) {
+  const id = Number(node.id);
+  let button = accessibilityButtons.get(id);
+  if (button) return button;
+  button = document.createElement("button");
+  button.type = "button";
+  button.className = "accessibility-proxy";
+  button.id = `gpui-accessibility-node-${id}`;
+  button.dataset.semanticNode = String(id);
+  button.setAttribute("role", node.role);
+  button.addEventListener("focus", () => {
+    queueInput("gpui_browser_accessibility_focus", id, false);
+  });
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    queueInput("gpui_browser_accessibility_activate", id);
+  });
+  button.addEventListener("keydown", (event) => {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      navigateSemanticFocus(id, event.shiftKey);
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") event.preventDefault();
+    queueInput("gpui_browser_key", event.key, true, event.repeat, ...modifiers(event));
+  });
+  button.addEventListener("keyup", (event) => {
+    if (event.key === "Enter" || event.key === " ") event.preventDefault();
+    queueInput("gpui_browser_key", event.key, false, false, ...modifiers(event));
+  });
+  accessibilityLayer.appendChild(button);
+  accessibilityButtons.set(id, button);
+  return button;
+}
+
+function createLegacyIslandSurface() {
+  legacyRequestedVisible = true;
+  legacySurface = document.createElement("section");
+  legacySurface.id = "legacy-island";
+  legacySurface.className = "legacy-island";
+  legacySurface.setAttribute("role", "group");
+  legacySurface.setAttribute("aria-label", "Legacy web notes editor");
+
+  const title = document.createElement("span");
+  title.className = "legacy-island-title";
+  title.textContent = "LEGACY WEB EDITOR";
+  legacyEditor = document.createElement("textarea");
+  legacyEditor.rows = 1;
+  legacyEditor.value = "Notes remain in the existing web surface.";
+  legacyEditor.setAttribute("aria-label", "Legacy note text");
+  legacySave = document.createElement("button");
+  legacySave.type = "button";
+  legacySave.className = "legacy-island-save";
+  legacySave.textContent = "Save";
+  legacySave.setAttribute("aria-label", "Save legacy note");
+  legacySurface.append(title, legacyEditor, legacySave);
+  elements.frame.appendChild(legacySurface);
+  legacyIsland = createLegacyIsland({
+    frame: elements.frame,
+    surface: legacySurface,
+    canvas,
+    onOwnerChange: (owner) => {
+      elements.hostInputOwner.textContent = owner === "legacy-island" ? "Legacy web island" : "gpui.mbt canvas";
+    },
+  });
+  listen(legacySave, "click", () => {
+    elements.lastEvent.textContent = `legacy note saved (${legacyEditor.value.length} chars)`;
+  });
+  listen(elements.returnFramework, "click", () => legacyIsland?.returnToFramework());
+}
+
+function syncHostLayout() {
+  if (!running) return;
+  currentHostLayout = JSON.parse(gpui.gpui_browser_host_layout());
+  const currentIds = new Set();
+  for (const node of currentHostLayout.nodes || []) {
+    const id = Number(node.id);
+    currentIds.add(id);
+    const button = ensureAccessibilityButton(node);
+    const bounds = node.bounds;
+    button.setAttribute("aria-label", node.name);
+    button.setAttribute("aria-disabled", String(Boolean(node.disabled)));
+    button.setAttribute("aria-current", String(Boolean(node.focused)));
+    button.dataset.semanticValue = node.value == null ? "" : String(node.value);
+    button.style.left = `${bounds.x}px`;
+    button.style.top = `${bounds.y}px`;
+    button.style.width = `${bounds.width}px`;
+    button.style.height = `${bounds.height}px`;
+  }
+  for (const [id, button] of accessibilityButtons) {
+    if (!currentIds.has(id)) {
+      button.remove();
+      accessibilityButtons.delete(id);
+    }
+  }
+  const region = currentHostLayout.regions?.find((value) => value.id === 8);
+  if (region && legacyIsland) {
+    legacyIsland.sync(region.bounds, legacyRequestedVisible && !document.hidden);
+  }
 }
 
 function renderFrame() {
@@ -208,6 +360,7 @@ function renderFrame() {
     syncViewport();
     const snapshot = call("gpui_browser_render_frame");
     drawSnapshot(snapshot);
+    syncHostLayout();
     refreshStatus();
     clearDiagnostic();
   } catch (error) {
@@ -283,8 +436,34 @@ function attachCanvasEvents() {
     if (!buttons) return;
     for (const button of buttons) pointerButton(event, button, false);
   });
+  listen(canvas, "lostpointercapture", (event) => {
+    const buttons = activePointerButtons.get(event.pointerId);
+    activePointerButtons.delete(event.pointerId);
+    if (!buttons) return;
+    for (const button of buttons) pointerButton(event, button, false);
+  });
+  listen(canvas, "wheel", (event) => {
+    event.preventDefault();
+    const bounds = canvas.getBoundingClientRect();
+    const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? 16
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? bounds.height : 1;
+    queueInput(
+      "gpui_browser_scroll",
+      event.clientX - bounds.left,
+      event.clientY - bounds.top,
+      event.deltaX * unit,
+      event.deltaY * unit,
+      ...modifiers(event),
+    );
+  }, { passive: false });
   listen(canvas, "keydown", (event) => {
-    if (["Tab", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(event.key)) event.preventDefault();
+    if (event.key === "Tab" && accessibilityButtons.size > 0) {
+      event.preventDefault();
+      navigateSemanticFocus(null, event.shiftKey);
+      return;
+    }
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(event.key)) event.preventDefault();
     queueInput("gpui_browser_key", event.key, true, event.repeat, ...modifiers(event));
   });
   listen(canvas, "keyup", (event) => queueInput("gpui_browser_key", event.key, false, false, ...modifiers(event)));
@@ -321,6 +500,15 @@ function stop() {
   }
   dprQuery = null;
   for (const remove of listeners.splice(0)) remove();
+  legacyIsland?.dispose();
+  legacyIsland = null;
+  legacySurface = null;
+  legacyEditor = null;
+  legacySave = null;
+  accessibilityLayer?.remove();
+  accessibilityLayer = null;
+  accessibilityButtons.clear();
+  currentHostLayout = null;
   activePointerButtons.clear();
   if (hadAdapter) gpui.gpui_browser_destroy();
   context = null;
@@ -342,6 +530,8 @@ function start() {
     call("gpui_browser_start");
     adapterStarted = true;
     running = true;
+    createAccessibilityLayer();
+    createLegacyIslandSurface();
     attachCanvasEvents();
     call("gpui_browser_visibility", !document.hidden);
     listen(window, "resize", () => queueInput("gpui_browser_set_viewport", canvas.getBoundingClientRect().width, canvas.getBoundingClientRect().height, window.devicePixelRatio || 1));
@@ -381,7 +571,29 @@ function start() {
   }
 }
 
-window.__gpuiSmokeStatus = () => JSON.parse(gpui.gpui_browser_status());
+window.__gpuiSmokeStatus = () => ({
+  ...JSON.parse(gpui.gpui_browser_status()),
+  hostInputOwner: elements.frame?.dataset.inputOwner || "framework",
+  legacyVisible: legacySurface ? legacySurface.isConnected && !legacySurface.hidden : false,
+});
+window.__gpuiHostLayout = () => currentHostLayout;
+window.__gpuiSetLegacyIslandVisible = (visible) => {
+  const region = currentHostLayout?.regions?.find((value) => value.id === 8);
+  legacyRequestedVisible = Boolean(visible);
+  return region ? legacyIsland?.sync(region.bounds, legacyRequestedVisible && !document.hidden) : false;
+};
+window.__gpuiDirectCounter = (delta) => {
+  const value = call("gpui_browser_direct_counter", delta);
+  scheduleFrame();
+  return value;
+};
+window.__gpuiMcpCounter = (delta) => {
+  const value = call("gpui_browser_mcp_counter", delta);
+  scheduleFrame();
+  return value;
+};
+window.__gpuiReadCounter = () => call("gpui_browser_query_counter");
+window.__gpuiDisposeLegacyIsland = () => legacyIsland?.dispose();
 
 const gpuiCapabilities = JSON.parse(gpui.gpui_browser_capabilities());
 elements.remount.addEventListener("click", () => start());

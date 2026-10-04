@@ -7,6 +7,10 @@ pub(all) enum ErrorCode {
   Unavailable
   Stale
   DomainFailure
+  ProjectionFailed
+  RequestConflict
+  RequestInProgress
+  OutcomeNotRetained
   AdapterClosed
 } derive(Eq)
 
@@ -27,6 +31,11 @@ pub fn AdapterError::code(self : AdapterError) -> ErrorCode {
 ///|
 pub fn AdapterError::message(self : AdapterError) -> String {
   self.message
+}
+
+///|
+fn copy_adapter_error(error : AdapterError) -> AdapterError {
+  { code: error.code, message: error.message, }
 }
 
 ///|
@@ -140,7 +149,37 @@ pub fn Inventory::canonical_json(self : Inventory) -> String {
 ///|
 priv struct AdapterState {
   mut open : Bool
+  mut completed_requests : Array[CompletedRequest]
+  mut in_flight_requests : Array[InFlightRequest]
 }
+
+///|
+priv struct CompletedRequest {
+  request_id : String
+  fingerprint : String
+  outcome : Result[@capability.Value, AdapterError]?
+}
+
+///|
+priv struct InFlightRequest {
+  request_id : String
+  fingerprint : String
+}
+
+///|
+const MAX_REQUEST_ID_LENGTH : Int = 256
+
+///|
+const MAX_REQUEST_JSON_CHARS : Int = 1_048_576
+
+///|
+const MAX_RETAINED_REQUESTS : Int = 128
+
+///|
+const MAX_RETAINED_OUTCOME_CHARS : Int = 262_144
+
+///|
+const MAX_IN_FLIGHT_REQUESTS : Int = 128
 
 ///|
 /// Optional protocol adapter. It owns no application state and no domain
@@ -152,7 +191,10 @@ pub struct Adapter {
 
 ///|
 pub fn Adapter::new(registry : @capability.Registry) -> Adapter {
-  { registry, state: Ref({ open: true, }), }
+  {
+    registry,
+    state: Ref({ open: true, completed_requests: [], in_flight_requests: [], }),
+  }
 }
 
 ///|
@@ -163,6 +205,7 @@ pub fn Adapter::is_open(self : Adapter) -> Bool {
 ///|
 pub fn Adapter::close(self : Adapter) -> Unit {
   self.state.val.open = false
+  self.state.val.completed_requests.clear()
 }
 
 ///|
@@ -209,6 +252,143 @@ pub fn Adapter::call_tool(
     }
   }
   Err({ code: UnknownOperation, message: "unknown tool: \{name}", })
+}
+
+///|
+/// Call a tool with session-local duplicate suppression. The adapter retains
+/// the most recent 128 terminal outcomes, with each successful result capped at
+/// 256 KiB of canonical JSON; a larger result leaves a no-reexecution
+/// tombstone. Requests older than the retention window may execute again. This
+/// does not promise persistence across restart or exactly-once execution across
+/// processes. Every replay re-checks registry liveness, availability, and
+/// origin policy. Host cancellation/disconnect cannot interrupt a synchronous
+/// handler that has started, so loss of the response is ambiguous.
+pub fn Adapter::call_tool_with_request_id(
+  self : Adapter,
+  request_id : String,
+  name : String,
+  input : @capability.Value,
+) -> Result[@capability.Value, AdapterError] {
+  if !self.state.val.open {
+    return Err({ code: AdapterClosed, message: "adapter is closed", })
+  }
+  if request_id.length() == 0 || request_id.length() > MAX_REQUEST_ID_LENGTH {
+    return Err({
+      code: InvalidInput,
+      message: "request id must contain 1 to 256 characters",
+    })
+  }
+  // The caller may retain and mutate public array/object storage. Own one
+  // validated copy so later policy and decode callbacks cannot make the
+  // request fingerprint diverge from the payload dispatched below.
+  let owned_input = match input.try_clone_transport() {
+    Err(error) => return Err(map_error(error))
+    Ok(value) => value
+  }
+  let input_json = match owned_input.try_canonical_json() {
+    Err(error) => return Err(map_error(error))
+    Ok(json) => json
+  }
+  let fingerprint = "\{name.length()}:\{name};\{input_json.length()}:\{input_json}"
+  if fingerprint.length() > MAX_REQUEST_JSON_CHARS {
+    return Err({
+      code: InvalidInput,
+      message: "request exceeds the 1048576 character limit",
+    })
+  }
+  for active in self.state.val.in_flight_requests {
+    if active.request_id == request_id {
+      if active.fingerprint != fingerprint {
+        return Err({
+          code: RequestConflict,
+          message: "request id is already executing with different tool arguments",
+        })
+      }
+      match self.registry.authorize_external(name, @capability.RemoteMcp) {
+        Err(error) => return Err(map_error(error))
+        Ok(_) => ()
+      }
+      if active.fingerprint == fingerprint {
+        return Err({
+          code: RequestInProgress,
+          message: "request with this id is already executing",
+        })
+      }
+      return Err({
+        code: RequestConflict,
+        message: "request id is already executing with different tool arguments",
+      })
+    }
+  }
+  for completed in self.state.val.completed_requests {
+    if completed.request_id == request_id {
+      if completed.fingerprint != fingerprint {
+        return Err({
+          code: RequestConflict,
+          message: "request id was already used with different tool arguments",
+        })
+      }
+      match self.registry.authorize_external(name, @capability.RemoteMcp) {
+        Err(error) => return Err(map_error(error))
+        Ok(_) => ()
+      }
+      return replay_outcome(completed.outcome)
+    }
+  }
+
+  if self.state.val.in_flight_requests.length() >= MAX_IN_FLIGHT_REQUESTS {
+    return Err({
+      code: Unavailable,
+      message: "adapter in-flight request limit has been reached",
+    })
+  }
+  self.state.val.in_flight_requests.push({ request_id, fingerprint, })
+  let outcome = self.call_tool(name, owned_input)
+  self.remove_in_flight_request(request_id)
+  if !self.state.val.open {
+    return Err({
+      code: AdapterClosed,
+      message: "adapter closed while request ran; its domain effect may already be committed",
+    })
+  }
+  let retained = match outcome {
+    Ok(value) =>
+      match value.try_canonical_json() {
+        Ok(json) if json.length() <= MAX_RETAINED_OUTCOME_CHARS =>
+          Some(Ok(value.clone()))
+        _ => None
+      }
+    Err(error) => Some(Err(copy_adapter_error(error)))
+  }
+  if self.state.val.completed_requests.length() >= MAX_RETAINED_REQUESTS {
+    let remaining : Array[CompletedRequest] = []
+    let mut index = 1
+    while index < self.state.val.completed_requests.length() {
+      remaining.push(self.state.val.completed_requests[index])
+      index += 1
+    }
+    self.state.val.completed_requests = remaining
+  }
+  self.state.val.completed_requests.push({
+    request_id,
+    fingerprint,
+    outcome: retained,
+  })
+  outcome
+}
+
+///|
+fn Adapter::remove_in_flight_request(
+  self : Adapter,
+  request_id : String,
+) -> Unit {
+  let remaining : Array[InFlightRequest] = []
+  for active in self.state.val.in_flight_requests {
+    if active.request_id != request_id {
+      remaining.push(active)
+    }
+  }
+  self.state.val.in_flight_requests = remaining
 }
 
 ///|
@@ -279,7 +459,12 @@ fn map_error(error : @diagnostics.FrameworkError) -> AdapterError {
   let code = match error.code() {
     @diagnostics.UnsupportedCapability => UnknownOperation
     @diagnostics.InvalidInput => InvalidInput
-    @diagnostics.ConversionFailed => DomainFailure
+    @diagnostics.ConversionFailed =>
+      if error.subsystem() is Some("capability_projection") {
+        ProjectionFailed
+      } else {
+        DomainFailure
+      }
     @diagnostics.PermissionDenied => PermissionDenied
     @diagnostics.EntityNotLive | @diagnostics.StaleHandle => Stale
     @diagnostics.AppNotRunning | @diagnostics.Busy => Unavailable
@@ -290,4 +475,19 @@ fn map_error(error : @diagnostics.FrameworkError) -> AdapterError {
     None => error.operation()
   }
   { code, message: detail, }
+}
+
+///|
+fn replay_outcome(
+  outcome : Result[@capability.Value, AdapterError]?,
+) -> Result[@capability.Value, AdapterError] {
+  match outcome {
+    None =>
+      Err({
+        code: OutcomeNotRetained,
+        message: "request already completed; its large result was not retained, and it will not be executed again",
+      })
+    Some(Ok(value)) => Ok(value.clone())
+    Some(Err(error)) => Err(copy_adapter_error(error))
+  }
 }

@@ -72,6 +72,94 @@ test "portable browser app preserves logical dimensions across DPR changes" {
 }
 
 ///|
+test "browser GUI direct and MCP adapter calls share one observed capability" {
+  let demo = create_browser_demo()
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains(
+      "\"capabilityValue\":0",
+    ),
+  )
+
+  assert_true(@browser_app.BrowserDemo::invoke_counter_direct(demo, 3) is Ok(3))
+  assert_true(@browser_app.BrowserDemo::query_counter(demo) is Ok(3))
+  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains(
+      "\"capabilityValue\":3",
+    ),
+  )
+
+  assert_true(@browser_app.BrowserDemo::invoke_counter_mcp(demo, 2) is Ok(5))
+  assert_true(@browser_app.BrowserDemo::query_counter(demo) is Ok(5))
+  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains(
+      "\"capabilityValue\":5",
+    ),
+  )
+
+  ignore(
+    @browser_app.BrowserDemo::enqueue_event(
+      demo,
+      @platform.Input(
+        @primitives.PointerButtonPressed(
+          position=browser_test_point(120.0, 238.0),
+          button=@primitives.Primary,
+          modifiers=@primitives.Modifiers::none(),
+        ),
+      ),
+    ),
+  )
+  let frame = match @browser_app.BrowserDemo::render_frame(demo) {
+    Ok(value) => value
+    Err(_) => abort("semantic capability GUI action failed to render")
+  }
+  assert_true(@browser_app.BrowserDemo::query_counter(demo) is Ok(6))
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains(
+      "\"capabilityValue\":6",
+    ),
+  )
+  let mut has_visible_counter_indicator = false
+  for item in frame.items() {
+    if item.id() == 92 {
+      match item {
+        @scene.QuadItem(bounds~, ..) =>
+          has_visible_counter_indicator = bounds.size().width() == 32.0
+      }
+    }
+  }
+  assert_true(has_visible_counter_indicator)
+  @browser_app.BrowserDemo::dispose(demo)
+}
+
+///|
+test "browser host layout exposes semantics and a measured legacy island" {
+  let demo = create_browser_demo()
+  let layout = @browser_app.BrowserDemo::host_layout_json(demo)
+  assert_true(layout.contains("\"role\":\"button\""))
+  assert_true(layout.contains("Alpine cyan action"))
+  assert_true(layout.contains("\"kind\":\"legacy-island\""))
+  assert_true(layout.contains("\"id\":8"))
+
+  assert_true(
+    @browser_app.BrowserDemo::focus_semantic_node(demo, 7, false) is Ok(_),
+  )
+  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains("\"focus\":7"),
+  )
+  assert_true(
+    @browser_app.BrowserDemo::focus_semantic_node(demo, 4, true) is Ok(_),
+  )
+  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains("\"focus\":4"),
+  )
+  @browser_app.BrowserDemo::dispose(demo)
+}
+
+///|
 test "portable keyboard model honors reverse tab and focused activation" {
   let demo = create_browser_demo()
   let shift = @primitives.Modifiers::new(

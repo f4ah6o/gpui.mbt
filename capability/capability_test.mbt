@@ -143,14 +143,12 @@ test "tagged schemas reserve payload key and number JSON stays valid" {
   assert_true(!numbers.accepts(@capability.Value::number(nan)))
   assert_true(!numbers.accepts(@capability.Value::number(positive_infinity)))
   assert_true(!numbers.accepts(@capability.Value::number(negative_infinity)))
-  assert_eq(@capability.Value::number(nan).canonical_json(), "\"NaN\"")
-  assert_eq(
-    @capability.Value::number(positive_infinity).canonical_json(),
-    "\"Infinity\"",
+  assert_true(@capability.Value::number(nan).try_canonical_json() is Err(_))
+  assert_true(
+    @capability.Value::number(positive_infinity).try_canonical_json() is Err(_),
   )
-  assert_eq(
-    @capability.Value::number(negative_infinity).canonical_json(),
-    "\"-Infinity\"",
+  assert_true(
+    @capability.Value::number(negative_infinity).try_canonical_json() is Err(_),
   )
 }
 
@@ -161,6 +159,61 @@ test "canonical JSON escapes every control character" {
     @capability.Value::string(controls).canonical_json(),
     "\"\\u0000\\u0008\\u000c\\u001f\"",
   )
+}
+
+///|
+test "transport projection rejects duplicate keys cycles and oversized graphs" {
+  let duplicate = @capability.ObjectValue([
+    ("name", @capability.Value::string("first")),
+    ("name", @capability.Value::string("second")),
+  ])
+  assert_true(duplicate.validate_transport() is Err(_))
+  assert_true(duplicate.try_canonical_json() is Err(_))
+
+  let cycle_values : Array[@capability.Value] = []
+  let cycle = @capability.ArrayValue(cycle_values)
+  cycle_values.push(cycle)
+  assert_true(cycle.validate_transport() is Err(_))
+  assert_true(cycle.as_array() is Err(_))
+  assert_true(cycle.clone().validate_transport() is Err(_))
+  assert_true(cycle.try_clone_transport() is Err(_))
+
+  let too_many_children : Array[@capability.Value] = []
+  let mut index = 0
+  while index < 10_000 {
+    too_many_children.push(@capability.Value::int(index))
+    index += 1
+  }
+  assert_true(
+    @capability.ArrayValue(too_many_children).validate_transport() is Err(_),
+  )
+}
+
+///|
+test "transport JSON length counts UTF-16 and accepts the exact object boundary" {
+  // A supplementary Unicode scalar occupies two UTF-16 code units; the
+  // surrounding JSON quotes make this four characters in MoonBit strings.
+  assert_eq(@capability.Value::string("🦊").canonical_json().length(), 4)
+
+  let exact_text = StringBuilder()
+  let mut index = 0
+  while index < 1_048_568 {
+    exact_text.write_char('x')
+    index += 1
+  }
+  let exact = @capability.ObjectValue([
+    ("k", @capability.Value::string(exact_text.to_string())),
+  ])
+  assert_true(exact.validate_transport() is Ok(_))
+  match exact.try_canonical_json() {
+    Ok(json) => assert_eq(json.length(), 1_048_576)
+    Err(_) => fail("exactly bounded transport value should serialize")
+  }
+  exact_text.write_char('x')
+  let over = @capability.ObjectValue([
+    ("k", @capability.Value::string(exact_text.to_string())),
+  ])
+  assert_true(over.validate_transport() is Err(_))
 }
 
 ///|
@@ -332,5 +385,61 @@ test "registry rejects collisions invalid values policy and stale handles" {
     ) {
     Err(error) => assert_true(error.code() is @diagnostics.StaleHandle)
     Ok(_) => fail("torn down registry must reject invocation")
+  }
+}
+
+///|
+test "typed and erased lanes run the same domain input validator" {
+  let capability = @capability.TypedCapability::new_with_validation(
+    external_int_descriptor("document.rename", @capability.Command),
+    value => value.as_int(),
+    value => Ok(@capability.Value::int(value)),
+    value => {
+      if value < 0 {
+        Err(
+          @diagnostics.FrameworkError::new(
+            @diagnostics.InvalidInput,
+            "document.rename",
+            subsystem="domain",
+            message="name length cannot be negative",
+          ),
+        )
+      } else {
+        Ok(())
+      }
+    },
+    _output => Ok(()),
+    value => Ok(value),
+    () => Ok(()),
+    _origin => Ok(()),
+  )
+  let registry = @capability.Registry::new()
+  assert_true(registry.register(capability) is Ok(_))
+
+  match capability.invoke(@capability.Direct, -1) {
+    Err(error) => assert_true(error.code() is @diagnostics.InvalidInput)
+    Ok(_) => fail("typed invocation must use domain input validation")
+  }
+  match
+    registry.invoke(
+      "document.rename",
+      @capability.RemoteMcp,
+      @capability.Value::int(-1),
+    ) {
+    Err(error) => {
+      assert_true(error.code() is @diagnostics.InvalidInput)
+      assert_eq(error.message(), Some("name length cannot be negative"))
+    }
+    Ok(_) => fail("erased invocation must use the same domain validator")
+  }
+  assert_true(capability.invoke(@capability.Direct, 4) is Ok(4))
+  match
+    registry.invoke(
+      "document.rename",
+      @capability.RemoteMcp,
+      @capability.Value::int(4),
+    ) {
+    Ok(@capability.IntValue(4)) => ()
+    _ => fail("erased invocation should return the encoded result")
   }
 }

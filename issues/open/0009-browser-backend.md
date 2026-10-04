@@ -385,8 +385,9 @@ flex-tree layout, element hit testing, focus, common event ingress, and
 `SceneSnapshot` v1 quad data. The host owns the canvas, CSS-pixel/DPR measurement,
 pointer and keyboard callbacks, focus/visibility/lifecycle listeners, and
 on-demand `requestAnimationFrame` presentation. Its current capability report
-keeps native top-level windows, clipboard, cursor, IME, accessibility, renderer
-recovery, and worker commands unavailable.
+keeps native top-level windows, clipboard, cursor, IME, a general accessibility
+bridge, renderer recovery, and worker commands unavailable; it separately
+reports the fixture-only ARIA adapter.
 
 The local build and all-target check/test suites pass. A pinned Chromium smoke
 test covers rendered Canvas 2D output, pointer/focus input, live viewport/DPR
@@ -402,3 +403,26 @@ This is the first JavaScript proof slice only. This packet remains open for CI
 browser evidence, WasmGC and Wasm browser targets, broader input and text
 services, WebGPU, accessibility, renderer recovery, native/backend conformance,
 and the production gates above.
+
+## Browser migration bridge slice — 2026-10-04
+
+The browser proof now includes wheel-to-scroll event translation, a
+fixture-specific ARIA proxy for the app-provided button descriptions, and a
+migration-only DOM editor placed from the app's reserved logical region. The
+island host reports input ownership, preserves legacy ownership while focus
+moves between its controls, and returns focus to the canvas when hidden or
+disposed. The app fixture registers one External counter write; GUI, direct,
+and in-process MCP adapter calls reach that same typed handler and app-owned
+entity, while the normal `Context.observe` path updates the rendered counter
+quad. The MCP call is only a local semantic adapter seam, not wire transport.
+
+The portable host-service package and JS Electron/Tauri adapters are default
+deny, use decimal-string request/scope IDs, validate copied bounded values, and
+discard stale/cancelled completions. Electron and Tauri examples have empty
+operation/command grants. Contract tests use fake IPC/invoke functions; no real
+Electron main process or Tauri runtime is part of this change. The expanded
+Chromium smoke is configured to check pointer/wheel/focus, visible redraw from
+GUI/direct/MCP calls, island focus ownership and teardown, DPR/lifecycle, and
+repeated remount. Its result for this extension must be recorded by the current
+browser CI run. WasmGC/Wasm, WebGPU, Japanese IME, general accessibility, and
+production browser support remain open.

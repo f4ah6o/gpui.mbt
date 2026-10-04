@@ -89,7 +89,11 @@ pub fn Value::as_array(
   self : Value,
 ) -> Result[Array[Value], @diagnostics.FrameworkError] {
   match self {
-    ArrayValue(values) => Ok(copy_values(values))
+    ArrayValue(values) =>
+      match self.validate_transport() {
+        Err(error) => Err(error)
+        Ok(_) => Ok(copy_values(values))
+      }
     _ => Err(value_conversion_error("array"))
   }
 }
@@ -99,27 +103,110 @@ pub fn Value::as_object(
   self : Value,
 ) -> Result[Array[(String, Value)], @diagnostics.FrameworkError] {
   match self {
-    ObjectValue(fields) => Ok(copy_object_fields(fields))
+    ObjectValue(fields) =>
+      match self.validate_transport() {
+        Err(error) => Err(error)
+        Ok(_) => Ok(copy_object_fields(fields))
+      }
     _ => Err(value_conversion_error("object"))
   }
 }
 
 ///|
 pub fn Value::clone(self : Value) -> Value {
+  match self.validate_transport() {
+    Err(_) => self
+    Ok(_) => self.clone_transport_unchecked()
+  }
+}
+
+///|
+/// Clone only a transport-safe value. This is the checked choice for code
+/// crossing an erased or host boundary. The compatibility `clone` method
+/// returns the original invalid graph unchanged because it cannot report an
+/// error; boundary code must use this method instead.
+pub fn Value::try_clone_transport(
+  self : Value,
+) -> Result[Value, @diagnostics.FrameworkError] {
+  match self.validate_transport() {
+    Err(error) => Err(error)
+    Ok(_) => Ok(self.clone_transport_unchecked())
+  }
+}
+
+///|
+fn Value::clone_transport_unchecked(self : Value) -> Value {
   match self {
     UnitValue => UnitValue
     BoolValue(value) => BoolValue(value)
     IntValue(value) => IntValue(value)
     NumberValue(value) => NumberValue(value)
     StringValue(value) => StringValue(value)
-    ArrayValue(values) => ArrayValue(copy_values(values))
-    ObjectValue(fields) => ObjectValue(copy_object_fields(fields))
+    ArrayValue(values) => {
+      let copy : Array[Value] = []
+      for value in values {
+        copy.push(value.clone_transport_unchecked())
+      }
+      ArrayValue(copy)
+    }
+    ObjectValue(fields) => {
+      let copy : Array[(String, Value)] = []
+      for field in fields {
+        let (name, value) = field
+        copy.push((name, value.clone_transport_unchecked()))
+      }
+      ObjectValue(copy)
+    }
   }
 }
 
 ///|
-/// Canonical JSON used by tests and generated adapters.
+/// Validate a transport value before projection or schema traversal. The
+/// limits bound recursion and allocation, non-finite numbers and duplicate
+/// object fields are rejected, and depth bounds reject cyclic mutable arrays.
+pub fn Value::validate_transport(
+  self : Value,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  match transport_stats(self, 0) {
+    Err(error) => Err(error)
+    Ok((nodes, json_chars)) =>
+      if nodes > 10_000 {
+        Err(transport_error("value exceeds the 10000 node limit"))
+      } else if json_chars > 1_048_576 {
+        Err(
+          transport_error("canonical JSON exceeds the 1048576 character limit"),
+        )
+      } else {
+        Ok(())
+      }
+  }
+}
+
+///|
+/// Canonical JSON with a typed failure for values outside the bounded
+/// transport subset.
+pub fn Value::try_canonical_json(
+  self : Value,
+) -> Result[String, @diagnostics.FrameworkError] {
+  match self.validate_transport() {
+    Err(error) => Err(error)
+    Ok(_) => Ok(self.canonical_json_unchecked())
+  }
+}
+
+///|
+/// Convenience projection for validated values. Invalid or cyclic graphs
+/// return an empty string; boundary code should use `try_canonical_json` to
+/// retain the diagnostic.
 pub fn Value::canonical_json(self : Value) -> String {
+  match self.try_canonical_json() {
+    Ok(json) => json
+    Err(_) => ""
+  }
+}
+
+///|
+fn Value::canonical_json_unchecked(self : Value) -> String {
   match self {
     UnitValue => "null"
     BoolValue(value) => if value { "true" } else { "false" }
@@ -143,7 +230,7 @@ pub fn Value::canonical_json(self : Value) -> String {
         if index > 0 {
           builder.write_string(",")
         }
-        builder.write_string(value.canonical_json())
+        builder.write_string(value.canonical_json_unchecked())
       }
       builder.write_string("]")
       builder.to_string()
@@ -160,12 +247,161 @@ pub fn Value::canonical_json(self : Value) -> String {
         builder.write_string("\"")
         builder.write_string(json_escape(name))
         builder.write_string("\":")
-        builder.write_string(value.canonical_json())
+        builder.write_string(value.canonical_json_unchecked())
       }
       builder.write_string("}")
       builder.to_string()
     }
   }
+}
+
+///|
+fn transport_stats(
+  value : Value,
+  depth : Int,
+) -> Result[(Int, Int), @diagnostics.FrameworkError] {
+  if depth > 32 {
+    return Err(transport_error("value exceeds the depth limit of 32"))
+  }
+  match value {
+    UnitValue => Ok((1, 4))
+    BoolValue(boolean) => Ok((1, if boolean { 4 } else { 5 }))
+    IntValue(integer) => Ok((1, "\{integer}".length()))
+    NumberValue(number) =>
+      if !finite_number(number) {
+        Err(transport_error("non-finite numbers are not transportable"))
+      } else {
+        let normalized = if number == 0.0 { 0.0 } else { number }
+        Ok((1, "\{normalized}".length()))
+      }
+    StringValue(text) => {
+      let chars = escaped_json_string_length(text)
+      if chars > 1_048_576 {
+        Err(
+          transport_error("canonical JSON exceeds the 1048576 character limit"),
+        )
+      } else {
+        Ok((1, chars))
+      }
+    }
+    ArrayValue(values) => {
+      if values.length() > 9_999 {
+        return Err(transport_error("array exceeds the 10000 node limit"))
+      }
+      let mut nodes = 1
+      let mut chars = 2
+      for index, child in values {
+        match transport_stats(child, depth + 1) {
+          Err(error) => return Err(error)
+          Ok((child_nodes, child_chars)) => {
+            nodes += child_nodes
+            chars += child_chars
+            if index > 0 {
+              chars += 1
+            }
+            if nodes > 10_000 {
+              return Err(transport_error("value exceeds the 10000 node limit"))
+            }
+            if chars > 1_048_576 {
+              return Err(
+                transport_error(
+                  "canonical JSON exceeds the 1048576 character limit",
+                ),
+              )
+            }
+          }
+        }
+      }
+      Ok((nodes, chars))
+    }
+    ObjectValue(fields) => {
+      if fields.length() > 1_024 {
+        return Err(transport_error("object exceeds the 1024 field limit"))
+      }
+      let mut outer = 0
+      while outer < fields.length() {
+        let (name, _) = fields[outer]
+        let mut inner = outer + 1
+        while inner < fields.length() {
+          let (candidate, _) = fields[inner]
+          if name == candidate {
+            return Err(
+              transport_error("object contains a duplicate field name"),
+            )
+          }
+          inner += 1
+        }
+        outer += 1
+      }
+      let mut nodes = 1
+      let mut chars = 2
+      for index, field in fields {
+        let (name, child) = field
+        match transport_stats(child, depth + 1) {
+          Err(error) => return Err(error)
+          Ok((child_nodes, child_chars)) => {
+            nodes += child_nodes + 1
+            // The quoted field name already includes its quotes. Add the
+            // colon and the child value; commas are counted separately.
+            chars += escaped_json_string_length(name) + 1 + child_chars
+            if index > 0 {
+              chars += 1
+            }
+            if nodes > 10_000 {
+              return Err(transport_error("value exceeds the 10000 node limit"))
+            }
+            if chars > 1_048_576 {
+              return Err(
+                transport_error(
+                  "canonical JSON exceeds the 1048576 character limit",
+                ),
+              )
+            }
+          }
+        }
+      }
+      Ok((nodes, chars))
+    }
+  }
+}
+
+///|
+fn escaped_json_string_length(text : String) -> Int {
+  // String.length() counts UTF-16 code units, matching canonical JSON's
+  // observable length. It also lets oversized input stop before scanning.
+  if text.length() > 1_048_576 {
+    return 1_048_577
+  }
+  let mut length = 2
+  for character in text {
+    match character {
+      '"' | '\\' | '\n' | '\r' | '\t' => length += 2
+      _ => {
+        let code = character.to_int()
+        if code < 0x20 {
+          length += 6
+        } else if code > 0xffff {
+          length += 2
+        } else {
+          length += 1
+        }
+      }
+    }
+    if length > 1_048_576 {
+      return 1_048_577
+    }
+  }
+  length
+}
+
+///|
+fn transport_error(message : String) -> @diagnostics.FrameworkError {
+  @diagnostics.FrameworkError::new(
+    @diagnostics.InvalidInput,
+    "capability.value.transport",
+    subsystem="capability",
+    message~,
+  )
 }
 
 ///|

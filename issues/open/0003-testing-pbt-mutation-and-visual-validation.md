@@ -306,3 +306,41 @@ wasm-gc, js, and native. These are MoonBit target/headless results only.
 Turtles mutation baselines, committed full-schema scene/raster goldens, vlmkit
 artifacts, Render/text coverage, native E2E, stress, and performance evidence
 remain pending, so this packet stays open.
+
+## Mutation and timing tooling update — 2026-10-04
+
+The repository now pins `turtles` 0.3.0 for a `primitives/` mutation job. It
+runs deterministic examples and the existing fixed-seed QuickCheck properties
+against source mutants in turtles' temporary workspaces, retains schema-2 JSON
+and survivor/timeout diffs, and emits property-kill regression templates. Its
+first baseline uses `--fail-under 0`, so survivors are recorded for review
+without blocking CI; setup failures and the independent report audit remain
+fatal. The audit rejects empty or all-unviable runs, missing configured
+operator groups, skipped source files, inconsistent score summaries, and
+missing survivor/timeout diffs. The pinned 0.3.0 CLI has no target selector, so
+this initial job uses Moon's default test target; it is not an all-target
+mutation score or a reviewed per-package/operator baseline.
+
+Ubuntu native CI now has an opt-in benchmark report for 30 renderer-recovery to
+first-frame samples at 1x and 2x. The report retains raw samples, fixture and
+worktree checksums, the actual GL renderer, CPU/toolchain/runner metadata, and
+summary statistics. The comparator requires two distinct runs on the same
+candidate worktree and exact environment/workload signatures before confirming
+a 10% p50 or p95 regression. The report is diagnostic only until a comparable,
+reviewed baseline exists.
+
+The first complete local mutation run used pinned MoonBit and turtles 0.3.0 and
+passed turtles' pristine `moon check` and baseline tests. Across 145 viable
+mutants, 115 were killed, 30 survived, and none timed out or was unviable: the
+observed score is 79.310%. Per-operator results were arithmetic 16/20, boolean
+16/28, comparison 34/37, condition 45/56, and literal 4/4. The schema-2 report
+and all 30 survivor diffs passed the report audit. This is one non-blocking
+observation on the default Moon test target, not a reviewed or repeated
+per-package/operator ratchet; the mutation release gate remains pending. It was
+captured at HEAD `731981259efe3815de06d3420163f3b842e854a0` from a dirty shared
+worktree with audited source-manifest SHA-256
+`cd6c3cec88c5fcba97ec2325a798fe5cc47141f99c45d467bf6b45d6c353d6f1`; it is not
+a clean candidate baseline. The local Ubuntu benchmark attempt could not create
+the Wayland AF_UNIX socket, so it produced no timing samples or performance
+score. Full turtles coverage, all-target mutation, visual goldens, vlmkit
+artifacts, and broader native/performance evidence remain open.

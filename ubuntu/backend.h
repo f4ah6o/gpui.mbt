@@ -40,4 +40,11 @@ int32_t gpui_next(int32_t host, double *event);
 int32_t gpui_present(int32_t host, int32_t window, const double *data,
                      int32_t length);
 int32_t gpui_recover(int32_t host, int32_t window);
+int32_t gpui_capability(int32_t host, int32_t capability);
+int32_t gpui_read_clipboard(int32_t host);
+int32_t gpui_clipboard_length(int32_t host);
+int32_t gpui_clipboard_copy(int32_t host, uint8_t *bytes, int32_t capacity);
+int32_t gpui_write_clipboard(int32_t host, const uint8_t *bytes,
+                             int32_t length);
+int32_t gpui_set_cursor(int32_t host, int32_t cursor);
 #endif

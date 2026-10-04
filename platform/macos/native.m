@@ -150,6 +150,26 @@ static int setup_gpu(void) {
   pipeline = [device newRenderPipelineStateWithDescriptor:desc error:&error];
   return pipeline ? 0 : 16;
 }
+static int recover_renderer(void) {
+  /* Frames are submitted synchronously, so no command buffer retains a layer
+   * or drawable when this operation begins. Replace the shared device graph,
+   * then attach the new device to every live window before publishing success. */
+  pipeline = nil;
+  queue = nil;
+  device = nil;
+  int status = setup_gpu();
+  if (status) {
+    pipeline = nil;
+    queue = nil;
+    device = nil;
+    return status;
+  }
+  for (GPWindow *window in windows.allValues) {
+    window.surface.device = device;
+    resize_surface(window);
+  }
+  return 0;
+}
 typedef struct { float position[4], color[4]; } Vertex;
 typedef struct { Vertex v[6]; MTLScissorRect clip; } Draw;
 static double n(NSDictionary *d, NSString *key) { return [d[key] doubleValue]; }
@@ -358,6 +378,7 @@ static int32_t native_call(int32_t op, int64_t token, double x, double y, const 
         }
         destroy(w); return 0;
       case 9: return present(w,bytes,len);
+      case 16: return recover_renderer();
       case 15: resize_surface(w); current=@{@"width":@(w.window.contentView.bounds.size.width), @"height":@(w.window.contentView.bounds.size.height), @"scale":@(w.scale)}; return 0;
       default: return 9;
     }

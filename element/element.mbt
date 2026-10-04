@@ -6,6 +6,12 @@ pub enum ElementError {
   InvalidPreorder
   UnknownElement
   NotFocusable
+  RootRequired
+  InvalidChildRoot
+  MissingLayoutItem
+  TreeTooDeep
+  LayoutFailure(@layout.TreeLayoutError)
+  GeometryFailure
 } derive(Eq)
 
 ///|

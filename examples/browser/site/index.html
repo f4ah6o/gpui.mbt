@@ -58,6 +58,8 @@
           </div>
           <footer class="viewport-footer">
             <p><kbd>Tab</kbd> focus <kbd>← →</kbd> move <kbd>Enter</kbd> activate</p>
+            <span class="input-owner-label">Input owner: <strong id="host-input-owner">gpui.mbt canvas</strong></span>
+            <button class="quiet-button" id="return-framework" type="button">Return focus to canvas</button>
             <button class="quiet-button" id="remount" type="button">Remount viewport</button>
           </footer>
         </article>
@@ -80,6 +82,7 @@
               <div><dt>Hit target</dt><dd id="hit-target">—</dd></div>
               <div><dt>Logical focus</dt><dd id="focus-target">—</dd></div>
               <div><dt>Activations</dt><dd id="activation-count">0</dd></div>
+              <div><dt>Capability value</dt><dd id="capability-value">0</dd></div>
             </dl>
             <p class="last-event" id="last-event">Waiting for the first frame…</p>
           </section>
@@ -120,7 +123,7 @@
         <div>
           <span class="note-index">03</span>
           <h2>Experimental by design</h2>
-          <p>No WebGPU, Japanese IME, accessibility bridge, clipboard, or production support claim.</p>
+          <p>Fixture ARIA and a legacy web island are browser adapter examples. WebGPU, Japanese IME, general accessibility, clipboard, and production support remain open.</p>
         </div>
       </section>
 

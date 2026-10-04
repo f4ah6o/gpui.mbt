@@ -6,16 +6,23 @@ pub(all) enum TreeLayoutError {
   MissingParent
   InvalidPreorder
   MissingContainer
+  TreeTooDeep
   Flex(LayoutError)
   GeometryFailure
 } derive(Eq)
 
 ///|
+/// Bounded recursion keeps measurement and recursive box placement independent
+/// of untrusted host stack depth.
+pub const MAX_FLEX_TREE_DEPTH : Int = 64
+
+///|
 pub extend TreeLayoutError with Eq::{not_equal, equal}
 
 ///|
-/// Container-only style for a recursive flex node. Its definite size is supplied
-/// by the parent allocation, so descendants never carry an independent viewport.
+/// Container-only style for a recursive flex node. Its size is supplied by the
+/// parent allocation or measured from descendant bases when the corresponding
+/// child dimensions are auto.
 pub struct FlexTreeStyle {
   direction : FlowDirection
   gap : Double
@@ -194,8 +201,9 @@ pub fn FlexTreeLayout::overflow(self : FlexTreeLayout) -> Bool {
 
 ///|
 /// Recursively lay out a flat pre-order tree. The root viewport is definite;
-/// descendants may use auto dimensions through their intrinsic sizes, and any
-/// node with children must opt into a `FlexTreeStyle`.
+/// descendants with auto dimensions derive intrinsic sizes from their content
+/// and insets. Percentages against an auto-measured axis are rejected as
+/// indefinite. Any node with children must opt into a `FlexTreeStyle`.
 pub fn layout_flex_tree(
   root_id : UInt64,
   root_size : @primitives.Size,
@@ -213,7 +221,7 @@ pub fn layout_flex_tree(
           let overflow = Ref(false)
           match
             layout_tree_children(
-              root_id, root_bounds, root_style, nodes, output, overflow,
+              root_id, root_bounds, root_style, nodes, output, overflow, 0,
             ) {
             Err(error) => Err(error)
             Ok(_) =>
@@ -237,13 +245,12 @@ fn layout_tree_children(
   nodes : Array[FlexTreeNode],
   output : Array[TreeLayoutBox],
   overflow : Ref[Bool],
+  depth : Int,
 ) -> Result[Unit, TreeLayoutError] {
   let direct_nodes : Array[FlexTreeNode] = []
-  let direct_items : Array[FlexItem] = []
   for node in nodes {
     if node.parent == parent_id {
       direct_nodes.push(node)
-      direct_items.push(node.item)
     }
   }
   if direct_nodes.length() == 0 {
@@ -256,66 +263,276 @@ fn layout_tree_children(
     match base.with_gap(style.gap) {
       Err(error) => Err(Flex(error))
       Ok(container) =>
-        match layout_flex(container, direct_items) {
-          Err(error) => Err(Flex(error))
-          Ok(line) => {
-            if line.overflow() {
-              overflow.val = true
-            }
-            let local_boxes = line.items()
-            let mut failure : TreeLayoutError? = None
-            let mut index = 0
-            while index < direct_nodes.length() && failure is None {
-              let node = direct_nodes[index]
-              let child_box = local_boxes[index]
-              let local_bounds = child_box.bounds()
-              match
-                @primitives.Rect::new(
-                  parent_bounds.left() + local_bounds.left(),
-                  parent_bounds.top() + local_bounds.top(),
-                  local_bounds.size().width(),
-                  local_bounds.size().height(),
-                ) {
-                Err(_) => failure = Some(GeometryFailure)
-                Ok(bounds) => {
-                  if child_box.overflow() {
-                    overflow.val = true
-                  }
-                  output.push({
-                    id: node.id(),
-                    bounds,
-                    overflow: child_box.overflow(),
-                  })
-                  let has_children = tree_has_direct_children(node.id(), nodes)
-                  if has_children {
-                    match node.children_style {
-                      None => failure = Some(MissingContainer)
-                      Some(child_style) =>
-                        match
-                          layout_tree_children(
-                            node.id(),
-                            bounds,
-                            child_style,
-                            nodes,
-                            output,
-                            overflow,
-                          ) {
-                          Err(error) => failure = Some(error)
-                          Ok(_) => ()
+        match
+          measure_direct_items(direct_nodes, style.direction, nodes, depth) {
+          Err(error) => Err(error)
+          Ok(direct_items) =>
+            match layout_flex(container, direct_items) {
+              Err(error) => Err(Flex(error))
+              Ok(line) => {
+                if line.overflow() {
+                  overflow.val = true
+                }
+                let local_boxes = line.items()
+                let mut failure : TreeLayoutError? = None
+                let mut index = 0
+                while index < direct_nodes.length() && failure is None {
+                  let node = direct_nodes[index]
+                  let child_box = local_boxes[index]
+                  let local_bounds = child_box.bounds()
+                  match
+                    @primitives.Rect::new(
+                      parent_bounds.left() + local_bounds.left(),
+                      parent_bounds.top() + local_bounds.top(),
+                      local_bounds.size().width(),
+                      local_bounds.size().height(),
+                    ) {
+                    Err(_) => failure = Some(GeometryFailure)
+                    Ok(bounds) => {
+                      if child_box.overflow() {
+                        overflow.val = true
+                      }
+                      output.push({
+                        id: node.id(),
+                        bounds,
+                        overflow: child_box.overflow(),
+                      })
+                      let has_children = tree_has_direct_children(
+                        node.id(),
+                        nodes,
+                      )
+                      if has_children {
+                        match node.children_style {
+                          None => failure = Some(MissingContainer)
+                          Some(child_style) =>
+                            match
+                              layout_tree_children(
+                                node.id(),
+                                bounds,
+                                child_style,
+                                nodes,
+                                output,
+                                overflow,
+                                depth + 1,
+                              ) {
+                              Err(error) => failure = Some(error)
+                              Ok(_) => ()
+                            }
                         }
+                      }
                     }
+                  }
+                  index += 1
+                }
+                match failure {
+                  Some(error) => Err(error)
+                  None => Ok(())
+                }
+              }
+            }
+        }
+    }
+  }
+}
+
+///|
+/// Before laying out a flex line, fill intrinsic fallbacks for auto dimensions
+/// of container children from descendant content. Explicit points and percent
+/// dimensions keep the behavior of the regular definite flex line.
+fn measure_direct_items(
+  nodes_for_parent : Array[FlexTreeNode],
+  direction : FlowDirection,
+  all_nodes : Array[FlexTreeNode],
+  parent_depth : Int,
+) -> Result[Array[FlexItem], TreeLayoutError] {
+  let items : Array[FlexItem] = []
+  let mut failure : TreeLayoutError? = None
+  for node in nodes_for_parent {
+    if failure is None {
+      match
+        measure_item_intrinsic(node, direction, all_nodes, parent_depth + 1) {
+        Err(error) => failure = Some(error)
+        Ok(item) => items.push(item)
+      }
+    }
+  }
+  match failure {
+    Some(error) => Err(error)
+    None => Ok(items)
+  }
+}
+
+///|
+fn measure_item_intrinsic(
+  node : FlexTreeNode,
+  parent_direction : FlowDirection,
+  all_nodes : Array[FlexTreeNode],
+  depth : Int,
+) -> Result[FlexItem, TreeLayoutError] {
+  let item = node.item
+  let mut width = item.intrinsic.width()
+  let mut height = item.intrinsic.height()
+  let width_axis = match parent_direction {
+    Row => item.main
+    Column => item.cross
+  }
+  let height_axis = match parent_direction {
+    Row => item.cross
+    Column => item.main
+  }
+  let mut failure : TreeLayoutError? = None
+  match (width_axis, node.children_style) {
+    (Auto, Some(style)) =>
+      match
+        measure_container_axis(node.id(), style, WidthAxis, all_nodes, depth) {
+        Err(error) => failure = Some(error)
+        Ok(value) => width = value
+      }
+    _ => ()
+  }
+  match (height_axis, node.children_style) {
+    (Auto, Some(style)) if failure is None =>
+      match
+        measure_container_axis(node.id(), style, HeightAxis, all_nodes, depth) {
+        Err(error) => failure = Some(error)
+        Ok(value) => height = value
+      }
+    _ => ()
+  }
+  match failure {
+    Some(error) => Err(error)
+    None =>
+      match @primitives.Size::new(width, height) {
+        Err(_) => Err(GeometryFailure)
+        Ok(intrinsic) => Ok(item.with_intrinsic(intrinsic))
+      }
+  }
+}
+
+///|
+priv enum MeasureAxis {
+  WidthAxis
+  HeightAxis
+}
+
+///|
+/// Measure only the requested physical axis. This is important for mixed
+/// definite/auto containers: a percentage on a definite orthogonal axis is
+/// left for layout, while a percentage against the measured auto axis fails.
+fn measure_container_axis(
+  parent_id : UInt64,
+  style : FlexTreeStyle,
+  axis : MeasureAxis,
+  nodes : Array[FlexTreeNode],
+  depth : Int,
+) -> Result[Double, TreeLayoutError] {
+  if depth > MAX_FLEX_TREE_DEPTH {
+    Err(TreeTooDeep)
+  } else {
+    let axis_is_main = match (style.direction, axis) {
+      (Row, WidthAxis) | (Column, HeightAxis) => true
+      _ => false
+    }
+    let mut count = 0
+    let mut total = 0.0
+    let mut maximum = 0.0
+    let mut failure : TreeLayoutError? = None
+    for node in nodes {
+      if node.parent == parent_id && failure is None {
+        count += 1
+        let item = node.item
+        let (dimension, minimum, maximum_value) = if axis_is_main {
+          (item.main, item.min_main, item.max_main)
+        } else {
+          (item.cross, item.min_cross, item.max_cross)
+        }
+        if !valid_limits(minimum, maximum_value) {
+          failure = Some(Flex(InvalidMinMax))
+        } else {
+          match resolve_dimension(dimension, None) {
+            Err(error) => failure = Some(Flex(error))
+            Ok(resolved) => {
+              let natural = match resolved {
+                Some(value) => Ok(value)
+                None =>
+                  measure_child_intrinsic_axis(node, axis, nodes, depth + 1)
+              }
+              match natural {
+                Err(error) => failure = Some(error)
+                Ok(value) => {
+                  let bounded = clamp_once(value, minimum, maximum_value)
+                  if !finite(bounded) {
+                    failure = Some(Flex(NonFiniteValue))
+                  } else if axis_is_main {
+                    total += bounded
+                    if !finite(total) {
+                      failure = Some(Flex(NonFiniteValue))
+                    }
+                  } else if bounded > maximum {
+                    maximum = bounded
                   }
                 }
               }
-              index += 1
-            }
-            match failure {
-              Some(error) => Err(error)
-              None => Ok(())
             }
           }
         }
+      }
     }
+    match failure {
+      Some(error) => Err(error)
+      None => {
+        let horizontal_insets = style.padding.left() +
+          style.padding.right() +
+          style.border.left() +
+          style.border.right()
+        let vertical_insets = style.padding.top() +
+          style.padding.bottom() +
+          style.border.top() +
+          style.border.bottom()
+        let insets = match axis {
+          WidthAxis => horizontal_insets
+          HeightAxis => vertical_insets
+        }
+        let gaps = if axis_is_main && count > 1 {
+          (count - 1).to_double() * style.gap
+        } else {
+          0.0
+        }
+        let content = if axis_is_main { total + gaps } else { maximum }
+        let measured = content + insets
+        if !finite(horizontal_insets) ||
+          !finite(vertical_insets) ||
+          !finite(gaps) ||
+          !finite(measured) {
+          Err(Flex(NonFiniteValue))
+        } else {
+          Ok(measured)
+        }
+      }
+    }
+  }
+}
+
+///|
+fn measure_child_intrinsic_axis(
+  node : FlexTreeNode,
+  axis : MeasureAxis,
+  nodes : Array[FlexTreeNode],
+  depth : Int,
+) -> Result[Double, TreeLayoutError] {
+  match node.children_style {
+    Some(style) => measure_container_axis(node.id(), style, axis, nodes, depth)
+    None =>
+      if tree_has_direct_children(node.id(), nodes) {
+        Err(MissingContainer)
+      } else {
+        Ok(
+          match axis {
+            WidthAxis => node.item.intrinsic.width()
+            HeightAxis => node.item.intrinsic.height()
+          },
+        )
+      }
   }
 }
 
@@ -364,6 +581,8 @@ fn validate_tree_preorder(
         } else {
           Some(MissingParent)
         }
+      } else if parent_depth >= MAX_FLEX_TREE_DEPTH {
+        failure = Some(TreeTooDeep)
       } else {
         let next : Array[UInt64] = []
         let mut depth = 0

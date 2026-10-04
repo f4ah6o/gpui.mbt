@@ -5,7 +5,8 @@ cd "$(dirname "$0")/.."
 sh scripts/prepare_ubuntu.sh
 mkdir -p _build/ubuntu-e2e
 cc -std=c11 -Wall -Wextra -Werror ${GPUI_TEST_CFLAGS:-} tests/ubuntu/backend_test.c ubuntu/xdg-shell-protocol.c \
-  -o _build/ubuntu-e2e/backend-test $(pkg-config --cflags --libs wayland-client wayland-egl egl glesv2 xkbcommon) -lpthread -lm
+  -o _build/ubuntu-e2e/backend-test $(pkg-config --cflags --libs wayland-client wayland-cursor wayland-egl egl glesv2 xkbcommon) -lpthread -lm
+_build/ubuntu-e2e/backend-test --clipboard-unit
 runtime=$(mktemp -d)
 chmod 700 "$runtime"
 compositor_pid=

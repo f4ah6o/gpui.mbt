@@ -159,6 +159,8 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
   if @env.get_env_var("GPUI_UBUNTU_E2E") == Some("1") {
     let host = require_ok(Host::start())
     assert_true(host.state() == Running)
+    require_ok(host.require_capability(@platform.Clipboard))
+    require_ok(host.require_capability(@platform.Cursor))
     assert_true(Host::start() is Err(_))
     for iteration = 0; iteration < 24; iteration = iteration + 1 {
       println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=create")
@@ -217,6 +219,10 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
       match host.read_clipboard() {
         Err(e) => assert_eq(e.code().label(), "unsupported_capability")
         Ok(_) => fail("clipboard unavailable")
+      }
+      match host.write_clipboard("clipboard needs a real input serial") {
+        Err(e) => assert_eq(e.code().label(), "unsupported_capability")
+        Ok(_) => fail("clipboard write accepted without input serial")
       }
       require_ok(host.recover_renderer(window))
       println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=recovered-present")

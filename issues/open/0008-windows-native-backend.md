@@ -2,7 +2,7 @@
 
 Status: open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-03
+Updated: 2026-10-04
 
 ## Goal
 
@@ -163,3 +163,20 @@ Do not block first-window success on:
 - Tier 1 production support
 
 Those require separate evidence before support claims are promoted.
+
+## Implementation progress — 2026-10-04
+
+An experimental one-window Win32/DXGI/D3D11 backend and runnable example now
+exist; the implementation and evidence boundary are in
+[docs/windows-native.md](../../docs/windows-native.md). The slice includes
+per-monitor-v2 logical sizing, WARP fallback, basic pointer/keyboard/focus,
+Unicode clipboard, cursors, D3D readback, and synchronized cross-thread
+wake/exit posting during host teardown. Portable MoonBit tests and strict
+MinGW syntax compilation pass locally. The MSVC/Windows runtime workflow has
+not run, so native E2E and app-smoke evidence remain pending.
+
+The one-HWND limit remains. Multi-window behavior, physical multi-monitor DPI
+transitions, Japanese IME/text shaping, accessibility, menus, renderer/device
+loss recovery, external clipboard interoperability, sustained resource
+lifetime, physical-GPU coverage, and performance remain open. No Windows
+support tier or production claim is promoted.

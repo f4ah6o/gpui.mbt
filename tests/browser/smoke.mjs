@@ -183,6 +183,12 @@ try {
   await page.waitForFunction(() => document.querySelector("#frame-state")?.textContent === "RUNNING");
   await page.waitForFunction(() => Number(document.querySelector("#sequence")?.textContent) >= 3);
   await waitForCoherentViewport(1.5);
+  await page.waitForFunction(() => window.__gpuiHostLayout()?.nodes?.length === 4 && window.__gpuiHostLayout()?.regions?.some((region) => region.id === 8));
+  assert.equal(await page.getByRole("button", { name: "Alpine cyan action" }).count(), 1);
+  assert.equal(await page.getByRole("button", { name: "Ocean blue action" }).count(), 1);
+  assert.equal(await page.locator("#legacy-island[role=group][aria-label='Legacy web notes editor']").count(), 1);
+  const reservedRegion = await page.evaluate(() => window.__gpuiHostLayout().regions.find((region) => region.id === 8));
+  assert.ok(reservedRegion.bounds.width > 1 && reservedRegion.bounds.height > 1, "the portable fixture supplies logical bounds for the legacy island");
   const initialViewport = await readViewport();
   const initialPixel = await page.evaluate(() => {
     const canvas = document.querySelector("#gpui-viewport");
@@ -213,6 +219,58 @@ try {
   await page.waitForFunction(() => [4, 5, 6, 7].includes(window.__gpuiSmokeStatus().hover));
   await page.mouse.click(canvasBounds.x + targetPoint.x, canvasBounds.y + targetPoint.y);
   await page.waitForFunction(() => Number(document.querySelector("#activation-count")?.textContent) >= 2);
+  await page.waitForFunction(() => Number(window.__gpuiSmokeStatus().capabilityValue) >= 1);
+  const guiCounterValue = await page.evaluate(() => window.__gpuiReadCounter());
+  assert.equal(guiCounterValue, await page.evaluate(() => window.__gpuiSmokeStatus().capabilityValue));
+  const counterSample = (x) => page.evaluate((logicalX) => {
+    const canvas = document.querySelector("#gpui-viewport");
+    const context = canvas.getContext("2d");
+    const scale = window.devicePixelRatio || 1;
+    return Array.from(context.getImageData(Math.round(logicalX * scale), Math.round(115 * scale), 1, 1).data);
+  }, x);
+  const directSampleBefore = await counterSample(46);
+  const directCounterValue = await page.evaluate(() => window.__gpuiDirectCounter(2));
+  assert.equal(directCounterValue, guiCounterValue + 2);
+  await page.waitForFunction((value) => window.__gpuiSmokeStatus().capabilityValue === value, directCounterValue);
+  assert.equal(await page.evaluate(() => window.__gpuiReadCounter()), directCounterValue);
+  const directSampleAfter = await counterSample(46);
+  assert.notDeepEqual(directSampleAfter, directSampleBefore, "direct API mutation redraws the observed counter quad in Chromium");
+
+  const mcpSampleBefore = await counterSample(56);
+  const mcpCounterValue = await page.evaluate(() => window.__gpuiMcpCounter(3));
+  assert.equal(mcpCounterValue, directCounterValue + 3);
+  await page.waitForFunction((value) => window.__gpuiSmokeStatus().capabilityValue === value, mcpCounterValue);
+  assert.equal(await page.evaluate(() => window.__gpuiReadCounter()), mcpCounterValue);
+  const mcpSampleAfter = await counterSample(56);
+  assert.notDeepEqual(mcpSampleAfter, mcpSampleBefore, "in-process MCP adapter mutation redraws the same observed counter quad");
+
+  const pageScrollBefore = await page.evaluate(() => window.scrollY);
+  const scrollBefore = await page.evaluate(() => window.__gpuiSmokeStatus().scrollY);
+  await page.mouse.move(canvasBounds.x + 24, canvasBounds.y + 24);
+  await page.mouse.wheel(0, 120);
+  await page.waitForFunction((value) => window.__gpuiSmokeStatus().scrollY > value, scrollBefore);
+  assert.equal(await page.evaluate(() => window.scrollY), pageScrollBefore, "wheel input stays in the framework viewport");
+
+  const legacyNote = page.getByRole("textbox", { name: "Legacy note text" });
+  await legacyNote.focus();
+  await page.waitForFunction(() => window.__gpuiSmokeStatus().hostInputOwner === "legacy-island");
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Save legacy note");
+  assert.equal((await page.evaluate(() => window.__gpuiSmokeStatus())).hostInputOwner, "legacy-island", "focus movement within the island preserves legacy ownership");
+  assert.equal(await page.evaluate(() => window.__gpuiSetLegacyIslandVisible(false)), false);
+  await page.waitForFunction(() => window.__gpuiSmokeStatus().hostInputOwner === "framework" && document.activeElement?.id === "gpui-viewport");
+  assert.equal((await page.evaluate(() => window.__gpuiSmokeStatus())).legacyVisible, false);
+  assert.equal(await page.evaluate(() => window.__gpuiSetLegacyIslandVisible(true)), true);
+  await legacyNote.focus();
+  await page.waitForFunction(() => window.__gpuiSmokeStatus().hostInputOwner === "legacy-island");
+  await page.evaluate(() => window.__gpuiDisposeLegacyIsland());
+  assert.equal(await page.locator("#legacy-island").count(), 0, "disposing a focused island removes it");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "gpui-viewport", "disposing a focused island returns focus to the framework canvas");
+  await page.getByRole("button", { name: "Remount viewport" }).click();
+  await page.waitForFunction(() => document.querySelector("#frame-state")?.textContent === "RUNNING");
+  await page.waitForFunction(() => window.__gpuiHostLayout()?.nodes?.length === 4);
+  assert.equal(await page.locator("#legacy-island").count(), 1, "remount creates one legacy surface");
+  assert.equal(await page.locator("#gpui-accessibility-bridge").count(), 1, "remount creates one ARIA proxy layer");
 
   // pointercancel is stream cancellation, not a button transition. Browsers may
   // report button === -1, so the host must release tracked buttons without
@@ -328,7 +386,7 @@ try {
   assert.equal(remounted.backingHeight, Math.round(remounted.cssHeight * 2));
   assert.deepEqual(pageErrors, [], "browser callbacks and renderer complete without uncaught errors");
   await context.close();
-  console.log("Browser smoke passed: Canvas2D snapshot, DPR, input/focus, resize/lifecycle, hidden-tab scheduling, context loss, and repeated teardown.");
+  console.log("Browser smoke passed: Canvas2D snapshot, DPR, pointer/wheel/focus, GUI/direct/in-process MCP redraw, ARIA and legacy-island ownership, resize/lifecycle, hidden-tab scheduling, context loss, and repeated teardown.");
 } catch (error) {
   console.error("Browser smoke failed:", error);
   if (page) {

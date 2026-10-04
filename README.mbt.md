@@ -9,8 +9,10 @@ Build GPUI-style user interfaces in MoonBit.
 - **Application state** — `App`, typed `Entity[T]`, scoped updates, subscriptions, explicit notifications, deterministic queued work, and manually advanced timers.
 - **Layout and interaction** — deterministic row/column flex layout, recursive layout trees, hit testing, capture/bubble pointer dispatch, stop-propagation, and focus state.
 - **Scene data** — ordered quads, rectangle clip chains, affine transforms, opacity, and canonical `SceneSnapshot` data.
-- **macOS** — an AppKit + Metal native host with windows, input, clipboard/cursors, scale/resize events, and quad presentation.
-- **Ubuntu / Wayland** — a Wayland + EGL/OpenGL ES 2 native host with window lifecycle, input, scale handling, and quad presentation.
+- **Semantic capabilities** — one typed operation can be bound to GUI actions, direct MoonBit calls, and optional in-process MCP dispatch with shared domain validation.
+- **macOS** — an AppKit + Metal native host with windows, input, clipboard/cursors, scale/resize events, quad presentation, and an experimental renderer-recovery path.
+- **Ubuntu / Wayland** — a Wayland + EGL/OpenGL ES 2 native host with window lifecycle, input, clipboard/cursor services, scale handling, and quad presentation.
+- **Windows** — an experimental one-window Win32/D3D11 hardware-or-WARP slice with basic input and quad presentation; the hosted workflow still needs a successful run.
 - **Browser** — a JavaScript-target proof using the same MoonBit app/layout/event/scene model and a Canvas 2D host.
 - **Headless testing** — portable model, layout, event, focus, and scene behavior can be exercised without a window system.
 
@@ -93,7 +95,11 @@ Subscriptions are explicitly canceled with `unsubscribe`. Deterministic timer te
 | `scene/` | Paint commands, validation, canonical snapshots, transforms, opacity, and clips |
 | `platform/` | Portable backend/window/event contracts plus the macOS backend |
 | `ubuntu/` | Ubuntu Wayland/EGL/GLES2 native backend |
-| `examples/` | Headless, macOS, Ubuntu, and browser programs |
+| `windows/` | Experimental Win32/D3D11 WARP backend slice |
+| `capability/` | Typed semantic capabilities, validation, schema projection, and registry |
+| `mcp/` | Optional transport-neutral inventory and in-process MCP dispatch adapter |
+| `migration/host_services/` | Bounded portable service requests/completions and default-deny host-service policy |
+| `examples/` | Headless, macOS, Ubuntu, Windows, and browser programs |
 
 ## Documentation
 

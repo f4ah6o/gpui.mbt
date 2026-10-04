@@ -5,9 +5,9 @@ Status: M1 contract; all 1.0 runtime evidence is pending.
 Production readiness is an evidence-backed state. The machine-readable ledger
 is [release-gates.json](release-gates.json). Its current `pending` status is
 intentional: M1 contains a small headless primitives layer and core
-app/entity/scheduler lifecycle code with deterministic and model-based tests. A
-full lifecycle stress suite, element/rendering system, platform backends,
-performance baselines, and release artifacts do not exist yet. Passing the
+app/entity/scheduler lifecycle code with deterministic and model-based tests.
+Full platform conformance, stability suites, production renderer/text coverage,
+comparable performance baselines, and release artifacts remain incomplete. Passing the
 documentation contract check validates these files only; it does not mean the
 project is production-ready.
 
@@ -63,7 +63,9 @@ The compatibility matrix lives in [compatibility.md](compatibility.md),
 platform tiers and conformance requirements in [platform.md](platform.md),
 upstream records in [provenance.md](provenance.md) and [upstream.json](upstream.json),
 and test evidence requirements in [testing.md](testing.md). Performance
-methodology and budget policy are in [performance.md](performance.md).
+methodology and budget policy are in [performance.md](performance.md). The
+Ubuntu recovery-to-first-frame diagnostic is retained for investigation but does
+not satisfy the performance gate without a reviewed comparable baseline.
 
 ## Release-candidate sequence
 

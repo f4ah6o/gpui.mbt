@@ -2,7 +2,7 @@
 
 Status: in progress — first native slice implemented; remaining gates open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-03
+Updated: 2026-10-04
 
 ## Goal
 
@@ -203,3 +203,20 @@ and evidence are in [docs/ubuntu.md](../../docs/ubuntu.md).
 
 Local execution used Debian 13 / Weston 14.0.2; it does not establish Ubuntu
 support. No X11/XWayland, Tier 1 or general Linux support claim is made.
+
+## Implementation progress — 2026-10-04
+
+The first slice now also implements Wayland data-device UTF-8 clipboard read
+and write, with bounded nonblocking pipe transfer and a real input-serial
+requirement for writes, plus arrow/hand/text cursors gated on pointer-enter
+focus. Details are in [docs/ubuntu.md](../../docs/ubuntu.md). Helper and
+portable tests pass locally; the Weston native E2E could not run in this
+environment because the headless compositor failed to create its socket. The
+configured Ubuntu CI result remains pending, and local Debian evidence is not
+an Ubuntu support claim.
+
+Still open are cross-client clipboard roundtrip and visible cursor smoke,
+fractional scaling/public display metadata, Japanese IME/text shaping,
+accessibility, menus, cross-thread enqueue, automatic recovery/reconnect and
+sustained resource/performance evidence. X11/XWayland, real Ubuntu desktop
+validation, and all Tier 1 gates remain pending.

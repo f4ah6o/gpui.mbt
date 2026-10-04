@@ -60,7 +60,12 @@ int main(void) {
       device_pixel(scale,row,9,13,19);
     }
     test_scale_override=0; resize_surface(w);
-    pipeline=nil; assert(call_op(9,token,0,0,snapshot)==16); assert(setup_gpu()==0);
+    pipeline=nil; queue=nil; device=nil;
+    assert(call_op(9,token,0,0,snapshot)==16);
+    assert(call_op(16,token,0,0,nil)==0);
+    assert(w.surface.device==device && device && queue && pipeline);
+    assert(call_op(9,token,0,0,snapshot)==0);
+    pixel(70,70,255,0,0); pixel(90,70,128,0,128);
     for (int i=0;i<50;i++) assert(call_op(6,0,10,0,nil)==0);
     drain();
     NSEvent *mouse=[NSEvent mouseEventWithType:NSEventTypeLeftMouseDown location:NSMakePoint(90,170) modifierFlags:NSEventModifierFlagShift timestamp:0 windowNumber:w.window.windowNumber context:nil eventNumber:1 clickCount:1 pressure:1];
@@ -125,7 +130,7 @@ int main(void) {
     assert(call_op(2,0,0,0,nil)==0); assert(call_op(2,0,0,0,nil)==0);
     assert(call_op(1,0,0,0,nil)==0); assert(call_op(0,epoch,0,0,nil)==10);
     assert(call_op(2,0,0,0,nil)==0);
-    puts("GPUI_MACOS_E2E {\"gpu_pixels\":true,\"input\":true,\"logical_coordinates\":true,\"resize\":true,\"wrong_thread\":true,\"churn\":32,\"stale_callbacks\":true,\"device_loss\":true}");
+    puts("GPUI_MACOS_E2E {\"gpu_pixels\":true,\"input\":true,\"logical_coordinates\":true,\"resize\":true,\"wrong_thread\":true,\"churn\":32,\"stale_callbacks\":true,\"device_loss\":true,\"device_recovery\":true}");
   }
   return 0;
 }

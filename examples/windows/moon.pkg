@@ -1,0 +1,12 @@
+import {
+  "f4ah6o/gpui/windows" @native,
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/scene",
+  "moonbitlang/core/env",
+}
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")

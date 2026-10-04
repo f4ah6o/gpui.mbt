@@ -127,6 +127,20 @@ pub fn Host::request_exit(
 }
 
 ///|
+/// Rebuild Metal device, queue and pipeline state, then rebind all live window
+/// layers while preserving their logical identities.
+pub fn Host::recover_renderer(
+  self : Host,
+  window : @platform.WindowId,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  match self.check() {
+    Err(error) => return Err(error)
+    Ok(_) => ()
+  }
+  status(call(16, window.value(), 0.0, 0.0, b"", 0), "recover_renderer")
+}
+
+///|
 fn error(
   code : @diagnostics.ErrorCode,
   operation : String,

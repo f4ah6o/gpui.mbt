@@ -15,6 +15,26 @@ fn tree_pbt_points(value : Double) -> @layout.Dimension {
 }
 
 ///|
+fn tree_pbt_sized_item(
+  id : UInt64,
+  direction : @layout.FlowDirection,
+  width : Double,
+  height : Double,
+) -> @layout.FlexItem {
+  let main = if direction is @layout.Row {
+    tree_pbt_points(width)
+  } else {
+    tree_pbt_points(height)
+  }
+  let cross = if direction is @layout.Row {
+    tree_pbt_points(height)
+  } else {
+    tree_pbt_points(width)
+  }
+  @layout.FlexItem::new(id, main, cross, tree_pbt_size(width, height))
+}
+
+///|
 // Stable suite ID: layout.flex-tree.invariants
 test "property recursive layout is deterministic and descendants stay ordered" {
   @quickcheck.check(
@@ -111,5 +131,101 @@ test "property recursive layout is deterministic and descendants stay ordered" {
     max_size=64,
     max_shrinks=500,
     seed=4323271489673228617,
+  )
+}
+
+///|
+/// Stable suite ID: layout.flex-tree.auto-sizing
+test "property auto container dimensions sum flow sizes and maximize cross sizes" {
+  @quickcheck.check(
+    (values : (Int, Int, Int, Int, Int, Int)) => {
+      let (direction0, width_a0, height_a0, width_b0, height_b0, gap0) = values
+      let direction = if (direction0 % 2).abs() == 0 {
+        @layout.FlowDirection::row()
+      } else {
+        @layout.FlowDirection::column()
+      }
+      let width_a = (width_a0 % 60).abs().to_double() + 1.0
+      let height_a = (height_a0 % 60).abs().to_double() + 1.0
+      let width_b = (width_b0 % 60).abs().to_double() + 1.0
+      let height_b = (height_b0 % 60).abs().to_double() + 1.0
+      let gap = (gap0 % 8).abs().to_double()
+      let child_style_result = @layout.FlexTreeStyle::new(direction).with_gap(
+        gap,
+      )
+      match child_style_result {
+        Err(_) => false
+        Ok(child_style) => {
+          let root_style = @layout.FlexTreeStyle::new(
+            @layout.FlowDirection::row(),
+          )
+          let auto_item = @layout.FlexItem::new(
+            2,
+            @layout.Dimension::auto(),
+            @layout.Dimension::auto(),
+            tree_pbt_size(900.0, 900.0),
+          )
+          let branch = @layout.FlexTreeNode::new(auto_item, 1).with_children(
+            child_style,
+          )
+          let first = @layout.FlexTreeNode::new(
+            tree_pbt_sized_item(3, direction, width_a, height_a),
+            2,
+          )
+          let second = @layout.FlexTreeNode::new(
+            tree_pbt_sized_item(4, direction, width_b, height_b),
+            2,
+          )
+          let expected_width = if direction is @layout.Row {
+            width_a + width_b + gap
+          } else if width_a > width_b {
+            width_a
+          } else {
+            width_b
+          }
+          let expected_height = if direction is @layout.Row {
+            if height_a > height_b {
+              height_a
+            } else {
+              height_b
+            }
+          } else {
+            height_a + height_b + gap
+          }
+          match
+            (
+              @layout.layout_flex_tree(
+                1,
+                tree_pbt_size(400.0, 400.0),
+                root_style,
+                [branch, first, second],
+              ),
+              @layout.layout_flex_tree(
+                1,
+                tree_pbt_size(400.0, 400.0),
+                root_style,
+                [branch, first, second],
+              ),
+            ) {
+            (Ok(left), Ok(right)) => {
+              let left_boxes = left.items()
+              let right_boxes = right.items()
+              left_boxes.length() == 3 &&
+              right_boxes.length() == 3 &&
+              left_boxes[0].id() == 2 &&
+              left_boxes[0].bounds().size().width() == expected_width &&
+              left_boxes[0].bounds().size().height() == expected_height &&
+              left_boxes[0].bounds() == right_boxes[0].bounds() &&
+              left_boxes[2].bounds().top() >= left_boxes[0].bounds().top()
+            }
+            _ => false
+          }
+        }
+      }
+    },
+    count=256,
+    max_size=64,
+    max_shrinks=500,
+    seed=8285246981798288716,
   )
 }

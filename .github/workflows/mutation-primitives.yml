@@ -1,0 +1,68 @@
+name: Primitive mutation baseline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-primitives-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  primitives-mutation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hustcer/setup-moonbit@1522f9aef02a8ca0187dfc00a41f5dd6b16750f7 # v1.23
+        with:
+          version: 0.10.14+7d59c7ec9
+          core-version: 0.10.14+7d59c7ec9
+      - name: Record pinned toolchain
+        run: moon version --all
+      - name: Install pinned turtles 0.3.0
+        run: |
+          mkdir -p _build/tools _build/mutation
+          moon install f4ah6o/turtles/cmd/turtles@0.3.0 --bin _build/tools
+          _build/tools/turtles --version
+      - name: Mutate primitives and run tests plus fixed-seed properties
+        run: |
+          set -o pipefail
+          set +e
+          _build/tools/turtles \
+            --dir . \
+            --jobs 2 \
+            --timeout 180 \
+            --timeout-multiplier 3 \
+            --fail-under 0 \
+            --emit-regressions \
+            --json _build/mutation/report.json \
+            --output-dir _build/mutation/turtles 2>&1 | tee _build/mutation/console.log
+          turtles_status=$?
+          set -e
+          if [ -s _build/mutation/report.json ]; then
+            if python3 scripts/check_turtles_report.py \
+              --report _build/mutation/report.json \
+              --output _build/mutation/summary.json \
+              --survivor-dir _build/mutation/turtles/survivors; then
+              audit_status=0
+            else
+              audit_status=$?
+            fi
+          else
+            echo "turtles produced no valid report (exit $turtles_status)" >&2
+            audit_status=2
+          fi
+          if [ "$turtles_status" -ne 0 ]; then exit "$turtles_status"; fi
+          exit "$audit_status"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: primitives-mutation-report
+          path: _build/mutation/
+          if-no-files-found: ignore

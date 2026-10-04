@@ -326,3 +326,23 @@ gpui.mbt afterward.
 The migration story must make adoption materially easier than a full rewrite:
 applications should be able to move one coherent UI surface at a time while
 retaining working production infrastructure around it.
+
+## Implementation progress — 2026-10-04
+
+The repository now has a bounded, versioned host-service bridge with logical
+scope/request IDs, typed capability states, copied values, queue and payload
+limits, cancellation of late completions, and default-deny grants. Renderer
+adapters use a fixed Electron IPC channel or explicit Tauri command mapping;
+the examples grant no privileged service by default. A browser legacy-island
+fixture exercises logical bounds and focus handoff. See
+[docs/electron-tauri-migration.md](../../docs/electron-tauri-migration.md).
+
+Node contract tests use fake IPC/invoke functions; there is no real Electron
+main-process service handler or Tauri Rust command implementation, and neither
+desktop runtime has an integration smoke. Complete envelope-size validation,
+adapter validation, and late-scope completion handling are implemented, while
+real host integrations, mixed-runtime input/focus E2E, serialization/version
+fixtures against a production host, and full-renderer migration examples remain
+acceptance work. The implemented v1 JSON adapter is not a framed wire protocol
+and has no transport negotiation. This progress does not close the migration
+packet.

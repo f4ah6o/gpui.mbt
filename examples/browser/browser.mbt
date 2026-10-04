@@ -89,7 +89,7 @@ pub fn browser_host_error(kind : Int) -> String {
 ///|
 #export_name("gpui_browser_capabilities")
 pub fn browser_capabilities() -> String {
-  "{\"logicalViewport\":true,\"nativeWindow\":false,\"quadFrames\":true,\"frameScheduling\":\"requestAnimationFrame\",\"pointerKeyboard\":true,\"clipboard\":false,\"cursor\":false,\"textInputIme\":false,\"accessibility\":false,\"rendererRecovery\":false,\"crossThreadCommands\":false,\"renderer\":\"Canvas 2D\"}"
+  "{\"logicalViewport\":true,\"nativeWindow\":false,\"quadFrames\":true,\"frameScheduling\":\"requestAnimationFrame\",\"pointerKeyboard\":true,\"clipboard\":false,\"cursor\":false,\"textInputIme\":false,\"accessibility\":false,\"accessibilityFixture\":true,\"rendererRecovery\":false,\"crossThreadCommands\":false,\"renderer\":\"Canvas 2D\"}"
 }
 
 ///|
@@ -187,6 +187,30 @@ pub fn browser_pointer_button(
 }
 
 ///|
+#export_name("gpui_browser_scroll")
+pub fn browser_scroll(
+  x : Double,
+  y : Double,
+  delta_x : Double,
+  delta_y : Double,
+  shift : Bool,
+  control : Bool,
+  alt : Bool,
+  meta : Bool,
+) -> String {
+  match
+    (@primitives.Point::new(x, y), @primitives.Point::new(delta_x, delta_y)) {
+    (Err(_), _) | (_, Err(_)) => error_json(host_error(2))
+    (Ok(position), Ok(delta)) => {
+      let modifiers = @primitives.Modifiers::new(shift~, control~, alt~, meta~)
+      enqueue_event(
+        @platform.Input(@primitives.Scroll(position~, delta~, modifiers~)),
+      )
+    }
+  }
+}
+
+///|
 fn mouse_button(button : Int) -> @primitives.MouseButton? {
   match button {
     0 => Some(@primitives.Primary)
@@ -275,6 +299,86 @@ pub fn browser_status() -> String {
   match adapter_runtime.val {
     None => "{\"active\":false}"
     Some(adapter) => @browser_app.BrowserDemo::status_json(adapter.demo)
+  }
+}
+
+///|
+#export_name("gpui_browser_host_layout")
+pub fn browser_host_layout() -> String {
+  match adapter_runtime.val {
+    None => "{\"version\":1,\"nodes\":[],\"regions\":[]}"
+    Some(adapter) => @browser_app.BrowserDemo::host_layout_json(adapter.demo)
+  }
+}
+
+///|
+#export_name("gpui_browser_accessibility_focus")
+pub fn browser_accessibility_focus(id : Int, backwards : Bool) -> String {
+  match adapter_runtime.val {
+    None => error_json(host_error(3))
+    Some(adapter) =>
+      match
+        @browser_app.BrowserDemo::focus_semantic_node(
+          adapter.demo,
+          id,
+          backwards,
+        ) {
+        Err(_) => error_json(host_error(4))
+        Ok(_) => ok_json("true")
+      }
+  }
+}
+
+///|
+#export_name("gpui_browser_accessibility_activate")
+pub fn browser_accessibility_activate(id : Int) -> String {
+  match adapter_runtime.val {
+    None => error_json(host_error(3))
+    Some(adapter) =>
+      match @browser_app.BrowserDemo::activate_semantic_node(adapter.demo, id) {
+        Err(_) => error_json(host_error(4))
+        Ok(_) => ok_json("true")
+      }
+  }
+}
+
+///|
+#export_name("gpui_browser_direct_counter")
+pub fn browser_direct_counter(delta : Int) -> String {
+  match adapter_runtime.val {
+    None => error_json(host_error(3))
+    Some(adapter) =>
+      match
+        @browser_app.BrowserDemo::invoke_counter_direct(adapter.demo, delta) {
+        Err(error) => error_json(error)
+        Ok(value) => ok_json("\{value}")
+      }
+  }
+}
+
+///|
+#export_name("gpui_browser_mcp_counter")
+pub fn browser_mcp_counter(delta : Int) -> String {
+  match adapter_runtime.val {
+    None => error_json(host_error(3))
+    Some(adapter) =>
+      match @browser_app.BrowserDemo::invoke_counter_mcp(adapter.demo, delta) {
+        Err(error) => error_json(error)
+        Ok(value) => ok_json("\{value}")
+      }
+  }
+}
+
+///|
+#export_name("gpui_browser_query_counter")
+pub fn browser_query_counter() -> String {
+  match adapter_runtime.val {
+    None => error_json(host_error(3))
+    Some(adapter) =>
+      match @browser_app.BrowserDemo::query_counter(adapter.demo) {
+        Err(error) => error_json(error)
+        Ok(value) => ok_json("\{value}")
+      }
   }
 }
 

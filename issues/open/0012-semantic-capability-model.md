@@ -57,10 +57,28 @@ Implemented in PR #12:
 
 Still required before this packet is complete:
 
-- one real rendered GUI reference example proving redraw through ordinary observation
 - broader schema coverage for optional/record/tagged values in application fixtures
 - application-owner teardown wiring beyond explicit registry teardown
+- an observed browser host smoke proving rendered redraw for GUI, direct, and MCP fixture calls
 - release/compatibility evidence for the final public API
+
+## Shared typed-domain validation update — 2026-10-04
+
+`TypedCapability::new_with_validation` now supplies input and output domain
+validators used by GUI, direct, and erased registry calls. Typed invocation
+does not project opaque application values through `Value`; schema and
+transport checks remain at the erased boundary. `Value::validate_transport`
+rejects non-finite numbers, duplicate object keys, cycles/depth over 32,
+graphs over 10,000 nodes, and canonical JSON over 1 MiB before schema walks or
+copies. The checked serializer counts UTF-16 code units and has exact boundary
+coverage.
+
+The browser fixture now renders one observed counter capability through GUI,
+direct, and in-process MCP dispatch over the same app state; the JavaScript
+host remains below the portable fixture. MCP dispatch here is a conformance
+seam, not a network protocol. Registry-owner lifecycle wiring, broader record
+and tagged-value application fixtures, compatibility review, and a real browser
+host run remain open.
 
 
 ## Non-goals

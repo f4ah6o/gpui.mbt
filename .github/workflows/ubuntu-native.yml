@@ -19,13 +19,17 @@ jobs:
       - name: Install native system APIs and CI compositor
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri wayland-utils weston
-          dpkg-query -W libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri wayland-utils weston
+          sudo apt-get install -y build-essential pkg-config libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri adwaita-icon-theme wayland-utils weston
+          dpkg-query -W libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri adwaita-icon-theme wayland-utils weston
           moon version --all
-      - name: Native lifecycle, visual readback, integer scale, recovery and disconnect
-        run: sh scripts/test_ubuntu.sh
+      - name: Native E2E and recovery-to-first-frame timing diagnostic
+        env:
+          GPUI_BENCH_RUNNER_CLASS: ubuntu-24.04-github-hosted
+        run: python3 scripts/benchmark_ubuntu.py --output _build/ubuntu-bench/report.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: ubuntu-native-e2e
-          path: _build/ubuntu-e2e/
+          path: |
+            _build/ubuntu-e2e/
+            _build/ubuntu-bench/

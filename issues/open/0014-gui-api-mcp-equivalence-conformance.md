@@ -11,13 +11,33 @@ Implemented in PR #12:
 
 Still required before this packet is complete:
 
-- normalized production-independent semantic trace type
-- create/rename/delete and unavailable/domain-error reference scenarios
-- retry/duplicate/cancellation timing matrix
-- richer schema round-trip generators
-- side-effect recording test doubles
-- rendered GUI invalidation integration and host smoke gates
+- broader generated schema round trips and reference operations beyond the one-document CRUD fixture
+- host cancellation/disconnect timing matrix for a genuinely long-running operation
+- rendered browser host smoke for the GUI/direct/MCP redraw path
+- native endpoint topology and lifecycle smoke gates
 - turtles mutation gate once the capability API stabilizes
+
+## Normalized CRUD and request-lifecycle update — 2026-10-04
+
+The test suite now compares a normalized trace for create, rename, and delete
+from isolated GUI, direct, and MCP fixtures. It records semantic operation IDs,
+initial/final state, results, entity revisions, notification count, and the
+committed side-effect log; all three lanes produce the same trace. Availability
+failure before document creation is also compared across all lanes, while
+domain validation and erased input conversion have separate no-side-effect
+checks.
+
+Request-ID conformance additionally covers reauthorization of cached successes
+before result disclosure, changed-policy and torn-down-registry rejection,
+reentrant duplicate rejection, conflicting input, adapter close after a handler
+may have committed, and oversized-result tombstones. The browser proof fixture
+routes an External counter write through an in-process MCP adapter and uses the
+same observable state as the rendered UI.
+
+Long-running host cancellation/disconnect timing, broader generated schema
+round trips, native endpoint topology, and a reviewed mutation baseline remain
+pending. The browser fixture demonstrates in-process dispatch, not protocol
+wire parity or MCP transport cancellation.
 
 # GUI / API / MCP equivalence conformance suite
 

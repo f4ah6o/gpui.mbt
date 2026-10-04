@@ -43,6 +43,8 @@ jobs:
         run: vp install --frozen-lockfile
       - name: Check Vite+ browser tooling
         run: vp check
+      - name: Test Electron/Tauri host bridge contracts
+        run: vp run migration:host:test
       - name: Install Chromium and system dependencies
         run: vp run browser:install
       - name: Exercise Vite+ MoonBit dev watch and source maps
