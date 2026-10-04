@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "kind": "turtles-mutation-ratchet",
+  "scope": "mcp/",
+  "turtles_version": "0.3.0",
+  "target": "moon-default",
+  "test_scope": "module",
+  "moon_version": "moon 0.1.20260920 (914d7da 2026-09-20)",
+  "source": {
+    "head_sha": "ac89b8e24a71209a21223a445b125c5a420fceac",
+    "merge_sha": "6d18b844167259c258f5ec9fef8e443b4c3a134a",
+    "workflow_run_id": 37241489153,
+    "workflow_run_url": "https://github.com/gpui-mbt/gpui.mbt/actions/runs/37241489153",
+    "artifact_id": 11318000405,
+    "artifact_sha256": "e9c8836dbae8604dc6d2219aa42f120f32cdf132edd826a73126850143ceb74f",
+    "observed_at": "2026-10-04",
+    "source_manifest_sha256": "96e9533e3a040b80ff8e2df10e96afe5aeebec37e73ff8aca8d8504a935f2e95"
+  },
+  "overall": {
+    "killed": 262,
+    "survived": 9,
+    "timeout": 0,
+    "viable": 271
+  },
+  "by_operator": {
+    "arithmetic": {
+      "killed": 8,
+      "survived": 0,
+      "timeout": 0,
+      "viable": 8
+    },
+    "boolean": {
+      "killed": 11,
+      "survived": 0,
+      "timeout": 0,
+      "viable": 11
+    },
+    "comparison": {
+      "killed": 67,
+      "survived": 0,
+      "timeout": 0,
+      "viable": 67
+    },
+    "condition": {
+      "killed": 138,
+      "survived": 6,
+      "timeout": 0,
+      "viable": 144
+    },
+    "literal": {
+      "killed": 38,
+      "survived": 3,
+      "timeout": 0,
+      "viable": 41
+    }
+  },
+  "survivor_reviews": [
+    {
+      "id": "m-0ba1e7876aefedb9",
+      "path": "mcp/json_unique_keys.mbt",
+      "line": 162,
+      "operator": "literal",
+      "original": "false",
+      "replacement": "true",
+      "classification": "equivalent",
+      "rationale": "The return at json_unique_keys.mbt:162 is reached only when scan_json_string is entered without an opening quote. Both production callers establish the quote beforehand: scan_json_value selects its code=34 branch, and scan_json_key checks code=34 immediately before calling. Immutable input and an unchanged cursor preserve that condition. The mutated return is therefore unreachable under the current production call graph; bounds protection remains in json_scan_code.",
+      "review_detail": "unreachable",
+      "column": 12
+    },
+    {
+      "id": "m-26661035b3652a90",
+      "path": "mcp/protocol.mbt",
+      "line": 558,
+      "operator": "literal",
+      "original": "false",
+      "replacement": "true",
+      "classification": "equivalent",
+      "rationale": "tagged_choice_matches is called only for oneOf choices parsed from a capability Schema canonical JSON. Schema has private immutable canonical storage, and Schema::tagged always emits each choice with an object-valued properties member. Public constructors do not admit arbitrary raw schemas. Thus the missing/non-object properties return at protocol.mbt:558 is unreachable for legitimate decoder input. This mutation does not affect the distinct reachable non-object value branch, which is covered by the nested tagged-array test.",
+      "review_detail": "unreachable",
+      "column": 17
+    },
+    {
+      "id": "m-2fc4711bb7a1af77",
+      "path": "mcp/adapter.mbt",
+      "line": 377,
+      "operator": "condition",
+      "original": "active.fingerprint == fingerprint",
+      "replacement": "true",
+      "classification": "equivalent",
+      "rationale": "At adapter.mbt:367, an unequal immutable active fingerprint returns RequestConflict immediately. Therefore the equality at :377 is true whenever reached. The intervening authorization callback cannot mutate the copied InFlightRequest or either immutable fingerprint string. Replacing this equality with true changes neither authorization, response, work, nor allocation.",
+      "review_detail": "equivalent",
+      "column": 10
+    },
+    {
+      "id": "m-5ac501eb281626be",
+      "path": "mcp/protocol.mbt",
+      "line": 278,
+      "operator": "condition",
+      "original": "resource.uri() == uri",
+      "replacement": "true",
+      "classification": "redundant",
+      "rationale": "This URI check follows successful Adapter.read_resource(uri), which already matched and invoked that exact external unit-input Query. The subsequent successful inventory retains its immutable descriptor: no public removal/update exists, and teardown/owner invalidation returns earlier. At least one loop element therefore always matches, so known is always true after this loop. Setting it for additional elements cannot change routing, results, invocation counts, traversal bounds, or allocation.",
+      "review_detail": "redundant",
+      "column": 16
+    },
+    {
+      "id": "m-5f66c3f729e6f136",
+      "path": "mcp/protocol.mbt",
+      "line": 166,
+      "operator": "condition",
+      "original": "!json_within_transport_limits(arguments, 0, node_budget)",
+      "replacement": "false",
+      "classification": "redundant",
+      "rationale": "ProtocolServer.handle_line calls validate_unique_json_keys at protocol.mbt:73 before JSON parsing or dispatch. That scanner rejects whole requests over 10,000 value nodes and rejects containers at depth >=32. call_tool receives an arguments-object subtree at whole-request depth >=2, so its relative leaf depth is <=30 and its node count is strictly smaller than the bounded request. The parsed tree is acyclic and no callbacks mutate it before this check. json_within_transport_limits therefore always returns true on this call path. Removing only this redundant traversal reduces work; it cannot enlarge parsed allocation, downstream decoder work, or recursion bounds. The independent helper budget remains protected by direct white-box tests.",
+      "review_detail": "redundant",
+      "column": 6
+    },
+    {
+      "id": "m-65019728af773e0e",
+      "path": "mcp/protocol.mbt",
+      "line": 282,
+      "operator": "condition",
+      "original": "!known",
+      "replacement": "false",
+      "classification": "equivalent",
+      "rationale": "The Resource-not-found branch at protocol.mbt:282 follows successful Adapter.read_resource(uri) and successful inventory(). The former requires an exact external unit-input Query URI. Registry entries/descriptors cannot be removed or changed through public APIs; teardown or owner invalidation causes the latter inventory call to fail before this check. Therefore known is always true here. Suppressing this unreachable error branch changes no response, handler execution, work, or allocation bounds.",
+      "review_detail": "unreachable",
+      "column": 14
+    },
+    {
+      "id": "m-7402f57daa3a6598",
+      "path": "mcp/json_unique_keys.mbt",
+      "line": 141,
+      "operator": "condition",
+      "original": "json_scan_code(input, index.val) != 34",
+      "replacement": "false",
+      "classification": "redundant",
+      "rationale": "If the cursor is not on a quote, removing scan_json_key’s guard at json_unique_keys.mbt:141 still calls scan_json_string, whose first guard at :161 rejects the same unchanged cursor without consuming input. scan_json_key then returns None. Neither immutable input nor cursor changes and no callback runs between those guards. Both continue using the bounds-checked json_scan_code. This changes only a repeated predicate, not parsing, allocation, or safety.",
+      "review_detail": "redundant",
+      "column": 6
+    },
+    {
+      "id": "m-e25b28775fa701ff",
+      "path": "mcp/protocol.mbt",
+      "line": 276,
+      "operator": "literal",
+      "original": "false",
+      "replacement": "true",
+      "classification": "redundant",
+      "rationale": "This known flag is checked only after Adapter.read_resource(uri) succeeds and the subsequent inventory() succeeds. Adapter.read_resource succeeds only for an exact matching external unit-input Query descriptor. Descriptors are immutable; Registry permits registration but has no removal or descriptor-update API. Teardown or owner invalidation makes the subsequent inventory return Err before this block. Thus a matching resource remains present and known must become true on every reachable successful path, regardless of its initial value. No handler execution or result/allocation bound changes.",
+      "review_detail": "redundant",
+      "column": 27
+    },
+    {
+      "id": "m-e3dbbec4c1dc10f3",
+      "path": "mcp/json_unique_keys.mbt",
+      "line": 161,
+      "operator": "condition",
+      "original": "json_scan_code(input, index.val) != 34",
+      "replacement": "false",
+      "classification": "equivalent",
+      "rationale": "scan_json_string has only two production callers: scan_json_value’s code=34 match arm and scan_json_key immediately after its code=34 guard. With immutable string input and unchanged cursor between check and call, the opening-quote rejection predicate at json_unique_keys.mbt:161 is false on every production entry. Removing this guard changes no scanner work or allocation and does not remove the separate bounds-checked json_scan_code.",
+      "review_detail": "unreachable",
+      "column": 6
+    }
+  ]
+}

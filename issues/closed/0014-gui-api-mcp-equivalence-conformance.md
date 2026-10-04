@@ -1,4 +1,65 @@
-## Implementation progress
+# GUI / API / MCP equivalence conformance suite
+
+Status: closed (effective only on verified merge)
+Close review: 2026-10-04
+Parent: [0012-semantic-capability-model.md](0012-semantic-capability-model.md)
+Depends on: [0013-generated-api-and-mcp-adapters.md](../open/0013-generated-api-and-mcp-adapters.md)
+Related: [0003-testing-pbt-mutation-and-visual-validation.md](../open/0003-testing-pbt-mutation-and-visual-validation.md)
+Child: [0016-mcp-endpoint-lifecycle-conformance.md](../open/0016-mcp-endpoint-lifecycle-conformance.md)
+
+## Bounded semantic close review — 2026-10-04
+
+The reference-fixture semantic acceptance is complete in implementation and
+review. Closure takes effect with the verified merge of
+[PR #17](https://github.com/gpui-mbt/gpui.mbt/pull/17).
+
+The merge gate is a successful hosted baseline stability rerun and all required
+CI checks on the final candidate head, followed by verification of the merge.
+The exact successful final-head run links must be recorded in the PR's merge
+evidence. The source observation below is not that final-head pass; this
+review does not claim a final run or merge result in advance.
+
+- [x] GUI semantic binding, direct API, and MCP compare normalized CRUD
+  state/results, revisions, notifications, and committed side effects.
+- [x] Rejection/no-reexecution cases, bounded replay, deterministic inventory,
+  model-based sequences, and 15 supported schema/value wire round-trips are
+  covered by the reference suite.
+- [x] The browser fixture proves direct/MCP changes reach the ordinary GUI
+  observation and canvas redraw path.
+- [x] Owner-lifecycle packet [0015](0015-capability-owner-lifecycle.md) is
+  merged at main `074cd7b`, with all nine main checks green. Its teardown
+  checks reject stale handles, retained results, and late completions.
+- [x] Independent `capability/` and `mcp/` mutation observations have reviewed
+  baselines and 41 added deterministic regression tests. Hosted observation
+  [37241489153](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37241489153)
+  at PR head `ac89b8e24a71209a21223a445b125c5a420fceac` killed 271/283
+  capability mutants and 262/271 MCP mutants. All 12 and nine respective
+  survivors have reviewed equivalent/redundant rationales; both scopes had
+  zero timeouts, unviable mutants, or in-scope parser skips. Source artifacts
+  and fingerprints were checked against the observed revision.
+
+The observation job deliberately failed its enforcement step because the new
+baseline files were not yet present. Its complete audited report is evidence
+for the reviewed baseline, not a green stability run. The
+[semantic mutation contract](../../docs/semantic-mutation.md) records exact
+operator floors, survivor identities, provenance, and review caveats.
+
+The previously agreed split remains in force: genuinely asynchronous
+cancellation/disconnect and real native/browser endpoint topologies belong to
+open packet [0016](../open/0016-mcp-endpoint-lifecycle-conformance.md). The
+current stdio cancellation notification is an explicit no-op; synchronous
+handlers cannot be interrupted and committed side effects cannot be rolled
+back. These limitations are not waived by closing this bounded semantic
+packet. Parent [0013](../open/0013-generated-api-and-mcp-adapters.md) remains
+open until 0016 and its parent close review are complete. No production or
+release-ledger gate is promoted.
+
+The dated implementation and triage entries below are historical evidence.
+Their then-pending schema/mutation statements are superseded by this review;
+the original broader host/lifecycle requirements are retained for traceability
+and assigned to 0016 rather than silently marked implemented.
+
+## Historical implementation progress
 
 Implemented in PR #12:
 
@@ -15,7 +76,7 @@ Remaining follow-up scope:
   endpoint topology, tracked in child 0016
 - capability-layer mutation ratchet, handled next through issue 0003
 
-## Normalized CRUD and request-lifecycle update — 2026-10-04
+## Historical normalized CRUD and request-lifecycle update — 2026-10-04
 
 The test suite now compares a normalized trace for create, rename, and delete
 from isolated GUI, direct, and MCP fixtures. It records semantic operation IDs,
@@ -32,7 +93,7 @@ may have committed, and oversized-result tombstones. The browser proof fixture
 routes an External counter write through an in-process MCP adapter and uses the
 same observable state as the rendered UI.
 
-## Schema and wire round-trip update — 2026-10-04
+## Historical schema and wire round-trip update — 2026-10-04
 
 The conformance suite now compares GUI, direct API, and MCP wire entry for 15
 supported schema/value cases: unit, bool, both int32 limits, integer and
@@ -58,16 +119,7 @@ On the worktree based on implementation commit
 Async cancellation/disconnect and native/browser host topologies remain in
 child 0016. The reviewed mutation baseline is still pending in issue 0003.
 
-# GUI / API / MCP equivalence conformance suite
-
-Status: open
-Parent: [0012-semantic-capability-model.md](../closed/0012-semantic-capability-model.md)
-Depends on: [0013-generated-api-and-mcp-adapters.md](0013-generated-api-and-mcp-adapters.md)
-Related: [0003-testing-pbt-mutation-and-visual-validation.md](0003-testing-pbt-mutation-and-visual-validation.md)
-Updated: 2026-10-04
-Child: [0016-mcp-endpoint-lifecycle-conformance.md](0016-mcp-endpoint-lifecycle-conformance.md)
-
-## Current-head acceptance triage — 2026-10-04
+## Historical acceptance triage — 2026-10-04
 
 Baseline: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
 head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`. The schema/wire conformance
@@ -397,6 +449,12 @@ stable:
 - MCP-originated state change does not reach normal GUI observation
 
 ## Acceptance gate
+
+The original acceptance below is bounded by the recorded split to 0016:
+item 6 covers the implemented synchronous retry/replay contract here, while
+true asynchronous cancellation and hosted disconnect/topology evidence remain
+required by 0016. The mutation stability and merge condition above must also
+hold before closure takes effect.
 
 This packet is complete when CI can take one reference application, derive its
 capability manifest, and prove across GUI semantic binding, direct API, and MCP

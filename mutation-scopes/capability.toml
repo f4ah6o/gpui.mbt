@@ -1,0 +1,3 @@
+# Independently audited capability package mutation scope.
+include = ["capability/"]
+operators = ["comparison", "boolean", "arithmetic", "literal", "condition"]

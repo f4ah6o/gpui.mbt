@@ -98,9 +98,16 @@ The hosted [contracts/core run](https://github.com/f4ah6o/gpui.mbt/actions/runs/
 and [browser run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282)
 passed at PR #13 head. The base adapter, stdio wire host, and drift gate are
 implemented and tested. Native/browser topology and asynchronous lifecycle
-remain assigned to child 0016; semantic schema breadth and the mutation gate
-remain in 0014. This issue stays open until the parent close review after those
-packets is complete.
+remain assigned to child 0016. Supported-schema/wire parity is implemented in
+[0014](../closed/0014-gui-api-mcp-equivalence-conformance.md), and its capability
+and MCP mutation baselines are reviewed in PR #17. That bounded semantic packet
+closes with verified merge, gated by a successful hosted baseline stability
+rerun and required CI on the final candidate. Exact successful run links must
+be recorded in PR #17's merge evidence; the source observation does not assert
+that final-head result. Supported schema implementation and initial mutation
+review are complete. This issue stays open until 0016 and the parent close
+review are complete. See the [semantic mutation contract](../../docs/semantic-mutation.md)
+for observation evidence, exact gates, and review caveats.
 
 ## Goal
 

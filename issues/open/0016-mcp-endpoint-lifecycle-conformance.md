@@ -3,7 +3,7 @@
 Status: open
 Parent: [0013-generated-api-and-mcp-adapters.md](0013-generated-api-and-mcp-adapters.md)
 Depends on: [0013-generated-api-and-mcp-adapters.md](0013-generated-api-and-mcp-adapters.md)
-Related: [0014-gui-api-mcp-equivalence-conformance.md](0014-gui-api-mcp-equivalence-conformance.md), [0009-browser-backend.md](0009-browser-backend.md), [0011-electron-tauri-migration.md](0011-electron-tauri-migration.md)
+Related: [0014-gui-api-mcp-equivalence-conformance.md](../closed/0014-gui-api-mcp-equivalence-conformance.md), [0009-browser-backend.md](0009-browser-backend.md), [0011-electron-tauri-migration.md](0011-electron-tauri-migration.md)
 
 ## Progress — 2026-10-04
 
@@ -14,6 +14,12 @@ request framing bounds, malformed UTF-8 recovery, no-response notifications,
 shared semantic state, and shutdown on stdin EOF. The remaining acceptance is
 native/browser topology, genuinely asynchronous cancellation/disconnect, and
 CI-retained lifecycle artifacts.
+
+The bounded semantic packet 0014 has reviewed capability/MCP mutation baselines
+and closes on verified merge after its final-head stability/CI gates. That review does not satisfy or
+close this packet's asynchronous cancellation, hosted parity, or native/browser
+endpoint acceptance. Parent 0013 remains open until this work and its parent
+close review are complete.
 
 ## Goal
 

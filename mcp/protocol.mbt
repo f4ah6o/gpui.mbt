@@ -531,7 +531,8 @@ fn json_to_schema_value(
         None => ()
       }
       let result : Array[(String, @capability.Value)] = []
-      for (key, child) in fields.to_array() {
+      for entry in fields.to_array() {
+        let (key, child) = entry
         let child_schema = match properties.get(key) {
           Some(value) => value
           None => return Err("Unknown input field")
@@ -556,7 +557,8 @@ fn tagged_choice_matches(value : Json, choice : Json) -> Bool {
     Some(Json::Object(fields)) => fields
     _ => return false
   }
-  for (key, property_schema) in properties.to_array() {
+  for entry in properties.to_array() {
+    let (key, property_schema) = entry
     match json_member(property_schema, "const") {
       Some(Json::String(expected)) =>
         match actual.get(key) {
@@ -589,7 +591,8 @@ fn json_within_transport_limits(
       true
     }
     Json::Object(fields) => {
-      for (_, child) in fields.to_array() {
+      for entry in fields.to_array() {
+        let (_, child) = entry
         if !json_within_transport_limits(child, depth + 1, nodes) {
           return false
         }

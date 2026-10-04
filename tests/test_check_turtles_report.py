@@ -57,6 +57,7 @@ def valid_report() -> dict:
 
 def valid_ratchet_summary() -> dict:
     return {
+        "scope": "primitives/",
         "turtles_version": "0.3.0",
         "target": "moon-default",
         "test_scope": "module",
@@ -103,6 +104,24 @@ def valid_ratchet_baseline() -> dict:
             "condition": {"killed": 2, "survived": 1, "timeout": 0, "viable": 3},
         },
     }
+
+
+def semantic_ratchet_pair() -> tuple[dict, dict]:
+    summary, baseline = valid_ratchet_summary(), valid_ratchet_baseline()
+    summary["scope"] = baseline["scope"] = "capability/"
+    summary["moon_version"] = "moon 0.1.20260920 (914d7da 2026-09-20) /tmp/moon/bin/moon"
+    baseline["moon_version"] = "moon 0.1.20260920 (914d7da 2026-09-20)"
+    reviews = [
+        {
+            "id": f"survivor-{operator}", "path": "capability/schema.mbt",
+            "operator": operator, "original": "test_original", "replacement": "test_replacement",
+            "classification": "redundant", "rationale": "Synthetic review fixture: earlier check rejects the same case.",
+        }
+        for operator in ("boolean", "condition")
+    ]
+    baseline["survivor_reviews"] = reviews
+    summary["unresolved"] = [dict(review, outcome="SURVIVED") for review in reviews]
+    return summary, baseline
 
 
 class TurtlesReportAuditTests(unittest.TestCase):
@@ -291,6 +310,109 @@ class TurtlesReportAuditTests(unittest.TestCase):
         baseline["scope"] = "core/"
         with self.assertRaisesRegex(ValueError, "baseline scope"):
             checker.enforce_ratchet(valid_ratchet_summary(), baseline)
+
+
+    def test_named_package_scopes_retain_fail_closed_auditing(self) -> None:
+        for scope in ("capability/", "mcp/"):
+            with self.subTest(scope=scope):
+                report = valid_report()
+                report["files"][scope + "registry.mbt"] = "a" * 16
+                for mutant in report["mutants"]:
+                    mutant["path"] = mutant["path"].replace("primitives/", scope)
+                result = checker.audit_report(report, "sha", scope=scope)
+                self.assertEqual(result["scope"], scope)
+                self.assertEqual(result["score_percent"], 50.0)
+                with self.assertRaisesRegex(ValueError, "outside"):
+                    checker.audit_report(report, "sha")
+                report["skipped_files"] = [{"path": scope + "registry.mbt"}]
+                with self.assertRaisesRegex(ValueError, "skipped"):
+                    checker.audit_report(report, "sha", scope=scope)
+
+    def test_package_ratchet_cannot_reuse_another_package_baseline(self) -> None:
+        baseline = valid_ratchet_baseline()
+        summary = valid_ratchet_summary()
+        with self.assertRaisesRegex(ValueError, "summary scope"):
+            checker.enforce_ratchet(summary, baseline, "capability/")
+        summary["scope"] = "capability/"
+        with self.assertRaisesRegex(ValueError, "baseline scope"):
+            checker.enforce_ratchet(summary, baseline, "capability/")
+        summary, baseline = semantic_ratchet_pair()
+        result = checker.enforce_ratchet(summary, baseline, "capability/")
+        self.assertEqual(result["status"], "pass")
+        with self.assertRaisesRegex(ValueError, "unsupported mutation scope"):
+            checker.audit_report(valid_report(), "sha", scope="../")
+
+    def test_scope_configuration_disallows_hidden_exclusions(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            config_path = Path(temporary) / "capability.toml"
+            config = ('include = ["capability/"]\n'
+                      'operators = ["comparison", "boolean", "arithmetic", "literal", "condition"]\n')
+            config_path.write_text(config)
+            report = valid_report()
+            report["files"]["turtles.toml"] = checker._fnv1a64_hex(config.encode())
+            checker.validate_scope_configuration(config_path, report, "capability/")
+            with self.assertRaisesRegex(ValueError, "include"):
+                checker.validate_scope_configuration(config_path, report, "mcp/")
+            config_path.write_text(config + 'exclude = ["registry.mbt"]\n')
+            report["files"]["turtles.toml"] = checker._fnv1a64_hex(config_path.read_bytes())
+            with self.assertRaisesRegex(ValueError, "only include and operators"):
+                checker.validate_scope_configuration(config_path, report, "capability/")
+
+
+    def test_semantic_ratchet_rejects_unreviewed_survivor_even_at_same_score(self) -> None:
+        summary, baseline = semantic_ratchet_pair()
+        result = checker.enforce_ratchet(summary, baseline, "capability/")
+        self.assertEqual(result["survivor_review"]["surviving_reviewed"], 2)
+        summary["unresolved"][0]["id"] = "new-security-gap"
+        with self.assertRaisesRegex(ValueError, "unreviewed semantic survivor"):
+            checker.enforce_ratchet(summary, baseline, "capability/")
+
+    def test_semantic_reviews_are_complete_explicit_and_identity_bound(self) -> None:
+        import copy
+        summary, baseline = semantic_ratchet_pair()
+        mutations = [
+            lambda b: b.pop("survivor_reviews"),
+            lambda b: b["survivor_reviews"].pop(),
+            lambda b: b["survivor_reviews"][0].update(classification="test-gap"),
+            lambda b: b["survivor_reviews"][0].update(rationale="  "),
+            lambda b: b["survivor_reviews"][0].update(path="mcp/adapter.mbt"),
+            lambda b: b["survivor_reviews"][0].update(replacement="different-edit"),
+            lambda b: b["survivor_reviews"][0].update(id=b["survivor_reviews"][1]["id"]),
+        ]
+        for change in mutations:
+            with self.subTest(change=change):
+                altered = copy.deepcopy(baseline)
+                change(altered)
+                with self.assertRaises(ValueError):
+                    checker.enforce_ratchet(summary, altered, "capability/")
+
+    def test_semantic_summary_cannot_omit_unresolved_details(self) -> None:
+        summary, baseline = semantic_ratchet_pair()
+        summary["unresolved"] = []
+        with self.assertRaisesRegex(ValueError, "unresolved count"):
+            checker.enforce_ratchet(summary, baseline, "capability/")
+
+
+    def test_semantic_baseline_pins_moon_build_but_not_installation_path(self) -> None:
+        summary, baseline = semantic_ratchet_pair()
+        checker.enforce_ratchet(summary, baseline, "capability/")
+        summary["moon_version"] = "moon 0.1.20260920 (914d7da 2026-09-20) ~/.moon/bin/moon"
+        checker.enforce_ratchet(summary, baseline, "capability/")
+        summary["moon_version"] = "moon 0.1.20260920 (914d7da 2026-09-20) C:\\tools\\moon.exe"
+        checker.enforce_ratchet(summary, baseline, "capability/")
+        for changed in (
+            "moon 0.2.0 (914d7da 2026-09-20)",
+            "moon 0.1.20260920 (abcdef0 2026-09-20)",
+            "moon 0.1.20260920 (914d7da 2026-10-04)",
+            "unknown", "", "moon 0.1.20260920 (914d7da 2026-09-20) relative/path",
+        ):
+            summary["moon_version"] = changed
+            with self.subTest(changed=changed):
+                with self.assertRaisesRegex(ValueError, "Moon build identity"):
+                    checker.enforce_ratchet(summary, baseline, "capability/")
+        baseline.pop("moon_version")
+        with self.assertRaisesRegex(ValueError, "Moon build identity"):
+            checker.enforce_ratchet(summary, baseline, "capability/")
 
 
 if __name__ == "__main__":
