@@ -31,17 +31,12 @@ workflow retains logs as an artifact. The opt-in native E2E and shared backend
 conformance checks run sequentially in separate test processes because both
 exercise the process-wide host. Wake and exit messages carry the host token, so
 messages queued during teardown cannot affect a later host generation. The
-hosted attempts built the shim and passed portable tests. The first native run
-found an ordering error in the smoke's one-window assertion, now checked after
-the primary HWND is created. The next run progressed through readback,
-clipboard, and resize, then exposed a message-pump bug: its availability probe
-removed the first queued message before dispatch. The probe now uses
-`PM_NOREMOVE`, leaving the close event for the normal dispatch loop. The latest
-run reached teardown and found an off-by-one in duplicate destruction of the
-most recently destroyed window. The backend now tracks that tombstone per host,
-so only that repeated destroy is idempotent; older same-host and prior-host
-handles remain stale. A successful hosted run is still required before this
-counts as Windows runtime evidence.
+hosted [Windows Server 2025 run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37189457500)
+for PR head `a1f6e523dc41317064c5657179baa20456dcf6b1` passed the MSVC shim build,
+the portable tests (6/6), native GPU E2E (1/1), shared backend conformance
+(1/1), and the example app smoke. This is runtime evidence for the experimental
+one-HWND slice on that hosted configuration; it does not promote a Windows
+support tier or production claim.
 
 The example opens one visible 640 by 400 logical-pixel window and paints a dark
 background with a blue quad. Press Escape or use the system close button to
@@ -98,21 +93,20 @@ evidence exists.
 
 ## Remaining support gates
 
-This is a one-window development slice. Multi-window behavior, IME, UI
+This remains a one-window development slice. Multi-window behavior, IME, UI
 Automation accessibility, menus, broad DPI/display coverage, automated
 physical-GPU coverage, fault-injected renderer recovery, sustained
-resource-lifetime testing, and performance evidence remain open. The planned
-native readback test checks a deterministic D3D11 render target if the Windows
-workflow passes; no hosted result has been observed yet. WARP fallback does not
-establish physical GPU coverage or desktop performance. Clipboard verification
-is an in-process Unicode round trip, not an external application
-interoperability test. Only the Windows GitHub Actions runner is configured;
-supported Windows versions, GPUs, and driver combinations have not been
-established. Do not infer Tier 1 support from a successful build or smoke.
+resource-lifetime testing, and performance evidence remain open. The hosted
+run verified deterministic D3D11 target readback, but does not establish
+physical GPU coverage or desktop performance. Clipboard verification is an
+in-process Unicode round trip, not an external application interoperability
+test. Only the Windows GitHub Actions runner is configured; supported Windows
+versions, GPUs, and driver combinations have not been established. Do not infer
+Tier 1 support from a successful build or smoke.
 
 | Evidence | State |
 | --- | --- |
-| Portable MoonBit formatting, type checks, and headless tests | Locally verified |
+| Portable MoonBit formatting, type checks, and headless tests | Passed locally and in hosted run (6/6) |
 | MinGW Windows-header syntax and link check | Locally verified; compile-only, not the MoonBit Windows toolchain |
-| MSVC/Windows SDK build, native readback, clipboard and lifecycle E2E | Workflow configured; hosted result pending |
+| MSVC/Windows SDK build, native readback, clipboard and lifecycle E2E, app smoke | Passed in hosted run 37189457500 for PR head `a1f6e523dc41317064c5657179baa20456dcf6b1` |
 | Physical multi-monitor DPI, IME, accessibility, multi-window and fault recovery | Pending |

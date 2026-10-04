@@ -4,7 +4,7 @@ Status: M1 evidence ledger, pinned to upstream `zed-industries/zed@d9afb21688e04
 
 Compatibility means useful behavioral and conceptual correspondence. It does not mean Rust source or binary compatibility. A row may be marked `compatible` only after conformance evidence exists for its stated behavior. `compatible with documented deviation` requires both passing evidence and a linked deviation. `planned` means the contract exists or is scheduled but implementation/conformance evidence is incomplete. `intentionally unsupported` requires a deliberate scope decision and explanation.
 
-The contract links below state gpui.mbt behavior. Some M1 concepts now have a MoonBit implementation and headless tests; those links establish behavior against this project’s contract only. Every concept remains `planned` until an explicit comparison to the pinned upstream revision supports a compatibility claim. Native platform evidence is also pending.
+The contract links below state gpui.mbt behavior. Some M1 concepts now have a MoonBit implementation and headless tests; those links establish behavior against this project’s contract only. Every concept remains `planned` until an explicit comparison to the pinned upstream revision supports a compatibility claim. Hosted checks now cover initial Ubuntu/Wayland and experimental Windows slices; broader native behavior and production evidence remain incomplete (see [project status](status.md) and the [Windows guide](windows-native.md)).
 
 | Concept | Status | Contract | Upstream reference | Deviation | Evidence |
 |---|---|---|---|---|---|
