@@ -129,6 +129,15 @@ fn endpoint_has_json_member(value : Json, key : String) -> Bool {
 }
 
 ///|
+fn endpoint_assert_invalid_params(value : Json) -> Unit raise {
+  assert_true(!endpoint_has_json_member(value, "result"))
+  let error = endpoint_json_member(value, "error")
+  assert_true(
+    endpoint_json_member(error, "code") is Json::Number(-32602.0, ..),
+  )
+}
+
+///|
 fn endpoint_wire_request(
   rpc_method : String,
   request_id : String,
@@ -577,9 +586,7 @@ test "int32 limits and closed-record and tagged rejection do not execute the han
         "\"name\":\"\{integer_registration.capability.descriptor().external_name()}\",\"arguments\":{\"value\":\{overflow}}",
       ),
     )
-    let result = endpoint_json_member(response, "result")
-    assert_true(endpoint_json_member(result, "isError") is Json::True)
-    assert_true(!endpoint_has_json_member(response, "error"))
+    endpoint_assert_invalid_params(response)
     assert_true(integer_executions.val == 0)
   }
 
@@ -615,10 +622,7 @@ test "int32 limits and closed-record and tagged rejection do not execute the han
         "\"name\":\"\{record_registration.capability.descriptor().external_name()}\",\"arguments\":\{args}",
       ),
     )
-    assert_true(
-      endpoint_json_member(endpoint_json_member(response, "result"), "isError")
-      is Json::True,
-    )
+    endpoint_assert_invalid_params(response)
     assert_true(record_executions.val == 0)
   }
 
@@ -657,10 +661,7 @@ test "int32 limits and closed-record and tagged rejection do not execute the han
       "\"name\":\"\{tagged_registration.capability.descriptor().external_name()}\",\"arguments\":{\"kind\":\"rejected\",\"value\":\"no\"}",
     ),
   )
-  assert_true(
-    endpoint_json_member(endpoint_json_member(wrong_tag, "result"), "isError")
-    is Json::True,
-  )
+  endpoint_assert_invalid_params(wrong_tag)
   assert_true(tagged_executions.val == 0)
 }
 
