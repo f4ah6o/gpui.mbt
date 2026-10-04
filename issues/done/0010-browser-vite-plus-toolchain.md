@@ -1,6 +1,6 @@
 # Browser development toolchain: Vite+ and MoonBit plugin
 
-Status: open
+Status: done
 Parent: [0009-browser-backend.md](0009-browser-backend.md)
 Updated: 2026-10-04
 
