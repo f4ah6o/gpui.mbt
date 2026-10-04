@@ -59,7 +59,12 @@ int32_t gpui_windows_test_clipboard_validation(void);
 /* CI-only direct-message probes: size phases are minimize, zero-size, restore. */
 int32_t gpui_windows_test_size_message(int32_t host, int32_t window,
                                        int32_t phase);
-int32_t gpui_windows_test_mouse_capture(int32_t host, int32_t window);
+/* diagnostics has ten int32 fields on failure: stage, expected/actual button
+ * masks, expected capture (-1 means unchecked), actual capture (0 none, 1
+ * this window, 2 another), message, wParam words, capture-change count, and
+ * last new-capture target (0 none, 1 this window, 2 another). */
+int32_t gpui_windows_test_mouse_capture(int32_t host, int32_t window,
+                                        int32_t *diagnostics);
 int32_t gpui_windows_test_mouse_arm_destroy(int32_t host, int32_t window);
 int32_t gpui_windows_test_mouse_destroy_reset(int32_t host, int32_t window);
 

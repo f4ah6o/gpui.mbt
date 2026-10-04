@@ -19,7 +19,12 @@ extern "C" fn native_wake_stop_race(host : Int) -> Int = "gpui_windows_test_wake
 extern "C" fn native_size_message(host : Int, window : Int, phase : Int) -> Int = "gpui_windows_test_size_message"
 
 ///|
-extern "C" fn native_mouse_capture(host : Int, window : Int) -> Int = "gpui_windows_test_mouse_capture"
+#borrow(mouse_diagnostic)
+extern "C" fn native_mouse_capture(
+  host : Int,
+  window : Int,
+  mouse_diagnostic : FixedArray[Int],
+) -> Int = "gpui_windows_test_mouse_capture"
 
 ///|
 extern "C" fn native_mouse_arm_destroy(host : Int, window : Int) -> Int = "gpui_windows_test_mouse_arm_destroy"
@@ -359,12 +364,38 @@ test "Windows D3D11 HWND renders and reads back first frame" {
     assert_eq(restored_width, initial_width)
     assert_eq(restored_height, initial_height)
 
-    required(
-      outcome(
-        native_mouse_capture(host.token, window.value().to_int()),
-        "mouse_capture_probe",
-      ),
+    let mouse_diagnostic = FixedArray::make(10, 0)
+    let mouse_status = native_mouse_capture(
+      host.token,
+      window.value().to_int(),
+      mouse_diagnostic,
     )
+    let mouse_stage = match mouse_diagnostic[0] {
+      0 => "initial_state"
+      1 => "left_down"
+      2 => "right_down"
+      3 => "left_up"
+      4 => "right_up"
+      5 => "xbutton1_down"
+      6 => "xbutton2_down"
+      7 => "xbutton1_up"
+      8 => "xbutton2_up"
+      9 => "middle_down"
+      10 => "middle_up"
+      11 => "capture_loss_down"
+      12 => "capture_changed_reset"
+      13 => "capture_changed_release"
+      14 => "focus_loss_down"
+      15 => "focus_lost_reset"
+      16 => "focus_lost_release"
+      _ => "unknown"
+    }
+    let mouse_operation = if mouse_status == 0 {
+      "mouse_capture_probe"
+    } else {
+      "mouse_capture_probe stage=\{mouse_stage}(\{mouse_diagnostic[0]}) expected_buttons=\{mouse_diagnostic[1]} actual_buttons=\{mouse_diagnostic[2]} expected_capture=\{mouse_diagnostic[3]} actual_capture=\{mouse_diagnostic[4]} message=\{mouse_diagnostic[5]} wparam_low=\{mouse_diagnostic[6]} wparam_high=\{mouse_diagnostic[7]} capture_change_count=\{mouse_diagnostic[8]} last_capture_target=\{mouse_diagnostic[9]}"
+    }
+    required(outcome(mouse_status, mouse_operation))
     let mouse_events = required(host.dispatch(0))
     let expected_buttons = [
       @primitives.Primary,
