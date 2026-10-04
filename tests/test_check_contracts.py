@@ -242,6 +242,45 @@ class RuntimeDependencyTests(unittest.TestCase):
         errors = checker.validate_runtime_dependencies(self.root)
         self.assertTrue(any("widgets: runtime package has no approved dependency layer" in error for error in errors))
 
+    def test_capability_and_mcp_edges_are_explicit_and_bounded(self) -> None:
+        for package, content in {
+            "capability": 'import { "f4ah6o/gpui/diagnostics" }\n',
+            "mcp": (
+                'import { "f4ah6o/gpui/capability", '
+                '"f4ah6o/gpui/diagnostics" }\n'
+            ),
+        }.items():
+            directory = self.root / package
+            directory.mkdir()
+            (directory / "moon.pkg").write_text(content, encoding="utf-8")
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+        (self.root / "capability/moon.pkg").write_text(
+            'import { "f4ah6o/gpui/core" }\n',
+            encoding="utf-8",
+        )
+        self.assertTrue(
+            any(
+                "capability/: forbidden runtime package edge" in error
+                for error in checker.validate_runtime_dependencies(self.root)
+            )
+        )
+
+        (self.root / "capability/moon.pkg").write_text(
+            'import { "f4ah6o/gpui/diagnostics" }\n',
+            encoding="utf-8",
+        )
+        (self.root / "mcp/moon.pkg").write_text(
+            'import { "f4ah6o/gpui/core" }\n',
+            encoding="utf-8",
+        )
+        self.assertTrue(
+            any(
+                "mcp/: forbidden runtime package edge" in error
+                for error in checker.validate_runtime_dependencies(self.root)
+            )
+        )
+
     def test_approved_headless_example_runtime_edges_are_allowed(self) -> None:
         directory = self.root / "examples/headless"
         directory.mkdir(parents=True)

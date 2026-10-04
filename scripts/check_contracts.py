@@ -644,6 +644,10 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "ubuntu": {"platform", "primitives", "diagnostics", "scene"},
         "examples/ubuntu": {"ubuntu", "platform", "primitives", "diagnostics", "scene"},
         "element": {"core", "primitives", "layout", "scene"},
+        # Semantic capabilities are portable application-facing contracts. The
+        # optional MCP adapter is a leaf above them and owns no domain state.
+        "capability": {"diagnostics"},
+        "mcp": {"capability", "diagnostics"},
         "examples/headless": {"core", "diagnostics", "primitives"},
         # Portable browser fixture consumes framework layers only. Browser host
         # code is a target-specific leaf above that fixture and shared values.

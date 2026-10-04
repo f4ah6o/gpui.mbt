@@ -1,0 +1,9 @@
+import {
+  "f4ah6o/gpui/diagnostics",
+}
+
+import {
+  "f4ah6o/gpui/core",
+  "f4ah6o/gpui/capability",
+  "f4ah6o/gpui/diagnostics",
+} for "test"

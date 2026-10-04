@@ -1,3 +1,24 @@
+## Implementation progress
+
+Implemented in PR #12:
+
+- three semantic lanes: GUI binding, direct typed API, and MCP adapter
+- state/result/notification equivalence checks for one write capability
+- MCP resource read-after-direct-mutation coverage
+- invalid-input, remote-policy-denial, released-owner, and adapter-close tests
+- deterministic inventory/manifest registration-order tests
+- QuickCheck direct-vs-MCP semantic operation sequence parity
+
+Still required before this packet is complete:
+
+- normalized production-independent semantic trace type
+- create/rename/delete and unavailable/domain-error reference scenarios
+- retry/duplicate/cancellation timing matrix
+- richer schema round-trip generators
+- side-effect recording test doubles
+- rendered GUI invalidation integration and host smoke gates
+- turtles mutation gate once the capability API stabilizes
+
 # GUI / API / MCP equivalence conformance suite
 
 Status: open
