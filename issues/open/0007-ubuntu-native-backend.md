@@ -202,10 +202,12 @@ and evidence are in [docs/ubuntu.md](../../docs/ubuntu.md).
   2026-10-04 started Weston GL and passed native helper checks, then exposed an
   E2E assumption that optional clipboard/cursor services must exist. The test
   now validates typed unsupported results and records service status while
-  retaining the window/render/recovery gates. The next run passed the MoonBit
-  E2E 4/4, including 24 window cycles, but the C harness repeated the capability
-  assumption and stopped before its 40-cycle/timing checks. The C harness now
-  records typed service status too; a full corrected rerun and real GNOME/Mutter,
+  retaining the window/render/recovery gates. A later run passed MoonBit E2E
+  4/4, including 24 window cycles, and completed the C lifecycle, readback,
+  input-order, scale, recovery and resource checks at both scales, emitting all
+  30 timing samples per scale. The benchmark report then failed because merged
+  stderr split one sample record. The collector now parses stdout separately and
+  retains stderr in a sidecar log; a reporter rerun and real GNOME/Mutter,
   Japanese IME, accessibility and production gates remain pending.
 
 Local execution used Debian 13 / Weston 14.0.2; it does not establish Ubuntu
@@ -222,9 +224,12 @@ environment because the headless compositor failed to create its socket. The
 first Ubuntu CI run confirmed Weston 13 starts and the transfer helper
 passes, but MoonBit E2E failed on unconditional clipboard/cursor capability
 requirements. Its next run passed MoonBit E2E 4/4, then exposed the same
-assumption in the C harness before the 40-cycle and timing gates. Both E2E layers
-now check typed optional-service status and continue core native gates. A full
-corrected rerun is pending; local Debian evidence is not an Ubuntu support claim.
+assumption in the C harness before its stress/timing gates. Both E2E layers now
+check typed optional-service status. The latest run passed native E2E at both
+scales and emitted 30 timing samples per scale; only report parsing failed after
+stderr was merged with buffered sample stdout. The collector now writes stderr
+to a sidecar log and parses stdout independently. A corrected report rerun is
+pending; local Debian evidence is not an Ubuntu support claim.
 
 Still open are cross-client clipboard roundtrip and visible cursor smoke,
 fractional scaling/public display metadata, Japanese IME/text shaping,

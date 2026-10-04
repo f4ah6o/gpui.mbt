@@ -172,14 +172,16 @@ exist; the implementation and evidence boundary are in
 per-monitor-v2 logical sizing, WARP fallback, basic pointer/keyboard/focus,
 Unicode clipboard, cursors, D3D readback, and synchronized cross-thread
 wake/exit posting during host teardown. Portable MoonBit tests and strict
-MinGW syntax compilation pass locally. The first MSVC/Windows workflow compiled
-the shim and passed the portable tests, but the opted-in E2E failed because its
-second-window Busy assertion ran before the primary window existed. The smoke
-now creates the primary HWND first. The singleton-host E2E and conformance
-checks also run sequentially in separate filtered test processes. Wake and exit
-messages carry their originating host token so queued messages from a stopped
-host cannot reach a restart. A successful hosted rerun is still required;
-native E2E and app-smoke evidence remain pending.
+MinGW syntax compilation pass locally. Hosted runs compiled the shim and passed
+the portable tests. The native smoke first exposed an ordering error in its
+one-window assertion, now checked after creating the primary HWND. The next run
+progressed through readback, clipboard, and resize, then exposed that the pump's
+message-availability probe removed the first queued message before dispatch.
+The probe now uses `PM_NOREMOVE`; the `CloseRequested` assertion remains
+required. The singleton-host E2E and conformance checks run in separate filtered
+processes, and wake/exit messages carry their originating host token. A
+successful hosted rerun is still required; native E2E and app-smoke evidence
+remain pending.
 
 The one-HWND limit remains. Multi-window behavior, physical multi-monitor DPI
 transitions, Japanese IME/text shaping, accessibility, menus, renderer/device

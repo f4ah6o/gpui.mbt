@@ -131,12 +131,14 @@ written to `_build/ubuntu-e2e/`.
 Set `GPUI_BENCH_UBUNTU=1` when invoking the runner to emit 30
 `GPUI_BENCH_SAMPLE` records per scale. They measure first-frame completion after
 injected EGL renderer recovery, with the current `GL_RENDERER` value included;
-they are a headless llvmpipe recovery-path measure, not a desktop frame-rate
-claim.
+the reporter parses test stdout separately and stores test stderr in a sidecar
+log referenced by the JSON report. This keeps compositor diagnostics out of the
+strict sample records. The samples measure a headless llvmpipe recovery path, not
+a desktop frame-rate claim.
 
 | Evidence path | Distro / compositor | Graphics / session | Evidence state |
 | --- | --- | --- | --- |
-| Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Hosted rerun 2026-10-04: Weston GL and transfer helper passed; MoonBit E2E passed 4/4 with 24 window cycles. The C harness then exposed the same optional clipboard/cursor assumption and stopped before its 40-cycle and timing checks. The harness now records typed service status; corrected full rerun pending |
+| Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Hosted rerun 2026-10-04: MoonBit E2E passed 4/4 with 24 window cycles; C E2E passed lifecycle, readback, input-order, scale, recovery and resource checks at both scales, emitting 30 timing samples per scale. Report collection failed when merged stderr split a sample record; the collector now keeps stderr in a sidecar log and parses stdout separately. Reporter rerun pending |
 | Local implementation validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Strict C compile and clipboard transfer helper passed; Weston headless launch blocked | Full native E2E unrun: the runner observed Weston fail to add its socket with `No such file or directory`; a separate AF_UNIX bind diagnostic was denied with `EPERM` in this environment |
 | Real Ubuntu desktop | Ubuntu 24.04 GNOME Wayland/Mutter | Desktop GPU, IME and assistive technology | Pending |
 

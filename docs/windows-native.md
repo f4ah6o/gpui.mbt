@@ -31,11 +31,14 @@ workflow retains logs as an artifact. The opt-in native E2E and shared backend
 conformance checks run sequentially in separate test processes because both
 exercise the process-wide host. Wake and exit messages carry the host token, so
 messages queued during teardown cannot affect a later host generation. The
-first hosted attempt built the shim and passed the portable tests, then exposed
-an ordering error in the native smoke: it expected a second window to be busy
-before creating the primary window. The smoke now creates the primary HWND
-before checking the one-window limit. The corrected workflow still needs a
-successful hosted run before this counts as Windows runtime evidence.
+hosted attempts built the shim and passed portable tests. The first native run
+found an ordering error in the smoke's one-window assertion, now checked after
+the primary HWND is created. The next run progressed through readback,
+clipboard, and resize, then exposed a message-pump bug: its availability probe
+removed the first queued message before dispatch. The probe now uses
+`PM_NOREMOVE`, leaving the close event for the normal dispatch loop. A
+successful hosted run is still required before this counts as Windows runtime
+evidence.
 
 The example opens one visible 640 by 400 logical-pixel window and paints a dark
 background with a blue quad. Press Escape or use the system close button to

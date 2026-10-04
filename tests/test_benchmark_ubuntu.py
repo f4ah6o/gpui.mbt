@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
+import tempfile
 import unittest
 import uuid
 from pathlib import Path
@@ -129,6 +131,52 @@ class BenchmarkParserTests(unittest.TestCase):
         ]
         with self.assertRaisesRegex(ValueError, "renderer changed"):
             benchmark.summarize_samples(iter(rows))
+
+
+class BenchmarkCollectorTests(unittest.TestCase):
+    def test_stderr_cannot_splice_diagnostics_into_sample_stdout(self) -> None:
+        # Reproduce the hosted failure at the file-descriptor level: stderr is
+        # written while stdout holds a partial machine record. The collector
+        # must parse only stdout and retain diagnostics in its sidecar log.
+        child = f"""
+import os
+for scale in (1, 2):
+    for sample in range(30):
+        record = (
+            "GPUI_BENCH_SAMPLE scenario={benchmark.SCENARIO} "
+            f"platform=ubuntu-wayland renderer=llvmpipe scale={{scale}} "
+            f"sample={{sample}} duration_ns={{1000 + sample}}\\n"
+        ).encode()
+        if scale == 2 and sample == 22:
+            split = record.index(b"scale=") + 3
+            os.write(1, record[:split])
+            os.write(2, b"gpui-wayland: read after revents=0x19 failed\\n")
+            os.write(1, record[split:])
+        else:
+            os.write(1, record)
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            diagnostic_path = Path(directory) / "runner.stderr.log"
+            samples, status, _, error, captured_diagnostics = benchmark._collect_measurements(
+                None,
+                30,
+                command=[sys.executable, "-c", child],
+                diagnostics_path=diagnostic_path,
+                forward_output=False,
+            )
+
+            self.assertEqual(status, 0)
+            self.assertIsNone(error)
+            self.assertEqual(len(samples), 60)
+            self.assertIn(
+                (2, 22),
+                {(sample["scale"], sample["sample"]) for sample in samples},
+            )
+            self.assertEqual(captured_diagnostics, diagnostic_path)
+            self.assertIn(
+                "gpui-wayland: read after revents=0x19 failed",
+                diagnostic_path.read_text(encoding="utf-8"),
+            )
 
 
 class BaselineComparisonTests(unittest.TestCase):

@@ -431,32 +431,60 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _collect_measurements(
     input_log: Path | None,
     samples_per_scale: int,
-) -> tuple[list[dict[str, Any]], int, str, str | None]:
+    *,
+    command: list[str] | None = None,
+    diagnostics_path: Path | None = None,
+    forward_output: bool = True,
+) -> tuple[list[dict[str, Any]], int, str, str | None, Path | None]:
     samples: list[dict[str, Any]] = []
     if input_log is not None:
         lines = input_log.read_text(encoding="utf-8").splitlines()
         process_exit = 0
         command_text = f"replay:{input_log}"
+        diagnostic_log = None
     else:
         env = os.environ.copy()
         env["GPUI_BENCH_UBUNTU"] = "1"
-        process = subprocess.Popen(
-            ["sh", "scripts/test_ubuntu.sh"],
-            cwd=ROOT,
-            env=env,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=1,
+        command = command or ["sh", "scripts/test_ubuntu.sh"]
+        diagnostic_log = diagnostics_path or ROOT / "_build/ubuntu-bench/test_ubuntu.stderr.log"
+        if not diagnostic_log.is_absolute():
+            diagnostic_log = ROOT / diagnostic_log
+        diagnostic_log.parent.mkdir(parents=True, exist_ok=True)
+        command_text = (
+            "sh scripts/test_ubuntu.sh (benchmark env enabled)"
+            if command == ["sh", "scripts/test_ubuntu.sh"]
+            else " ".join(command)
         )
-        assert process.stdout is not None
         lines = []
-        for line in process.stdout:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            lines.append(line.rstrip("\n"))
-        process_exit = process.wait()
-        command_text = "sh scripts/test_ubuntu.sh (benchmark env enabled)"
+        # Keep stderr on a separate file descriptor: Wayland/GL diagnostics can
+        # arrive while C stdio is flushing a buffered sample record. Merging the
+        # streams can splice diagnostic text into the strict machine protocol.
+        with diagnostic_log.open("w", encoding="utf-8", newline="") as diagnostic_stream:
+            process = subprocess.Popen(
+                command,
+                cwd=ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=diagnostic_stream,
+                bufsize=1,
+            )
+            assert process.stdout is not None
+            with process.stdout:
+                for line in process.stdout:
+                    if forward_output:
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                    lines.append(line.rstrip("\n"))
+            process_exit = process.wait()
+            diagnostic_stream.flush()
+        if forward_output:
+            diagnostic_text = diagnostic_log.read_text(encoding="utf-8")
+            if diagnostic_text:
+                sys.stderr.write(
+                    f"\nCaptured E2E stderr in {diagnostic_log}:\n{diagnostic_text}"
+                )
+                sys.stderr.flush()
 
     parse_error = None
     for line_number, line in enumerate(lines, start=1):
@@ -468,7 +496,7 @@ def _collect_measurements(
             parse_error = f"line {line_number}: {error}"
             break
     if parse_error:
-        return samples, process_exit, command_text, parse_error
+        return samples, process_exit, command_text, parse_error, diagnostic_log
     for scale in EXPECTED_SCALES:
         count = sum(1 for sample in samples if sample["scale"] == scale)
         if count != samples_per_scale:
@@ -477,8 +505,9 @@ def _collect_measurements(
                 process_exit,
                 command_text,
                 f"scale {scale} emitted {count} samples; expected exactly {samples_per_scale}",
+                diagnostic_log,
             )
-    return samples, process_exit, command_text, None
+    return samples, process_exit, command_text, None, diagnostic_log
 
 
 def build_report(
@@ -488,6 +517,7 @@ def build_report(
     runner_class: str,
     samples_per_scale: int,
     error: str | None,
+    diagnostic_log: Path | None = None,
 ) -> dict[str, Any]:
     fixture = ROOT / "tests/ubuntu/backend_test.c"
     workload = {
@@ -516,6 +546,11 @@ def build_report(
         "measurement_error": error,
         "process_exit_code": process_exit,
         "command": command_text,
+        "diagnostic_log": (
+            diagnostic_log.relative_to(ROOT).as_posix()
+            if diagnostic_log is not None and diagnostic_log.is_relative_to(ROOT)
+            else str(diagnostic_log) if diagnostic_log is not None else None
+        ),
         "run_id": str(uuid.uuid4()),
         "revision": git["revision"],
         "worktree_dirty": git["dirty"],
@@ -555,8 +590,21 @@ def main() -> int:
     if input_log is not None and not input_log.is_absolute():
         input_log = ROOT / input_log
 
-    samples, process_exit, command_text, error = _collect_measurements(input_log, args.samples)
-    report = build_report(samples, process_exit, command_text, args.runner_class, args.samples, error)
+    diagnostic_log = output.with_suffix(".stderr.log")
+    samples, process_exit, command_text, error, diagnostic_log = _collect_measurements(
+        input_log,
+        args.samples,
+        diagnostics_path=diagnostic_log,
+    )
+    report = build_report(
+        samples,
+        process_exit,
+        command_text,
+        args.runner_class,
+        args.samples,
+        error,
+        diagnostic_log,
+    )
     if args.baseline:
         try:
             baseline = _read_json(args.baseline)

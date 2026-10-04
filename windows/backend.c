@@ -1528,7 +1528,9 @@ static int32_t dispatch_messages(gpui_windows_host *host, int32_t timeout_ms) {
   int32_t completion_status = poll_frame_completion(host);
   if (completion_status != GPUI_WINDOWS_OK)
     return completion_status;
-  BOOL got = host->api.peek_message_w(&message, NULL, 0, 0, PM_REMOVE);
+  /* Probe without consuming: the dispatch loop below must see the first
+   * queued message too (notably a lone posted WM_CLOSE or host wake). */
+  BOOL got = host->api.peek_message_w(&message, NULL, 0, 0, PM_NOREMOVE);
   DWORD wait_ms = (DWORD)timeout_ms;
   if (host->frame_pending && wait_ms > 8)
     wait_ms = 8;

@@ -332,6 +332,8 @@ test "Windows D3D11 HWND renders and reads back first frame" {
       completion_polls += 1
     }
     assert_true(frame_completed)
+    // The frame loop drained earlier traffic; this lone WM_CLOSE must reach
+    // the window procedure during the next dispatch.
     required(host.request_close(window))
     let close_events = required(host.dispatch(0))
     assert_true(
