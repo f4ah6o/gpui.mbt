@@ -49,7 +49,7 @@ fn int_capability(
     external_int_descriptor(id, kind),
     value => value.as_int(),
     value => Ok(@capability.Value::int(value)),
-    value =>
+    value => {
       if kind is @capability.Query {
         app.read(entity, current => current)
       } else {
@@ -63,8 +63,9 @@ fn int_capability(
           Err(error) => Err(error)
           Ok(_) => app.read(entity, current => current)
         }
-      },
-    () =>
+      }
+    },
+    () => {
       if entity.is_live() {
         Ok(())
       } else {
@@ -76,7 +77,8 @@ fn int_capability(
             subsystem="capability-test",
           ),
         )
-      },
+      }
+    },
     _origin => Ok(()),
   )
 }
@@ -84,30 +86,20 @@ fn int_capability(
 ///|
 test "schema projection is deterministic and validates closed records" {
   let string_field = match
-    @capability.SchemaField::new(
-      "name",
-      @capability.Schema::string(),
-      true,
-    ) {
+    @capability.SchemaField::new("name", @capability.Schema::string(), true) {
     Ok(value) => value
     Err(_) => fail("valid field rejected")
   }
   let enabled_field = match
-    @capability.SchemaField::new(
-      "enabled",
-      @capability.Schema::bool(),
-      false,
-    ) {
+    @capability.SchemaField::new("enabled", @capability.Schema::bool(), false) {
     Ok(value) => value
     Err(_) => fail("valid field rejected")
   }
-  let first = match
-    @capability.Schema::record([string_field, enabled_field]) {
+  let first = match @capability.Schema::record([string_field, enabled_field]) {
     Ok(value) => value
     Err(_) => fail("valid record schema rejected")
   }
-  let second = match
-    @capability.Schema::record([enabled_field, string_field]) {
+  let second = match @capability.Schema::record([enabled_field, string_field]) {
     Ok(value) => value
     Err(_) => fail("valid record schema rejected")
   }
@@ -130,9 +122,7 @@ test "schema projection is deterministic and validates closed records" {
   )
   assert_true(
     !first.accepts(
-      @capability.Value::object([
-        ("enabled", @capability.Value::bool(true)),
-      ]),
+      @capability.Value::object([("enabled", @capability.Value::bool(true))]),
     ),
   )
 }
@@ -192,12 +182,7 @@ test "gui direct and erased registry invocation share one handler" {
     "document.rename",
     @capability.Command,
   )
-  let query = int_capability(
-    app,
-    entity,
-    "document.current",
-    @capability.Query,
-  )
+  let query = int_capability(app, entity, "document.current", @capability.Query)
   let gui = command.gui_binding()
   let registry = @capability.Registry::new()
   assert_true(registry.register(command) is Ok(_))
@@ -242,8 +227,7 @@ test "registry rejects collisions invalid values policy and stale handles" {
   )
   assert_true(registry.register(command) is Ok(_))
   match registry.register(command) {
-    Err(error) =>
-      assert_true(error.code() is @diagnostics.InvalidInput)
+    Err(error) => assert_true(error.code() is @diagnostics.InvalidInput)
     Ok(_) => fail("duplicate capability id must fail")
   }
   match
@@ -252,8 +236,7 @@ test "registry rejects collisions invalid values policy and stale handles" {
       @capability.RemoteMcp,
       @capability.Value::string("wrong"),
     ) {
-    Err(error) =>
-      assert_true(error.code() is @diagnostics.ConversionFailed)
+    Err(error) => assert_true(error.code() is @diagnostics.ConversionFailed)
     Ok(_) => fail("invalid external value must fail")
   }
 
@@ -289,8 +272,7 @@ test "registry rejects collisions invalid values policy and stale handles" {
       @capability.RemoteMcp,
       @capability.Value::int(1),
     ) {
-    Err(error) =>
-      assert_true(error.code() is @diagnostics.PermissionDenied)
+    Err(error) => assert_true(error.code() is @diagnostics.PermissionDenied)
     Ok(_) => fail("remote invocation of internal capability must fail")
   }
   registry.teardown()
