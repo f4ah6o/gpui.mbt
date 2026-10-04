@@ -14,7 +14,7 @@ fn running_mcp_app() -> @core.App raise {
 fn mcp_command_descriptor(
   id : String,
   exposure : @capability.Exposure,
-) -> @capability.Descriptor raise {
+) -> @capability.Descriptor {
   match
     @capability.Descriptor::new(
       id,
@@ -30,12 +30,12 @@ fn mcp_command_descriptor(
       1,
     ) {
     Ok(value) => value
-    Err(_) => fail("valid descriptor rejected")
+    Err(_) => abort("valid descriptor rejected")
   }
 }
 
 ///|
-fn mcp_query_descriptor(id : String) -> @capability.Descriptor raise {
+fn mcp_query_descriptor(id : String) -> @capability.Descriptor {
   match
     @capability.Descriptor::new(
       id,
@@ -51,7 +51,7 @@ fn mcp_query_descriptor(id : String) -> @capability.Descriptor raise {
       1,
     ) {
     Ok(value) => value
-    Err(_) => fail("valid descriptor rejected")
+    Err(_) => abort("valid descriptor rejected")
   }
 }
 
@@ -64,10 +64,10 @@ fn install_fixture(
   @capability.Registry,
   @capability.TypedCapability[Int, Int],
   @capability.TypedCapability[Unit, Int],
-) raise {
+) {
   let owner = match app.create_entity(0) {
     Ok(value) => value
-    Err(_) => fail("observer entity creation should succeed")
+    Err(_) => abort("observer entity creation should succeed")
   }
   assert_true(
     app.update(owner, context => {
