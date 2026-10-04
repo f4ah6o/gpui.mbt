@@ -194,26 +194,32 @@ try {
   await waitForCompiledMarker(updatedMarker);
   console.log("dev-watch: plugin watch emitted watch-v2 JS");
 
-  // Open a fresh Vite entry after the plugin-owned MoonBit watch has rebuilt
-  // the fixture. The entry imports a unique mbt: module id so Vite must resolve
-  // and serve the updated MoonBit output instead of reusing the initial graph.
-  await page.goto("http://127.0.0.1:5173/dev-watch-after.html", {
-    waitUntil: "load",
-    timeout: 30_000,
-  });
-  console.log("dev-watch: Vite served updated acceptance entry");
-  await page.waitForFunction(
-    (expected) => document.body.dataset.devWatchMarker === expected,
+  const refreshDeadline = Date.now() + 30_000;
+  let observedMarker;
+  while (Date.now() < refreshDeadline) {
+    try {
+      observedMarker = await page.evaluate(
+        () => document.body.dataset.devWatchMarker,
+      );
+      if (observedMarker === updatedMarker) break;
+    } catch {
+      // A Vite full reload may temporarily destroy the execution context.
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  }
+
+  assert.equal(
+    observedMarker,
     updatedMarker,
-    { timeout: 30_000 },
+    "the already-open Vite page must refresh to the rebuilt MoonBit module",
   );
   assert.equal(
     await page.locator("#dev-watch-marker").textContent(),
     updatedMarker,
-    "browser must observe the MoonBit watch rebuild through Vite",
+    "same-page refresh must render the updated MoonBit value",
   );
   assert.deepEqual(pageErrors, [], "dev-watch browser page must stay error-free");
-  console.log("dev-watch: Chromium observed watch-v2");
+  console.log("dev-watch: same Vite page refreshed to watch-v2");
 
   const rebuiltSourceMap = JSON.parse(readFileSync(sourceMapPath, "utf8"));
   assert.ok(
@@ -229,7 +235,7 @@ try {
 
   console.log("dev-watch: rebuilt source map retains .mbt reference");
   console.log(
-    "Vite+ dev-watch passed: MoonBit edit rebuilt through vite-plugin-moonbit, Vite served watch-v2 to Chromium, and the source map references the .mbt fixture.",
+    "Vite+ dev-watch passed: MoonBit edit rebuilt through vite-plugin-moonbit, the already-open Vite page refreshed to watch-v2, and the source map references the .mbt fixture.",
   );
 } catch (error) {
   console.error("Vite+ dev-watch failed:", error);
