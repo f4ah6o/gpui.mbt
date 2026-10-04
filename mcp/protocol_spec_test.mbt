@@ -257,8 +257,7 @@ test "tool execution errors stay distinct from JSON-RPC dispatch errors" {
   )
   assert_true(!protocol_spec_has_member(malformed_arguments, "result"))
   let malformed_arguments_error = protocol_spec_member(
-    malformed_arguments,
-    "error",
+    malformed_arguments, "error",
   )
   assert_true(
     protocol_spec_member(malformed_arguments_error, "code")
