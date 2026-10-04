@@ -109,10 +109,7 @@ try {
   });
 
   await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: "load" });
-  await page.evaluate(async () => {
-    const gpui = await import("./gpui-browser.js");
-    window.__gpuiSmokeStatus = () => JSON.parse(gpui.gpui_browser_status());
-  });
+  await page.waitForFunction(() => typeof window.__gpuiSmokeStatus === "function");
   const canvas = page.locator("#gpui-viewport");
   const readViewport = () => page.evaluate(() => {
     const canvas = document.querySelector("#gpui-viewport");

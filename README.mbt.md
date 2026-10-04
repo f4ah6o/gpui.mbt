@@ -49,14 +49,14 @@ The demo opens a Wayland window and presents the shared scene model through EGL/
 
 ### Browser
 
-With Node.js 24+ available:
+With Vite+ and a supported Node.js release available:
 
 ```sh
-./scripts/build_browser_demo.sh
-python3 -m http.server --directory _build/browser-site 8000
+vp install --frozen-lockfile
+vp dev
 ```
 
-Open `http://localhost:8000`. The browser proof uses the shared MoonBit app, flex-tree layout, element hit testing/focus, event ingress, and `SceneSnapshot` data. See [the browser guide](docs/browser-demo.md).
+Open the URL printed by Vite+. The browser proof uses the shared MoonBit app, flex-tree layout, element hit testing/focus, event ingress, and `SceneSnapshot` data. Use `vp build` for the production artifact in `_build/browser-site`. See [the browser guide](docs/browser-demo.md).
 
 ## MoonBit programming model
 

@@ -1,4 +1,4 @@
-import * as gpui from "./gpui-browser.js";
+import * as gpui from "mbt:f4ah6o/gpui/examples/browser";
 
 const elements = {
   frame: document.querySelector("#canvas-frame"),
@@ -380,6 +380,8 @@ function start() {
     showDiagnostic(error);
   }
 }
+
+window.__gpuiSmokeStatus = () => JSON.parse(gpui.gpui_browser_status());
 
 const gpuiCapabilities = JSON.parse(gpui.gpui_browser_capabilities());
 elements.remount.addEventListener("click", () => start());
