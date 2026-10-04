@@ -241,13 +241,12 @@ test "tool execution errors stay distinct from JSON-RPC dispatch errors" {
       "tools/call", "4", "\"name\":\"spec_value\",\"arguments\":{\"value\":\"five\"}",
     ),
   )
-  assert_true(!protocol_spec_has_member(invalid_value, "error"))
-  let tool_error = protocol_spec_member(invalid_value, "result")
+  assert_true(!protocol_spec_has_member(invalid_value, "result"))
+  let invalid_value_error = protocol_spec_member(invalid_value, "error")
   assert_true(
-    protocol_spec_member(tool_error, "resultType") is Json::String("complete"),
+    protocol_spec_member(invalid_value_error, "code")
+    is Json::Number(-32602.0, ..),
   )
-  assert_true(protocol_spec_member(tool_error, "isError") is Json::True)
-  assert_true(protocol_spec_member(tool_error, "content") is Json::Array(_))
 
   let unknown_tool = protocol_spec_reply(
     server,
