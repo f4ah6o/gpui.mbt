@@ -42,6 +42,27 @@ This also makes automation testable headlessly: a test can invoke the same
 capability used by a button without synthesizing a mouse click merely to reach
 domain behavior.
 
+## Implementation progress
+
+Implemented in PR #12:
+
+- portable typed `TypedCapability[I, O]` descriptors and one common invocation path
+- stable semantic IDs, collision diagnostics, registry lookup, teardown invalidation,
+  and deterministic public enumeration
+- framework-owned deterministic `Value` / `Schema` projection for the initial
+  transport-safe subset
+- explicit `Internal` / `Local` / `External` exposure and per-origin policy hooks
+- semantic `GuiBinding` that calls the same typed handler as direct invocation
+- headless state/notification tests for GUI, direct, and erased registry invocation
+
+Still required before this packet is complete:
+
+- one real rendered GUI reference example proving redraw through ordinary observation
+- broader schema coverage for optional/record/tagged values in application fixtures
+- application-owner teardown wiring beyond explicit registry teardown
+- release/compatibility evidence for the final public API
+
+
 ## Non-goals
 
 - infer reliable domain semantics from arbitrary rendered pixels
