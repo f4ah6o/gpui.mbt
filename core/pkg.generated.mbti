@@ -20,6 +20,7 @@ pub fn App::diagnostics(Self) -> Array[@diagnostics.Diagnostic]
 pub fn App::dispatch(Self, (TaskContext) -> Result[Unit, @diagnostics.FrameworkError]) -> Result[Task, @diagnostics.FrameworkError]
 pub fn App::id(Self) -> AppId
 pub fn App::lifecycle(Self) -> AppLifecycle
+pub fn App::lifetime(Self) -> AppLifetime
 pub fn App::new() -> Result[Self, @diagnostics.FrameworkError]
 pub fn App::now_ms(Self) -> UInt64
 pub fn App::pending_work(Self) -> Int
@@ -45,6 +46,13 @@ pub(all) enum AppLifecycle {
   Stopped
   Failed
 }
+
+pub struct AppLifetime {
+  // private fields
+}
+pub fn AppLifetime::app_id(Self) -> AppId
+pub fn AppLifetime::is_alive(Self) -> Bool
+pub fn AppLifetime::is_running(Self) -> Bool
 
 pub struct Context[T] {
   // private fields

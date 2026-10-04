@@ -2,6 +2,7 @@
 package "f4ah6o/gpui/capability"
 
 import {
+  "f4ah6o/gpui/core",
   "f4ah6o/gpui/diagnostics",
 }
 
@@ -73,6 +74,7 @@ pub fn OperationKind::not_equal(Self, Self) -> Bool
 pub struct Registry {
   // private fields
 }
+pub fn Registry::attach_owner(Self, @core.App) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Registry::authorize_external(Self, String, InvocationOrigin) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Registry::descriptors(Self) -> Array[Descriptor]
 pub fn Registry::external_descriptors(Self) -> Array[Descriptor]
@@ -81,6 +83,7 @@ pub fn Registry::invoke(Self, String, InvocationOrigin, Value) -> Result[Value, 
 pub fn Registry::invoke_external(Self, String, InvocationOrigin, Value) -> Result[Value, @diagnostics.FrameworkError]
 pub fn Registry::is_alive(Self) -> Bool
 pub fn Registry::new() -> Self
+pub fn Registry::new_owned(@core.App) -> Result[Self, @diagnostics.FrameworkError]
 pub fn[I, O] Registry::register(Self, TypedCapability[I, O]) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Registry::teardown(Self) -> Unit
 

@@ -258,15 +258,27 @@ pub fn Adapter::is_open(self : Adapter) -> Bool {
 pub fn Adapter::close(self : Adapter) -> Unit {
   self.state.val.open = false
   self.state.val.completed_requests.clear()
+  self.state.val.in_flight_requests.clear()
 }
 
 ///|
-pub fn Adapter::inventory(self : Adapter) -> Result[Inventory, AdapterError] {
+fn Adapter::check_live(self : Adapter) -> Result[Unit, AdapterError] {
   if !self.state.val.open {
     return Err({ code: AdapterClosed, message: "adapter is closed", })
   }
   if !self.registry.is_alive() {
+    self.state.val.completed_requests.clear()
+    self.state.val.in_flight_requests.clear()
     return Err({ code: Stale, message: "capability registry is not live", })
+  }
+  Ok(())
+}
+
+///|
+pub fn Adapter::inventory(self : Adapter) -> Result[Inventory, AdapterError] {
+  match self.check_live() {
+    Err(error) => return Err(error)
+    Ok(_) => ()
   }
   let tools : Array[Tool] = []
   let resources : Array[Resource] = []
@@ -287,8 +299,9 @@ pub fn Adapter::call_tool(
   name : String,
   input : @capability.Value,
 ) -> Result[@capability.Value, AdapterError] {
-  if !self.state.val.open {
-    return Err({ code: AdapterClosed, message: "adapter is closed", })
+  match self.check_live() {
+    Err(error) => return Err(error)
+    Ok(_) => ()
   }
   let inventory = match self.inventory() {
     Err(error) => return Err(error)
@@ -321,8 +334,9 @@ pub fn Adapter::call_tool_with_request_id(
   name : String,
   input : @capability.Value,
 ) -> Result[@capability.Value, AdapterError] {
-  if !self.state.val.open {
-    return Err({ code: AdapterClosed, message: "adapter is closed", })
+  match self.check_live() {
+    Err(error) => return Err(error)
+    Ok(_) => ()
   }
   if request_id.length() == 0 || request_id.length() > MAX_REQUEST_ID_LENGTH {
     return Err({
@@ -403,6 +417,10 @@ pub fn Adapter::call_tool_with_request_id(
       message: "adapter closed while request ran; its domain effect may already be committed",
     })
   }
+  match self.check_live() {
+    Err(error) => return Err(error)
+    Ok(_) => ()
+  }
   let retained = match outcome {
     Ok(value) =>
       match value.try_canonical_json() {
@@ -448,8 +466,9 @@ pub fn Adapter::read_resource(
   self : Adapter,
   uri : String,
 ) -> Result[@capability.Value, AdapterError] {
-  if !self.state.val.open {
-    return Err({ code: AdapterClosed, message: "adapter is closed", })
+  match self.check_live() {
+    Err(error) => return Err(error)
+    Ok(_) => ()
   }
   let inventory = match self.inventory() {
     Err(error) => return Err(error)

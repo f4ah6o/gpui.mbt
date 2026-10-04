@@ -240,8 +240,18 @@ test "registry enumeration and manifest ignore registration order" {
   let b = int_capability(app, entity, "document.current", @capability.Query)
   assert_true(first.register(a) is Ok(_))
   assert_true(first.register(b) is Ok(_))
-  assert_true(second.register(b) is Ok(_))
-  assert_true(second.register(a) is Ok(_))
+  assert_true(
+    second.register(
+      int_capability(app, entity, "document.current", @capability.Query),
+    )
+    is Ok(_),
+  )
+  assert_true(
+    second.register(
+      int_capability(app, entity, "document.rename", @capability.Command),
+    )
+    is Ok(_),
+  )
   assert_eq(first.external_manifest_json(), second.external_manifest_json())
   let first_descriptors = first.descriptors()
   let second_descriptors = second.descriptors()

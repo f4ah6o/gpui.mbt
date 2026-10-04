@@ -27,6 +27,14 @@ The lifecycle is `New -> Running -> Stopping -> Stopped`. M1 exposes a reserved 
 
 M1 tasks are synchronous app-executor callbacks; there is no background executor. A running task receives a cancellation token and must cooperate. Queued tasks are canceled before user code runs. Backend teardown and late-native-callback handling are future platform responsibilities.
 
+Application-owned capability registries consume the read-only `AppLifetime`
+token. `request_stop` revokes it synchronously before cancellation or entity
+release, including the `New -> Stopped` path. Registries may be configured
+before start, but owner-bound calls require `Running`. Direct and GUI handles
+share registry lifetime; see [capability owner lifecycle](capability-lifecycle.md)
+for adoption, stale errors, and synchronous completion limits. Reference dropping
+alone is not an app-disposal/finalizer contract.
+
 ### Entity identity and lifetime
 
 `Entity[T]` is an opaque, value-like handle to app-owned state of type `T`. Copying a handle copies access to the same entity; it does not copy the state. The `EntityId` combines app identity with a monotonically allocated entity number; compare IDs rather than handles because M1 does not define `Entity[T]` equality. IDs are never reused during one app lifetime; allocation returns `ResourceExhausted` before the numeric counter can wrap.
@@ -79,7 +87,7 @@ The conceptual surface includes `App`, `Entity[T]`, `Context[T]`, `Render`, `Int
 
 ### M1 public core slice
 
-`core/` exports opaque `App`, `Entity[T]`, `Context[T]`, `Subscription`, and `Task` handles; logical `AppId`, `EntityId`, and `TaskId`; lifecycle and event enums; and `Result`-based operations. The main entry points are `App::new/start/request_stop`, `create_entity`, `read`, `update`, `revision`, `destroy_entity`, `dispatch`, `schedule_after`, `advance_time_by`, `run_ready`, and `pending_work`. `Context` provides `get/set/notify/observe/subscribe`; `TaskContext` exposes cooperative cancellation. This package contains no renderer, window, OS handle, GPU, or background-thread API.
+`core/` exports opaque `App`, `Entity[T]`, `Context[T]`, `Subscription`, and `Task` handles; logical `AppId`, `EntityId`, and `TaskId`; lifecycle and event enums; and `Result`-based operations. The main entry points are `App::new/start/request_stop/lifetime`, `create_entity`, `read`, `update`, `revision`, `destroy_entity`, `dispatch`, `schedule_after`, `advance_time_by`, `run_ready`, and `pending_work`. `Context` provides `get/set/notify/observe/subscribe`; `TaskContext` exposes cooperative cancellation. This package contains no renderer, window, OS handle, GPU, or background-thread API.
 
 Every entered update advances revision once, including one returning `Err`; rejected calls do not. A callback failure preserves partial writes, wraps the cause as `CallbackFailure`, records it, and continues event delivery. A caller that invokes `update` from notification/task dispatch receives `Ok(())` when the update is accepted into the queue; a later failure is available in diagnostics. `run_ready(budget)` executes no more than `budget` FIFO items, returns the count processed, and rejects negative budgets. Zero-delay tasks join the queue when submitted. Timers use a manually advanced monotonic `UInt64` clock, are promoted when time advances, and order by deadline then registration sequence. `Task::cancel` clears queued callback state immediately; running cancellation is cooperative. Cancellation is task status, not a diagnostic error.
 

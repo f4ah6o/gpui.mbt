@@ -9,6 +9,7 @@ pub struct App {
 priv struct AppInner {
   id : AppId
   mut lifecycle : AppLifecycle
+  lifetime : AppLifetime
   mut next_entity_id : UInt64
   mut next_task_id : UInt64
   mut next_sequence : UInt64
@@ -67,6 +68,7 @@ pub fn App::new() -> Result[App, @diagnostics.FrameworkError] {
             inner: Ref({
               id,
               lifecycle: New,
+              lifetime: { app_id: id, alive: Ref(true), running: Ref(false), },
               next_entity_id: 1,
               next_task_id: 1,
               next_sequence: 1,
@@ -102,6 +104,7 @@ pub fn App::start(self : App) -> Result[Unit, @diagnostics.FrameworkError] {
   match self.inner.val.lifecycle {
     New => {
       self.inner.val.lifecycle = Running
+      self.inner.val.lifetime.running.val = true
       Ok(())
     }
     _ =>
@@ -123,6 +126,9 @@ pub fn App::start(self : App) -> Result[Unit, @diagnostics.FrameworkError] {
 pub fn App::request_stop(
   self : App,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
+  // Revoke owner handles before any cancellation or release can reenter.
+  self.inner.val.lifetime.alive.val = false
+  self.inner.val.lifetime.running.val = false
   match self.inner.val.lifecycle {
     New => {
       self.inner.val.lifecycle = Stopped
@@ -228,4 +234,36 @@ fn App::finish_stop_if_drained(self : App) -> Unit {
     self.inner.val.entities.clear()
     self.inner.val.timers.clear()
   }
+}
+
+///|
+/// Read-only lifetime of an app. It does not retain the app, its entities, or
+/// callbacks. It is valid during New/Running and permanently revoked as soon
+/// as request_stop begins, even when entity release is deferred.
+pub struct AppLifetime {
+  priv app_id : AppId
+  priv alive : Ref[Bool]
+  priv running : Ref[Bool]
+}
+
+///|
+pub fn App::lifetime(self : App) -> AppLifetime {
+  self.inner.val.lifetime
+}
+
+///|
+pub fn AppLifetime::app_id(self : AppLifetime) -> AppId {
+  self.app_id
+}
+
+///|
+pub fn AppLifetime::is_alive(self : AppLifetime) -> Bool {
+  self.alive.val
+}
+
+///|
+/// Readiness is separate from lifetime: a New app may configure owned handles
+/// but cannot execute them until start succeeds.
+pub fn AppLifetime::is_running(self : AppLifetime) -> Bool {
+  self.running.val
 }

@@ -391,3 +391,40 @@ test "new apps may be stopped directly and ready-work budgets reject negatives" 
     Ok(_) => fail("negative ready-work budgets must be rejected")
   }
 }
+
+///|
+test "app lifetime token is shared read only and revoked before deferred shutdown" {
+  let app = running_app()
+  let first = app.lifetime()
+  let second = app.lifetime()
+  let unrelated = running_app().lifetime()
+  assert_true(first.app_id() == app.id())
+  assert_true(first.is_alive())
+  let entity = int_entity(app, 1)
+  let observed_revocation = Ref(false)
+  assert_true(
+    app.update(entity, _context => {
+      ignore(app.request_stop())
+      observed_revocation.val = !first.is_alive() &&
+        !second.is_alive() &&
+        entity.is_live()
+      ignore(app.request_stop())
+      Ok(())
+    })
+    is Ok(_),
+  )
+  assert_true(observed_revocation.val)
+  assert_true(unrelated.is_alive())
+  assert_true(app.run_ready(8) is Ok(_))
+  assert_true(!app.lifetime().is_alive())
+  assert_true(app.request_stop() is Ok(_))
+  assert_true(!first.is_alive())
+  let never_started = match @core.App::new() {
+    Ok(app) => app
+    Err(_) => fail("app allocation should succeed")
+  }
+  let token = never_started.lifetime()
+  assert_true(token.is_alive())
+  assert_true(never_started.request_stop() is Ok(_))
+  assert_true(!token.is_alive())
+}

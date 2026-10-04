@@ -648,7 +648,7 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "element": {"core", "primitives", "layout", "scene"},
         # Semantic capabilities are portable application-facing contracts. The
         # optional MCP adapter is a leaf above them and owns no domain state.
-        "capability": {"diagnostics"},
+        "capability": {"core", "diagnostics"},
         "mcp": {"capability", "diagnostics"},
         # Electron/Tauri migrations use a portable request/completion contract;
         # the host transport remains in target-specific leaf adapters.

@@ -5,7 +5,7 @@ Closed: 2026-10-04
 Parent: [0001-product-charter-and-compatibility.md](../open/0001-product-charter-and-compatibility.md)
 Related: [0003-testing-pbt-mutation-and-visual-validation.md](../open/0003-testing-pbt-mutation-and-visual-validation.md), [0009-browser-backend.md](../open/0009-browser-backend.md)
 Updated: 2026-10-04
-Child: [0015-capability-owner-lifecycle.md](../open/0015-capability-owner-lifecycle.md)
+Child: [0015-capability-owner-lifecycle.md](0015-capability-owner-lifecycle.md)
 
 ## Current-head acceptance triage — 2026-10-04
 
@@ -33,7 +33,7 @@ stdio, macOS build, Ubuntu, Windows, and browser workflows.
 
 The seven-point core acceptance gate is complete. This packet was closed after
 the ordered 0013 → 0014 review. Automatic application-owner lifetime wiring is
-tracked separately in open packet 0015; native/browser endpoint topology and
+implemented in closed packet 0015; native/browser endpoint topology and
 asynchronous cancellation are tracked in open packet 0016.
 
 ## Goal
@@ -90,9 +90,9 @@ Follow-up work after core closure:
 
 - [x] Supported-schema and wire round-trips are covered by the 0014 conformance
   suite; broader application-domain fixture coverage remains with 0014.
-- [ ] Automatic application-owner teardown for arbitrary registries is tracked
-  in child packet 0015; explicit registry/adapter teardown and stale rejection
-  are tested at this head.
+- [x] Automatic application-owner teardown for arbitrary registries is implemented
+  in child packet 0015, including typed/GUI handles, cached replay, and late
+  completion rejection. Its closure records local verification and CI limits.
 - [x] The browser host smoke now proves GUI, direct, and MCP mutations repaint
   the observed value in real Chromium:
   [run 37195649282](https://github.com/f4ah6o/gpui.mbt/actions/runs/37195649282).
@@ -117,7 +117,7 @@ host smoke for that path passed in PR #13
 it proves browser presentation and semantic redraw, not an MCP network
 protocol. Supported schema/value round-trips and wire parity are covered by
 0014; broader application-domain fixtures and its mutation gate remain there.
-Automatic owner-lifecycle wiring is in 0015, and compatibility/release
+Automatic owner-lifecycle wiring is completed in closed packet 0015, and compatibility/release
 evidence is in 0001/0005.
 
 
