@@ -47,6 +47,8 @@ jobs:
         run: vp run migration:host:test
       - name: Test browser clipboard and committed-text contracts
         run: vp run browser:services:test
+      - name: Test canvas text and dynamic accessibility contracts
+        run: vp run browser:canvas:test
       - name: Install Chromium and system dependencies
         run: vp run browser:install
       - name: Exercise Vite+ MoonBit dev watch and source maps
@@ -54,7 +56,9 @@ jobs:
       - name: Build the Vite+ browser proof
         run: vp build
       - name: Run real Chromium smoke tests
-        run: vp run browser:smoke
+        run: |
+          vp run browser:smoke
+          vp run browser:board:smoke
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
@@ -62,6 +66,12 @@ jobs:
           path: |
             _build/browser-smoke-status.json
             _build/browser-smoke-failure.png
+            _build/browser-board-status.json
+            _build/browser-board-failure.png
+            _build/browser-board-desktop.png
+            _build/browser-board-mobile.png
+            _build/browser-board-focus-*.png
+            _build/browser-board-focus-paint.json
           if-no-files-found: ignore
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:

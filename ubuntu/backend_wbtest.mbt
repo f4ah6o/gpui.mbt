@@ -143,6 +143,31 @@ test "renderer preserves v1 clip intersection and rejects resource tables" {
     Err(e) => assert_eq(e.code().label(), "unsupported_capability")
     Ok(_) => fail("resources not implemented")
   }
+  let text = @scene.TextItem(
+    id=2,
+    bounds=viewport,
+    text="Browser text",
+    font_size=16.0,
+    color~,
+    transform~,
+    opacity=1.0,
+    clip_chain_id=None,
+  )
+  let text_scene = match
+    @scene.SceneSnapshot::new(
+      viewport,
+      1.0,
+      [],
+      [@scene.ClipChain::new(7, [viewport])],
+      [item, text],
+    ) {
+    Ok(value) => value
+    Err(_) => abort("text fixture rejected")
+  }
+  match frame_data(text_scene) {
+    Err(e) => assert_eq(e.code().label(), "unsupported_capability")
+    Ok(_) => fail("bounded text must not silently render as a native quad")
+  }
 }
 
 ///|

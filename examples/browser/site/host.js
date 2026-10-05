@@ -2,6 +2,7 @@ import * as gpui from "mbt:f4ah6o/gpui/examples/browser";
 import { createLegacyIsland } from "../../migration/legacy-island.js";
 import { createBrowserClipboard } from "./clipboard.js";
 import { createTextInputBridge } from "./text-input.js";
+import { CanvasSceneError, drawSceneSnapshot } from "./canvas-renderer.js";
 
 const elements = {
   frame: document.querySelector("#canvas-frame"),
@@ -38,6 +39,7 @@ const elements = {
 const capabilityRows = [
   ["Logical viewport", "logicalViewport"],
   ["Canvas quad frames", "quadFrames"],
+  ["Canvas text runs", "textFrames"],
   ["Pointer + keyboard", "pointerKeyboard"],
   ["Native window", "nativeWindow"],
   ["Clipboard", "clipboard"],
@@ -306,59 +308,23 @@ function restoreRenderer() {
   }
 }
 
-function rgba(color) {
-  for (const channel of [color.red, color.green, color.blue, color.alpha]) {
-    if (!Number.isInteger(channel) || channel < 0 || channel > 255) {
-      throw new FrameworkHostError(JSON.parse(gpui.gpui_browser_host_error(4)).error);
-    }
-  }
-  return `rgba(${color.red}, ${color.green}, ${color.blue}, ${color.alpha / 255})`;
-}
-
 function drawSnapshot(snapshot) {
-  if (snapshot.schema_version !== 1 || snapshot.resources.length !== 0 || !Array.isArray(snapshot.items) || !Array.isArray(snapshot.clip_chains)) {
-    throw new FrameworkHostError(JSON.parse(gpui.gpui_browser_host_error(4)).error);
+  try {
+    drawSceneSnapshot(context, snapshot, {
+      width: logicalWidth,
+      height: logicalHeight,
+      scale: deviceScale,
+    });
+  } catch (error) {
+    if (!(error instanceof CanvasSceneError)) throw error;
+    const diagnostic = JSON.parse(gpui.gpui_browser_host_error(4)).error;
+    throw new FrameworkHostError({
+      ...diagnostic,
+      code: error.code,
+      operation: error.operation,
+      message: error.message,
+    });
   }
-  const viewport = snapshot.viewport;
-  if (![viewport.x, viewport.y, viewport.width, viewport.height, snapshot.scale].every(Number.isFinite) || viewport.width <= 0 || viewport.height <= 0 || snapshot.scale <= 0) {
-    throw new FrameworkHostError(JSON.parse(gpui.gpui_browser_host_error(4)).error);
-  }
-
-  context.setTransform(deviceScale, 0, 0, deviceScale, 0, 0);
-  context.clearRect(0, 0, logicalWidth, logicalHeight);
-  for (const item of snapshot.items) {
-    if (item.kind !== "quad" || !Number.isFinite(item.opacity) || item.opacity < 0 || item.opacity > 1) {
-      throw new FrameworkHostError(JSON.parse(gpui.gpui_browser_host_error(4)).error);
-    }
-    const { x, y, width, height } = item.bounds;
-    const transform = item.transform;
-    if (![x, y, width, height, transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty].every(Number.isFinite)) {
-      throw new FrameworkHostError(JSON.parse(gpui.gpui_browser_host_error(4)).error);
-    }
-    context.save();
-    try {
-      // Clip rectangles are viewport-space and are applied before each item's transform.
-      if (item.clip_chain_id !== null) {
-        const chain = snapshot.clip_chains.find((candidate) => candidate.id === item.clip_chain_id);
-        if (!chain) throw new FrameworkHostError(JSON.parse(gpui.gpui_browser_host_error(4)).error);
-        for (const clip of chain.rects) {
-          if (![clip.x, clip.y, clip.width, clip.height].every(Number.isFinite)) {
-            throw new FrameworkHostError(JSON.parse(gpui.gpui_browser_host_error(4)).error);
-          }
-          context.beginPath();
-          context.rect(clip.x, clip.y, clip.width, clip.height);
-          context.clip();
-        }
-      }
-      context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty);
-      context.globalAlpha = item.opacity;
-      context.fillStyle = rgba(item.color);
-      context.fillRect(x, y, width, height);
-    } finally {
-      context.restore();
-    }
-  }
-  context.globalAlpha = 1;
 }
 
 function syncCursor(status) {

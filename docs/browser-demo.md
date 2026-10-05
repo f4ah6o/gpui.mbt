@@ -1,13 +1,17 @@
-# JavaScript browser proof of concept
+# Browser demos: Weekboard and interaction lab
 
-This browser slice demonstrates one portable MoonBit app model hosted by a
-single browser canvas. The app fixture uses the shared `App` entity model,
-flex-tree layout, element hit testing, focus handling, common event ingress,
-and `SceneSnapshot` v1 data. A small JavaScript host owns the canvas, Canvas 2D
-context, browser callbacks, device-pixel-ratio measurement, wheel translation,
-and animation-frame scheduling. A fixture-only ARIA layer mirrors four
-framework-provided button descriptions; a migration-only DOM island occupies a
-logical layout region and reports focus ownership back to the host.
+The JavaScript browser slice has two entry points, both backed by portable
+MoonBit application state and `SceneSnapshot` v1 data:
+
+| Page | Purpose |
+| --- | --- |
+| [`index.html`](../examples/browser/site/index.html) | **Weekboard**, a small website-launch task board with real task titles, lane moves, filtering, history, scrolling, and responsive layout. |
+| [`proof.html`](../examples/browser/site/proof.html) | The retained **interaction lab** for the GUI/direct/MCP counter, browser services, fixed ARIA proxies, legacy DOM island, and lifecycle proofs. |
+
+A JavaScript host owns each canvas, Canvas 2D context, browser callbacks,
+device-pixel-ratio measurement, wheel translation, and animation-frame
+scheduling. Application state, board layout, hit testing, and scene generation
+remain in MoonBit.
 
 This is execution evidence for the experimental JavaScript slice. It does not close
 [`issues/open/0009-browser-backend.md`](../issues/open/0009-browser-backend.md)
@@ -20,6 +24,94 @@ The rendered counter fixture also exercises one shared typed capability through
 its GUI binding, direct API, and an in-process MCP adapter call. That adapter
 does not start MCP wire transport or expose browser host privileges.
 
+## Weekboard increment — 2026-10-05
+
+Weekboard starts with 12 website-launch tasks: seven in Backlog, three in
+In progress, and two in Done. Selecting a card shows its detail and lane-move
+actions. Dragging moves a card between lanes; the detail buttons provide the
+same move without dragging. Moving within the same lane does not reorder cards.
+Search matches task titles and details without case sensitivity. Add accepts
+at most 80 UTF-16 input code units and trims leading and trailing ECMAScript
+whitespace and line terminators, including nonbreaking space, ideographic space,
+and BOM. It rejects blank results and remaining ASCII control characters before
+queuing a change, and allows at most 100 tasks. A successful addition clears the
+filter and reveals the new Backlog task. Search is also bounded to 80 UTF-16
+code units. Undo retains the last 32 additions or lane moves; task IDs are
+never reused. There is no redo or storage service: reloading restores the
+seeded board.
+
+Each lane has its own clamped vertical scroll state. Hit testing uses the
+visible intersection of a card and its lane viewport, and keyboard navigation
+reveals the selected card. Below 700 logical pixels of board width, the view
+shows one lane with lane selectors and explicit scroll buttons. Pointer
+gestures distinguish a click from a drag and cancel on focus loss, page hiding,
+renderer loss, or pointer-capture loss without committing an abandoned move.
+The page also exposes explicit task-summary copying through the shared
+plain-text clipboard adapter.
+
+The [task model](../examples/task_board/model.mbt) owns these state changes and
+history. Its [view](../examples/task_board/view.mbt) uses shared flex layout,
+clipping, [ScrollState](../element/scroll.mbt), and
+[DragGesture](../element/drag.mbt). The
+[JS-only adapter](../examples/browser_board/adapter.mbt) exposes copied input,
+status, layout, and scene values. The HTML search/add fields and detail controls
+are host UI; their native browser editing does not implement the framework's
+text editor or IME contract.
+
+### Bounded text and visible-card semantics
+
+The shared [TextItem](../scene/snapshot.mbt) describes one plain-text run with
+bounds, font size, color, transform, opacity, and an optional rectangle clip
+chain. [The Canvas renderer](../examples/browser/site/canvas-renderer.js)
+draws it left-aligned from the top of its bounds using `system-ui, sans-serif`
+and clips overflow. Font size must be finite and in `(0, 1024]`; each run is
+limited to 65,536 UTF-16 code units. Snapshot validation applies to constructor
+calls and direct enum values. Unicode/control/quote escaping is canonical,
+and existing quad JSON remains unchanged. Native renderers explicitly return
+`UnsupportedCapability` for text items.
+
+This supplies labels, not portable shaping, font metrics, wrapping, selection,
+caret positioning, bidi compatibility, or a rich text/editor contract. It does
+not complete the design's resource-backed `TextRun` or Japanese IME support.
+
+The [DOM projection](../examples/browser/site/canvas-accessibility.js) mirrors
+the view's currently visible cards as buttons with stable task IDs, names,
+selected state, and clipped logical bounds. It updates node order and lifetime
+when filtering, scrolling, moving, or undoing changes the visible set. Focus
+and keyboard actions return to the portable model. Cards outside the visible
+set lose their proxies; suspension retains proxy identity and focus while
+blocking action admission. This is a demo-specific projection, not the
+shared generational semantic tree or a qualified screen-reader/native adapter.
+
+The board frame shows a visible focus outline while either the canvas or a
+card proxy owns focus. The frame paints the outline outside the clipped card
+surface, so it remains visible when the selected card is offscreen or removing
+a focused proxy returns focus to the canvas.
+
+### Verification for this increment
+
+The implementation is covered by [task-board model tests](../examples/task_board/task_board_wbtest.mbt),
+[scroll tests](../element/scroll_test.mbt), [drag tests](../element/drag_test.mbt),
+[text snapshot tests](../scene/snapshot_text_test.mbt),
+[Canvas renderer tests](../tests/browser/canvas-renderer.test.mjs), and
+[DOM projection tests](../tests/browser/canvas-accessibility.test.mjs).
+The separate [Weekboard Chromium smoke](../tests/browser/board.mjs) exercises
+the built production page, including search/add/move/undo, clipped scrolling,
+keyboard and proxy focus, cancellation/restoration, mobile touch/page scrolling,
+DPR changes, and recovery from the 100-task limit. Screenshot-based focus checks
+cover tabbing into the canvas with an offscreen selection, removing a focused
+card proxy by scrolling, and clearing the board's focus indicator on exit.
+Browser CI retains the focus screenshots and measured edge coverage with its
+smoke diagnostics.
+
+Initial integration checks at `9e112cb3` on 2026-10-05 passed MoonBit
+formatting/checks/tests across all configured targets with warnings denied,
+56 browser/host Node tests, 61 Python contract checks, Vite+ checks and production
+build, the dev-watch and source-map gate, all 15 Weekboard smoke groups, and the
+retained interaction-lab Chromium smoke. These are local results; hosted
+execution is reported separately by this change's PR checks.
+The hosted runs recorded below belong to earlier interaction-lab revisions.
+
 ## Browser development toolchain
 
 Browser development and production packaging use Vite+ through the `vp` CLI. The committed `pnpm-lock.yaml` is the dependency-resolution source of truth.
@@ -27,7 +119,7 @@ Browser development and production packaging use Vite+ through the `vp` CLI. The
 `mbt:` import, starts `moon build --watch` in development, and forwards
 MoonBit source maps into Vite.
 
-The Vite config performs one synchronous MoonBit JS build before Vite resolves
+The Vite config builds both MoonBit JS entry packages before Vite resolves
 the first module. This keeps both `vp dev` and `vp build` valid from a clean
 checkout; the MoonBit plugin then owns the normal dev watch/reload path.
 
@@ -39,8 +131,9 @@ vp install --frozen-lockfile
 vp dev
 ```
 
-The development server serves the browser proof directly. MoonBit edits rebuild
-through the plugin and Vite refreshes the affected browser module.
+The development server opens Weekboard at `/`; the interaction lab is at
+`/proof.html`. MoonBit edits rebuild through the plugin and Vite refreshes the
+affected browser module.
 
 `vp check` is also part of CI. Its format phase is disabled so Vite+ does not
 reformat the repository's existing Markdown/document corpus; `moon fmt --check`
@@ -53,7 +146,7 @@ Build the production artifact with:
 vp build
 ```
 
-The verified static output is written to `_build/browser-site`. Vite uses a
+The static output for both pages is written to `_build/browser-site`. Vite uses a
 relative base so the same output can be served locally or from the repository's
 GitHub Pages path.
 
@@ -62,7 +155,9 @@ Run the real-browser smoke test with Chromium installed:
 ```sh
 vp run browser:install
 vp build
+vp run browser:canvas:test
 vp run browser:services:test
+vp run browser:board:smoke
 vp run browser:smoke
 ```
 
@@ -72,7 +167,7 @@ plugins is pinned to the matching `@voidzero-dev/vite-plus-core@1.0.0`.
 
 The CI workflow also runs formatting and MoonBit checks/tests across all
 configured targets, installs the pinned Vite+ toolchain, builds through
-`vp build`, installs Chromium, runs the smoke test, then uploads and deploys
+`vp build`, installs Chromium, runs both smoke tests, then uploads and deploys
 that same verified static artifact with GitHub Pages Actions. Pull requests run
 verification and package the artifact but do not deploy. Pushes to `main` and
 manual runs started from `main` deploy the artifact.
@@ -87,7 +182,9 @@ sampled Canvas 2D pixel changes before it checks the app value. The app's
 observer updates before the host's next animation-frame paint, so waiting only
 for the semantic value could inspect the old pixels.
 
-The first hosted run of the expanded smoke
+### Historical interaction-lab hosted evidence
+
+The first hosted run of the expanded interaction-lab smoke
 ([37186910745](https://github.com/f4ah6o/gpui.mbt/actions/runs/37186910745))
 reached Chromium but failed the direct-counter redraw assertion because the
 test checked the model update before the scheduled paint. The smoke now waits
@@ -110,7 +207,7 @@ browser support remain open.
 
 ## Browser service increment — 2026-10-05
 
-The demo now has explicit **Copy text**, **Paste text**, and **Start text input**
+The interaction lab at `proof.html` has explicit **Copy text**, **Paste text**, and **Start text input**
 controls. The latter displays the last committed insert and its event count in
 the inspector; it is an input proof, not a text editor. The canvas still renders
 the shared quad scene.
@@ -156,7 +253,7 @@ cancellation does not consume that paste.
 
 The new `committedTextInput` capability is distinct from `textInputIme`, which
 remains false. Selection/replacement, deletion, caret/candidate positioning,
-text scene rendering, native Japanese IME qualification, and a full editor
+editable text layout, native Japanese IME qualification, and a full editor
 contract remain open work.
 
 ### Canvas 2D restoration
@@ -217,7 +314,7 @@ the built-in `GITHUB_TOKEN`; it does not publish a generated branch. Allow
 `main` in the `github-pages` environment's deployment branch rules; feature
 branch and pull request runs never target that protected environment.
 
-## Boundaries and current capability report
+## Interaction-lab boundaries and capability report
 
 The browser host reports one logical viewport, Canvas 2D quad frames, browser
 pointer/keyboard/wheel input, request-animation-frame scheduling, portable
@@ -238,18 +335,21 @@ frames and wait for visibility before requesting another.
 Canvas coordinates and layout use CSS pixels. The canvas backing store follows
 the measured device-pixel ratio. A device-pixel content-box `ResizeObserver`
 tracks backing-size changes, with a CSS-size fallback and a resolution media
-query for live DPR changes. SceneSnapshot v1 resources must be empty and items
-must be quads; rectangle clip chains are applied in viewport space before each
-item's affine transform, and opacity is carried to Canvas 2D. Unsupported or
+query for live DPR changes. The shared Canvas renderer accepts SceneSnapshot
+v1 quads and bounded text items with empty resources; rectangle clip chains are
+applied in viewport space before each item's affine transform, and opacity is
+carried to Canvas 2D. Text bounds add an item-local clip after the transform.
+Unsupported or
 invalid snapshots, missing canvas/context, invalid viewport measurements, and
 context loss surface typed framework diagnostics in the page.
 
-The fixture ARIA layer uses the app's `host_layout_json` descriptions for four
+The interaction lab's fixture ARIA layer uses the app's `host_layout_json` descriptions for four
 buttons, including role, name, focus, disabled state, and logical bounds. Proxy
 buttons are visually hidden from pointer hit testing; focus and actions are
 translated back into the app's normal keyboard/event queue. This fixture does
 not provide the shared semantic tree, dynamic-node lifetime rules, full value
 mapping, or screen-reader coverage required for a general browser adapter.
+Weekboard's dynamic visible-card projection is described separately above.
 
 The migration island reserves region 8 in the app-provided layout DTO. The JS
 host positions an existing-style note editor there, keeps its tab sequence

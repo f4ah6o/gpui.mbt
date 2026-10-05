@@ -8,8 +8,10 @@
   "scripts": {
     "browser:install": "playwright install --with-deps chromium",
     "browser:smoke": "node tests/browser/smoke.mjs",
+    "browser:board:smoke": "node tests/browser/board.mjs",
     "browser:dev-watch": "node tests/browser/dev-watch.mjs",
     "browser:services:test": "node --test tests/browser/clipboard.test.mjs tests/browser/text-input.test.mjs",
+    "browser:canvas:test": "node --test tests/browser/canvas-renderer.test.mjs tests/browser/canvas-accessibility.test.mjs",
     "migration:host:test": "node --test tests/browser/migration-host.test.mjs"
   },
   "devDependencies": {

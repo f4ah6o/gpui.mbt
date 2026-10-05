@@ -157,14 +157,22 @@ resource and clip-chain tables, flat ordered items, finite affine transforms,
 opacity, and canonical compact serialization with negative-zero normalization.
 The implemented v1 subset converts the current quad plus rectangle-clip command
 surface, reuses identical active clip chains deterministically, and currently
-emits no renderer-facing resources. The complete schema below still requires
-quad border/corner data, path clips, paths, images, text runs, and their logical
-resources. R1 may add a reference software raster path for deterministic
+emits no renderer-facing resources. A bounded `TextItem` can also be added
+directly to the v1 item list: it carries a MoonBit string, bounds, font size,
+color, transform, opacity, and optional clip-chain ID. Canvas 2D draws one
+system-sans run clipped to those bounds; native renderers return
+`UnsupportedCapability`. It has no source ranges, shaping/measurement API, or
+editor state. See [the implementation](../scene/snapshot.mbt),
+[text validation tests](../scene/snapshot_text_test.mbt), and
+[browser scope](browser-demo.md#bounded-text-and-visible-card-semantics).
+The complete schema below still requires quad border/corner data, path clips,
+paths, images, richer text runs, and their logical resources.
+R1 may add a reference software raster path for deterministic
 correctness checks. R2 adds the native
 GPU renderer required by a production backend. R3 covers optimization and
 device-loss recovery while preserving scene-level oracles.
 
-An R0 `SceneSnapshot` has `schema_version: 1`, a logical viewport, finite
+The complete R0 design target has `schema_version: 1`, a logical viewport, finite
 positive scale, logical resource table, ordered clip-chain table, and a flat
 ordered list of `SceneItem` values. The item list is paint stacking order and
 is stable for identical inputs. Every item contains a finite 2D affine
@@ -181,13 +189,22 @@ Geometry is expressed in logical points and represented as finite IEEE-754
 binary64 values. Canonical JSON uses schema field order and shortest-round-trip
 decimal numbers; negative zero is normalized to zero, item/clip/resource order
 is preserved, and NaN/infinity are rejected before a snapshot is emitted.
-Schema changes increment `schema_version`; snapshot equality is structural,
-not a pixel comparison. These rules make scene tests reproducible without a
-window server or GPU.
+Breaking envelope changes increment `schema_version`; the current v1 envelope
+permits extending item variants, and consumers must reject unsupported variants
+explicitly. Bounded text is such an extension and preserves existing quad JSON
+bytes. Its canonical string encoding escapes quotes, controls, and non-ASCII
+UTF-16 code units, including surrogate pairs, without introducing text-range
+semantics. Snapshot equality is structural, not a pixel comparison. These rules
+make scene tests reproducible without a window server or GPU.
 
 ## Text and IME
 
-The public text model is platform-neutral. Text and composition payloads are
+The following is the complete design target. The browser's bounded `TextItem`
+and the interaction lab's committed-insert bridge do not implement this range,
+shaping, selection, or IME contract. Weekboard's search/add fields use ordinary
+HTML inputs; they do not establish portable text editing or native IME evidence.
+
+The target public text model is platform-neutral. Text and composition payloads are
 UTF-8. All ranges are half-open UTF-8 byte ranges whose endpoints must fall on
 Unicode scalar boundaries; conversion to native UTF-16 or platform ranges is
 backend work. User-visible caret and selection endpoints must also fall on
@@ -212,7 +229,16 @@ candidate positioning where exposed.
 
 ## Accessibility
 
-Core owns a semantic tree independent of the scene and pixels. Each live node
+The following shared semantic-tree contract remains a design target.
+[Weekboard's DOM projection](../examples/browser/site/canvas-accessibility.js)
+currently maps a portable application layout DTO into visible-card buttons,
+with stable task IDs, clipped bounds, node lifetime/order updates, and
+focus/action reconciliation. Its [contract tests](../tests/browser/canvas-accessibility.test.mjs)
+and [Chromium checks](../tests/browser/board.mjs) cover that bounded adapter;
+they do not qualify a shared generational tree, native accessibility, or
+screen-reader behavior.
+
+The target core owns a semantic tree independent of the scene and pixels. Each live node
 has a stable generational `NodeId`, parent/child order, role, label/name,
 optional value, state, focused/enabled flags, supported actions, and optional
 text plus selection/caret ranges. A committed semantic update is sent to the
@@ -247,12 +273,12 @@ remain pending.
 
 ## R0 clip-structure validation update — 2026-10-03
 
-The provisional command scene now validates clip pushes/pops as a strict LIFO
+At this stage, the provisional command scene validated clip pushes/pops as a strict LIFO
 stack before a `CommandSnapshot` can be emitted. Underflow, mismatched IDs, and
 unclosed clips are typed scene errors and are covered by deterministic and
 seeded property tests. This remains part of the unversioned command foundation;
 the contracted `SceneSnapshot` schema version 1 resource/clip-chain/item model
-is still pending.
+was still pending. The current subset is described above.
 
 ## First Ubuntu native implementation — 2026-10-03
 
