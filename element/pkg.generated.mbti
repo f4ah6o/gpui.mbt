@@ -1,0 +1,208 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/element"
+
+import {
+  "f4ah6o/gpui/layout",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/scene",
+  "moonbitlang/core/ref",
+}
+
+// Values
+pub const MAX_DRAG_THRESHOLD : Double = 1000000.0
+
+pub const MAX_ELEMENT_DEPTH : Int = 64
+
+pub fn[T : IntoElement] into_element(T) -> Element
+
+pub fn[T : Render] render_element(T) -> Element
+
+// Errors
+
+// Types and methods
+pub struct DispatchContext {
+  target : UInt64
+  current_target : UInt64
+  phase : EventPhase
+  stopped : @ref.Ref[Bool]
+}
+pub fn DispatchContext::current_target(Self) -> UInt64
+pub fn DispatchContext::is_propagation_stopped(Self) -> Bool
+pub fn DispatchContext::phase(Self) -> EventPhase
+pub fn DispatchContext::stop_propagation(Self) -> Unit
+pub fn DispatchContext::target(Self) -> UInt64
+
+pub struct DispatchOutcome {
+  target : UInt64?
+  capture_visited : Array[UInt64]
+  bubble_visited : Array[UInt64]
+  stopped : Bool
+}
+pub fn DispatchOutcome::bubble_visited(Self) -> Array[UInt64]
+pub fn DispatchOutcome::capture_visited(Self) -> Array[UInt64]
+pub fn DispatchOutcome::target(Self) -> UInt64?
+pub fn DispatchOutcome::was_stopped(Self) -> Bool
+
+pub struct DispatchPlan {
+  target : UInt64?
+  capture : Array[UInt64]
+  bubble : Array[UInt64]
+}
+pub fn DispatchPlan::bubble(Self) -> Array[UInt64]
+pub fn DispatchPlan::capture(Self) -> Array[UInt64]
+pub fn DispatchPlan::target(Self) -> UInt64?
+
+pub enum DragError {
+  InvalidThreshold
+} derive(Eq)
+pub fn DragError::equal(Self, Self) -> Bool
+pub fn DragError::not_equal(Self, Self) -> Bool
+
+pub struct DragGesture {
+  // private fields
+}
+pub fn DragGesture::begin(Self, UInt64, @primitives.Point) -> Self
+pub fn DragGesture::cancel(Self) -> Self
+pub fn DragGesture::is_dragging(Self) -> Bool
+pub fn DragGesture::is_pending(Self) -> Bool
+pub fn DragGesture::new(Double) -> Result[Self, DragError]
+pub fn DragGesture::origin(Self) -> @primitives.Point?
+pub fn DragGesture::position(Self) -> @primitives.Point?
+pub fn DragGesture::release(Self, @primitives.Point) -> (Self, UInt64?)
+pub fn DragGesture::source(Self) -> UInt64?
+pub fn DragGesture::update(Self, @primitives.Point) -> Self
+
+pub struct Element {
+  id : UInt64
+  item : @layout.FlexItem?
+  is_root : Bool
+  children_style : @layout.FlexTreeStyle?
+  children : Array[Element]
+  background : @primitives.Color?
+  focusable : Bool
+  pointer_events : Bool
+}
+pub fn Element::into_element(Self) -> Self
+pub fn Element::new(@layout.FlexItem) -> Self
+pub fn Element::render(Self) -> Self
+pub fn Element::request_layout(Self, @primitives.Size) -> Result[RequestedLayout, ElementError]
+pub fn Element::root(UInt64, @layout.FlexTreeStyle) -> Self
+pub fn Element::with_background(Self, @primitives.Color?) -> Self
+pub fn Element::with_child(Self, Self) -> Self
+pub fn Element::with_children_style(Self, @layout.FlexTreeStyle) -> Self
+pub fn Element::with_focusable(Self, Bool) -> Self
+pub fn Element::with_pointer_events(Self, Bool) -> Self
+pub impl IntoElement for Element
+pub impl Render for Element
+
+pub enum ElementError {
+  DuplicateId
+  MissingParent
+  InvalidPreorder
+  UnknownElement
+  NotFocusable
+  RootRequired
+  InvalidChildRoot
+  MissingLayoutItem
+  TreeTooDeep
+  LayoutFailure(@layout.TreeLayoutError)
+  GeometryFailure
+} derive(Eq)
+pub fn ElementError::equal(Self, Self) -> Bool
+pub fn ElementError::not_equal(Self, Self) -> Bool
+
+pub struct ElementNode {
+  id : UInt64
+  parent : UInt64?
+  bounds : @primitives.Rect
+  focusable : Bool
+  pointer_events : Bool
+  background : @primitives.Color?
+}
+pub fn ElementNode::accepts_pointer_events(Self) -> Bool
+pub fn ElementNode::background(Self) -> @primitives.Color?
+pub fn ElementNode::bounds(Self) -> @primitives.Rect
+pub fn ElementNode::from_layout_box(@layout.LayoutBox, UInt64?) -> Self
+pub fn ElementNode::id(Self) -> UInt64
+pub fn ElementNode::is_focusable(Self) -> Bool
+pub fn ElementNode::new(UInt64, UInt64?, @primitives.Rect) -> Self
+pub fn ElementNode::parent(Self) -> UInt64?
+pub fn ElementNode::with_background(Self, @primitives.Color?) -> Self
+pub fn ElementNode::with_focusable(Self, Bool) -> Self
+pub fn ElementNode::with_pointer_events(Self, Bool) -> Self
+
+pub struct ElementTree {
+  focused : UInt64?
+  // private fields
+}
+pub fn ElementTree::clear_focus(Self) -> Self
+pub fn ElementTree::dispatch_input(Self, @primitives.InputEvent) -> DispatchPlan
+pub fn ElementTree::dispatch_input_with(Self, @primitives.InputEvent, (DispatchContext, @primitives.InputEvent) -> Result[Unit, ElementError]) -> Result[DispatchOutcome, ElementError]
+pub fn ElementTree::dispatch_pointer(Self, @primitives.Point) -> DispatchPlan
+pub fn ElementTree::dispatch_pointer_with(Self, @primitives.Point, (DispatchContext) -> Result[Unit, ElementError]) -> Result[DispatchOutcome, ElementError]
+pub fn ElementTree::focused(Self) -> UInt64?
+pub fn ElementTree::hit_test(Self, @primitives.Point) -> UInt64?
+pub fn ElementTree::new(Array[ElementNode]) -> Result[Self, ElementError]
+pub fn ElementTree::node(Self, UInt64) -> ElementNode?
+pub fn ElementTree::nodes(Self) -> Array[ElementNode]
+pub fn ElementTree::path_to_root(Self, UInt64) -> Result[Array[UInt64], ElementError]
+pub fn ElementTree::to_scene(Self) -> @scene.Scene
+pub fn ElementTree::with_focus(Self, UInt64) -> Result[Self, ElementError]
+pub fn ElementTree::without_subtree(Self, UInt64) -> Result[Self, ElementError]
+
+pub(all) enum EventPhase {
+  Capture
+  Bubble
+} derive(Eq)
+pub fn EventPhase::equal(Self, Self) -> Bool
+pub fn EventPhase::not_equal(Self, Self) -> Bool
+
+pub struct Prepainted {
+  tree : ElementTree
+  viewport : @primitives.Size
+  viewport_bounds : @primitives.Rect
+  overflow : Bool
+}
+pub fn Prepainted::overflow(Self) -> Bool
+pub fn Prepainted::paint(Self) -> @scene.Scene
+pub fn Prepainted::paint_snapshot(Self, Double) -> Result[@scene.SceneSnapshot, @scene.SceneError]
+pub fn Prepainted::tree(Self) -> ElementTree
+pub fn Prepainted::viewport(Self) -> @primitives.Size
+pub fn Prepainted::viewport_bounds(Self) -> @primitives.Rect
+
+pub struct RequestedLayout {
+  viewport : @primitives.Size
+  layout : @layout.FlexTreeLayout
+  // private fields
+}
+pub fn RequestedLayout::prepaint(Self) -> Result[Prepainted, ElementError]
+
+pub enum ScrollError {
+  NonFiniteValue
+} derive(Eq)
+pub fn ScrollError::equal(Self, Self) -> Bool
+pub fn ScrollError::not_equal(Self, Self) -> Bool
+
+pub struct ScrollState {
+  viewport : @primitives.Size
+  content : @primitives.Size
+  position : @primitives.Point
+}
+pub fn ScrollState::ensure_visible(Self, @primitives.Rect) -> Self
+pub fn ScrollState::max_offset(Self) -> @primitives.Point
+pub fn ScrollState::new(@primitives.Size, @primitives.Size) -> Self
+pub fn ScrollState::offset(Self) -> @primitives.Point
+pub fn ScrollState::scroll_by(Self, Double, Double) -> Result[Self, ScrollError]
+pub fn ScrollState::scroll_to(Self, Double, Double) -> Result[Self, ScrollError]
+pub fn ScrollState::with_sizes(Self, @primitives.Size, @primitives.Size) -> Self
+
+// Type aliases
+
+// Traits
+pub(open) trait IntoElement {
+  fn into_element(Self) -> Element
+}
+
+pub(open) trait Render {
+  fn render(Self) -> Element
+}

@@ -285,11 +285,14 @@ The local headless C mask consumer passes normally and with ASan+UBSan using
 leak detection disabled on Debian 13 / PangoFT2 1.56.3 / Fontconfig 2.15.0
 with the declared DejaVu/Noto fixtures. The leak-enabled LeakSanitizer run
 reports that it does not work under ptrace in this environment; that is not a
-leak pass or a product leak failure. Integrated mixed-scene Weston/GLES checks
-remain pending because AF_UNIX stream-socket creation returns `EPERM` before
-the compositor starts, and hosted renderer CI is pending. Earlier Wayland/
-Weston quad checks and merged PR27 measurement results do not establish this
-renderer acceptance. Ubuntu checks `require_grayscale_raster()` to admit the
+leak pass or a product leak failure. [PR28's Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37346110201) passed the headless
+adapter and integrated mixed-scene Weston/llvmpipe checks at 1x/2x, including
+late invalid/color/resource rejection with unchanged prior pixels and retained
+Latin/Japanese clipping/overlap readbacks. PR28 merged as
+`3cc72f548dc6138e17f949efad8eae92c70a1cb0`, reviewed tree
+`14b8ce67796bcb08e08b60d8fcdb495afb7257b4`. Local GPU tests remain unrun because
+AF_UNIX stream-socket creation returns `EPERM`. This bounded correctness proof
+is not a desktop, IME, text-performance or production-support qualification. Ubuntu checks `require_grayscale_raster()` to admit the
 linked ABI and Pango >= 1.50 before discovering the capability. A future
 editable control must use the same generic `sans` family, font size, and Pango
 context as drawing for caret/hit geometry; arbitrary-family measurement does
@@ -298,7 +301,8 @@ and [Ubuntu guide](../../docs/ubuntu.md#grayscale-text-frame-subset) for the
 complete implementation boundary.
 
 The remaining text roadmap is focused on usable input controls: connect
-focused key/text dispatch; present caret and selection geometry; define
+the shared focused key/text dispatcher to actual native committed-text input
+and editing; present caret and selection geometry; define
 composition/commit/cancel and focus-loss ownership; qualify Japanese IME;
 then add semantic accessibility and an actual text field/picker consumer.
 Text drawing alone does not satisfy packet D's text-input/IME acceptance.

@@ -1,0 +1,137 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/scene"
+
+import {
+  "f4ah6o/gpui/primitives",
+}
+
+// Values
+pub const SCENE_SNAPSHOT_SCHEMA_VERSION : Int = 1
+
+// Errors
+
+// Types and methods
+pub struct AffineTransform {
+  a : Double
+  b : Double
+  c : Double
+  d : Double
+  tx : Double
+  ty : Double
+}
+pub fn AffineTransform::a(Self) -> Double
+pub fn AffineTransform::b(Self) -> Double
+pub fn AffineTransform::c(Self) -> Double
+pub fn AffineTransform::d(Self) -> Double
+pub fn AffineTransform::identity() -> Self
+pub fn AffineTransform::new(Double, Double, Double, Double, Double, Double) -> Result[Self, SnapshotError]
+pub fn AffineTransform::tx(Self) -> Double
+pub fn AffineTransform::ty(Self) -> Double
+
+pub struct ClipChain {
+  id : Int
+  // private fields
+}
+pub fn ClipChain::id(Self) -> Int
+pub fn ClipChain::new(Int, Array[@primitives.Rect]) -> Self
+pub fn ClipChain::rects(Self) -> Array[@primitives.Rect]
+
+pub struct CommandSnapshot {
+  viewport : @primitives.Rect
+  scale : Double
+  commands : Array[PaintCommand]
+}
+pub fn CommandSnapshot::canonical_json(Self) -> String
+pub fn CommandSnapshot::commands(Self) -> Array[PaintCommand]
+pub fn CommandSnapshot::scale(Self) -> Double
+pub fn CommandSnapshot::viewport(Self) -> @primitives.Rect
+
+pub(all) enum PaintCommand {
+  QuadCommand(id~ : UInt64, bounds~ : @primitives.Rect, color~ : @primitives.Color)
+  ClipPushCommand(id~ : UInt64, bounds~ : @primitives.Rect)
+  ClipPopCommand(id~ : UInt64)
+} derive(Eq)
+pub fn PaintCommand::bounds(Self) -> @primitives.Rect?
+pub fn PaintCommand::clip_pop(UInt64) -> Self
+pub fn PaintCommand::clip_push(UInt64, @primitives.Rect) -> Self
+pub fn PaintCommand::color(Self) -> @primitives.Color?
+pub fn PaintCommand::equal(Self, Self) -> Bool
+pub fn PaintCommand::id(Self) -> UInt64
+pub fn PaintCommand::kind(Self) -> PaintKind
+pub fn PaintCommand::not_equal(Self, Self) -> Bool
+pub fn PaintCommand::quad(UInt64, @primitives.Rect, @primitives.Color) -> Self
+
+pub(all) enum PaintKind {
+  Quad
+  ClipPush
+  ClipPop
+} derive(Eq)
+pub fn PaintKind::equal(Self, Self) -> Bool
+pub fn PaintKind::not_equal(Self, Self) -> Bool
+
+pub struct Scene {
+  commands : Array[PaintCommand]
+}
+pub fn Scene::command_at(Self, Int) -> PaintCommand?
+pub fn Scene::command_count(Self) -> Int
+pub fn Scene::command_snapshot(Self, @primitives.Rect, Double) -> Result[CommandSnapshot, SceneError]
+pub fn Scene::commands(Self) -> Array[PaintCommand]
+pub fn Scene::empty() -> Self
+pub fn Scene::new(Array[PaintCommand]) -> Self
+pub fn Scene::snapshot_v1(Self, @primitives.Rect, Double) -> Result[SceneSnapshot, SceneError]
+pub fn Scene::validate(Self) -> Result[Unit, SceneError]
+
+pub enum SceneError {
+  InvalidScale
+  ClipUnderflow
+  ClipMismatch
+  UnclosedClip
+} derive(Eq)
+pub fn SceneError::equal(Self, Self) -> Bool
+pub fn SceneError::not_equal(Self, Self) -> Bool
+
+pub(all) enum SceneItem {
+  QuadItem(id~ : UInt64, bounds~ : @primitives.Rect, color~ : @primitives.Color, transform~ : AffineTransform, opacity~ : Double, clip_chain_id~ : Int?)
+  TextItem(id~ : UInt64, bounds~ : @primitives.Rect, text~ : String, font_size~ : Double, color~ : @primitives.Color, transform~ : AffineTransform, opacity~ : Double, clip_chain_id~ : Int?)
+}
+pub fn SceneItem::clip_chain_id(Self) -> Int?
+pub fn SceneItem::id(Self) -> UInt64
+pub fn SceneItem::quad(UInt64, @primitives.Rect, @primitives.Color, AffineTransform, Double, Int?) -> Result[Self, SnapshotError]
+pub fn SceneItem::text(UInt64, @primitives.Rect, String, Double, @primitives.Color, AffineTransform, Double, Int?) -> Result[Self, SnapshotError]
+
+pub struct SceneResource {
+  id : UInt64
+}
+pub fn SceneResource::id(Self) -> UInt64
+pub fn SceneResource::new(UInt64) -> Self
+
+pub struct SceneSnapshot {
+  schema_version : Int
+  viewport : @primitives.Rect
+  scale : Double
+  // private fields
+}
+pub fn SceneSnapshot::canonical_json(Self) -> String
+pub fn SceneSnapshot::clip_chains(Self) -> Array[ClipChain]
+pub fn SceneSnapshot::items(Self) -> Array[SceneItem]
+pub fn SceneSnapshot::new(@primitives.Rect, Double, Array[SceneResource], Array[ClipChain], Array[SceneItem]) -> Result[Self, SnapshotError]
+pub fn SceneSnapshot::resources(Self) -> Array[SceneResource]
+pub fn SceneSnapshot::scale(Self) -> Double
+pub fn SceneSnapshot::schema_version(Self) -> Int
+pub fn SceneSnapshot::viewport(Self) -> @primitives.Rect
+
+pub enum SnapshotError {
+  InvalidScale
+  InvalidOpacity
+  InvalidFontSize
+  TextTooLong
+  NonFiniteTransform
+  UnknownClipChain
+  DuplicateClipChain
+} derive(Eq)
+pub fn SnapshotError::equal(Self, Self) -> Bool
+pub fn SnapshotError::not_equal(Self, Self) -> Bool
+
+// Type aliases
+
+// Traits

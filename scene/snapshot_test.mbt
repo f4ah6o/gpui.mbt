@@ -109,6 +109,61 @@ test "scene snapshot v1 rejects invalid command scale and clip structure" {
 }
 
 ///|
+test "scene snapshot backing arrays and nested clip rectangles stay detached" {
+  let viewport = snapshot_rect(0.0, 0.0, 20.0, 20.0)
+  let bounds = snapshot_rect(1.0, 2.0, 5.0, 6.0)
+  let color = snapshot_color(4, 5, 6)
+  let source_rects = [bounds]
+  let source_chain = @scene.ClipChain::new(7, source_rects)
+  let source_resources = [@scene.SceneResource::new(9)]
+  let source_chains = [source_chain]
+  let item = match
+    @scene.SceneItem::quad(
+      1,
+      bounds,
+      color,
+      @scene.AffineTransform::identity(),
+      1.0,
+      Some(7),
+    ) {
+    Ok(value) => value
+    Err(_) => abort("valid quad item rejected")
+  }
+  let source_items = [item]
+  let snapshot = match
+    @scene.SceneSnapshot::new(
+      viewport, 1.0, source_resources, source_chains, source_items,
+    ) {
+    Err(_) => fail("valid snapshot rejected")
+    Ok(value) => value
+  }
+
+  source_resources.clear()
+  source_rects.clear()
+  source_chains.clear()
+  source_items.clear()
+  assert_eq(snapshot.resources().length(), 1)
+  assert_true(snapshot.resources()[0].id() == 9)
+  assert_eq(snapshot.clip_chains().length(), 1)
+  assert_true(snapshot.clip_chains()[0].id() == 7)
+  assert_eq(snapshot.clip_chains()[0].rects().length(), 1)
+  assert_eq(snapshot.items().length(), 1)
+
+  let resource_copy = snapshot.resources()
+  let chain_copy = snapshot.clip_chains()
+  let item_copy = snapshot.items()
+  let rect_copy = snapshot.clip_chains()[0].rects()
+  resource_copy.clear()
+  chain_copy.clear()
+  item_copy.clear()
+  rect_copy.clear()
+  assert_eq(snapshot.resources().length(), 1)
+  assert_eq(snapshot.clip_chains().length(), 1)
+  assert_eq(snapshot.clip_chains()[0].rects().length(), 1)
+  assert_eq(snapshot.items().length(), 1)
+}
+
+///|
 test "scene snapshot v1 reuses identical active clip chains" {
   let viewport = snapshot_rect(0.0, 0.0, 100.0, 50.0)
   let clip = snapshot_rect(0.0, 0.0, 80.0, 40.0)

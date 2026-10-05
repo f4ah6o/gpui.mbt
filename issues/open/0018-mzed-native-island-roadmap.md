@@ -157,8 +157,9 @@ See the source-grounded [codebase gap analysis](../../docs/codebase-gap-analysis
 for implementation evidence and boundaries. The portable `text/` value model
 and `text_layout/` copied measurement contract are present; PR27 adds Linux
 PangoFT2 measurements. The Ubuntu native host now draws supported grayscale
-text frames. These foundations do not implement an editable control, key/text
-dispatch, visible caret/selection, grapheme navigation, host input ownership,
+text frames; the shared element tree now routes focused key/text events.
+These foundations do not implement an editable control, visible caret/selection,
+grapheme navigation, native committed-text ingress, host input ownership,
 or actual OS input-method behavior. The MZed application milestones and
 platform admission gates remain unchanged. See the [portable text model](../../docs/text-model.md)
 and [Linux text guide](../../docs/linux-text.md).
@@ -171,18 +172,20 @@ current change. On Debian 13/PangoFT2 1.56.3/Fontconfig 2.15.0, the headless C
 mask consumer passes normally and with ASan+UBSan when leak detection is
 disabled. The leak-enabled LeakSanitizer run reports that it does not work
 under ptrace in this environment; that is not a leak pass or product leak
-failure. Integrated
-Weston/GLES text-frame checks remain pending because local AF_UNIX stream-socket
-creation returns `EPERM` before compositor testing, and hosted renderer CI is
-pending. Historical measurement and quad-only passes alone do not evidence
-frame-presentation acceptance.
+failure. [PR28's Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37346110201) now proves the bounded grayscale mixed-scene
+path at 1x/2x under Weston/llvmpipe, with invalid/color/resource frame
+preservation and retained Latin/Japanese clipping/overlap readbacks. PR28
+merged as `3cc72f548dc6138e17f949efad8eae92c70a1cb0`, tree
+`14b8ce67796bcb08e08b60d8fcdb495afb7257b4`. Local GPU testing remains unrun
+because AF_UNIX stream-socket creation returns `EPERM`. This does not qualify
+hardware/text performance, an editable control, IME or a support tier.
 
 | Capability | Available foundation | Remaining app behavior |
 | --- | --- | --- |
 | App/entity ownership | Headless lifetimes, updates, observers, and capability revocation | Mutable aliases remain caller-managed; no destructor guarantee |
 | Asynchronous execution | Deterministic foreground queue/manual clock | Background or suspending execution and complete native endpoint topology |
 | Layout/element lifecycle | Bounded flex and request-layout/prepaint/paint | Reconciliation, invalidation, reusable controls |
-| Pointer/focus/keyboard | Pointer capture/bubble and focus ID exist | Focused key/text dispatch, shared bindings, input ownership |
+| Pointer/focus/keyboard | Position-based pointer and focused key/text capture/bubble routes exist | Native committed-text ingress, shared bindings, input ownership and controls |
 | Rendering | Native quads, bounded browser text, Ubuntu grayscale text frames | Other native hosts, richer resources, and renderer qualification |
 | Text model | Immutable UTF-16 document/selection/composition; strict UTF-8 bridge | Editable widget, undo history, multi-cursor editing |
 | Measured text | Merged PR27 copied caret/hit values and Linux PangoFT2 geometry; Ubuntu draws supported grayscale subset | Other-host drawing, wrapping policy, selection geometry, caching, workload evidence |
@@ -200,8 +203,9 @@ The implementation order now follows application outcomes:
    integration boundary. Foundation work can proceed independently; a text
    renderer is not a same-window island proof.
 2. Build a usable Linux text field on the portable model, merged PR27
-   measurement, and Ubuntu grayscale drawing. Connect focused key/text
-   dispatch, show caret and selection geometry, define clipboard and
+   measurement, and Ubuntu grayscale drawing. Connect actual native committed
+   text through the shared focused dispatcher, show caret and selection
+   geometry, define clipboard and
    composition/focus ownership, and qualify actual Japanese IME before
    claiming input support. Keep scalar offsets, grapheme cursor stops, and
    bidi affinity distinct. For caret/hit geometry to match the current v1
@@ -222,8 +226,9 @@ The implementation order now follows application outcomes:
    UX consumer. Neither app proof alone establishes release readiness.
 
 The next text-control work is not complete until it joins rendering to actual
-focus/input and shows editable caret/selection behavior. This renderer slice
-does not implement key/text dispatch, caret or selection presentation, an
+focus/input and shows editable caret/selection behavior. Shared focused
+routing is now present, but it does not create native committed-text ingress.
+The renderer itself does not implement caret or selection presentation, an
 editable control, IME, accessibility, rich text, or color glyphs; its
 `GrayscaleTextFrames` capability flag does not imply any of those features. The
 [Linux text guide](../../docs/linux-text.md) and [Ubuntu guide](../../docs/ubuntu.md)

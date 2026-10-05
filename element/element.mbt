@@ -236,7 +236,7 @@ pub fn DispatchOutcome::was_stopped(self : DispatchOutcome) -> Bool {
 /// Headless element tree. Nodes are stored in stable pre-order and later nodes
 /// are considered visually above earlier nodes during hit testing.
 pub struct ElementTree {
-  nodes : Array[ElementNode]
+  priv nodes : Array[ElementNode]
   focused : UInt64?
 }
 
@@ -396,20 +396,8 @@ pub fn ElementTree::dispatch_pointer(
   position : @primitives.Point,
 ) -> DispatchPlan {
   match self.hit_test(position) {
-    None => { target: None, capture: [], bubble: [], }
-    Some(target) =>
-      match self.path_to_root(target) {
-        Err(_) => { target: None, capture: [], bubble: [], }
-        Ok(capture) => {
-          let bubble : Array[UInt64] = []
-          let mut index = capture.length()
-          while index > 0 {
-            index -= 1
-            bubble.push(capture[index])
-          }
-          { target: Some(target), capture, bubble, }
-        }
-      }
+    None => empty_dispatch_plan()
+    Some(target) => self.dispatch_target(target)
   }
 }
 
@@ -423,6 +411,82 @@ pub fn ElementTree::dispatch_pointer_with(
   callback : (DispatchContext) -> Result[Unit, ElementError],
 ) -> Result[DispatchOutcome, ElementError] {
   let plan = self.dispatch_pointer(position)
+  execute_dispatch_plan(plan, callback)
+}
+
+///|
+/// Route pointer input by position and keyboard/text input to the currently
+/// focused focusable node. This selects a route only; it does not acquire or
+/// move focus, synthesize text, or interpret key semantics.
+pub fn ElementTree::dispatch_input(
+  self : ElementTree,
+  event : @primitives.InputEvent,
+) -> DispatchPlan {
+  match event {
+    @primitives.PointerMoved(position~) => self.dispatch_pointer(position)
+    @primitives.PointerButtonPressed(position~, ..) =>
+      self.dispatch_pointer(position)
+    @primitives.PointerButtonReleased(position~, ..) =>
+      self.dispatch_pointer(position)
+    @primitives.Scroll(position~, ..) => self.dispatch_pointer(position)
+    @primitives.KeyPressed(..) => self.dispatch_focused()
+    @primitives.KeyReleased(..) => self.dispatch_focused()
+    @primitives.TextInput(..) => self.dispatch_focused()
+  }
+}
+
+///|
+/// Dispatch any input event with its original value alongside each callback
+/// context. The route and event are fixed before callbacks begin.
+pub fn ElementTree::dispatch_input_with(
+  self : ElementTree,
+  event : @primitives.InputEvent,
+  callback : (DispatchContext, @primitives.InputEvent) -> Result[
+    Unit,
+    ElementError,
+  ],
+) -> Result[DispatchOutcome, ElementError] {
+  let plan = self.dispatch_input(event)
+  execute_dispatch_plan(plan, context => callback(context, event))
+}
+
+///|
+fn ElementTree::dispatch_focused(self : ElementTree) -> DispatchPlan {
+  match self.focused {
+    None => empty_dispatch_plan()
+    Some(target) => self.dispatch_target(target)
+  }
+}
+
+///|
+fn ElementTree::dispatch_target(
+  self : ElementTree,
+  target : UInt64,
+) -> DispatchPlan {
+  match self.path_to_root(target) {
+    Err(_) => empty_dispatch_plan()
+    Ok(capture) => {
+      let bubble : Array[UInt64] = []
+      let mut index = capture.length()
+      while index > 0 {
+        index -= 1
+        bubble.push(capture[index])
+      }
+      { target: Some(target), capture, bubble, }
+    }
+  }
+}
+
+///|
+fn empty_dispatch_plan() -> DispatchPlan {
+  { target: None, capture: [], bubble: [], }
+}
+
+///|
+fn execute_dispatch_plan(
+  plan : DispatchPlan,
+  callback : (DispatchContext) -> Result[Unit, ElementError],
+) -> Result[DispatchOutcome, ElementError] {
   match plan.target() {
     None =>
       Ok({

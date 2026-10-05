@@ -185,11 +185,15 @@ PangoFT2 1.56.3, Fontconfig 2.15.0, and the declared DejaVu/Noto fixtures, the
 headless C mask consumer passes normally and under ASan+UBSan with leak
 detection disabled. The leak-enabled LeakSanitizer run reports that it does
 not work under ptrace in this environment; that is neither a leak pass nor a
-product leak failure. The integrated Weston/GLES text-frame
-check has not passed locally: this environment returns `EPERM` when creating
-the required AF_UNIX stream socket, before compositor testing. Hosted renderer
-CI remains pending. Earlier measurement results and quad-only checks do not
-establish GLES text-rendering acceptance or a platform support tier.
+product leak failure. Local Weston/GLES execution remains unrun because
+AF_UNIX stream socket creation returns `EPERM`. The [PR28 Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37346110201)
+passed the headless adapter and real Weston/llvmpipe mixed-scene checks at 1x/2x
+on head `2686fbf15d4c05aeaa373c5eeed401cdcb3b146f`, reviewed tree
+`14b8ce67796bcb08e08b60d8fcdb495afb7257b4`. It retains Latin/Japanese clipped/
+overlapped PPM readbacks with executed commit, scale and renderer metadata.
+PR28 merged as `3cc72f548dc6138e17f949efad8eae92c70a1cb0`, with that same tree.
+This bounded software-rendered acceptance does not establish a platform support
+tier, hardware performance, editable control or IME.
 
 ## Direct native dependency and license inventory
 
