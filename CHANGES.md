@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added browser plain-text clipboard services, committed-text input through the
+  shared event queue, and event-driven Canvas 2D restoration that preserves the
+  live app state. The demo includes explicit clipboard/text controls and focused
+  service/browser regressions. Full text/IME and production support remain open;
+  see [the browser guide](docs/browser-demo.md).
+
 - Added 41 capability/MCP mutation regression tests, independently reviewed per-operator baselines, survivor-identity checks, and retained CI reports. Bounded semantic conformance closes on verified merge after final-head stability and CI gates; async endpoint lifecycle/topology remains open in 0016. See the [semantic mutation contract](docs/semantic-mutation.md).
 
 - Added portable `AppLifetime` tokens and app-owned capability registry creation/adoption. Stop now invalidates registered typed, GUI, and adapter handles and rejects cached or late results. See the [owner lifecycle contract](docs/capability-lifecycle.md).

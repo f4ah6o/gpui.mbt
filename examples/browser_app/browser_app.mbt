@@ -2,6 +2,7 @@
 pub(all) enum BrowserDemoError {
   Stopped
   InvalidViewport
+  InvalidTextInput
   QueueRejected
   ModelUpdateFailed
   LayoutFailed
@@ -33,6 +34,8 @@ struct DemoModel {
   mut last_sequence : Int64
   mut last_event : String
   mut last_key : String
+  mut last_committed_text : String
+  mut text_commit_count : Int
 }
 
 ///|
@@ -77,6 +80,8 @@ fn initial_model() -> DemoModel {
     last_sequence: 0,
     last_event: "ready",
     last_key: "—",
+    last_committed_text: "",
+    text_commit_count: 0,
   }
 }
 
@@ -402,7 +407,11 @@ fn apply_event(model : DemoModel, event : @platform.Event) -> DemoModel {
           updated.last_key = key_label(key)
           updated.last_event = "key up"
         }
-        @primitives.TextInput(..) => updated.last_event = "text input"
+        @primitives.TextInput(text~) => {
+          updated.last_committed_text = text
+          updated.text_commit_count += 1
+          updated.last_event = "text input"
+        }
         @primitives.Scroll(position~, delta~, ..) => {
           updated.pointer_x = Some(position.x())
           updated.pointer_y = Some(position.y())
@@ -980,6 +989,26 @@ pub fn BrowserDemo::enqueue_event(
 }
 
 ///|
+/// Queue a bounded committed insert through the same deterministic ingress as
+/// pointer and key callbacks. No provisional composition text enters the model.
+pub fn BrowserDemo::enqueue_text_input(
+  self : BrowserDemo,
+  text : String,
+) -> Result[Unit, BrowserDemoError] {
+  if self.stopped {
+    Err(Stopped)
+  } else if text.length() == 0 || text.length() > 65_536 {
+    Err(InvalidTextInput)
+  } else {
+    enqueue(
+      self,
+      @platform.Input(@primitives.TextInput(text~)),
+      self.host_scale,
+    )
+  }
+}
+
+///|
 /// Queue a host measurement. Scale changes are accepted before resize and all
 /// later inputs, so frame rendering and hit testing observe the new DPR.
 pub fn BrowserDemo::set_viewport(
@@ -1093,7 +1122,7 @@ pub fn BrowserDemo::status_json(self : BrowserDemo) -> String {
       let cursor = json_quote(cursor_label(cursor_for_hover(model.hover_id)))
       let focus = id_json(model.focus_id)
       let target = id_json(model.last_target)
-      "{\"active\":\{!self.stopped},\"logicalWidth\":\{model.width},\"logicalHeight\":\{model.height},\"dpr\":\{model.scale},\"hover\":\{hover},\"cursor\":\{cursor},\"focus\":\{focus},\"target\":\{target},\"clicks\":\{model.clicks},\"capabilityValue\":\{model.capability_value},\"scrollX\":\{model.scroll_x},\"scrollY\":\{model.scroll_y},\"events\":\{model.processed_events},\"lastSequence\":\{model.last_sequence},\"lastEvent\":\{json_quote(model.last_event)},\"lastKey\":\{json_quote(model.last_key)},\"focused\":\{model.focused},\"visible\":\{model.visible}}"
+      "{\"active\":\{!self.stopped},\"logicalWidth\":\{model.width},\"logicalHeight\":\{model.height},\"dpr\":\{model.scale},\"hover\":\{hover},\"cursor\":\{cursor},\"focus\":\{focus},\"target\":\{target},\"clicks\":\{model.clicks},\"capabilityValue\":\{model.capability_value},\"scrollX\":\{model.scroll_x},\"scrollY\":\{model.scroll_y},\"events\":\{model.processed_events},\"lastSequence\":\{model.last_sequence},\"lastEvent\":\{json_quote(model.last_event)},\"lastKey\":\{json_quote(model.last_key)},\"lastCommittedText\":\{json_quote(model.last_committed_text)},\"textCommitCount\":\{model.text_commit_count},\"focused\":\{model.focused},\"visible\":\{model.visible}}"
     }
   }
 }
@@ -1360,18 +1389,5 @@ fn id_json(id : UInt64?) -> String {
 ///|
 /// JSON string encoding used for browser-visible status and diagnostics.
 pub fn json_quote(value : String) -> String {
-  let output = StringBuilder()
-  output.write_char('"')
-  for character in value {
-    match character {
-      '"' => output.write_string("\\\"")
-      '\\' => output.write_string("\\\\")
-      '\n' => output.write_string("\\n")
-      '\r' => output.write_string("\\r")
-      '\t' => output.write_string("\\t")
-      _ => output.write_char(character)
-    }
-  }
-  output.write_char('"')
-  output.to_string()
+  "\"\{@capability.json_escape(value)}\""
 }

@@ -9,6 +9,7 @@
     "browser:install": "playwright install --with-deps chromium",
     "browser:smoke": "node tests/browser/smoke.mjs",
     "browser:dev-watch": "node tests/browser/dev-watch.mjs",
+    "browser:services:test": "node --test tests/browser/clipboard.test.mjs tests/browser/text-input.test.mjs",
     "migration:host:test": "node --test tests/browser/migration-host.test.mjs"
   },
   "devDependencies": {

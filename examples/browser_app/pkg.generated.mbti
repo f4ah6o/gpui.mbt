@@ -1,0 +1,65 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/examples/browser_app"
+
+import {
+  "f4ah6o/gpui/capability",
+  "f4ah6o/gpui/core",
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/mcp",
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/scene",
+}
+
+// Values
+pub fn json_quote(String) -> String
+
+// Errors
+
+// Types and methods
+pub struct BrowserDemo {
+  app : @core.App
+  model : @core.Entity[DemoModel]
+  counter_command : @capability.TypedCapability[Int, Int]
+  counter_query : @capability.TypedCapability[Unit, Int]
+  counter_gui_binding : @capability.GuiBinding[Int, Int]
+  mcp_adapter : @mcp.Adapter
+  ingress : @platform.EventIngress
+  mut host_width : Double
+  mut host_height : Double
+  mut host_scale : Double
+  mut queued_focus_id : UInt64?
+  mut stopped : Bool
+}
+pub fn BrowserDemo::activate_semantic_node(Self, Int) -> Result[Unit, BrowserDemoError]
+pub fn BrowserDemo::dispose(Self) -> Unit
+pub fn BrowserDemo::enqueue_event(Self, @platform.EventKind) -> Result[Unit, BrowserDemoError]
+pub fn BrowserDemo::enqueue_text_input(Self, String) -> Result[Unit, BrowserDemoError]
+pub fn BrowserDemo::focus_semantic_node(Self, Int, Bool) -> Result[Unit, BrowserDemoError]
+pub fn BrowserDemo::host_layout_json(Self) -> String
+pub fn BrowserDemo::invoke_counter_direct(Self, Int) -> Result[Int, @diagnostics.FrameworkError]
+pub fn BrowserDemo::invoke_counter_mcp(Self, Int) -> Result[Int, @diagnostics.FrameworkError]
+pub fn BrowserDemo::is_stopped(Self) -> Bool
+pub fn BrowserDemo::new() -> Result[Self, @diagnostics.FrameworkError]
+pub fn BrowserDemo::query_counter(Self) -> Result[Int, @diagnostics.FrameworkError]
+pub fn BrowserDemo::render_frame(Self) -> Result[@scene.SceneSnapshot, BrowserDemoError]
+pub fn BrowserDemo::set_viewport(Self, Double, Double, Double) -> Result[Unit, BrowserDemoError]
+pub fn BrowserDemo::status_json(Self) -> String
+
+pub(all) enum BrowserDemoError {
+  Stopped
+  InvalidViewport
+  InvalidTextInput
+  QueueRejected
+  ModelUpdateFailed
+  LayoutFailed
+  ElementTreeInvalid
+  SceneSnapshotFailed
+} derive(Eq)
+pub fn BrowserDemoError::equal(Self, Self) -> Bool
+pub fn BrowserDemoError::not_equal(Self, Self) -> Bool
+
+type DemoModel
+
+// Type aliases
+
+// Traits

@@ -318,3 +318,62 @@ test "demo teardown is idempotent and rejects later size changes" {
     @browser_app.BrowserDemo::render_frame(demo) is Err(@browser_app.Stopped),
   )
 }
+
+///|
+test "committed inserts remain queued until the portable model drains input" {
+  let demo = create_browser_demo()
+  let initial = @browser_app.BrowserDemo::status_json(demo)
+  assert_true(initial.contains("\"textCommitCount\":0"))
+  assert_true(initial.contains("\"lastCommittedText\":\"\""))
+  assert_true(
+    @browser_app.BrowserDemo::enqueue_text_input(demo, "Latin") is Ok(_),
+  )
+  let text = "日本語 👩🏽‍💻 e\u0301 שלום العربية \" \\ \n\r\t\u0000\u0008\u000c\u001f"
+  assert_true(@browser_app.BrowserDemo::enqueue_text_input(demo, text) is Ok(_))
+  assert_eq(@browser_app.BrowserDemo::status_json(demo), initial)
+  assert_true(@browser_app.BrowserDemo::render_frame(demo) is Ok(_))
+  let status = @browser_app.BrowserDemo::status_json(demo)
+  assert_true(status.contains("\"textCommitCount\":2"))
+  assert_true(
+    status.contains("\"lastCommittedText\":\{@browser_app.json_quote(text)}"),
+  )
+  assert_true(status.contains("\"lastEvent\":\"text input\""))
+  assert_true(status.contains("\"lastKey\":\"—\""))
+  assert_true(status.contains("\"clicks\":0"))
+  assert_true(status.contains("\\u0000\\u0008\\u000c\\u001f"))
+  assert_true(@browser_app.BrowserDemo::render_frame(demo) is Ok(_))
+  assert_eq(@browser_app.BrowserDemo::status_json(demo), status)
+  @browser_app.BrowserDemo::dispose(demo)
+}
+
+///|
+test "committed insert bounds count UTF-16 units without truncation" {
+  let demo = create_browser_demo()
+  assert_eq("😀".length(), 2)
+  let boundary = "😀".repeat(32_768)
+  assert_eq(boundary.length(), 65_536)
+  assert_true(
+    @browser_app.BrowserDemo::enqueue_text_input(demo, "")
+    is Err(@browser_app.InvalidTextInput),
+  )
+  assert_true(
+    @browser_app.BrowserDemo::enqueue_text_input(demo, boundary + "x")
+    is Err(@browser_app.InvalidTextInput),
+  )
+  assert_true(
+    @browser_app.BrowserDemo::enqueue_text_input(demo, boundary) is Ok(_),
+  )
+  assert_true(@browser_app.BrowserDemo::render_frame(demo) is Ok(_))
+  let status = @browser_app.BrowserDemo::status_json(demo)
+  assert_true(status.contains("\"textCommitCount\":1"))
+  assert_true(
+    status.contains(
+      "\"lastCommittedText\":\{@browser_app.json_quote(boundary)}",
+    ),
+  )
+  @browser_app.BrowserDemo::dispose(demo)
+  assert_true(
+    @browser_app.BrowserDemo::enqueue_text_input(demo, "late")
+    is Err(@browser_app.Stopped),
+  )
+}

@@ -12,8 +12,10 @@ logical layout region and reports focus ownership back to the host.
 This is execution evidence for the experimental JavaScript slice. It does not close
 [`issues/open/0009-browser-backend.md`](../issues/open/0009-browser-backend.md)
 or establish a production browser backend. WasmGC and Wasm targets, WebGPU,
-text and Japanese IME, a general accessibility tree/adapter, clipboard
-services, renderer recovery, and production support remain open work.
+full text editing and Japanese IME, a general accessibility tree/adapter,
+GPU recovery, and production support remain open work. The current JS slice
+adds scoped plain-text clipboard services, committed-text ingress, and
+event-driven Canvas 2D context restoration as described below.
 The rendered counter fixture also exercises one shared typed capability through
 its GUI binding, direct API, and an in-process MCP adapter call. That adapter
 does not start MCP wire transport or expose browser host privileges.
@@ -60,6 +62,7 @@ Run the real-browser smoke test with Chromium installed:
 ```sh
 vp run browser:install
 vp build
+vp run browser:services:test
 vp run browser:smoke
 ```
 
@@ -101,9 +104,85 @@ deployment was skipped for the pull request.
 
 This is browser execution evidence for the experimental JavaScript Canvas 2D
 slice. WasmGC and Wasm browser targets, WebGPU, Japanese IME and broader text
-input, a general accessibility adapter, clipboard services,
-renderer recovery, native/backend conformance, worker commands, and production
+input, a general accessibility adapter,
+native/backend conformance, worker commands, and production
 browser support remain open.
+
+## Browser service increment — 2026-10-05
+
+The demo now has explicit **Copy text**, **Paste text**, and **Start text input**
+controls. The latter displays the last committed insert and its event count in
+the inspector; it is an input proof, not a text editor. The canvas still renders
+the shared quad scene.
+
+### Plain-text clipboard
+
+The browser adapter uses `navigator.clipboard.readText` and `writeText` through
+the existing version-1 host-service request/completion envelope. Operations
+must be explicitly allowed and belong to a live logical scope. Requests retain
+the existing payload, in-flight, scope, and decimal-ID bounds. The native API
+is invoked during the button callback before the first asynchronous yield so
+the browser can apply its user-activation policy.
+
+Availability is measured separately from permission. An insecure context or a
+missing method produces `unsupported_capability`; browser permission or
+user-activation rejection produces `permission_denied`. Other failures retain
+the typed service envelope and do not stop rendering. The page never reads
+the clipboard at startup. Remount closes the old adapter and ignores late
+completion messages; an already-started native write cannot be rolled back.
+
+`clipboard` in the live capability report requires both text methods and a
+secure context. Individual Copy/Paste controls reflect their method's
+availability. A supported method can still be denied when the user invokes it.
+
+### Committed-text ingress
+
+An opt-in hidden textarea receives browser editing/composition events and sends
+only committed inserts through `gpui_browser_text_input` into the existing
+`EventIngress` queue and `InputEvent.TextInput`. Input callbacks do not dispatch
+the MoonBit app directly. The next scheduled frame exposes
+`lastCommittedText` and `textCommitCount` from the shared app model.
+
+Provisional composition is discarded on cancellation, blur, hiding, teardown,
+or renderer loss. A composition commit is delivered once even when the browser
+also sends its trailing input event. Each commit is bounded to 65,536 UTF-16
+code units. Starting text input is explicit; the bridge does not take input
+from the existing canvas actions or the legacy web island on its own.
+
+The new `committedTextInput` capability is distinct from `textInputIme`, which
+remains false. Selection/replacement, deletion, caret/candidate positioning,
+text scene rendering, native Japanese IME qualification, and a full editor
+contract remain open work.
+
+### Canvas 2D restoration
+
+`contextlost` suspends frame scheduling and input while preserving the live
+MoonBit application. The handler leaves this event uncancelled so the browser
+can restore its backing storage, following the
+[HTML context-lost steps](https://html.spec.whatwg.org/multipage/webappapis.html#context-lost-steps).
+A `contextrestored` event attempts to reacquire the 2D
+context, resynchronizes the latest logical size and DPR, and schedules the
+current scene. Only a successful repaint clears the loss diagnostic and
+re-enables input. Hidden pages defer that repaint until visible. Focus and
+visibility and the active ARIA semantic target are sampled again immediately
+before the restored frame drains events so focus moves during that wait are
+preserved and the next keyboard activation reaches the focused target.
+
+Restoration is event-driven: one acquisition attempt per restoration event,
+with no polling or automatic retry loop. Failed acquisition stays unavailable
+until another restoration event or an explicit remount. Remount continues to
+create a new logical app. This browser-specific path does not implement the
+timed native/GPU recovery policy in [the platform design](platform.md).
+
+### Verification scope
+
+`vp run browser:services:test` covers the service and text-bridge contracts.
+The production-artifact Chromium smoke adds clipboard round trips and denial,
+committed input and composition/lifecycle cases, and state/pixel preservation
+across context restoration. Context loss/restoration and hidden-document cases
+use explicitly dispatched browser lifecycle events; they do not establish real
+GPU fault recovery or operating-system tab/IME behavior. Test-only clipboard
+permissions apply only to the isolated Chromium context.
 
 For initial repository setup, enable GitHub Pages with **Build and deployment →
 Source: GitHub Actions**. The workflow uses the `github-pages` environment and
@@ -115,9 +194,10 @@ branch and pull request runs never target that protected environment.
 
 The browser host reports one logical viewport, Canvas 2D quad frames, browser
 pointer/keyboard/wheel input, request-animation-frame scheduling, portable
-Arrow/PointingHand/Text cursor mapping, and the fixture-specific ARIA layer. It
-reports no native top-level window, clipboard, IME/text input, general
-accessibility bridge, renderer recovery, or worker command support.
+Arrow/PointingHand/Text cursor mapping, committed-text ingress, event-driven
+Canvas 2D restoration, and the fixture-specific ARIA layer. Plain-text clipboard
+availability is detected by the host. It reports no native top-level window,
+full IME/text editing, general accessibility bridge, or worker command support.
 
 Cursor intent stays framework-owned: the portable demo derives a
 `platform.Cursor` from its post-dispatch hover state, the host reads that state
