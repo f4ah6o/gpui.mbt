@@ -123,9 +123,9 @@ Cursor intent stays framework-owned: the portable demo derives a
 `platform.Cursor` from its post-dispatch hover state, the host reads that state
 after the scheduled frame drain, and only then maps `Arrow`, `PointingHand`,
 and `Text` to the browser's `default`, `pointer`, and `text` CSS cursor
-values. Browser callbacks still only enqueue input; they do not directly
-re-enter framework dispatch. Browser callbacks enqueue framework-owned events;
-only a scheduled frame drains them into the app. Hidden pages cancel pending
+values. Browser callbacks still only enqueue framework-owned events; they do not
+directly re-enter framework dispatch. Only a scheduled frame drains them into
+the app. Hidden pages cancel pending
 frames and wait for visibility before requesting another.
 
 Canvas coordinates and layout use CSS pixels. The canvas backing store follows
