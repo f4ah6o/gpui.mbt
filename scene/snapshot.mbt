@@ -105,7 +105,7 @@ pub fn SceneResource::id(self : SceneResource) -> UInt64 {
 /// One ordered rectangle-only clip chain in the current R0 subset.
 pub struct ClipChain {
   id : Int
-  rects : Array[@primitives.Rect]
+  priv rects : Array[@primitives.Rect]
 }
 
 ///|
@@ -225,9 +225,9 @@ pub struct SceneSnapshot {
   schema_version : Int
   viewport : @primitives.Rect
   scale : Double
-  resources : Array[SceneResource]
-  clip_chains : Array[ClipChain]
-  items : Array[SceneItem]
+  priv resources : Array[SceneResource]
+  priv clip_chains : Array[ClipChain]
+  priv items : Array[SceneItem]
 }
 
 ///|

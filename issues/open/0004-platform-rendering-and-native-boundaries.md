@@ -416,8 +416,8 @@ quadratically with node count; the depth limit protects stack use only.
 PR27's measured-text work is merged to main as
 `d0335f65f6758b5ecaf91353500ad6978f9ae13e` (tree
 `ae19ca012ac03cf3b4fed6c93f442d8a04f9fd8c`). It supplies the copied
-text-layout/caret/hit contract and the Linux PangoFT2 measurement adapter. The
-next bounded scene-presentation slice implements Ubuntu Wayland/GLES drawing
+text-layout/caret/hit contract and the Linux PangoFT2 measurement adapter. [PR28](https://github.com/gpui-mbt/gpui.mbt/pull/28) merged as
+`3cc72f548dc6138e17f949efad8eae92c70a1cb0` and implements Ubuntu Wayland/GLES drawing
 for existing `SceneSnapshot` v1 text items, interleaved with quads in paint
 order. It rasterizes grayscale A8 masks at logical resolution with PangoFT2,
 then transforms/scales them with GLES and `GL_LINEAR`; higher output scale does
@@ -441,13 +441,14 @@ an editable control, IME, accessibility, color glyphs, rich text, or other-host
 text rendering. The public SceneSnapshot schema and non-Linux behavior are
 unchanged. The local headless C mask consumer passes normally and with
 ASan+UBSan using leak detection disabled on Debian 13 / PangoFT2 1.56.3 /
-Fontconfig 2.15.0 with the declared DejaVu/Noto fixtures. Integrated
-Weston/GLES acceptance remains pending. The leak-enabled LeakSanitizer run
-reports that it does not work under ptrace in this environment; that is not a
-leak pass or a product leak failure. Local AF_UNIX stream-socket creation
-returns `EPERM` before the compositor can start, and hosted renderer CI is
-pending. Previous PR27 measurement tests and quad-only Ubuntu checks are not
-evidence for this new renderer. The public `require_grayscale_raster()` checks
+Fontconfig 2.15.0 with the declared DejaVu/Noto fixtures. The [PR28 Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37346110201)
+passed headless adapter and real Weston/llvmpipe mixed-scene checks at 1x/2x,
+including late invalid/color/resource preservation and retained Latin/Japanese
+clipping/overlap readbacks. The exact reviewed tree is
+`14b8ce67796bcb08e08b60d8fcdb495afb7257b4`. This is bounded software-rendered
+acceptance, not a support tier. LeakSanitizer remains unavailable under ptrace;
+local AF_UNIX stream-socket creation returns `EPERM`, so local GPU tests remain
+unrun. The public `require_grayscale_raster()` checks
 the private linked ABI and Pango >= 1.50 before Ubuntu advertises the subset.
 The next text control must request the same generic `sans` family, font size,
 and Pango context as the renderer when using caret/hit geometry;
@@ -455,3 +456,33 @@ arbitrary-family measurement does not guarantee drawing parity. See the
 [Linux text guide](../../docs/linux-text.md#ubuntu-grayscale-scene-text),
 [Ubuntu guide](../../docs/ubuntu.md#grayscale-text-frame-subset), and
 [application roadmap refresh](0018-mzed-native-island-roadmap.md#framework-capability-status-and-application-order--2026-10-05).
+
+
+## Focused input routing and validated storage — 2026-10-05
+
+The shared element tree now exposes `dispatch_input` and `dispatch_input_with`.
+Pointer variants preserve existing position-based hit testing; key pressed,
+key released and committed TextInput variants route through the current focused
+focusable node. Capture precedes bubble, the route/event are fixed before
+callbacks, and stop/error behavior is shared with the old pointer dispatcher.
+No focus gives no target or callbacks; clearing focus or removing its subtree
+makes subsequent key/text dispatch empty. Unrelated subtree removal preserves
+the focused path, and retained old contexts cannot stop later events.
+
+Tests cover every event payload/modifier/repeat field, root/nested focus,
+sibling choice, propagation, errors, focus lifecycle, route freezing and old
+pointer parity. Seeded QuickCheck covers two independent fixed-tree route
+references; it is not generated arbitrary-tree coverage.
+
+`ElementTree.nodes`, SceneSnapshot's resource/clip-chain/item arrays and
+`ClipChain.rects` are private. Existing public copy-returning accessors remain,
+including detached nested clip rectangles. External direct-mutation compiler
+probes now fail, while accessor-only consumers compile. This narrow source-API
+tightening prevents bypassing validated routing/clip storage; SceneSnapshot v1
+and canonical JSON are unchanged. Generic entity aliases and other array types
+remain outside this change.
+
+This is shared routing only: it does not acquire focus, navigate Tab, synthesize
+TextInput from Character keys, implement editing, native committed-text ingress
+or IME, or advertise a native text-input capability. A usable Linux text field
+must still connect actual host input to editing and caret/selection drawing.

@@ -160,12 +160,15 @@ test "element tree and dispatch plans own their arrays" {
   let child = @element.ElementNode::new(2, Some(1), bounds)
   let source : Array[@element.ElementNode] = [root, child]
   let tree = unwrap_tree(source)
-  source.push(@element.ElementNode::new(3, Some(1), bounds))
+  source.clear()
+  assert_eq(source.length(), 0)
   assert_true(tree.node(3) is None)
+  assert_eq(tree.nodes().length(), 2)
 
   let exposed = tree.nodes()
-  exposed.push(@element.ElementNode::new(4, Some(1), bounds))
+  exposed.clear()
   assert_true(tree.node(4) is None)
+  assert_eq(tree.nodes().length(), 2)
 
   let plan = tree.dispatch_pointer(element_point(10.0, 10.0))
   let capture = plan.capture()

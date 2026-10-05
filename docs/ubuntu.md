@@ -150,15 +150,20 @@ backend's typed recovery path; preflight preservation does not guarantee a
 prior image across device loss. The public `SceneSnapshot` schema is unchanged. See
 [the full Linux text boundary](linux-text.md#ubuntu-grayscale-scene-text).
 
-This renderer slice is implemented in the current change. The headless C mask
+This renderer slice merged in [PR28](https://github.com/gpui-mbt/gpui.mbt/pull/28) as
+`3cc72f548dc6138e17f949efad8eae92c70a1cb0`. The headless C mask
 consumer passes normally and under ASan+UBSan with leak detection disabled on
 Debian 13/PangoFT2 1.56.3/Fontconfig 2.15.0. The leak-enabled LeakSanitizer
 run reports that it does not work under ptrace in this environment; this is
-not a leak pass or a product leak failure. Integrated Weston/GLES text
-presentation remains unverified: local execution is blocked before compositor
-testing because AF_UNIX stream socket creation returns `EPERM`, and hosted
-renderer CI is pending. The existing Ubuntu quad/input/recovery run does not
-establish text-renderer acceptance or broader platform support.
+not a leak pass or a product leak failure. The [PR28 Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37346110201)
+passed real Weston/llvmpipe text and quad readback, clipping/transform/order,
+late invalid/color/resource frame preservation, empty text, recovery and
+cleanup at 1x/2x; MoonBit E2E passed 5/5 per scale. Its reviewed tree is
+`14b8ce67796bcb08e08b60d8fcdb495afb7257b4`. Test-only Latin/Japanese clipping/
+overlap PPM artifacts retain exact executed commit/scale/renderer context.
+Local GPU execution remains unrun because AF_UNIX stream socket creation
+returns `EPERM`. This software-rendered proof does not establish broader
+platform support or text performance qualification.
 
 Text-input/IME, text-field controls, visible caret/selection, semantic
 accessibility, menus, background enqueue, timers, fractional scaling, and
@@ -204,7 +209,8 @@ a desktop frame-rate claim.
 | Evidence path | Distro / compositor | Graphics / session | Evidence state |
 | --- | --- | --- | --- |
 | Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Hosted run 2026-10-04 passed MoonBit E2E (4/4), C lifecycle/render/recovery checks at both scales, and 30 timing samples per scale. Measurement report completed with `no_baseline`; see [run and diagnostic results](performance.md#hosted-ubuntu-observation-2026-10-04). |
-| Local implementation validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Strict C compile and clipboard transfer helper passed; Weston headless launch blocked | Full native E2E unrun: the runner observed Weston fail to add its socket with `No such file or directory`; a separate AF_UNIX bind diagnostic was denied with `EPERM` in this environment |
+| PR28 grayscale text CI | Ubuntu 24.04 x86-64; Weston 13; PangoFT2 1.52.1; Fontconfig 2.15.0 | Weston headless GL kiosk shell; llvmpipe (LLVM 20.1.2); integer scales 1/2 | [Run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37346110201) passed headless raster, 5/5 MoonBit E2E per scale and C mixed-scene/preservation assertions; readback PPMs retained. Recovery timing report is `captured_live` + `no_baseline`, not text performance qualification. |
+| Local implementation validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Strict C compile and clipboard transfer helper passed; Weston headless launch blocked | Full native E2E unrun: the runner observed Weston fail to add its socket with `No such file or directory`; a separate AF_UNIX socket-creation diagnostic returned `EPERM` in this environment |
 | Real Ubuntu desktop | Ubuntu 24.04 GNOME Wayland/Mutter | Desktop GPU, IME and assistive technology | Pending |
 
 CI pins the distro and MoonBit release; Ubuntu archive package patch versions
