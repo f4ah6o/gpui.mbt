@@ -38,10 +38,11 @@ export async function runTextInputSmoke({ page, context }) {
   await page.evaluate(() => {
     const textarea = document.querySelector("#gpui-text-input");
     window.__gpuiTextInputEvidence = [];
-    for (const type of ["keydown", "input", "compositionstart", "compositionupdate", "compositionend"]) {
+    for (const type of ["keydown", "paste", "beforeinput", "input", "compositionstart", "compositionupdate", "compositionend"]) {
       textarea.addEventListener(type, (event) => window.__gpuiTextInputEvidence.push({
         type, trusted: event.isTrusted, inputType: event.inputType,
         composing: event.isComposing, data: event.data,
+        clipboardText: event.clipboardData?.getData("text/plain"), value: textarea.value,
       }));
     }
   });
@@ -75,6 +76,58 @@ export async function runTextInputSmoke({ page, context }) {
     await client.send("Input.insertText", { text: "日本語" });
     count += 1;
     await waitForText(count, "日本語");
+
+    // A real Ctrl+V produces a noncomposing insertFromPaste while Chromium's
+    // composition range remains open. Capture the original CRLF before the
+    // textarea normalizes it; the later composition must commit separately.
+    const pasted = "PASTE\r\n日本語";
+    const normalizedPaste = "PASTE\n日本語";
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin });
+    try {
+      for (const ending of ["commit", "cancel"]) {
+        await page.evaluate((text) => navigator.clipboard.writeText(text), pasted);
+        const traceStart = await page.evaluate(() => window.__gpuiTextInputEvidence.length);
+        await client.send("Input.imeSetComposition", { text: "未確定", selectionStart: 3, selectionEnd: 3 });
+        await page.keyboard.press("Control+V");
+        count += 1;
+        await waitForText(count, pasted);
+        assert.equal(await page.evaluate(() => window.__gpuiTextInput("status").composing), true);
+        assert.equal(await page.locator("#gpui-text-input").inputValue(), `未確定${normalizedPaste}`,
+          "accepting paste must preserve the native provisional range for a later commit or cancel");
+        const pasteCount = count;
+        if (ending === "commit") {
+          await client.send("Input.insertText", { text: "確定" });
+          count += 1;
+          await waitForText(count, "確定");
+        } else {
+          await client.send("Input.imeSetComposition", { text: "", selectionStart: 0, selectionEnd: 0 });
+        }
+        await settleBrowserInput();
+        assert.equal((await readStatus()).textCommitCount, count, `${ending} must not replay or discard the independent paste`);
+        assert.equal((await readStatus()).lastCommittedText, ending === "commit" ? "確定" : pasted);
+        assert.equal(await page.locator("#gpui-text-input").inputValue(), "");
+        const trace = await page.evaluate((start) => window.__gpuiTextInputEvidence.slice(start), traceStart);
+        const paste = trace.find((event) => event.type === "paste");
+        const beforeInput = trace.find((event) => event.type === "beforeinput" && event.inputType === "insertFromPaste");
+        const input = trace.find((event) => event.type === "input" && event.inputType === "insertFromPaste");
+        const end = trace.find((event) => event.type === "compositionend");
+        assert.equal(paste?.trusted, true);
+        assert.equal(paste?.clipboardText, pasted);
+        assert.equal(beforeInput?.trusted, true);
+        assert.equal(beforeInput?.composing, false);
+        assert.equal(beforeInput?.data, pasted);
+        assert.equal(input?.trusted, true);
+        assert.equal(input?.composing, false);
+        assert.equal(input?.value, `未確定${normalizedPaste}`);
+        assert.equal(end?.data, ending === "commit" ? "確定" : "",
+          "compositionend must carry only the composition range, excluding already committed paste");
+        assert.equal(end?.value, `${ending === "commit" ? "確定" : ""}${normalizedPaste}`);
+        assert.ok(trace.indexOf(beforeInput) < trace.indexOf(input) && trace.indexOf(input) < trace.indexOf(end));
+        console.log("Composition paste regression:", JSON.stringify({ ending, beforeInput, input, end, pasteCount, finalCount: count }));
+      }
+    } finally {
+      await context.clearPermissions();
+    }
 
     await client.send("Input.imeSetComposition", { text: "キャンセル", selectionStart: 5, selectionEnd: 5 });
     await client.send("Input.imeSetComposition", { text: "", selectionStart: 0, selectionEnd: 0 });
@@ -177,5 +230,5 @@ export async function runTextInputSmoke({ page, context }) {
     delete window.__gpuiOldTextInput;
     delete window.__gpuiTextInputEvidence;
   });
-  console.log("Committed text smoke passed: trusted Chromium keyboard/Unicode input, CDP Japanese composition/commit/cancel, synthetic alternate event order, lifecycle cancellation, focus ownership, and fresh input after remount. Chromium CDP compositionend is untrusted; OS IME candidate UI and production editor semantics are not covered.");
+  console.log("Committed text smoke passed: trusted Chromium keyboard/Unicode input, real Ctrl+V during active composition followed by commit/cancel, CDP Japanese composition, synthetic alternate event order, lifecycle cancellation, focus ownership, and fresh input after remount. Chromium CDP compositionend is untrusted; OS IME candidate UI and production editor semantics are not covered.");
 }

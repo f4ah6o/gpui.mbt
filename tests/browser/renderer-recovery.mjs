@@ -296,6 +296,102 @@ export async function runRendererRecoverySmoke({ page, context }) {
     assert.equal((await read()).clicks, semanticReady.clicks + 1);
     assert.equal((await read()).capabilityValue, semanticReady.capabilityValue, "Enter on node 7 cannot activate node 4's counter");
 
+    // The normal proxy-to-legacy focusout clears the semantic target. Losing
+    // that lifecycle transition must not leave an invisible action selected.
+    await page.locator("#gpui-accessibility-node-4").focus();
+    await ready();
+    const beforeSemanticClear = await read();
+    assert.equal(beforeSemanticClear.focus, 4);
+    await page.evaluate(() => {
+      const fixture = window.__gpuiRecoveryFixture;
+      fixture.canvas.dispatchEvent(new Event("contextlost", { cancelable: true }));
+      document.querySelector("#legacy-island textarea").focus();
+    });
+    assert.equal((await read()).focus, 4, "semantic clearing waits for the restored drain");
+    await page.evaluate(() => window.__gpuiRecoveryFixture.canvas.dispatchEvent(new Event("contextrestored")));
+    await ready();
+    const afterSemanticClear = await read();
+    const clearedCurrent = await page.locator("#gpui-accessibility-node-4").getAttribute("aria-current");
+    await page.locator("#return-framework").click();
+    await ready();
+    await page.keyboard.press("Enter");
+    await ready();
+    const afterCanvasReturn = await read();
+    assert.deepEqual({
+      focus: afterSemanticClear.focus,
+      ariaCurrent: clearedCurrent,
+      counterAfterEnter: afterCanvasReturn.capabilityValue,
+      activationsAfterEnter: afterCanvasReturn.clicks,
+    }, {
+      focus: null,
+      ariaCurrent: "false",
+      counterAfterEnter: beforeSemanticClear.capabilityValue,
+      activationsAfterEnter: beforeSemanticClear.clicks,
+    }, "loss → legacy → restore → canvas → Enter cannot activate a stale semantic target");
+    assert.equal(afterSemanticClear.focused, false);
+    assert.equal(afterSemanticClear.hostInputOwner, "legacy-island");
+    assert.equal(afterCanvasReturn.focused, true);
+    assert.equal(afterCanvasReturn.hostInputOwner, "framework");
+
+    // Canvas focus normally retains its logical selection. Recovery must not
+    // clear every selected target merely because no ARIA proxy is active.
+    await page.locator("#gpui-accessibility-node-4").focus();
+    await ready();
+    await page.locator("#gpui-viewport").focus();
+    await ready();
+    await page.evaluate(() => {
+      const fixture = window.__gpuiRecoveryFixture;
+      fixture.canvas.dispatchEvent(new Event("contextlost", { cancelable: true }));
+      fixture.canvas.dispatchEvent(new Event("contextrestored"));
+    });
+    await ready();
+    assert.equal((await read()).focus, 4, "ordinary canvas recovery preserves the intentionally selected target");
+    assert.equal(await page.locator("#gpui-accessibility-node-4").getAttribute("aria-current"), "true");
+
+    // Re-entering the canvas before presentation retains the latest semantic
+    // lifecycle intent: clear after visiting legacy, or select a newer proxy.
+    for (const focusIntent of [null, 7]) {
+      await page.locator("#gpui-accessibility-node-4").focus();
+      await ready();
+      const beforeIntent = await read();
+      const intentWait = await page.evaluate((target) => {
+        const fixture = window.__gpuiRecoveryFixture;
+        fixture.canvas.dispatchEvent(new Event("contextlost", { cancelable: true }));
+        document.querySelector("#legacy-island textarea").focus();
+        if (target === null) {
+          const undoContext = fixture.patch(fixture.canvas, "getContext", () => null);
+          fixture.canvas.dispatchEvent(new Event("contextrestored"));
+          undoContext();
+        }
+        const request = window.requestAnimationFrame.bind(window);
+        const undoRequest = fixture.patch(window, "requestAnimationFrame", (callback) => {
+          fixture.heldRestorationFrame = callback;
+          return request(() => {});
+        });
+        fixture.canvas.dispatchEvent(new Event("contextrestored"));
+        undoRequest();
+        if (target !== null) document.querySelector(`#gpui-accessibility-node-${target}`).focus();
+        fixture.canvas.focus();
+        return fixture.record();
+      }, focusIntent);
+      assert.equal(intentWait.status.focus, 4);
+      assert.equal(intentWait.status.renderer.state, "restoring");
+      assert.equal(intentWait.status.hostInputOwner, "framework");
+      await page.evaluate(() => {
+        const fixture = window.__gpuiRecoveryFixture;
+        fixture.heldRestorationFrame(performance.now());
+        fixture.heldRestorationFrame = null;
+      });
+      await ready();
+      const afterIntent = await read();
+      assert.equal(afterIntent.focus, focusIntent, "the latest semantic intent survives returning to canvas before paint");
+      assert.equal(afterIntent.focused, true);
+      assert.equal(afterIntent.capabilityValue, beforeIntent.capabilityValue);
+      assert.equal(afterIntent.renderer.completedFrames, beforeIntent.renderer.completedFrames + 1);
+      assert.equal(await page.locator("#gpui-accessibility-node-4").getAttribute("aria-current"), "false");
+      assert.equal(await page.locator("#gpui-accessibility-node-7").getAttribute("aria-current"), String(focusIntent === 7));
+    }
+
     const beforeHidden = (await read()).renderer;
     const hidden = await page.evaluate(() => {
       const fixture = window.__gpuiRecoveryFixture;

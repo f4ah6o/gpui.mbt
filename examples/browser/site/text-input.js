@@ -108,8 +108,44 @@ export function createTextInputBridge({
   function isCompositionTail(event) {
     if (!compositionTail) return false;
     return compositionTypes.has(event.inputType) ||
-      (insertionTypes.has(event.inputType) &&
+      (event.inputType === "insertText" &&
         (compositionTail.text === "" || event.data === compositionTail.text));
+  }
+
+  function isCompositionInput(event) {
+    // A browser may report an independent paste/drop/line break while a
+    // composition remains open. The local session flag cannot classify it.
+    // insertText before compositionend is ambiguous in some engines; keep that
+    // final composition value on the existing exactly-once settlement path.
+    return event.isComposing || compositionTypes.has(event.inputType) ||
+      (composing && event.inputType === "insertText");
+  }
+
+  function insertedText(event) {
+    const pending = pendingInput?.type === event.inputType ? pendingInput : null;
+    if (typeof pending?.data === "string") return pending.data;
+    if (typeof event.data === "string") return event.data;
+    if (["insertLineBreak", "insertParagraph"].includes(event.inputType)) return "\n";
+    // An input event without data cannot use the entire textarea: it still
+    // may contain the native provisional range or earlier accepted text while
+    // compositionend is pending. Derive the inserted span before any fallback.
+    if (pending && Number.isInteger(pending.start) && Number.isInteger(pending.end) &&
+        pending.start >= 0 && pending.end >= pending.start && pending.end <= pending.value.length) {
+      const prefix = pending.value.slice(0, pending.start);
+      const suffix = pending.value.slice(pending.end);
+      if (textarea.value.length >= prefix.length + suffix.length &&
+          textarea.value.startsWith(prefix) && textarea.value.endsWith(suffix)) {
+        return textarea.value.slice(prefix.length, textarea.value.length - suffix.length);
+      }
+    }
+    if (!composing && (!pending || pending.value === "")) return textarea.value;
+    const error = new Error("The browser did not provide an identifiable committed insert.");
+    error.diagnostic = {
+      code: "conversion_failed", operation: "BrowserBackend::text_input",
+      subsystem: "browser", backend: "js/canvas-2d", message: error.message,
+    };
+    onError(error);
+    return null;
   }
 
   listen(textarea, "focus", () => {
@@ -169,14 +205,14 @@ export function createTextInputBridge({
     }
   });
   listen(textarea, "paste", (event) => {
-    if (canReceive() && !composing) transferText = event.clipboardData?.getData("text/plain") ?? null;
+    if (canReceive()) transferText = event.clipboardData?.getData("text/plain") ?? null;
   });
   listen(textarea, "beforeinput", (event) => {
     if (!canReceive()) {
       if (event.cancelable) event.preventDefault();
       return;
     }
-    if (composing || event.isComposing) return;
+    if (isCompositionInput(event)) return;
     if (isCompositionTail(event)) {
       if (event.cancelable) event.preventDefault();
       return;
@@ -192,7 +228,10 @@ export function createTextInputBridge({
       type: event.inputType,
       data: event.inputType === "insertFromPaste" && transferText !== null
         ? transferText
-        : typeof event.data === "string" ? event.data : null,
+        : typeof event.data === "string" ? event.data : event.dataTransfer?.getData("text/plain") ?? null,
+      value: textarea.value,
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd,
     };
     transferText = null;
   });
@@ -201,23 +240,19 @@ export function createTextInputBridge({
       textarea.value = "";
       return;
     }
-    if (composing) return;
-    if (event.isComposing || isCompositionTail(event) || compositionTypes.has(event.inputType)) {
-      textarea.value = "";
+    if (isCompositionInput(event) || isCompositionTail(event)) {
+      if (!composing) textarea.value = "";
       pendingInput = null;
       return;
     }
     flushComposition();
     compositionTail = null;
-    if (insertionTypes.has(event.inputType)) {
-      const previous = pendingInput?.type === event.inputType ? pendingInput.data : null;
-      const text = previous ?? (typeof event.data === "string" ? event.data
-        : ["insertLineBreak", "insertParagraph"].includes(event.inputType) ? "\n" : textarea.value);
-      commit(text);
-    }
+    if (insertionTypes.has(event.inputType)) commit(insertedText(event));
     pendingInput = null;
     transferText = null;
-    textarea.value = "";
+    // Keep the native composition range intact. A later compositionend carries
+    // only that range's final value; the independent insert is already queued.
+    if (!composing) textarea.value = "";
   });
 
   function blur() {

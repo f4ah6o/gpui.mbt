@@ -29,6 +29,12 @@
 
 ### Fixed
 
+- Preserve semantic target clearing and subsequent selections across browser
+  renderer loss, including a return from the legacy island to the canvas before
+  the restored frame. Enter cannot reactivate the cleared action.
+- Deliver independent committed paste text during an active browser composition
+  without discarding it or clearing the provisional composition range.
+
 ### Deprecated
 
 ### Removed

@@ -66,6 +66,8 @@ let running = false;
 let adapterStarted = false;
 let surfaceLost = false;
 let restorationPending = false;
+// undefined retains the selection, null clears it, and an id selects a proxy.
+let suspendedSemanticFocus;
 let hostGeneration = 0;
 let rendererStats = { completedFrames: 0, lossCount: 0, restoreAttempts: 0, recoveries: 0 };
 let logicalWidth = 0;
@@ -459,6 +461,10 @@ function createAccessibilityLayer() {
   elements.frame.appendChild(accessibilityLayer);
   listen(accessibilityLayer, "focusout", (event) => {
     if (legacySurface?.contains(event.relatedTarget)) {
+      if (surfaceLost) {
+        suspendedSemanticFocus = null;
+        return;
+      }
       queueInput("gpui_browser_key", "Escape", true, false, false, false, false, false);
     }
   });
@@ -475,6 +481,11 @@ function ensureAccessibilityButton(node) {
   button.dataset.semanticNode = String(id);
   button.setAttribute("role", node.role);
   listen(button, "focus", () => {
+    if (surfaceLost) {
+      // Track native DOM focus transitions, not synthetic input notifications.
+      if (document.activeElement === button) suspendedSemanticFocus = id;
+      return;
+    }
     queueInput("gpui_browser_accessibility_focus", id, false);
   });
   listen(button, "click", (event) => {
@@ -577,8 +588,13 @@ function renderFrame() {
       const frameworkFocused = active === canvas || semanticFocused
         || Boolean(textInputBridge?.status().focused);
       call("gpui_browser_visibility", !document.hidden);
-      if (semanticFocused) {
-        call("gpui_browser_accessibility_focus", Number(active.dataset.semanticNode), false);
+      // Canvas focus retains the last semantic lifecycle intent. Apply one
+      // final target (or clear), not Escape followed by relative Tab traversal.
+      const semanticTarget = semanticFocused ? Number(active.dataset.semanticNode) : suspendedSemanticFocus;
+      if (semanticTarget === null) {
+        call("gpui_browser_key", "Escape", true, false, false, false, false, false);
+      } else if (semanticTarget !== undefined) {
+        call("gpui_browser_accessibility_focus", semanticTarget, false);
       }
       call("gpui_browser_focus", frameworkFocused);
     }
@@ -591,6 +607,7 @@ function renderFrame() {
     if (restorationPending) {
       restorationPending = false;
       surfaceLost = false;
+      suspendedSemanticFocus = undefined;
       rendererStats.recoveries += 1;
       if (textInputBridge) refreshTextInputState(textInputBridge.status());
     }
@@ -743,6 +760,7 @@ function stop() {
   adapterStarted = false;
   surfaceLost = false;
   restorationPending = false;
+  suspendedSemanticFocus = undefined;
   hostGeneration += 1;
   cancelFrame();
   if (resizeObserver) resizeObserver.disconnect();

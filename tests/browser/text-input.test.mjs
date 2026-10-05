@@ -215,6 +215,119 @@ test("paste without input.data preserves captured plain text, and line breaks in
   f.bridge.dispose();
 });
 
+test("an independent paste during composition commits exact text once and preserves the native range", async () => {
+  const f = fixture();
+  f.bridge.start();
+  f.composition("未確定");
+  const paste = "PASTE\r\n日本語";
+  f.event("paste", { clipboardData: { getData: () => paste } });
+  f.event("beforeinput", { data: paste, inputType: "insertFromPaste", isComposing: false });
+  assert.deepEqual(f.commits, []);
+  f.textarea.value = "未確定PASTE\n日本語";
+  f.event("input", { data: "PASTE\n日本語", inputType: "insertFromPaste", isComposing: false });
+  assert.deepEqual(f.commits, [paste]);
+  assert.equal(f.bridge.status().composing, true);
+  assert.equal(f.textarea.value, "未確定PASTE\n日本語");
+  f.event("compositionupdate", { data: "確定" });
+  f.event("beforeinput", { data: "確定", inputType: "insertCompositionText", isComposing: true });
+  f.textarea.value = "確定PASTE\n日本語";
+  f.event("input", { data: "確定", inputType: "insertCompositionText", isComposing: true });
+  f.event("compositionend", { data: "確定" });
+  await settle();
+  assert.deepEqual(f.commits, [paste, "確定"]);
+  assert.equal(f.textarea.value, "");
+  assert.deepEqual(f.errors, []);
+  f.bridge.dispose();
+});
+
+test("composition cancellation or lifecycle loss cannot undo an already committed paste", async () => {
+  for (const action of ["cancel", "blur", "hidden", "stop", "dispose"]) {
+    const f = fixture();
+    f.bridge.start();
+    f.composition("未確定");
+    f.event("paste", { clipboardData: { getData: () => "accepted\r\n日本語" } });
+    f.event("beforeinput", { data: null, inputType: "insertFromPaste", isComposing: false });
+    f.textarea.value = "未確定accepted\n日本語";
+    f.event("input", { data: null, inputType: "insertFromPaste", isComposing: false });
+    assert.deepEqual(f.commits, ["accepted\r\n日本語"], action);
+    if (action === "cancel") f.event("compositionend", { data: "" });
+    else if (action === "hidden") {
+      f.document.hidden = true;
+      f.document.dispatchEvent(new Event("visibilitychange"));
+    } else f.bridge[action]();
+    await settle();
+    assert.deepEqual(f.commits, ["accepted\r\n日本語"], action);
+    assert.deepEqual(f.errors, [], action);
+    f.bridge.dispose();
+  }
+});
+
+test("independent inserts bypass a matching or cancelled pending composition tail", async () => {
+  for (const type of ["insertFromPaste", "insertFromDrop", "insertLineBreak", "insertParagraph"]) {
+    const text = ["insertLineBreak", "insertParagraph"].includes(type) ? "\n" : "same";
+    for (const finalText of [text, ""]) {
+      const f = fixture();
+      f.bridge.start();
+      f.composition("provisional");
+      f.event("compositionend", { data: finalText });
+      // No keydown or task boundary is required to separate this operation.
+      if (type === "insertFromPaste") f.event("paste", { clipboardData: { getData: () => text } });
+      f.input(text, type, false);
+      await settle();
+      assert.deepEqual(f.commits, finalText ? [finalText, text] : [text], `${type}/${JSON.stringify(finalText)}`);
+      assert.deepEqual(f.errors, []);
+      f.bridge.dispose();
+    }
+  }
+});
+
+test("missing insert data uses the beforeinput selection without including provisional or earlier pasted text", () => {
+  const f = fixture();
+  f.bridge.start();
+  f.composition("未確定");
+  f.textarea.value = "未確定earlier";
+  f.textarea.selectionStart = 3;
+  f.textarea.selectionEnd = 3;
+  f.event("beforeinput", { data: null, inputType: "insertFromDrop", isComposing: false });
+  f.textarea.value = "未確定droppedearlier";
+  f.event("input", { data: null, inputType: "insertFromDrop", isComposing: false });
+  assert.deepEqual(f.commits, ["dropped"]);
+  assert.equal(f.textarea.value, "未確定droppedearlier");
+  assert.deepEqual(f.errors, []);
+  f.bridge.dispose();
+});
+
+test("null-data inserts after compositionend exclude pending committed or cancelled text", async () => {
+  for (const finalText of ["final", ""]) {
+    const f = fixture();
+    f.bridge.start();
+    f.composition("provisional");
+    f.textarea.value = finalText || "cancelled provisional";
+    f.event("compositionend", { data: finalText });
+    f.textarea.selectionStart = f.textarea.value.length;
+    f.textarea.selectionEnd = f.textarea.value.length;
+    f.event("beforeinput", { data: null, inputType: "insertFromDrop", isComposing: false });
+    f.textarea.value += "drop";
+    f.event("input", { data: null, inputType: "insertFromDrop", isComposing: false });
+    await settle();
+    assert.deepEqual(f.commits, finalText ? [finalText, "drop"] : ["drop"]);
+    assert.deepEqual(f.errors, []);
+    f.bridge.dispose();
+  }
+});
+
+test("an ambiguous final insertText before compositionend stays on the single composition commit path", async () => {
+  const f = fixture();
+  f.bridge.start();
+  f.composition("未確定");
+  f.input("確定", "insertText", false);
+  assert.deepEqual(f.commits, []);
+  f.event("compositionend", { data: "確定" });
+  await settle();
+  assert.deepEqual(f.commits, ["確定"]);
+  f.bridge.dispose();
+});
+
 test("empty and oversized inserts never enqueue a truncated commit", () => {
   const f = fixture();
   f.bridge.start();

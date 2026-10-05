@@ -149,6 +149,11 @@ also sends its trailing input event. Each commit is bounded to 65,536 UTF-16
 code units. Starting text input is explicit; the bridge does not take input
 from the existing canvas actions or the legacy web island on its own.
 
+A paste reported as a noncomposing insert is an independent commit even while
+a composition is active. Its original plain text is delivered without clearing
+the native textarea's provisional composition; the later composition commit or
+cancellation does not consume that paste.
+
 The new `committedTextInput` capability is distinct from `textInputIme`, which
 remains false. Selection/replacement, deletion, caret/candidate positioning,
 text scene rendering, native Japanese IME qualification, and a full editor
@@ -167,6 +172,10 @@ re-enables input. Hidden pages defer that repaint until visible. Focus and
 visibility and the active ARIA semantic target are sampled again immediately
 before the restored frame drains events so focus moves during that wait are
 preserved and the next keyboard activation reaches the focused target.
+Semantic selection and clearing are also remembered while input is suspended.
+Moving from an ARIA proxy to the legacy island clears the old action target,
+including when the canvas regains focus before the restored repaint. A later
+ARIA selection supersedes that clearing intent.
 
 Restoration is event-driven: one acquisition attempt per restoration event,
 with no polling or automatic retry loop. Failed acquisition stays unavailable
@@ -179,7 +188,9 @@ timed native/GPU recovery policy in [the platform design](platform.md).
 `vp run browser:services:test` covers the service and text-bridge contracts.
 The production-artifact Chromium smoke adds clipboard round trips and denial,
 committed input and composition/lifecycle cases, and state/pixel preservation
-across context restoration. Context loss/restoration and hidden-document cases
+across context restoration. Regressions include real Ctrl+V during CDP
+composition and ARIA-to-legacy focus clearing across restoration followed by a
+return to the canvas and Enter. Context loss/restoration and hidden-document cases
 use explicitly dispatched browser lifecycle events; they do not establish real
 GPU fault recovery or operating-system tab/IME behavior. Test-only clipboard
 permissions apply only to the isolated Chromium context.
