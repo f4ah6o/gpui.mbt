@@ -1,0 +1,39 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/platform/linux_text"
+
+import {
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/text",
+  "f4ah6o/gpui/text_layout",
+}
+
+// Values
+pub fn hit_test(@text.TextDocument, String, Double, @primitives.Point) -> Result[@text_layout.TextHit, LinuxTextError]
+
+pub let max_font_family_bytes : Int
+
+pub let max_font_size_px : Double
+
+pub let max_text_bytes : Int
+
+pub fn measure(@text.TextDocument, String, Double) -> Result[@text_layout.TextMeasurement, LinuxTextError]
+
+// Errors
+
+// Types and methods
+pub enum LinuxTextError {
+  InvalidFontFamily
+  InvalidFontSize
+  InvalidCoordinates
+  UnsupportedInput
+  InputTooLarge
+  BufferTooSmall
+  NativeFailure
+  InvalidNativeOutput
+} derive(Eq)
+pub fn LinuxTextError::equal(Self, Self) -> Bool
+pub fn LinuxTextError::not_equal(Self, Self) -> Bool
+
+// Type aliases
+
+// Traits

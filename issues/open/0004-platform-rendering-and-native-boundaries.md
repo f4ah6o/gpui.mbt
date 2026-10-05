@@ -70,6 +70,38 @@ multi-cursor editing, accessibility, and production platform gates remain
 open; no support tier is promoted. See the
 [portable text model](../../docs/text-model.md).
 
+## Headless Linux text measurement slice — 2026-10-05
+
+This patch adds `text_layout/`, a portable copied-value contract for logical
+and ink extents, first-line baseline, scalar-boundary caret records with Pango
+cursor-stop flags, and hit results with scalar trailing counts. Its runtime
+imports remain `text/` and `primitives/` only. `platform/linux_text/` adds a
+synchronous, uncached PangoFT2/Fontconfig adapter; the C boundary drops its
+owned references before returning, while Pango may finish internal worker
+cleanup asynchronously. Pango objects remain private to the C boundary. No
+window, display server, MZed, renderer, or shared `platform/` dependency is
+required for these calls.
+
+The local headless native suite passed 9/9 on Debian 13 with PangoFT2 1.56.3,
+Fontconfig 2.15.0, and installed DejaVu/Noto fixtures. It exercises a Latin
+ligature, Japanese/fallback, combining and ZWJ cursor-stop behavior, bidi
+strong/weak positions, supplementary-character XY trailing semantics, invalid
+input/capacity handling, and 64 measured create/free cycles. The initial
+Ubuntu 24.04 hosted run used PangoFT2 1.52.1 and exposed that the lifecycle test
+assumed Pango objects finalized immediately when the adapter dropped its own
+references. A test-only follow-up now observes finalizer callbacks under
+synchronization with a bounded post-measurement deadline; the adapter's
+production cleanup path remains unchanged. Hosted CI for the follow-up is
+still pending.
+
+This is measurement and hit testing only. It does not render/rasterize text,
+qualify color-emoji output, define wrapping or selection rectangles, connect
+editor input/IME/candidate placement, or establish cross-platform metrics.
+Per-call object/buffer allocation, font/runtime variation, host integration,
+rendering, accessibility, performance, leak qualification, and all Tier 1
+platform gates remain open; no native text support tier is promoted. See the
+[headless Linux text guide](../../docs/linux-text.md).
+
 ## Platform-specific child packets
 
 Implementation is split into concrete backend packets so that "native" is

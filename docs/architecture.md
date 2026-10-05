@@ -2,7 +2,7 @@
 
 Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; experimental macOS, Ubuntu/Wayland/GLES, and Windows native slices are present; the JS browser hosts Weekboard and the retained interaction lab with its in-process capability/MCP seam; a separate Node stdio fixture exercises the stateless MCP wire adapter; native and browser MCP endpoint topology remains planned.
 
-This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, `element/`, `text/`, `capability/`, and optional `mcp/`, plus native and example adapters. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
+This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, `element/`, `text/`, `text_layout/`, `capability/`, and optional `mcp/`, plus native and example adapters. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
 
 ## Runtime dependency budget
 
@@ -40,6 +40,8 @@ target FFI     ──> native OS / graphics / text APIs
 
 primitives ──> MoonBit standard/core only
 text ─────────> MoonBit standard/core only
+text_layout ──> text + primitives + MoonBit standard/core
+platform/linux_text ──> text_layout + text + primitives + Linux PangoFT2/Fontconfig FFI
 diagnostics ─> MoonBit standard/core + primitives
 core       ──> MoonBit standard/core + diagnostics + primitives
 ```
@@ -62,6 +64,8 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `element/` | Render/IntoElement/Element, tree, hit-test and dispatch metadata, immutable scroll state and drag gesture transitions | `core/`, `primitives/`, `layout/`, `scene/` contract | backend callbacks or OS event structs |
 | `scene/` | stable, platform-neutral quad/clip commands, bounded text snapshot items, validation, and ordering | `primitives/` | live GPU handles or backend resource objects |
 | `text/` | UTF-16 ranges, directional selection, immutable documents, and composition transitions | MoonBit standard/core only | rendering, platform, or host-input types |
+| `text_layout/` | Portable intrinsic text-measurement request/results and copied layout/caret/hit geometry | `text/`, `primitives/`, MoonBit standard/core | Pango/Fontconfig objects, native handles, GUI/session state |
+| `platform/linux_text/` | Linux-only implementation of portable text-layout measurements and copied UTF-8/UTF-16 caret/hit results | `text_layout/`, `text/`, `primitives/`, MoonBit standard/core, Linux PangoFT2/Fontconfig via FFI | shared window `platform/` API, renderer, native object pointers, or persistent Pango handles |
 | `capability/` | typed semantic operation descriptors, schema/value projection, registry, GUI binding, deterministic manifest generation | `core/`, `diagnostics/` | renderer/native/MCP transport state, host handles, duplicated domain handlers |
 | `mcp/` | optional MCP-facing inventory/dispatch adapter over semantic capabilities | `capability/`, `diagnostics/` | application state ownership, domain handlers, privileged host APIs |
 | `migration/host_services/` | portable service requests/completions, logical scopes, cancellation, bounded queues, and default-deny service policy for Electron/Tauri migration | `capability/`, `diagnostics/` | DOM, process APIs, native handles, or direct privileged service execution |
@@ -168,6 +172,13 @@ package imports the concrete backend. The executable package audit now permits
 and the native example edges above. It audits aliased imports and whitebox
 test imports as well as blackbox test imports. All other runtime dependencies
 continue to require a written exception.
+
+The headless Linux text adapter has a separate, Linux-only PangoFT2/Fontconfig
+system-library exception. `text_layout/` remains portable, while
+`platform/linux_text/` owns all native calls and copied geometry results. It
+does not import the shared window/backend API, start MZed or a display server,
+or render text. See the [Linux text guide](linux-text.md) for its FFI, build,
+font-fixture, and dependency/license boundaries.
 
 ## Initial native package edges
 

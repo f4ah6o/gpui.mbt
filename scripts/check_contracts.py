@@ -636,12 +636,16 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "primitives": set(),
         # Text editing semantics stay portable and depend only on core values.
         "text": set(),
+        # Intrinsic layout results are portable values layered over text and
+        # finite primitives; shaping and native handles remain in platform leaves.
+        "text_layout": {"text", "primitives"},
         "diagnostics": {"primitives"},
         "core": {"primitives", "diagnostics"},
         "layout": {"primitives"},
         "scene": {"primitives"},
         "platform": {"primitives", "diagnostics", "scene"},
         "platform/macos": {"platform", "primitives", "diagnostics", "scene"},
+        "platform/linux_text": {"text_layout", "text", "primitives"},
         "examples/native_macos": {"platform/macos", "platform", "primitives", "diagnostics", "scene"},
         "ubuntu": {"platform", "primitives", "diagnostics", "scene"},
         "examples/ubuntu": {"ubuntu", "platform", "primitives", "diagnostics", "scene"},

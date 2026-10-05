@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Forward MoonBit's archive-index step to the selected Linux ranlib tool."""
+
+import os
+import shlex
+import subprocess
+import sys
+
+
+value = os.environ.get("RANLIB", "ranlib")
+tool = [value] if os.path.isfile(value) else shlex.split(value)
+if not tool:
+    raise SystemExit("RANLIB must name an archiver indexer")
+raise SystemExit(subprocess.run([*tool, *sys.argv[1:]], check=False).returncode)

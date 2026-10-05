@@ -32,7 +32,9 @@ jobs:
       - name: Prepare Ubuntu native system boundary
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev
+          sudo apt-get install -y build-essential pkg-config libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libpango1.0-dev libfontconfig1-dev fontconfig fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji
+          dpkg-query -W libpango1.0-dev libpango-1.0-0 libpangoft2-1.0-0 libfontconfig1-dev libfontconfig1 fontconfig fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji
+          pkg-config --modversion pangoft2 fontconfig
           sh scripts/prepare_ubuntu.sh
       - name: Show pinned toolchain
         run: moon version --all
@@ -41,7 +43,13 @@ jobs:
       - name: Check all targets with warnings denied
         run: moon check --target all --deny-warn
       - name: Test all targets with warnings denied
-        run: moon test --target all --deny-warn
+        env:
+          FONTCONFIG_FILE: ${{ github.workspace }}/tests/linux_text/fonts.conf
+          FONTCONFIG_PATH: ${{ github.workspace }}/tests/linux_text
+          XDG_CACHE_HOME: ${{ runner.temp }}/gpui-contract-font-cache
+        run: |
+          mkdir -p "$XDG_CACHE_HOME"
+          env -u DISPLAY -u WAYLAND_DISPLAY moon test --target all --deny-warn
 
   mcp-stdio-reference:
     runs-on: ubuntu-24.04

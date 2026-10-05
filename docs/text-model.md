@@ -35,10 +35,13 @@ the current value and enforce event sequencing and composition ownership; an
 old snapshot remains a separate branch. This is not an input-method adapter and
 does not establish Japanese IME support.
 
-Still open are host event sequencing, actual Japanese IME behavior, text layout,
-candidate-window placement, shaping/rendering, undo, multi-cursor editing,
-accessibility, and production platform gates. See the [codebase gap
-analysis](codebase-gap-analysis.md) and [issue 0004](../issues/open/0004-platform-rendering-and-native-boundaries.md)
-for the remaining evidence boundary. The offset bridge does not provide
-shaping, caret geometry, hit testing, grapheme navigation, or runtime IME
-behavior.
+Still open are host event sequencing, actual Japanese IME behavior,
+candidate-window placement, text rendering, undo, multi-cursor editing,
+accessibility, and production platform gates. The separate, Linux-only
+`platform/linux_text/` native adapter provides experimental shaping
+measurements and copied caret/hit geometry through the portable
+`text_layout/` contract; it does not change this value model or add GUI/IME
+behavior. See the [Linux text guide](linux-text.md), the [codebase gap
+analysis](codebase-gap-analysis.md), and [issue 0004](../issues/open/0004-platform-rendering-and-native-boundaries.md)
+for the evidence boundary. The offset bridge itself does not provide shaping,
+caret geometry, hit testing, grapheme navigation, or runtime IME behavior.

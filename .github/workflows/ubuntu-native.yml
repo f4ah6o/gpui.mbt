@@ -7,6 +7,25 @@ on:
 permissions:
   contents: read
 jobs:
+  linux-text-headless:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: hustcer/setup-moonbit@1522f9aef02a8ca0187dfc00a41f5dd6b16750f7
+        with:
+          version: 0.10.14+7d59c7ec9
+          core-version: 0.10.14+7d59c7ec9
+      - name: Install Linux text measurement APIs and font fixtures
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libpango1.0-dev libfontconfig1-dev fontconfig fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji
+          dpkg-query -W libpango1.0-dev libpango-1.0-0 libpangoft2-1.0-0 libfontconfig1-dev libfontconfig1 fontconfig fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji
+          pkg-config --modversion pangoft2 fontconfig
+          moon version --all
+      - name: Run native text geometry tests with no display server
+        run: sh scripts/test_linux_text.sh
+
   wayland-gles:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
