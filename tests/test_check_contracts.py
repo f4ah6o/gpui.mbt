@@ -242,6 +242,22 @@ class RuntimeDependencyTests(unittest.TestCase):
         errors = checker.validate_runtime_dependencies(self.root)
         self.assertTrue(any("widgets: runtime package has no approved dependency layer" in error for error in errors))
 
+    def test_text_model_is_an_independent_core_only_layer(self) -> None:
+        directory = self.root / "text"
+        directory.mkdir()
+        manifest = directory / "moon.pkg"
+        manifest.write_text(
+            'import { "moonbitlang/core/int" }\n'
+            'import { "moonbitlang/core/quickcheck", '
+            '"f4ah6o/gpui/text" } for "test"\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+        manifest.write_text('import { "f4ah6o/gpui/scene" }\n', encoding="utf-8")
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(any("text/: forbidden runtime package edge" in error for error in errors))
+
     def test_capability_and_mcp_edges_are_explicit_and_bounded(self) -> None:
         for package, content in {
             "capability": 'import { "f4ah6o/gpui/core", "f4ah6o/gpui/diagnostics" }\n',
