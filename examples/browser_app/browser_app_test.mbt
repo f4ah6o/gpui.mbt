@@ -93,9 +93,7 @@ test "portable browser app preserves logical dimensions across DPR changes" {
   )
   ignore(@browser_app.BrowserDemo::render_frame(demo))
   assert_true(
-    @browser_app.BrowserDemo::status_json(demo).contains(
-      "\"cursor\":\"arrow\"",
-    ),
+    @browser_app.BrowserDemo::status_json(demo).contains("\"cursor\":\"arrow\""),
   )
   @browser_app.BrowserDemo::dispose(demo)
 }
