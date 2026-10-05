@@ -57,3 +57,11 @@
 - Add an EGL/GLES2 SceneSnapshot v1 quad renderer, ordered basic input, integer scale, frame completion, and explicit renderer recreation.
 - Add the native MoonBit example, shared host conformance gate, GPU readback/lifecycle/FD tests, and Ubuntu 24.04 Weston CI at 1×/2×.
 - Keep clipboard, IME/accessibility, fractional scale and production support gates open; see [Ubuntu evidence and limits](docs/ubuntu.md).
+
+## Cooperative capability foundation (0016, partial)
+
+- Add typed bounded cooperative work with mandatory input snapshots, explicit
+  polling/cancellation, one-shot results, and existing registry owner semantics.
+- Add bounded in-process adapter driving while excluding unsupported async
+  operations from the legacy wire inventory. Wire/native/browser lifecycle
+  conformance and mutation review remain open.

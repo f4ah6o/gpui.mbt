@@ -64,3 +64,12 @@ The protocol behavior follows the pinned official MCP references:
 - [Stdio transport, 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio)
 - [Discovery, 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/server/discover)
 - [Tools, 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)
+
+## Cooperative in-process operations
+
+The [cooperative capability API](cooperative-capabilities.md) adds separate
+`cooperative_inventory`, `begin_tool`, and `begin_resource` methods. Calls are
+explicitly polled and cancelled, with at most 128 pending/admission slots and no
+result replay. The synchronous inventory used by the current wire server omits
+these entries. Complete semantic registry discovery remains available. This
+foundation does not implement wire asynchronous cancellation or disconnect.

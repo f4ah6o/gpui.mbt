@@ -16,6 +16,26 @@ pub fn operation_kind_label(OperationKind) -> String
 // Errors
 
 // Types and methods
+pub struct AsyncCapability[I, O] {
+  // private fields
+}
+pub fn[I, O] AsyncCapability::begin(Self[I, O], InvocationOrigin, I, scope? : InvocationScope) -> Result[Invocation[O], @diagnostics.FrameworkError]
+pub fn[I, O] AsyncCapability::descriptor(Self[I, O]) -> Descriptor
+pub fn[I, O] AsyncCapability::gui_binding(Self[I, O]) -> AsyncGuiBinding[I, O]
+pub fn[I, O] AsyncCapability::new(Descriptor, (Value) -> Result[I, @diagnostics.FrameworkError], (O) -> Result[Value, @diagnostics.FrameworkError], (I) -> Result[I, @diagnostics.FrameworkError], (I) -> Result[Unit, @diagnostics.FrameworkError], (O) -> Result[Unit, @diagnostics.FrameworkError], (I) -> Result[() -> WorkStep[O], @diagnostics.FrameworkError], () -> Result[Unit, @diagnostics.FrameworkError], (InvocationOrigin) -> Result[Unit, @diagnostics.FrameworkError]) -> Self[I, O]
+
+pub struct AsyncGuiBinding[I, O] {
+  // private fields
+}
+pub fn[I, O] AsyncGuiBinding::begin(Self[I, O], I, scope? : InvocationScope) -> Result[Invocation[O], @diagnostics.FrameworkError]
+pub fn[I, O] AsyncGuiBinding::is_enabled(Self[I, O]) -> Bool
+
+pub(all) enum Cancellation {
+  Cancelled
+  AlreadyCancelled
+  TooLate
+}
+
 pub struct Descriptor {
   // private fields
 }
@@ -54,6 +74,12 @@ pub struct GuiBinding[I, O] {
 pub fn[I, O] GuiBinding::is_enabled(Self[I, O]) -> Bool
 pub fn[I, O] GuiBinding::trigger(Self[I, O], I) -> Result[O, @diagnostics.FrameworkError]
 
+pub struct Invocation[O] {
+  // private fields
+}
+pub fn[O] Invocation::cancel(Self[O]) -> Cancellation
+pub fn[O] Invocation::poll(Self[O]) -> InvocationOutcome[O]
+
 pub(all) enum InvocationOrigin {
   Gui
   Direct
@@ -62,6 +88,21 @@ pub(all) enum InvocationOrigin {
 } derive(Eq)
 pub fn InvocationOrigin::equal(Self, Self) -> Bool
 pub fn InvocationOrigin::not_equal(Self, Self) -> Bool
+
+pub(all) enum InvocationOutcome[O] {
+  Pending
+  Ready(O)
+  Failed(@diagnostics.FrameworkError)
+  Cancelled
+  Busy
+  Consumed
+}
+
+pub struct InvocationScope {
+  // private fields
+}
+pub fn InvocationScope::cancel(Self) -> Unit
+pub fn InvocationScope::new() -> Self
 
 pub(all) enum OperationKind {
   Command
@@ -76,15 +117,19 @@ pub struct Registry {
 }
 pub fn Registry::attach_owner(Self, @core.App) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Registry::authorize_external(Self, String, InvocationOrigin) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Registry::begin(Self, String, InvocationOrigin, Value, scope? : InvocationScope) -> Result[Invocation[Value], @diagnostics.FrameworkError]
+pub fn Registry::begin_external(Self, String, InvocationOrigin, Value, scope? : InvocationScope) -> Result[Invocation[Value], @diagnostics.FrameworkError]
 pub fn Registry::descriptors(Self) -> Array[Descriptor]
 pub fn Registry::external_descriptors(Self) -> Array[Descriptor]
 pub fn Registry::external_manifest_json(Self) -> String
 pub fn Registry::invoke(Self, String, InvocationOrigin, Value) -> Result[Value, @diagnostics.FrameworkError]
 pub fn Registry::invoke_external(Self, String, InvocationOrigin, Value) -> Result[Value, @diagnostics.FrameworkError]
 pub fn Registry::is_alive(Self) -> Bool
+pub fn Registry::is_async(Self, String) -> Bool
 pub fn Registry::new() -> Self
 pub fn Registry::new_owned(@core.App) -> Result[Self, @diagnostics.FrameworkError]
 pub fn[I, O] Registry::register(Self, TypedCapability[I, O]) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn[I, O] Registry::register_async(Self, AsyncCapability[I, O]) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Registry::teardown(Self) -> Unit
 
 pub struct Schema {
@@ -155,6 +200,12 @@ pub fn Value::try_canonical_json(Self) -> Result[String, @diagnostics.FrameworkE
 pub fn Value::try_clone_transport(Self) -> Result[Self, @diagnostics.FrameworkError]
 pub fn Value::unit() -> Self
 pub fn Value::validate_transport(Self) -> Result[Unit, @diagnostics.FrameworkError]
+
+pub(all) enum WorkStep[O] {
+  Pending
+  Complete(O)
+  Fail(@diagnostics.FrameworkError)
+}
 
 // Type aliases
 

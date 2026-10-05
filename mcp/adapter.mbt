@@ -201,6 +201,7 @@ pub fn Inventory::canonical_json(self : Inventory) -> String {
 ///|
 priv struct AdapterState {
   mut open : Bool
+  cooperative : Array[CooperativeSlot]
   mut completed_requests : Array[CompletedRequest]
   mut in_flight_requests : Array[InFlightRequest]
 }
@@ -245,7 +246,12 @@ pub struct Adapter {
 pub fn Adapter::new(registry : @capability.Registry) -> Adapter {
   {
     registry,
-    state: Ref({ open: true, completed_requests: [], in_flight_requests: [], }),
+    state: Ref({
+      open: true,
+      cooperative: [],
+      completed_requests: [],
+      in_flight_requests: [],
+    }),
   }
 }
 
@@ -257,6 +263,7 @@ pub fn Adapter::is_open(self : Adapter) -> Bool {
 ///|
 pub fn Adapter::close(self : Adapter) -> Unit {
   self.state.val.open = false
+  self.cancel_cooperative()
   self.state.val.completed_requests.clear()
   self.state.val.in_flight_requests.clear()
 }
@@ -267,6 +274,7 @@ fn Adapter::check_live(self : Adapter) -> Result[Unit, AdapterError] {
     return Err({ code: AdapterClosed, message: "adapter is closed", })
   }
   if !self.registry.is_alive() {
+    self.cancel_cooperative()
     self.state.val.completed_requests.clear()
     self.state.val.in_flight_requests.clear()
     return Err({ code: Stale, message: "capability registry is not live", })
@@ -283,6 +291,9 @@ pub fn Adapter::inventory(self : Adapter) -> Result[Inventory, AdapterError] {
   let tools : Array[Tool] = []
   let resources : Array[Resource] = []
   for descriptor in self.registry.external_descriptors() {
+    if self.registry.is_async(descriptor.id()) {
+      continue
+    }
     if descriptor.kind() is @capability.Query &&
       descriptor.input_schema().is_unit() {
       resources.push(resource_from_descriptor(descriptor))

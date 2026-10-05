@@ -57,12 +57,13 @@ owner is observed; it is never reused to execute another handler or expose a
 cached result. Uncached tool calls and resource reads use the same semantic
 completion checks.
 
-Handlers are synchronous. Stop cannot interrupt the body of a handler already
+`TypedCapability` handlers are synchronous. Stop cannot interrupt the body of a handler already
 running or roll back a side effect it already committed. It rejects that
 handler's late completion and every later invocation. Code that performs
 external effects inside a running handler remains responsible for its own
-cooperative cancellation and transaction boundaries. True asynchronous host
-completion/cancellation remains outside this slice.
+cooperative cancellation and transaction boundaries. The additive [cooperative API](cooperative-capabilities.md) supports bounded
+resumable semantic work and in-process cancellation. True asynchronous wire-host
+completion/cancellation remains outside the owner-lifecycle slice.
 
 ## Evidence
 

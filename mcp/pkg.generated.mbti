@@ -16,9 +16,12 @@ pub fn validate_unique_json_keys(String) -> Bool
 pub struct Adapter {
   // private fields
 }
+pub fn Adapter::begin_resource(Self, String) -> Result[CooperativeCall, AdapterError]
+pub fn Adapter::begin_tool(Self, String, @capability.Value) -> Result[CooperativeCall, AdapterError]
 pub fn Adapter::call_tool(Self, String, @capability.Value) -> Result[@capability.Value, AdapterError]
 pub fn Adapter::call_tool_with_request_id(Self, String, String, @capability.Value) -> Result[@capability.Value, AdapterError]
 pub fn Adapter::close(Self) -> Unit
+pub fn Adapter::cooperative_inventory(Self) -> Result[Inventory, AdapterError]
 pub fn Adapter::inventory(Self) -> Result[Inventory, AdapterError]
 pub fn Adapter::is_open(Self) -> Bool
 pub fn Adapter::new(@capability.Registry) -> Self
@@ -29,6 +32,21 @@ pub struct AdapterError {
 }
 pub fn AdapterError::code(Self) -> ErrorCode
 pub fn AdapterError::message(Self) -> String
+
+pub struct CooperativeCall {
+  // private fields
+}
+pub fn CooperativeCall::cancel(Self) -> @capability.Cancellation
+pub fn CooperativeCall::poll(Self) -> CooperativeOutcome
+
+pub(all) enum CooperativeOutcome {
+  Pending
+  Ready(@capability.Value)
+  Failed(AdapterError)
+  Cancelled
+  Busy
+  Consumed
+}
 
 pub(all) enum ErrorCode {
   UnknownOperation

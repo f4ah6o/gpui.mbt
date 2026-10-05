@@ -386,25 +386,48 @@ fn[I, O] TypedCapability::check(
   self : TypedCapability[I, O],
   origin : InvocationOrigin,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
+  match self.check_exposure(origin) {
+    Err(error) => return Err(error)
+    Ok(_) => ()
+  }
+  match self.complete_stage((self.availability)()) {
+    Err(error) => Err(error)
+    Ok(_) => self.complete_stage((self.policy)(origin))
+  }
+}
+
+///|
+fn[I, O] TypedCapability::check_exposure(
+  self : TypedCapability[I, O],
+  origin : InvocationOrigin,
+) -> Result[Unit, @diagnostics.FrameworkError] {
   match self.complete_stage(Ok(())) {
     Err(error) => return Err(error)
     Ok(_) => ()
   }
-  match exposure_allows(self.descriptor.exposure, origin) {
-    false =>
-      Err(
-        capability_error(
-          @diagnostics.PermissionDenied,
-          self.descriptor.id,
-          "invocation origin is outside the capability exposure policy",
-        ),
-      )
-    true =>
-      match self.complete_stage((self.availability)()) {
-        Err(error) => Err(error)
-        Ok(_) => self.complete_stage((self.policy)(origin))
-      }
+  if !exposure_allows(self.descriptor.exposure, origin) {
+    Err(
+      capability_error(
+        @diagnostics.PermissionDenied,
+        self.descriptor.id,
+        "invocation origin is outside the capability exposure policy",
+      ),
+    )
+  } else {
+    Ok(())
   }
+}
+
+///|
+fn[I, O] TypedCapability::authorize(
+  self : TypedCapability[I, O],
+  origin : InvocationOrigin,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  match self.check_exposure(origin) {
+    Err(error) => return Err(error)
+    Ok(_) => ()
+  }
+  self.complete_stage((self.policy)(origin))
 }
 
 ///|
@@ -452,6 +475,10 @@ pub fn[I, O] GuiBinding::is_enabled(self : GuiBinding[I, O]) -> Bool {
 
 ///|
 priv struct RegistryEntry {
+  begin : ((InvocationOrigin, Value, InvocationScope) -> Result[
+    Invocation[Value],
+    @diagnostics.FrameworkError,
+  ])?
   descriptor : Descriptor
   authorize : (InvocationOrigin) -> Result[Unit, @diagnostics.FrameworkError]
   invoke : (InvocationOrigin, Value) -> Result[
@@ -604,6 +631,7 @@ pub fn[I, O] Registry::register(
   capability.lifetime.val = Some(self.lifetime)
   let erased = RegistryEntry::{
     descriptor,
+    begin: None,
     authorize: origin => capability.check(origin),
     invoke: (origin, input) => capability.invoke_value(origin, input),
   }

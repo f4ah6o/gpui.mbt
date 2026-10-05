@@ -21,6 +21,23 @@ close this packet's asynchronous cancellation, hosted parity, or native/browser
 endpoint acceptance. Parent 0013 remains open until this work and its parent
 close review are complete.
 
+## Portable cooperative foundation (local implementation, review pending)
+
+The first semantic slice adds `AsyncCapability`, explicit owned input snapshots,
+bounded per-poll work, single-consumption typed outcomes, cancellation, owner
+revocation, and dynamic authorization through the existing registry contracts.
+The in-process adapter has a separate cooperative inventory and bounded active
+calls; legacy wire inventory omits operations it cannot drive. See the
+[cooperative contract](../../docs/cooperative-capabilities.md).
+
+This does not complete any remaining endpoint acceptance checkbox. No wire
+async driver, disconnect protocol, native/browser endpoint topology, rollback,
+or exactly-once promise is implemented. Local portable tests pass 219/219 on JS, Wasm and Wasm GC; targeted native
+core/capability/MCP tests, stdio regression and Python contracts pass. The
+[contract evidence](../../docs/cooperative-capabilities.md#local-evidence)
+records the exact scope. Semantic mutation execution, independent review and
+hosted final-head validation are still required before publication.
+
 ## Goal
 
 Prove that the adapter supplied by 0013 can be hosted in the supported
