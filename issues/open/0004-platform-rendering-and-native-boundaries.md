@@ -2,7 +2,7 @@
 
 Status: in progress — shared contracts and experimental backend slices; production gates remain open
 Model: gpt-6-luna
-Updated: 2026-10-04
+Updated: 2026-10-05
 
 ## Current-head acceptance triage — 2026-10-04
 
@@ -45,6 +45,17 @@ passes 29 tests. This is MoonBit native-target headless evidence only. No
 platform API, GUI backend, native renderer, or platform support claim exists;
 all native E2E, IME, accessibility, multi-DPI, renderer recovery, performance,
 and resource-lifetime gates remain pending.
+
+## Portable text editing semantics foundation — 2026-10-05
+
+The new `text/` package provides UTF-16 half-open ranges, directional
+selections, strict surrogate-boundary validation, and immutable document
+slicing/replacement with typed failures. Its deterministic and seeded property
+tests pass on native, JS, Wasm, and WasmGC; the focused package check and format
+check also pass. This is a data-model foundation only. It does not provide an
+editable UI, composition/marked text, grapheme navigation, shaping, rendering,
+caret geometry, a host input adapter, or IME behavior. These and the platform
+text/rendering gates remain open; no support tier is promoted.
 
 ## Platform-specific child packets
 

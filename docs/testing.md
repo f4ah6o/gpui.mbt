@@ -48,8 +48,12 @@ imported as `moonbitlang/core/quickcheck` only with `for "test"`; the dependency
 audit rejects it in runtime imports. The `core-model` entity lifecycle
 reference-model property uses seed `584118800423729943`
 (`0x081b34f445e23b17`), 256 cases, `max_size=32`, and `max_shrinks=500`.
-These exact counts and seeds are active. The larger nightly and stress budgets
-below are policy targets and are not scheduled jobs yet.
+The portable text editing property `text.utf16-replacement.invariants` uses seed
+`17836885540012499121` (`0xf78958e50fbf20b1`), 256 cases, `max_size=32`, and
+`max_shrinks=500`; its reference strings are independently assembled from
+generated Unicode scalar fragments. These exact counts and seeds are active.
+The larger nightly and stress budgets below are policy targets and are not
+scheduled jobs yet.
 
 Headless tests are the default for core semantics. Pixel comparisons are
 platform-specific unless the same deterministic rasterizer and assets are used.
