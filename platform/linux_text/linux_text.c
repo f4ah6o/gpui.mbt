@@ -20,44 +20,89 @@ typedef struct {
   int32_t context;
   int32_t layout;
   int32_t references;
+  GMutex mutex;
+  GCond finalized;
 } gpui_lifecycle_counts;
 
+typedef struct {
+  int32_t map;
+  int32_t context;
+  int32_t layout;
+} gpui_lifecycle_totals;
+
 static void lifecycle_retain(gpui_lifecycle_counts *counts) {
+  g_mutex_lock(&counts->mutex);
   if (counts->references < INT32_MAX)
     ++counts->references;
+  g_mutex_unlock(&counts->mutex);
 }
 
 static void lifecycle_release(gpui_lifecycle_counts *counts) {
   if (!counts)
     return;
+  gboolean destroy = FALSE;
+  g_mutex_lock(&counts->mutex);
   if (counts->references > 0)
     --counts->references;
   if (counts->references == 0)
+    destroy = TRUE;
+  g_mutex_unlock(&counts->mutex);
+  if (destroy) {
+    g_cond_clear(&counts->finalized);
+    g_mutex_clear(&counts->mutex);
     g_free(counts);
+  }
+}
+
+static void lifecycle_note_finalized(gpui_lifecycle_counts *counts,
+                                     int32_t *counter) {
+  g_mutex_lock(&counts->mutex);
+  if (*counter < INT32_MAX)
+    ++*counter;
+  g_cond_broadcast(&counts->finalized);
+  g_mutex_unlock(&counts->mutex);
+  lifecycle_release(counts);
 }
 
 static void count_map_finalize(gpointer data, GObject *object) {
   (void)object;
-  gpui_lifecycle_counts *counts = data;
-  if (counts->map < INT32_MAX)
-    ++counts->map;
-  lifecycle_release(counts);
+  lifecycle_note_finalized(data, &((gpui_lifecycle_counts *)data)->map);
 }
 
 static void count_context_finalize(gpointer data, GObject *object) {
   (void)object;
-  gpui_lifecycle_counts *counts = data;
-  if (counts->context < INT32_MAX)
-    ++counts->context;
-  lifecycle_release(counts);
+  lifecycle_note_finalized(data, &((gpui_lifecycle_counts *)data)->context);
 }
 
 static void count_layout_finalize(gpointer data, GObject *object) {
   (void)object;
-  gpui_lifecycle_counts *counts = data;
-  if (counts->layout < INT32_MAX)
-    ++counts->layout;
-  lifecycle_release(counts);
+  lifecycle_note_finalized(data, &((gpui_lifecycle_counts *)data)->layout);
+}
+
+static gboolean lifecycle_wait_for_finalization(
+    gpui_lifecycle_counts *counts, gint64 deadline, int32_t *map,
+    int32_t *context, int32_t *layout) {
+  g_mutex_lock(&counts->mutex);
+  while (counts->map != 1 || counts->context != 1 || counts->layout != 1) {
+    if (!g_cond_wait_until(&counts->finalized, &counts->mutex, deadline))
+      break;
+  }
+  *map = counts->map;
+  *context = counts->context;
+  *layout = counts->layout;
+  gboolean complete = counts->map == 1 && counts->context == 1 &&
+                      counts->layout == 1;
+  g_mutex_unlock(&counts->mutex);
+  return complete;
+}
+
+static void lifecycle_snapshot(gpui_lifecycle_counts *counts, int32_t *map,
+                               int32_t *context, int32_t *layout) {
+  g_mutex_lock(&counts->mutex);
+  *map = counts->map;
+  *context = counts->context;
+  *layout = counts->layout;
+  g_mutex_unlock(&counts->mutex);
 }
 
 static void observe_lifecycle(gpui_layout *objects,
@@ -439,11 +484,15 @@ int32_t gpui_linux_text_test_lifecycle_v1(int32_t cycles, int32_t *output,
 
   static const uint8_t text[] = {'A'};
   static const uint8_t family[] = "DejaVu Sans";
-  gpui_lifecycle_counts totals = {0, 0, 0, 0};
+  gpui_lifecycle_counts *states[1024] = {0};
+  int32_t state_count = 0;
+  gpui_lifecycle_totals totals = {0, 0, 0};
   for (int32_t i = 0; i < cycles; ++i) {
     gpui_lifecycle_counts *counts = g_try_new0(gpui_lifecycle_counts, 1);
     if (!counts)
-      return GPUI_LINUX_TEXT_NATIVE_FAILURE;
+      goto allocation_failure;
+    g_mutex_init(&counts->mutex);
+    g_cond_init(&counts->finalized);
     counts->references = 1; /* The test call holds a reference through reads. */
     double metrics[GPUI_LINUX_TEXT_HEADER_DOUBLES +
                    2 * GPUI_LINUX_TEXT_CARET_DOUBLES] = {0};
@@ -452,24 +501,56 @@ int32_t gpui_linux_text_test_lifecycle_v1(int32_t cycles, int32_t *output,
         (int32_t)(sizeof(family) - 1), 16.0, metrics,
         (int32_t)(sizeof(metrics) / sizeof(metrics[0])), counts);
     if (status != GPUI_LINUX_TEXT_OK) {
+      int32_t map = 0, context = 0, layout = 0;
+      lifecycle_snapshot(counts, &map, &context, &layout);
+      g_printerr("lifecycle test stage=measure cycle=%d status=%d "
+                 "map_finalized=%d context_finalized=%d "
+                 "layout_finalized=%d\n",
+                 i, status, map, context, layout);
       lifecycle_release(counts);
+      for (int32_t j = 0; j < state_count; ++j)
+        lifecycle_release(states[j]);
       return status;
     }
-    if (counts->map != 1 || counts->context != 1 || counts->layout != 1) {
-      lifecycle_release(counts);
-      return GPUI_LINUX_TEXT_INVALID_NATIVE_RESULT;
-    }
-    totals.map += counts->map;
-    totals.context += counts->context;
-    totals.layout += counts->layout;
-    /* If a Pango object is unexpectedly retained, its weak callback still has
-     * a live heap state reference and cannot dereference a dead stack frame. */
-    lifecycle_release(counts);
+    states[state_count++] = counts;
   }
+
+  /* Pango may release backend worker references after the synchronous API
+   * returns. Use one shared post-measurement observation deadline for this
+   * finalization loop, rather than assuming teardown is immediate. */
+  gint64 deadline = g_get_monotonic_time() + 5 * G_TIME_SPAN_SECOND;
+  int32_t failure = GPUI_LINUX_TEXT_OK;
+  for (int32_t i = 0; i < state_count; ++i) {
+    int32_t map = 0, context = 0, layout = 0;
+    gboolean complete = lifecycle_wait_for_finalization(
+        states[i], deadline, &map, &context, &layout);
+    totals.map += map;
+    totals.context += context;
+    totals.layout += layout;
+    if (!complete || map != 1 || context != 1 || layout != 1) {
+      g_printerr("lifecycle test stage=finalize cycle=%d "
+                 "map_finalized=%d context_finalized=%d "
+                 "layout_finalized=%d deadline_reached=%d\n",
+                 i, map, context, layout, complete ? 0 : 1);
+      failure = GPUI_LINUX_TEXT_INVALID_NATIVE_RESULT;
+    }
+  }
+  /* Each weak callback owns a reference to its heap state. If the deadline
+   * expires, releasing the test reference leaves that state alive until the
+   * corresponding callback eventually runs. */
+  for (int32_t i = 0; i < state_count; ++i)
+    lifecycle_release(states[i]);
+  if (failure != GPUI_LINUX_TEXT_OK)
+    return failure;
   output[0] = totals.map;
   output[1] = totals.context;
   output[2] = totals.layout;
   return GPUI_LINUX_TEXT_OK;
+
+allocation_failure:
+  for (int32_t i = 0; i < state_count; ++i)
+    lifecycle_release(states[i]);
+  return GPUI_LINUX_TEXT_NATIVE_FAILURE;
 }
 
 static void observe_shape(PangoLayout *layout, const char *requested_family,

@@ -9,16 +9,23 @@ does not add Pango values or handles to that public model.
 
 This package is a layout/measurement aid, not a text renderer or a full editor
 text system. Native pointers and Pango structs stay inside the Linux boundary;
-calls return copied values. No Pango font map, context, layout, or other Pango
-object is retained between calls. Each operation creates the required objects,
-uses them for that request, and unreferences them on success and failure. This
+calls return copied values. The adapter retains no Pango font map, context,
+layout, or other Pango object between calls. Each operation creates the
+required objects, uses them for that request, and unreferences them on success
+and failure. This
 avoids cross-call mutable native state and stale font-map/session ownership.
+The C boundary drops its own references before returning, but Pango may retain
+backend worker references and finalize internal objects asynchronously. This
+does not expose a handle or delay the geometry result; the adapter does not
+wait for Pango's internal workers.
 Each call currently pays for a new font map, context, and layout. Measurement
 also allocates a bounded copy buffer sized for one record per Unicode scalar
 boundary plus a fixed header; it queries both caret positions at each
 boundary. Hit testing similarly creates its own layout. There is no cache yet;
-these synchronous per-call allocations are the cost of avoiding persistent
-native-handle ownership in this slice.
+these per-call allocations are the cost of avoiding persistent native-handle
+ownership in this slice. The lifecycle test waits on thread-safe finalizer
+notifications with a bounded post-measurement deadline; it does not change
+production cleanup behavior.
 
 ## Coordinates and query semantics
 
