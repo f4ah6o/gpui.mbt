@@ -680,6 +680,32 @@ static struct gpui_linux_text_mask_v2 make_reference_mask(
   return reference;
 }
 
+/* FIELD_TEXT_BLEND_BEGIN */
+static void expected_field_text_rgb(const double *selection_q,
+                                     double sx, double sy,
+                                     const double *text_q, double coverage,
+                                     int expected[3]) {
+  /* The strict fixture contract requires identity selection geometry over an
+   * opaque white field. Compute its background independently of the readback
+   * before applying the separately rasterized text coverage. */
+  double background[3] = {255.0, 255.0, 255.0};
+  if (selection_q && sx >= selection_q[0] && sy >= selection_q[1] &&
+      sx < selection_q[0] + selection_q[2] &&
+      sy < selection_q[1] + selection_q[3] &&
+      sx >= selection_q[15] && sy >= selection_q[16] &&
+      sx < selection_q[15] + selection_q[17] &&
+      sy < selection_q[16] + selection_q[18]) {
+    double alpha = selection_q[7] / 255.0 * selection_q[14];
+    for (int c = 0; c < 3; ++c)
+      background[c] = 255.0 * (1.0 - alpha) + selection_q[4 + c] * alpha;
+  }
+  double text_alpha = coverage * text_q[7] / 255.0 * text_q[14];
+  for (int c = 0; c < 3; ++c)
+    expected[c] = (int)lround(background[c] * (1.0 - text_alpha) +
+                              text_q[4 + c] * text_alpha);
+}
+/* FIELD_TEXT_BLEND_END */
+
 static void assert_text_coverage(struct field_fixture *fixture,
                                  const struct gpui_linux_text_mask_v2 *reference) {
   double *record = fixture->data + 5 + fixture->text_record * fixture_stride;
@@ -695,12 +721,6 @@ static void assert_text_coverage(struct field_fixture *fixture,
         double *caret = item_record(fixture, fixture->caret_record) + 1;
         if (sx >= caret[0] && sx < caret[0] + caret[2] &&
             sy >= caret[1] && sy < caret[1] + caret[3])
-          continue;
-      }
-      if (fixture->label && !strcmp(fixture->label, "selected")) {
-        double *selection = item_record(fixture, 6) + 1;
-        if (sx >= selection[0] && sx < selection[0] + selection[2] &&
-            sy >= selection[1] && sy < selection[1] + selection[3])
           continue;
       }
       double coverage = expected_mask_coverage(reference, record, q, sx, sy);
@@ -728,24 +748,19 @@ static void assert_text_coverage(struct field_fixture *fixture,
             sy >= caret[1] && sy < caret[1] + caret[3])
           continue;
       }
-      if (!strcmp(fixture->label, "selected")) {
-        double *selection = item_record(fixture, 6) + 1;
-        if (sx >= selection[0] && sx < selection[0] + selection[2] &&
-            sy >= selection[1] && sy < selection[1] + selection[3])
-          continue;
-      }
       double coverage = expected_mask_coverage(reference, record, q, sx, sy);
       if (coverage < 0.08)
         continue;
       unsigned char pixel[4];
       glReadPixels(x, height - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
       assert(glGetError() == GL_NO_ERROR);
-      int expected_r = (int)lround(255.0 * (1.0 - coverage) + 20.0 * coverage);
-      int expected_g = (int)lround(255.0 * (1.0 - coverage) + 24.0 * coverage);
-      int expected_b = (int)lround(255.0 * (1.0 - coverage) + 30.0 * coverage);
-      assert(abs((int)pixel[0] - expected_r) <= 10 &&
-             abs((int)pixel[1] - expected_g) <= 10 &&
-             abs((int)pixel[2] - expected_b) <= 10);
+      const double *selection_q = !strcmp(fixture->label, "selected")
+          ? item_record(fixture, 6) + 1 : NULL;
+      int expected[3];
+      expected_field_text_rgb(selection_q, sx, sy, q, coverage, expected);
+      assert(abs((int)pixel[0] - expected[0]) <= 10 &&
+             abs((int)pixel[1] - expected[1]) <= 10 &&
+             abs((int)pixel[2] - expected[2]) <= 10);
       ++compared;
     }
   }

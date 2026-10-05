@@ -1,4 +1,202 @@
 ///|
+extern "C" fn field_test_monotonic_ns() -> Int64 = "gpui_field_test_monotonic_ns"
+
+///|
+const FIELD_E2E_TIMEOUT_NS : Int64 = 5000000000L
+
+///|
+const FIELD_E2E_NS_PER_MS : Int64 = 1000000L
+
+///|
+fn field_e2e_elapsed_ns(start : Int64, now : Int64) -> Int64? {
+  if start < 0L || now < 0L || now < start {
+    None
+  } else {
+    // Subtraction is safe only after validating 0 <= start <= now.
+    Some(now - start)
+  }
+}
+
+///|
+fn field_e2e_remaining_timeout_ms(start : Int64, now : Int64) -> Int? {
+  match field_e2e_elapsed_ns(start, now) {
+    None => None
+    Some(elapsed) =>
+      if elapsed >= FIELD_E2E_TIMEOUT_NS {
+        None
+      } else {
+        let remaining = FIELD_E2E_TIMEOUT_NS - elapsed
+        // Round up so a positive sub-millisecond remainder never becomes a
+        // nonblocking wait. The bounded timeout is also safe near Int64::MAX.
+        let rounded = (remaining + FIELD_E2E_NS_PER_MS - 1L) /
+          FIELD_E2E_NS_PER_MS
+        Some(if rounded > 100L { 100 } else { rounded.to_int() })
+      }
+  }
+}
+
+///|
+fn field_e2e_clock_now() -> Int64 raise {
+  let now = field_test_monotonic_ns()
+  if now < 0L {
+    fail("CLOCK_MONOTONIC test clock failed")
+  }
+  now
+}
+
+///|
+fn field_e2e_check_window(host : @native.Host) -> Unit raise {
+  if host.state() != @native.Running {
+    fail("live field window host stopped before frame admission")
+  }
+}
+
+///|
+fn field_e2e_next_event(
+  host : @native.Host,
+  window : @platform.WindowId,
+  timeout_ms : Int,
+  started_ns : Int64,
+) -> @platform.Event? raise {
+  field_e2e_check_window(host)
+  match host.next_event(timeout_ms~) {
+    Err(error) => fail("\{error.operation()}: \{error.code().label()}")
+    Ok(None) => {
+      field_e2e_check_window(host)
+      None
+    }
+    Ok(Some(event)) => {
+      match field_e2e_remaining_timeout_ms(started_ns, field_e2e_clock_now()) {
+        None =>
+          fail(
+            "live field window did not settle before the five-second deadline",
+          )
+        Some(_) => ()
+      }
+      field_e2e_check_window(host)
+      if event.window() == window {
+        match event.kind() {
+          @platform.CloseRequested | @platform.Destroyed =>
+            fail("live field window closed or was destroyed while settling")
+          _ => ()
+        }
+      }
+      Some(event)
+    }
+  }
+}
+
+///|
+fn field_e2e_drain_events(
+  host : @native.Host,
+  window : @platform.WindowId,
+  first_timeout_ms : Int,
+  started_ns : Int64,
+) -> Unit raise {
+  let mut event = field_e2e_next_event(
+    host, window, first_timeout_ms, started_ns,
+  )
+  while event is Some(_) {
+    let now = field_e2e_clock_now()
+    match field_e2e_remaining_timeout_ms(started_ns, now) {
+      None =>
+        fail("live field window did not settle before the five-second deadline")
+      Some(_) => ()
+    }
+    event = field_e2e_next_event(host, window, 0, started_ns)
+  }
+  field_e2e_check_window(host)
+}
+
+///|
+fn field_e2e_present_ready(
+  host : @native.Host,
+  window : @platform.WindowId,
+  initial : @text_field.TextField,
+) -> @text_field.TextField raise {
+  let started_ns = field_e2e_clock_now()
+  let mut field = initial
+  let mut wait_ms = 0
+  let mut accepted : @text_field.TextField? = None
+  while accepted is None {
+    let now = field_e2e_clock_now()
+    let remaining_ms = match field_e2e_remaining_timeout_ms(started_ns, now) {
+      Some(value) => value
+      None =>
+        fail("live field window did not settle before the five-second deadline")
+    }
+    field_e2e_drain_events(
+      host,
+      window,
+      if wait_ms > remaining_ms {
+        remaining_ms
+      } else {
+        wait_ms
+      },
+      started_ns,
+    )
+    let (width, height, scale) = field_e2e_required(host.window_metrics(window))
+    if width < 64.0 ||
+      height < 88.0 ||
+      scale <= 0.0 ||
+      width.is_nan() ||
+      width.is_inf() ||
+      height.is_nan() ||
+      height.is_inf() ||
+      scale.is_nan() ||
+      scale.is_inf() {
+      fail("live window geometry cannot admit the field bounds")
+    }
+    let bounds = match native_field_bounds(width, height) {
+      Ok(value) => value
+      Err(_) => fail("live window geometry cannot admit the field bounds")
+    }
+    field = match field.with_bounds(bounds) {
+      Ok(value) => value
+      Err(_) => fail("live field bounds update failed while settling metrics")
+    }
+    if field.document() != initial.document() ||
+      field.selection() != initial.selection() ||
+      field.is_focused() != initial.is_focused() {
+      fail("settling live metrics changed field document, selection, or focus")
+    }
+    let scene = match field_scene(field, width, height, scale) {
+      Ok(value) => value
+      Err(_) => fail("settled field did not produce a scene snapshot")
+    }
+    field_e2e_check_window(host)
+    match host.present(window, scene) {
+      Ok(_) => {
+        match
+          field_e2e_remaining_timeout_ms(started_ns, field_e2e_clock_now()) {
+          None =>
+            fail(
+              "live field window did not settle before the five-second deadline",
+            )
+          Some(_) => ()
+        }
+        field_e2e_check_window(host)
+        accepted = Some(field)
+      }
+      Err(error) =>
+        if error.code() is @diagnostics.Busy {
+          let now = field_e2e_clock_now()
+          wait_ms = match field_e2e_remaining_timeout_ms(started_ns, now) {
+            Some(value) => value
+            None =>
+              fail(
+                "live field window did not settle before the five-second deadline",
+              )
+          }
+        } else {
+          fail("\{error.operation()}: \{error.code().label()}")
+        }
+    }
+  }
+  accepted.unwrap()
+}
+
+///|
 fn[T] field_e2e_required(
   result : Result[T, @diagnostics.FrameworkError],
 ) -> T raise {
@@ -9,21 +207,27 @@ fn[T] field_e2e_required(
 }
 
 ///|
-fn field_e2e_drain_frame(host : @native.Host) -> Unit raise {
+fn field_e2e_drain_frame(
+  host : @native.Host,
+  window : @platform.WindowId,
+) -> Unit raise {
+  let started_ns = field_e2e_clock_now()
   let mut completed = false
-  let mut attempts = 0
-  while attempts < 40 && !completed {
-    match host.next_event(timeout_ms=100) {
-      Err(error) => fail("\{error.operation()}: \{error.code().label()}")
-      Ok(None) => ()
-      Ok(Some(event)) =>
-        if event.kind() is @platform.FrameCompleted {
+  while !completed {
+    let now = field_e2e_clock_now()
+    let timeout_ms = match field_e2e_remaining_timeout_ms(started_ns, now) {
+      Some(value) => value
+      None =>
+        fail("frame completion did not arrive before the five-second deadline")
+    }
+    match field_e2e_next_event(host, window, timeout_ms, started_ns) {
+      None => ()
+      Some(event) =>
+        if event.window() == window && event.kind() is @platform.FrameCompleted {
           completed = true
         }
     }
-    attempts += 1
   }
-  assert_true(completed)
 }
 
 ///|
@@ -57,6 +261,37 @@ fn field_e2e_with_late_malformed_text(
     Ok(value) => value
     Err(_) => fail("scene v1 should retain lone UTF-16 surrogate")
   }
+}
+
+///|
+test "test-only monotonic clock is nonnegative and monotonic" {
+  let first = field_test_monotonic_ns()
+  let second = field_test_monotonic_ns()
+  assert_true(first >= 0L)
+  assert_true(second >= first)
+}
+
+///|
+test "live field deadline arithmetic is checked and overflow-safe" {
+  let max_int64 : Int64 = 9223372036854775807L
+  assert_true(field_e2e_elapsed_ns(-1L, 0L) is None)
+  assert_true(field_e2e_elapsed_ns(0L, -1L) is None)
+  assert_true(field_e2e_elapsed_ns(2L, 1L) is None)
+  assert_eq(field_e2e_elapsed_ns(0L, 0L), Some(0L))
+  assert_eq(field_e2e_remaining_timeout_ms(0L, 0L), Some(100))
+  assert_eq(field_e2e_remaining_timeout_ms(0L, 4999000000L), Some(1))
+  assert_eq(field_e2e_remaining_timeout_ms(0L, 4999000001L), Some(1))
+  assert_eq(field_e2e_remaining_timeout_ms(0L, 5000000001L), None)
+  assert_eq(field_e2e_remaining_timeout_ms(0L, 5000000000L), None)
+  assert_eq(
+    field_e2e_remaining_timeout_ms(max_int64 - 5000000000L, max_int64 - 1L),
+    Some(1),
+  )
+  assert_eq(
+    field_e2e_remaining_timeout_ms(max_int64 - 5000000000L, max_int64),
+    None,
+  )
+  assert_eq(field_e2e_remaining_timeout_ms(max_int64, max_int64), Some(100))
 }
 
 ///|
@@ -94,15 +329,19 @@ test "Linux field Host.present admission and serializer rejection E2E" {
       Ok(value) => value.with_focus(true).unwrap()
       Err(_) => fail("real sans/Pango field admission failed")
     }
-    let first_scene = match field_scene(original, width, height, scale) {
-      Ok(value) => value
-      Err(_) => fail("real field did not produce a scene snapshot")
-    }
+    let original = field_e2e_present_ready(host, window, original)
+    // Use the metrics snapshot after the initial readiness submission when
+    // constructing the deliberate width+1 stale-viewport control case.
+    let (ready_width, ready_height, ready_scale) = field_e2e_required(
+      host.window_metrics(window),
+    )
+    width = ready_width
+    height = ready_height
+    scale = ready_scale
     let (first_origin, _) = @text_field.scene_text_run_geometry(
       original.measurement(),
     ).unwrap()
     assert_true(first_origin.x() > 0.0)
-    field_e2e_required(host.present(window, first_scene))
 
     // Build a real admitted edit candidate. A one-pixel-stale viewport reaches
     // the real Host.present/native metrics preflight and deterministically
@@ -149,9 +388,9 @@ test "Linux field Host.present admission and serializer rejection E2E" {
       Ok(_) => fail("malformed late text reached native frame submission")
     }
 
-    field_e2e_drain_frame(host)
-    field_e2e_required(host.present(window, candidate_scene))
-    field_e2e_drain_frame(host)
+    field_e2e_drain_frame(host, window)
+    let _candidate = field_e2e_present_ready(host, window, candidate)
+    field_e2e_drain_frame(host, window)
     field_e2e_required(host.destroy_window(window))
     field_e2e_required(host.stop())
   } else {

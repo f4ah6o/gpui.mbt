@@ -17,6 +17,7 @@ supported_targets = "native"
 pkgtype(kind: "executable")
 
 options(
+  "native-stub": [ "host_present_test.c" ],
   link: {
     "native": {
       "cc": "script/linux_text_cc.py",
