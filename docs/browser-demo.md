@@ -81,6 +81,11 @@ set lose their proxies; suspension retains proxy identity and focus while
 blocking action admission. This is a demo-specific projection, not the
 shared generational semantic tree or a qualified screen-reader/native adapter.
 
+The board frame shows a visible focus outline while either the canvas or a
+card proxy owns focus. The frame paints the outline outside the clipped card
+surface, so it remains visible when the selected card is offscreen or removing
+a focused proxy returns focus to the canvas.
+
 ### Verification for this increment
 
 The implementation is covered by [task-board model tests](../examples/task_board/task_board_wbtest.mbt),
@@ -91,14 +96,18 @@ The implementation is covered by [task-board model tests](../examples/task_board
 The separate [Weekboard Chromium smoke](../tests/browser/board.mjs) exercises
 the built production page, including search/add/move/undo, clipped scrolling,
 keyboard and proxy focus, cancellation/restoration, mobile touch/page scrolling,
-DPR changes, and recovery from the 100-task limit.
+DPR changes, and recovery from the 100-task limit. Screenshot-based focus checks
+cover tabbing into the canvas with an offscreen selection, removing a focused
+card proxy by scrolling, and clearing the board's focus indicator on exit.
+Browser CI retains the focus screenshots and measured edge coverage with its
+smoke diagnostics.
 
-Local integration checks on 2026-10-05 passed MoonBit formatting/checks/tests
-across all configured targets with warnings denied, 56 browser/host Node tests,
-61 Python contract checks, Vite+ checks and production build, the dev-watch and
-source-map gate, all 15 Weekboard smoke groups, and the retained interaction-lab
-Chromium smoke. These are local results; hosted execution is reported separately
-by this change's PR checks.
+Initial integration checks at `9e112cb3` on 2026-10-05 passed MoonBit
+formatting/checks/tests across all configured targets with warnings denied,
+56 browser/host Node tests, 61 Python contract checks, Vite+ checks and production
+build, the dev-watch and source-map gate, all 15 Weekboard smoke groups, and the
+retained interaction-lab Chromium smoke. These are local results; hosted
+execution is reported separately by this change's PR checks.
 The hosted runs recorded below belong to earlier interaction-lab revisions.
 
 ## Browser development toolchain

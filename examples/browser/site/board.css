@@ -427,6 +427,12 @@ h1 > span {
   overflow: hidden;
   background: #f1f2ec;
 }
+/* The frame owns the ring: canvas clipping and invisible card proxies can
+   otherwise hide the focused element's own outline. */
+.board-frame:focus-within {
+  outline: 3px solid var(--orange);
+  outline-offset: 3px;
+}
 #board-canvas {
   display: block;
   width: 100%;

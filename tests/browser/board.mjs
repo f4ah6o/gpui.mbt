@@ -54,6 +54,7 @@ let stage = "start production server";
 const pageErrors = [];
 const consoleMessages = [];
 const passed = [];
+const focusPaintChecks = [];
 
 function attachDiagnostics(target, label) {
   target.on("pageerror", (error) => pageErrors.push({ page: label, message: error.message }));
@@ -248,6 +249,244 @@ async function wheelLane(id, amount) {
   await page.mouse.wheel(0, amount);
 }
 
+async function frameScreenshot(name, clip) {
+  await afterInputFrames();
+  const bounds = await page.locator("#board-frame").boundingBox();
+  assert.ok(bounds);
+  const area = clip || {
+    x: Math.floor(bounds.x - 8),
+    y: Math.floor(bounds.y - 8),
+    width: Math.ceil(bounds.width + 17),
+    height: Math.ceil(bounds.height + 17),
+  };
+  const png = await page.screenshot({
+    path: output(`focus-${name}.png`),
+    clip: area,
+    scale: "css",
+    animations: "disabled",
+  });
+  return {
+    png: png.toString("base64"),
+    clip: area,
+    frame: {
+      x: bounds.x - area.x,
+      y: bounds.y - area.y,
+      width: bounds.width,
+      height: bounds.height,
+    },
+  };
+}
+
+async function compareFramePaint(before, after) {
+  assert.deepEqual(after.clip, before.clip, "focus comparisons use the same screenshot region");
+  assert.deepEqual(after.frame, before.frame, "focus indication must not shift the board layout");
+  return page.evaluate(
+    async ({ before, after }) => {
+      const decode = async (png) => {
+        const bitmap = await createImageBitmap(
+          await (await fetch(`data:image/png;base64,${png}`)).blob(),
+        );
+        const surface = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const context = surface.getContext("2d");
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        return context.getImageData(0, 0, surface.width, surface.height);
+      };
+      const previous = await decode(before.png);
+      const next = await decode(after.png);
+      if (previous.width !== next.width || previous.height !== next.height) {
+        throw new Error("focus screenshot dimensions changed");
+      }
+      const frame = before.frame;
+      const scaleX = previous.width / before.clip.width;
+      const scaleY = previous.height / before.clip.height;
+      const changed = (logicalX, logicalY) => {
+        const x = Math.floor(logicalX * scaleX);
+        const y = Math.floor(logicalY * scaleY);
+        const index = (y * previous.width + x) * 4;
+        return (
+          Math.max(
+            Math.abs(previous.data[index] - next.data[index]),
+            Math.abs(previous.data[index + 1] - next.data[index + 1]),
+            Math.abs(previous.data[index + 2] - next.data[index + 2]),
+          ) >= 40
+        );
+      };
+      // Sample only narrow strips around the frame, outside all card content.
+      // A selected card or text redraw cannot satisfy this perimeter assertion.
+      // Long painted edges are required; no exact color or CSS property is assumed.
+      const coverage = (length, point) => {
+        let rows = 0;
+        let changedRows = 0;
+        for (let along = 16; along < length - 16; along += 1) {
+          rows += 1;
+          let any = false;
+          for (let across = -7; across <= 3; across += 0.5) {
+            const [x, y] = point(along, across);
+            if (changed(x, y)) any = true;
+          }
+          if (any) changedRows += 1;
+        }
+        return changedRows / rows;
+      };
+      return {
+        left: coverage(frame.height, (along, across) => [frame.x + across, frame.y + along]),
+        right: coverage(frame.height, (along, across) => [
+          frame.x + frame.width - across,
+          frame.y + along,
+        ]),
+        top: coverage(frame.width, (along, across) => [frame.x + along, frame.y + across]),
+        bottom: coverage(frame.width, (along, across) => [
+          frame.x + along,
+          frame.y + frame.height - across,
+        ]),
+      };
+    },
+    { before, after },
+  );
+}
+
+async function focusExternalToolbar() {
+  await page.locator("#board-search").click();
+  // The Undo button can be disabled; walk the actual browser tab order to
+  // the last toolbar control instead of assigning focus to the canvas.
+  for (let step = 0; step < 3; step += 1) {
+    if (await page.locator("#new-task").evaluate((button) => document.activeElement === button))
+      break;
+    await page.keyboard.press("Tab");
+  }
+  assert.equal(
+    await page.locator("#new-task").evaluate((button) => document.activeElement === button),
+    true,
+  );
+  await waitForState({ focused: false });
+}
+
+async function assertPaintedKeyboardFocus(scale) {
+  const checks = [];
+  const sample = async (label, before, after, visible) => {
+    const edges = await compareFramePaint(before, after);
+    checks.push({ scale, label, visible, edges });
+  };
+  await clickCard(1);
+  await wheelLane(0, 2_000);
+  await page.waitForFunction(
+    () =>
+      !window.__gpuiBoardLayout().nodes.some((node) => node.id === 1) &&
+      !window.__gpuiBoardHost().pendingFrame,
+    null,
+    { timeout: 10_000 },
+  );
+  await focusExternalToolbar();
+  const offscreen = await readBoard();
+  assert.equal(offscreen.status.selectedId, 1);
+  assert.equal(
+    offscreen.layout.nodes.some((node) => node.selected),
+    false,
+    "no selected card is painted in the viewport",
+  );
+  const external = await frameScreenshot(`${scale}-offscreen-external`);
+  await page.keyboard.press("Tab");
+  await page.waitForFunction(
+    () =>
+      document.activeElement?.id === "board-canvas" &&
+      window.__gpuiBoardStatus().focused &&
+      !window.__gpuiBoardHost().pendingFrame,
+    null,
+    { timeout: 10_000 },
+  );
+  assert.equal(
+    (await readBoard()).layout.nodes.some((node) => node.id === 1),
+    false,
+  );
+  await sample(
+    "toolbar Tab to canvas with selected task offscreen",
+    external,
+    await frameScreenshot(`${scale}-offscreen-canvas`, external.clip),
+    true,
+  );
+  await assertAccessibleCards();
+  await page.keyboard.press("Shift+Tab");
+  await waitForState({ focused: false });
+  await sample(
+    "canvas indicator clears on focus exit",
+    external,
+    await frameScreenshot(`${scale}-offscreen-exited`, external.clip),
+    false,
+  );
+
+  await wheelLane(0, -2_000);
+  await page.waitForFunction(
+    () =>
+      window.__gpuiBoardLayout().lanes[0].scrollY === 0 && !window.__gpuiBoardHost().pendingFrame,
+    null,
+    { timeout: 10_000 },
+  );
+  await focusExternalToolbar();
+  const beforeProxy = await frameScreenshot(`${scale}-proxy-external`, external.clip);
+  await page.keyboard.press("Tab");
+  await page.waitForFunction(() => document.activeElement?.id === "board-canvas", null, {
+    timeout: 10_000,
+  });
+  await page.keyboard.press("Tab");
+  await page.waitForFunction(
+    () =>
+      document.activeElement?.dataset.canvasNodeId === "1" &&
+      !window.__gpuiBoardHost().pendingFrame,
+    null,
+    { timeout: 10_000 },
+  );
+  await sample(
+    "visible task proxy paints a frame indicator",
+    beforeProxy,
+    await frameScreenshot(`${scale}-proxy-focused`, external.clip),
+    true,
+  );
+  await wheelLane(0, 2_000);
+  await page.waitForFunction(
+    () =>
+      document.activeElement?.id === "board-canvas" &&
+      !window.__gpuiBoardLayout().nodes.some((node) => node.id === 1) &&
+      !window.__gpuiBoardHost().pendingFrame,
+    null,
+    { timeout: 10_000 },
+  );
+  assert.equal(await page.locator("[data-canvas-node-id='1']").count(), 0);
+  assert.equal((await readBoard()).status.selectedId, 1);
+  await sample(
+    "removed offscreen proxy transfers visible focus to canvas",
+    external,
+    await frameScreenshot(`${scale}-proxy-removed`, external.clip),
+    true,
+  );
+  await assertAccessibleCards();
+  await page.keyboard.press("Shift+Tab");
+  await waitForState({ focused: false });
+  await sample(
+    "transferred indicator clears on focus exit",
+    external,
+    await frameScreenshot(`${scale}-proxy-exited`, external.clip),
+    false,
+  );
+  await wheelLane(0, -2_000);
+  await page.waitForFunction(
+    () =>
+      window.__gpuiBoardLayout().lanes[0].scrollY === 0 && !window.__gpuiBoardHost().pendingFrame,
+    null,
+    { timeout: 10_000 },
+  );
+  focusPaintChecks.push(...checks);
+  writeFileSync(output("focus-paint.json"), JSON.stringify(focusPaintChecks, null, 2));
+  for (const check of checks) {
+    assert.ok(
+      Object.values(check.edges).every((coverage) =>
+        check.visible ? coverage >= 0.7 : coverage <= 0.05,
+      ),
+      `${check.label}: expected ${check.visible ? "painted" : "cleared"} frame edges, observed ${JSON.stringify(check.edges)}`,
+    );
+  }
+}
+
 async function suspend(kind) {
   if (kind === "hidden") {
     // Synthetic document visibility covers host scheduling and input gates;
@@ -349,6 +588,10 @@ try {
   assert.ok(textPixels > 40, "the task title is painted as visible text inside the canvas card");
   writeFileSync(output("initial-status.json"), JSON.stringify({ ...initial, textPixels }, null, 2));
   await page.screenshot({ path: output("desktop.png"), fullPage: true });
+  complete(stage);
+
+  stage = "visible keyboard focus with offscreen selection and removed focus proxy at DPR 1.5";
+  await assertPaintedKeyboardFocus(1.5);
   complete(stage);
 
   stage = "physical selection, threshold click, keyboard navigation and proxy undo";
@@ -694,6 +937,23 @@ try {
   await waitForState({ selectedId: 2 });
   complete(stage);
 
+  stage = "visible keyboard focus remains painted and clears correctly at DPR 2";
+  // Screenshot capture can restore Playwright's configured metrics after an
+  // out-of-band CDP override. Keep the live resize check above, but configure
+  // this pixel-verification context at its intended DPR from creation.
+  const focusAtTwo = await browser.newContext({
+    viewport: { width: 1180, height: 880 },
+    deviceScaleFactor: 2,
+  });
+  page = await focusAtTwo.newPage();
+  page.setDefaultTimeout(10_000);
+  attachDiagnostics(page, "desktop-2x-focus");
+  await page.goto(baseUrl, { waitUntil: "load" });
+  await coherentViewport(2, false);
+  await assertPaintedKeyboardFocus(2);
+  await coherentViewport(2, false);
+  complete(stage);
+
   stage = "mobile single-lane tabs, touch move buttons and Earlier/Later scrolling";
   const mobile = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -885,6 +1145,7 @@ try {
             board: await readBoard().catch(() => null),
             pageErrors,
             consoleMessages,
+            focusPaintChecks,
           },
           null,
           2,

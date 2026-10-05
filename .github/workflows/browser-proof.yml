@@ -70,6 +70,8 @@ jobs:
             _build/browser-board-failure.png
             _build/browser-board-desktop.png
             _build/browser-board-mobile.png
+            _build/browser-board-focus-*.png
+            _build/browser-board-focus-paint.json
           if-no-files-found: ignore
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
