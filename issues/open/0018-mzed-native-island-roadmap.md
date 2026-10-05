@@ -130,22 +130,26 @@ The inspected gpui.mbt revision is `35aae36e79588c47c030093bf64eaf54b15f715a`. I
 
 Packet 0011 supplies a browser DOM-island example and bounded host-service envelopes. Its fake Electron/Tauri adapters do not demonstrate a native Rust GPUI/MoonBit embedding boundary. Reuse its principles of explicit ownership, copied values, cancellation and versioning; do not call the new native work an already-supported 0011 integration.
 
-Portable scene rendering is currently centered on quads. A small UTF-16
-editing-semantics model now exists for ranges, directional selection and
-immutable replacement, but it does not draw text or provide an editable UI.
-Rich text, production text shaping, caret geometry, composition/IME, general
-accessibility and sustained performance evidence remain incomplete. A project
-tree or palette requires usable framework text capability before it can count
-as migrated UI.
+Portable scene rendering remains quad/clip-first, with bounded browser text
+snapshot items; native text renderers reject those items explicitly. The text value model
+foundation has UTF-16 ranges, directional selection and immutable replacement;
+this composition worktree slice adds pure composition/commit/cancel transitions.
+It does not draw text or provide an editable UI. Host sequencing, actual
+Japanese IME, text layout,
+candidate-window placement, rich text, production shaping, caret geometry,
+undo, multi-cursor editing, general accessibility and sustained performance
+evidence remain incomplete. A project tree or palette requires usable
+framework text capability before it can count as migrated UI.
 
 ### Foundation-first text gap and current slice
 
 See the source-grounded [codebase gap analysis](../../docs/codebase-gap-analysis.md)
 for the implementation order and evidence boundaries. The current `text/`
 package is a portable data model only. It does not implement a text field,
-marked/composition state, grapheme navigation, rendering, caret mapping, a host
-input adapter, or Japanese IME behavior. The MZed application milestones and
-their platform admission gates remain unchanged.
+grapheme navigation, rendering, caret mapping, a host input adapter, or actual
+OS input-method behavior. The MZed application
+milestones and their platform admission gates remain unchanged. See the
+[portable text model](../../docs/text-model.md) for the value-level contract.
 
 ### Upstream pin selection gate
 
