@@ -79,8 +79,24 @@ test "portable browser app preserves logical dimensions across DPR changes" {
   assert_true(status.contains("\"logicalHeight\":492"))
   assert_true(status.contains("\"dpr\":2"))
   assert_true(status.contains("\"hover\":4"))
+  assert_true(status.contains("\"cursor\":\"pointing-hand\""))
   assert_true(status.contains("\"events\":4"))
   assert_true(status.contains("\"lastSequence\":5"))
+  assert_true(
+    @browser_app.BrowserDemo::enqueue_event(
+      demo,
+      @platform.Input(
+        @primitives.PointerMoved(position=browser_test_point(20.0, 20.0)),
+      ),
+    )
+    is Ok(_),
+  )
+  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains(
+      "\"cursor\":\"arrow\"",
+    ),
+  )
   @browser_app.BrowserDemo::dispose(demo)
 }
 
