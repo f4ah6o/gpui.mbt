@@ -89,6 +89,18 @@ extern "C" fn native_present(
 ) -> Int = "gpui_present"
 
 ///|
+#borrow(data, text)
+extern "C" fn native_present_mixed(
+  abi : Int,
+  host : Int,
+  window : Int,
+  data : FixedArray[Double],
+  length : Int,
+  text : Bytes,
+  text_length : Int,
+) -> Int = "gpui_present_v2"
+
+///|
 extern "C" fn native_recover(host : Int, window : Int) -> Int = "gpui_recover"
 
 ///|
@@ -536,18 +548,172 @@ fn frame_data(
 }
 
 ///|
+priv struct MixedFrame {
+  data : FixedArray[Double]
+  text : Bytes
+}
+
+///|
+/// Private v2 records preserve ordered items and separately borrow one UTF-8
+/// blob. Local text clipping is implemented by the native raster path.
+fn mixed_frame_data(
+  snapshot : @scene.SceneSnapshot,
+) -> Result[MixedFrame, @diagnostics.FrameworkError] {
+  if snapshot.schema_version() != 1 || snapshot.resources().length() != 0 {
+    return Err(backend_error(1, "present"))
+  }
+  let viewport = snapshot.viewport()
+  let items = snapshot.items()
+  if items.length() > 100000 {
+    return Err(backend_error(8, "present"))
+  }
+  let data = FixedArray::make(5 + items.length() * 23, 0.0)
+  data[0] = viewport.left()
+  data[1] = viewport.top()
+  data[2] = viewport.size().width()
+  data[3] = viewport.size().height()
+  data[4] = snapshot.scale()
+  let blob : Array[Byte] = []
+  let chains = snapshot.clip_chains()
+  let mut text_count = 0
+  for index = 0; index < items.length(); index = index + 1 {
+    let offset = 5 + index * 23
+    match items[index] {
+      @scene.TextItem(text~, font_size~, ..) => {
+        text_count += 1
+        if text_count > 256 {
+          return Err(backend_error(8, "present"))
+        }
+        if font_size > @linux_text.max_font_size_px {
+          return Err(backend_error(1, "present"))
+        }
+        let document = match @text.TextDocument::new(text) {
+          Ok(value) => value
+          Err(_) => return Err(backend_error(1, "present"))
+        }
+        let byte_length = match document.utf8_length() {
+          Ok(value) => value
+          Err(_) => return Err(backend_error(8, "present"))
+        }
+        if byte_length > @linux_text.max_text_bytes ||
+          blob.length() > 1048576 - byte_length {
+          return Err(backend_error(8, "present"))
+        }
+        let bytes = @utf8.encode(document.text())
+        if bytes.length() > @linux_text.max_text_bytes ||
+          blob.length() > 1048576 - bytes.length() {
+          return Err(backend_error(8, "present"))
+        }
+        data[offset] = 1.0
+        data[offset + 20] = blob.length().to_double()
+        data[offset + 21] = bytes.length().to_double()
+        data[offset + 22] = font_size
+        for byte in bytes {
+          if byte == b'\x00' {
+            return Err(backend_error(1, "present"))
+          }
+          blob.push(byte)
+        }
+      }
+      @scene.QuadItem(..) => ()
+    }
+    match items[index] {
+      @scene.QuadItem(bounds~, color~, transform~, opacity~, clip_chain_id~, ..)
+      | @scene.TextItem(
+        bounds~,
+        color~,
+        transform~,
+        opacity~,
+        clip_chain_id~,
+        ..
+      ) => {
+        let mut clip = Some(viewport)
+        if clip_chain_id is Some(id) {
+          for chain in chains {
+            if chain.id() == id {
+              for rect in chain.rects() {
+                clip = match clip {
+                  Some(current) => current.intersection(rect)
+                  None => None
+                }
+              }
+            }
+          }
+        }
+        data[offset + 1] = bounds.left()
+        data[offset + 2] = bounds.top()
+        data[offset + 3] = bounds.size().width()
+        data[offset + 4] = bounds.size().height()
+        data[offset + 5] = color.red().to_double()
+        data[offset + 6] = color.green().to_double()
+        data[offset + 7] = color.blue().to_double()
+        data[offset + 8] = color.alpha().to_double()
+        data[offset + 9] = transform.a()
+        data[offset + 10] = transform.b()
+        data[offset + 11] = transform.c()
+        data[offset + 12] = transform.d()
+        data[offset + 13] = transform.tx()
+        data[offset + 14] = transform.ty()
+        data[offset + 15] = opacity
+        if clip is Some(rect) {
+          data[offset + 16] = rect.left()
+          data[offset + 17] = rect.top()
+          data[offset + 18] = rect.size().width()
+          data[offset + 19] = rect.size().height()
+        }
+      }
+    }
+  }
+  Ok({ data, text: Bytes::from_array(blob), })
+}
+
+///|
 pub fn Host::present(
   self : Host,
   window : @platform.WindowId,
   snapshot : @scene.SceneSnapshot,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  match frame_data(snapshot) {
-    Err(error) => Err(error)
-    Ok(data) =>
-      outcome(
-        native_present(self.token, window.value().to_int(), data, data.length()),
-        "present",
-      )
+  let mut has_text = false
+  for item in snapshot.items() {
+    if item is @scene.TextItem(..) {
+      has_text = true
+    }
+  }
+  if !has_text {
+    match frame_data(snapshot) {
+      Err(error) => Err(error)
+      Ok(data) =>
+        outcome(
+          native_present(
+            self.token,
+            window.value().to_int(),
+            data,
+            data.length(),
+          ),
+          "present",
+        )
+    }
+  } else {
+    match @linux_text.require_grayscale_raster() {
+      Ok(_) => ()
+      Err(_) => return Err(backend_error(1, "present"))
+    }
+    match mixed_frame_data(snapshot) {
+      Err(error) => Err(error)
+      Ok(frame) =>
+        outcome(
+          native_present_mixed(
+            2,
+            self.token,
+            window.value().to_int(),
+            frame.data,
+            frame.data.length(),
+            frame.text,
+            frame.text.length(),
+          ),
+          "present",
+        )
+    }
   }
 }
 
@@ -561,6 +727,11 @@ pub fn Host::require_capability(
     | @platform.QuadFrames
     | @platform.PointerKeyboard
     | @platform.RendererRecovery => Ok(())
+    @platform.GrayscaleTextFrames =>
+      match @linux_text.require_grayscale_raster() {
+        Ok(_) => Ok(())
+        Err(_) => Err(backend_error(1, "require_capability"))
+      }
     @platform.Clipboard =>
       outcome(native_capability(self.token, 1), "require_capability")
     @platform.Cursor =>

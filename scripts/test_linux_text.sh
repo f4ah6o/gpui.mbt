@@ -34,6 +34,7 @@ export FONTCONFIG_FILE="$fontconfig_file"
 FONTCONFIG_PATH=$(dirname "$fontconfig_file")
 export FONTCONFIG_PATH
 export XDG_CACHE_HOME="$build_root/xdg-cache"
+mkdir -p "$XDG_CACHE_HOME"
 
 check_font() {
   requested=$1
@@ -57,6 +58,14 @@ check_font() {
 check_font 'DejaVu Sans' 'DejaVu Sans'
 check_font 'Noto Sans CJK JP' 'Noto Sans CJK JP'
 check_font 'Noto Color Emoji' 'Noto Color Emoji'
+
+# Exercise the private raster ABI directly as well as its MoonBit provider.
+# The same compiler wrapper used by native packages supplies real distro
+# PangoFT2/Fontconfig cflags and link libraries to this consumer harness.
+script/linux_text_cc.py -std=c11 -Wall -Wextra -Werror \
+  tests/linux_text/raster_test.c platform/linux_text/linux_text.c \
+  -o "$build_root/raster-test" -pthread -lm
+env -u DISPLAY -u WAYLAND_DISPLAY "$build_root/raster-test"
 
 # A private XDG cache keeps concurrent jobs isolated.
 env -u DISPLAY -u WAYLAND_DISPLAY \

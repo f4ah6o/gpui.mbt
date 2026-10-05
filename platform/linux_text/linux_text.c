@@ -477,8 +477,176 @@ int32_t gpui_linux_text_hit_test_v1(
   return GPUI_LINUX_TEXT_OK;
 }
 
-int32_t gpui_linux_text_test_lifecycle_v1(int32_t cycles, int32_t *output,
-                                          int32_t output_capacity) {
+
+static int32_t raster_admission(int32_t abi, int32_t runtime_version) {
+  if (abi != GPUI_LINUX_TEXT_ABI || runtime_version < 0)
+    return GPUI_LINUX_TEXT_INVALID_ARGUMENT;
+  if (runtime_version < PANGO_VERSION_ENCODE(1, 50, 0))
+    return GPUI_LINUX_TEXT_UNSUPPORTED_RASTER;
+  return GPUI_LINUX_TEXT_OK;
+}
+
+int32_t gpui_linux_text_require_raster_v1(int32_t abi) {
+  return raster_admission(abi, pango_version());
+}
+
+int32_t gpui_linux_text_test_raster_admission_v1(int32_t abi,
+                                                int32_t runtime_version) {
+  return raster_admission(abi, runtime_version);
+}
+
+void gpui_linux_text_mask_release_v1(struct gpui_linux_text_mask *mask) {
+  if (!mask)
+    return;
+  g_free(mask->pixels);
+  memset(mask, 0, sizeof(*mask));
+}
+
+static int32_t raster_layout_v1(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    const uint8_t *family, int32_t family_length, double font_size_px,
+    double bounds_width, double bounds_height, int32_t pixel_budget,
+    struct gpui_linux_text_mask *output, gpui_lifecycle_counts *counts) {
+  if (!output || pixel_budget < 0 || !isfinite(bounds_width) || !isfinite(bounds_height) ||
+      bounds_width < 0 || bounds_height < 0 || bounds_width > 1e20 ||
+      bounds_height > 1e20)
+    return GPUI_LINUX_TEXT_INVALID_ARGUMENT;
+  int32_t admission = gpui_linux_text_require_raster_v1(abi);
+  if (admission != GPUI_LINUX_TEXT_OK)
+    return admission;
+  gpui_layout objects;
+  int32_t scalars = 0;
+  int32_t status = create_layout(abi, text, text_length, family, family_length,
+                                font_size_px, &objects, &scalars);
+  if (status != GPUI_LINUX_TEXT_OK)
+    return status;
+  observe_lifecycle(&objects, counts);
+  /* Bound unusually large combined requests before Pango materializes integer
+   * layout geometry. This is a resource rejection, never text truncation. */
+  if ((double)(scalars + 1) * font_size_px > 1048576.0) {
+    free_layout(&objects);
+    return GPUI_LINUX_TEXT_RESOURCE_LIMIT;
+  }
+  PangoLayoutIter *iter = pango_layout_get_iter(objects.layout);
+  if (!iter) {
+    free_layout(&objects);
+    return GPUI_LINUX_TEXT_NATIVE_FAILURE;
+  }
+  gboolean color = FALSE, has_ink = FALSE;
+  do {
+    PangoLayoutRun *run = pango_layout_iter_get_run_readonly(iter);
+    if (!run)
+      continue;
+    for (int i = 0; i < run->glyphs->num_glyphs; ++i) {
+      PangoGlyphInfo *glyph = run->glyphs->glyphs + i;
+      if (glyph->attr.is_color)
+        color = TRUE;
+      if (glyph->glyph != PANGO_GLYPH_EMPTY) {
+        PangoRectangle glyph_ink;
+        pango_font_get_glyph_extents(run->item->analysis.font, glyph->glyph,
+                                     &glyph_ink, NULL);
+        if (glyph_ink.width > 0 && glyph_ink.height > 0)
+          has_ink = TRUE;
+      }
+    }
+  } while (pango_layout_iter_next_run(iter));
+  pango_layout_iter_free(iter);
+  if (color) {
+    free_layout(&objects);
+    return GPUI_LINUX_TEXT_UNSUPPORTED_COLOR;
+  }
+  PangoRectangle ink, logical;
+  pango_layout_get_pixel_extents(objects.layout, &ink, &logical);
+  int unknown = pango_layout_get_unknown_glyphs_count(objects.layout);
+  if (ink.width < 0 || ink.height < 0 || logical.width < 0 ||
+      logical.height < 0 || unknown < 0) {
+    free_layout(&objects);
+    return GPUI_LINUX_TEXT_INVALID_NATIVE_RESULT;
+  }
+  struct gpui_linux_text_mask result = {0};
+  result.unknown_glyph_count = unknown;
+  double left = fmax(0.0, ink.x), top = fmax(0.0, ink.y);
+  double right = fmin(bounds_width, (double)ink.x + ink.width);
+  double bottom = fmin(bounds_height, (double)ink.y + ink.height);
+  /* PANGO_GLYPH_EMPTY (e.g. tabs) can contribute a synthetic layout ink box
+   * although the FT2 renderer draws nothing. Inspect actual nonempty glyph
+   * ink before allocating, so whitespace needs neither budget nor texture. */
+  if (!has_ink || right <= left || bottom <= top || !text_length) {
+    free_layout(&objects);
+    *output = result;
+    return GPUI_LINUX_TEXT_OK;
+  }
+  double tile_left = floor(left), tile_top = floor(top);
+  double tile_right = ceil(right), tile_bottom = ceil(bottom);
+  double width = tile_right - tile_left, height = tile_bottom - tile_top;
+  if (!isfinite(width) || !isfinite(height) || width <= 0 || height <= 0 ||
+      width > GPUI_LINUX_TEXT_MAX_MASK_DIMENSION ||
+      height > GPUI_LINUX_TEXT_MAX_MASK_DIMENSION) {
+    free_layout(&objects);
+    return GPUI_LINUX_TEXT_RESOURCE_LIMIT;
+  }
+  double origin_x = -tile_left * PANGO_SCALE;
+  double origin_y = -tile_top * PANGO_SCALE;
+  if (!isfinite(origin_x) || !isfinite(origin_y) ||
+      origin_x < INT32_MIN || origin_x > INT32_MAX ||
+      origin_y < INT32_MIN || origin_y > INT32_MAX) {
+    free_layout(&objects);
+    return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+  }
+  result.width = (int32_t)width;
+  result.height = (int32_t)height;
+  size_t bytes = (size_t)result.width * (size_t)result.height;
+  if (bytes / (size_t)result.width != (size_t)result.height ||
+      bytes > (size_t)pixel_budget) {
+    free_layout(&objects);
+    return GPUI_LINUX_TEXT_RESOURCE_LIMIT;
+  }
+  result.pixels = g_try_malloc0(bytes);
+  if (!result.pixels) {
+    free_layout(&objects);
+    return GPUI_LINUX_TEXT_RESOURCE_LIMIT;
+  }
+  FT_Bitmap bitmap = {0};
+  bitmap.width = (unsigned int)result.width;
+  bitmap.rows = (unsigned int)result.height;
+  bitmap.pitch = result.width;
+  bitmap.buffer = result.pixels;
+  bitmap.num_grays = 256;
+  bitmap.pixel_mode = FT_PIXEL_MODE_GRAY;
+  /* No context matrix: layout and masks remain at logical resolution. */
+  pango_ft2_render_layout_subpixel(&bitmap, objects.layout, (int)origin_x,
+                                  (int)origin_y);
+  gboolean covered = FALSE;
+  for (size_t i = 0; i < bytes && !covered; ++i)
+    covered = result.pixels[i] != 0;
+  if (!covered) {
+    gpui_linux_text_mask_release_v1(&result);
+    result.unknown_glyph_count = unknown;
+    free_layout(&objects);
+    *output = result;
+    return GPUI_LINUX_TEXT_OK;
+  }
+  result.left = left;
+  result.top = top;
+  result.right = right;
+  result.bottom = bottom;
+  free_layout(&objects);
+  *output = result;
+  return GPUI_LINUX_TEXT_OK;
+}
+
+int32_t gpui_linux_text_raster_v1(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    const uint8_t *family, int32_t family_length, double font_size_px,
+    double bounds_width, double bounds_height, int32_t pixel_budget,
+    struct gpui_linux_text_mask *output) {
+  return raster_layout_v1(abi, text, text_length, family, family_length,
+                           font_size_px, bounds_width, bounds_height,
+                           pixel_budget, output, NULL);
+}
+
+static int32_t test_lifecycle_v1(int32_t cycles, int32_t *output,
+                                  int32_t output_capacity, int raster) {
   if (cycles < 1 || cycles > 1024 || !output || output_capacity < 3)
     return GPUI_LINUX_TEXT_INVALID_ARGUMENT;
 
@@ -496,10 +664,19 @@ int32_t gpui_linux_text_test_lifecycle_v1(int32_t cycles, int32_t *output,
     counts->references = 1; /* The test call holds a reference through reads. */
     double metrics[GPUI_LINUX_TEXT_HEADER_DOUBLES +
                    2 * GPUI_LINUX_TEXT_CARET_DOUBLES] = {0};
-    int32_t status = measure_layout_v1(
-        GPUI_LINUX_TEXT_ABI, text, 1, family,
-        (int32_t)(sizeof(family) - 1), 16.0, metrics,
-        (int32_t)(sizeof(metrics) / sizeof(metrics[0])), counts);
+    int32_t status;
+    if (raster) {
+      struct gpui_linux_text_mask mask = {0};
+      status = raster_layout_v1(
+          GPUI_LINUX_TEXT_ABI, text, 1, family,
+          (int32_t)(sizeof(family) - 1), 16.0, 64.0, 64.0, 4096, &mask, counts);
+      gpui_linux_text_mask_release_v1(&mask);
+    } else {
+      status = measure_layout_v1(
+          GPUI_LINUX_TEXT_ABI, text, 1, family,
+          (int32_t)(sizeof(family) - 1), 16.0, metrics,
+          (int32_t)(sizeof(metrics) / sizeof(metrics[0])), counts);
+    }
     if (status != GPUI_LINUX_TEXT_OK) {
       int32_t map = 0, context = 0, layout = 0;
       lifecycle_snapshot(counts, &map, &context, &layout);
@@ -551,6 +728,16 @@ allocation_failure:
   for (int32_t i = 0; i < state_count; ++i)
     lifecycle_release(states[i]);
   return GPUI_LINUX_TEXT_NATIVE_FAILURE;
+}
+
+int32_t gpui_linux_text_test_lifecycle_v1(int32_t cycles, int32_t *output,
+                                          int32_t output_capacity) {
+  return test_lifecycle_v1(cycles, output, output_capacity, 0);
+}
+
+int32_t gpui_linux_text_test_raster_lifecycle_v1(int32_t cycles, int32_t *output,
+                                                 int32_t output_capacity) {
+  return test_lifecycle_v1(cycles, output, output_capacity, 1);
 }
 
 static void observe_shape(PangoLayout *layout, const char *requested_family,

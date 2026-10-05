@@ -14,7 +14,10 @@ import {
 // Types and methods
 pub(all) enum Capability {
   NativeWindow
+  LogicalViewport
   QuadFrames
+  GrayscaleTextFrames
+  FrameScheduling
   PointerKeyboard
   Clipboard
   Cursor
@@ -43,12 +46,37 @@ pub fn Event::scale(Self) -> Double
 pub fn Event::sequence(Self) -> Int64
 pub fn Event::window(Self) -> WindowId
 
+pub struct EventIngress {
+  window : WindowId
+  events : Array[Event]
+  mut next_sequence : Int64
+  mut closed : Bool
+  mut wake_pending : Bool
+}
+pub fn EventIngress::close(Self) -> Unit
+pub fn EventIngress::drain(Self) -> Array[Event]
+pub fn EventIngress::enqueue(Self, EventKind, Double) -> Result[Event, EventIngressError]
+pub fn EventIngress::enqueue_wake(Self, Double) -> Result[Bool, EventIngressError]
+pub fn EventIngress::is_closed(Self) -> Bool
+pub fn EventIngress::new(WindowId) -> Self
+pub fn EventIngress::pending_count(Self) -> Int
+pub impl EventSource for EventIngress
+
+pub(all) enum EventIngressError {
+  Closed
+  InvalidScale
+  SequenceExhausted
+} derive(Eq)
+pub fn EventIngressError::equal(Self, Self) -> Bool
+pub fn EventIngressError::not_equal(Self, Self) -> Bool
+
 pub(all) enum EventKind {
   Created
   Resized(width~ : Double, height~ : Double)
   Moved(x~ : Double, y~ : Double)
   ScaleChanged
   FocusChanged(Bool)
+  VisibilityChanged(Bool)
   Input(@primitives.InputEvent)
   CloseRequested
   Destroyed
@@ -81,4 +109,11 @@ pub(open) trait Backend {
   fn destroy_window(Self, WindowId) -> Result[Unit, @diagnostics.FrameworkError]
   fn wake(Self) -> Result[Unit, @diagnostics.FrameworkError]
   fn request_exit(Self) -> Result[Unit, @diagnostics.FrameworkError]
+}
+
+pub(open) trait EventSource {
+  fn enqueue(Self, EventKind, Double) -> Result[Event, EventIngressError]
+  fn enqueue_wake(Self, Double) -> Result[Bool, EventIngressError]
+  fn drain(Self) -> Array[Event]
+  fn close(Self) -> Unit
 }

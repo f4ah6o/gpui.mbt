@@ -21,6 +21,93 @@ fn snapshot(w : Double, h : Double, scale : Double) -> @scene.SceneSnapshot {
 }
 
 ///|
+fn mixed_snapshot(
+  w : Double,
+  h : Double,
+  scale : Double,
+) -> @scene.SceneSnapshot {
+  let viewport = rect(w, h)
+  let red = match @primitives.Color::rgba(220, 20, 30, 255) {
+    Ok(c) => c
+    Err(_) => abort("fixture")
+  }
+  let blue = match @primitives.Color::rgba(20, 70, 240, 255) {
+    Ok(c) => c
+    Err(_) => abort("fixture")
+  }
+  let green = match @primitives.Color::rgba(20, 220, 60, 255) {
+    Ok(c) => c
+    Err(_) => abort("fixture")
+  }
+  let shifted = match
+    @scene.AffineTransform::new(1.0, 0.0, 0.0, 1.0, 7.25, 4.5) {
+    Ok(t) => t
+    Err(_) => abort("fixture")
+  }
+  let backdrop = match
+    @scene.SceneItem::quad(
+      1,
+      viewport,
+      red,
+      @scene.AffineTransform::identity(),
+      1.0,
+      None,
+    ) {
+    Ok(i) => i
+    Err(_) => abort("fixture")
+  }
+  let clipped_text = match @primitives.Rect::new(8.25, 9.5, 58.5, 31.25) {
+    Ok(r) => r
+    Err(_) => abort("fixture")
+  }
+  let text = match
+    @scene.SceneItem::text(
+      2,
+      clipped_text,
+      "Grayscale text 日本語",
+      19.0,
+      blue,
+      shifted,
+      0.65,
+      Some(7),
+    ) {
+    Ok(i) => i
+    Err(_) => abort("fixture")
+  }
+  let overlay = match @primitives.Rect::new(32.0, 26.0, 12.0, 9.0) {
+    Ok(r) => r
+    Err(_) => abort("fixture")
+  }
+  let after_text = match
+    @scene.SceneItem::quad(
+      3,
+      overlay,
+      green,
+      @scene.AffineTransform::identity(),
+      1.0,
+      None,
+    ) {
+    Ok(i) => i
+    Err(_) => abort("fixture")
+  }
+  let clip = match @primitives.Rect::new(10.5, 11.25, w - 18.75, h - 20.5) {
+    Ok(r) => r
+    Err(_) => abort("fixture")
+  }
+  match
+    @scene.SceneSnapshot::new(
+      viewport,
+      scale,
+      [],
+      [@scene.ClipChain::new(7, [viewport, clip])],
+      [backdrop, text, after_text],
+    ) {
+    Ok(s) => s
+    Err(_) => abort("mixed scene fixture")
+  }
+}
+
+///|
 test "unsupported session is typed and failed start permits retry" {
   let previous = @env.get_env_var("XDG_SESSION_TYPE")
   @env.set_env_var("XDG_SESSION_TYPE", "x11")
@@ -171,6 +258,159 @@ test "renderer preserves v1 clip intersection and rejects resource tables" {
 }
 
 ///|
+test "mixed v2 serializer preserves order, UTF-8 spans and v1 rejection" {
+  let viewport = rect(100.0, 80.0)
+  let clip = match @primitives.Rect::new(5.0, 7.0, 40.0, 30.0) {
+    Ok(r) => r
+    Err(_) => abort("fixture")
+  }
+  let red = match @primitives.Color::rgba(240, 10, 20, 200) {
+    Ok(c) => c
+    Err(_) => abort("fixture")
+  }
+  let cyan = match @primitives.Color::rgba(10, 180, 220, 240) {
+    Ok(c) => c
+    Err(_) => abort("fixture")
+  }
+  let transform = match
+    @scene.AffineTransform::new(0.9, 0.2, -0.15, 1.1, 3.25, 4.5) {
+    Ok(t) => t
+    Err(_) => abort("fixture")
+  }
+  let backdrop = match
+    @scene.SceneItem::quad(
+      1,
+      viewport,
+      red,
+      @scene.AffineTransform::identity(),
+      1.0,
+      None,
+    ) {
+    Ok(i) => i
+    Err(_) => abort("fixture")
+  }
+  let first_bounds = match @primitives.Rect::new(9.25, 10.5, 20.0, 14.0) {
+    Ok(r) => r
+    Err(_) => abort("fixture")
+  }
+  let first_text = match
+    @scene.SceneItem::text(
+      2,
+      first_bounds,
+      "Aé",
+      14.0,
+      cyan,
+      transform,
+      0.5,
+      Some(7),
+    ) {
+    Ok(i) => i
+    Err(_) => abort("fixture")
+  }
+  let middle = match
+    @scene.SceneItem::quad(3, rect(1.0, 2.0), cyan, transform, 0.75, Some(7)) {
+    Ok(i) => i
+    Err(_) => abort("fixture")
+  }
+  let second_text = match
+    @scene.SceneItem::text(
+      4,
+      rect(3.5, 4.25),
+      "猫",
+      22.0,
+      red,
+      @scene.AffineTransform::identity(),
+      1.0,
+      Some(7),
+    ) {
+    Ok(i) => i
+    Err(_) => abort("fixture")
+  }
+  let scene = match
+    @scene.SceneSnapshot::new(
+      viewport,
+      1.5,
+      [],
+      [@scene.ClipChain::new(7, [viewport, clip])],
+      [backdrop, first_text, middle, second_text],
+    ) {
+    Ok(s) => s
+    Err(_) => abort("fixture")
+  }
+  let frame = match mixed_frame_data(scene) {
+    Ok(value) => value
+    Err(error) => fail("mixed serializer: \{error.code().label()}")
+  }
+  assert_eq(frame.data.length(), 5 + 4 * 23)
+  assert_eq(frame.data[0], 0.0)
+  assert_eq(frame.data[1], 0.0)
+  assert_eq(frame.data[2], 100.0)
+  assert_eq(frame.data[3], 80.0)
+  assert_eq(frame.data[4], 1.5)
+  assert_eq(frame.data[5], 0.0)
+  assert_eq(frame.data[28], 1.0)
+  assert_eq(frame.data[51], 0.0)
+  assert_eq(frame.data[74], 1.0)
+  assert_eq(frame.data[29], 9.25)
+  assert_eq(frame.data[30], 10.5)
+  assert_eq(frame.data[31], 20.0)
+  assert_eq(frame.data[32], 14.0)
+  assert_eq(frame.data[33], 10.0)
+  assert_eq(frame.data[36], 240.0)
+  assert_eq(frame.data[37], 0.9)
+  assert_eq(frame.data[39], -0.15)
+  assert_eq(frame.data[40], 1.1)
+  assert_eq(frame.data[41], 3.25)
+  assert_eq(frame.data[42], 4.5)
+  assert_eq(frame.data[43], 0.5)
+  assert_eq(frame.data[44], 5.0)
+  assert_eq(frame.data[45], 7.0)
+  assert_eq(frame.data[46], 40.0)
+  assert_eq(frame.data[47], 30.0)
+  assert_eq(frame.data[48], 0.0)
+  assert_eq(frame.data[49], 3.0)
+  assert_eq(frame.data[50], 14.0)
+  assert_eq(frame.data[94], 3.0)
+  assert_eq(frame.data[95], 3.0)
+  assert_eq(frame.data[96], 22.0)
+  try @utf8.decode(frame.text) catch {
+    _ => fail("serialized UTF-8 blob is malformed")
+  } noraise {
+    value => assert_eq(value, "Aé猫")
+  }
+
+  // The public SceneSnapshot v1 quad ABI intentionally remains quad-only.
+  match frame_data(scene) {
+    Err(error) => assert_eq(error.code().label(), "unsupported_capability")
+    Ok(_) => fail("v1 serializer accepted mixed text")
+  }
+
+  let high = "😀".unsafe_substring(start=0, end=1)
+  let low = "😀".unsafe_substring(start=1, end=2)
+  for lone_surrogate in [high, low] {
+    let lone = @scene.TextItem(
+      id=5,
+      bounds=rect(1.0, 2.0),
+      text=lone_surrogate,
+      font_size=14.0,
+      color=cyan,
+      transform=@scene.AffineTransform::identity(),
+      opacity=1.0,
+      clip_chain_id=None,
+    )
+    let invalid_scene = match
+      @scene.SceneSnapshot::new(viewport, 1.0, [], [], [lone]) {
+      Ok(value) => value
+      Err(_) => abort("snapshot should retain v1 UTF-16 string")
+    }
+    match mixed_frame_data(invalid_scene) {
+      Err(error) => assert_eq(error.code().label(), "unsupported_capability")
+      Ok(_) => fail("isolated surrogate reached the native UTF-8 ABI")
+    }
+  }
+}
+
+///|
 fn[T] require_ok(result : Result[T, @diagnostics.FrameworkError]) -> T raise {
   match result {
     Ok(value) => value
@@ -207,6 +447,7 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
     assert_true(host.state() == Running)
     record_optional_service(host, @platform.Clipboard, "clipboard")
     record_optional_service(host, @platform.Cursor, "cursor")
+    require_ok(host.require_capability(@platform.GrayscaleTextFrames))
     assert_true(Host::start() is Err(_))
     for iteration = 0; iteration < 24; iteration = iteration + 1 {
       println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=create")
@@ -232,7 +473,7 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
       require_ok(
         host.present(
           window,
-          snapshot(width.to_double(), height.to_double(), scale),
+          mixed_snapshot(width.to_double(), height.to_double(), scale),
         ),
       )
       let mut completed = false
@@ -247,6 +488,64 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
         }
       }
       assert_true(completed)
+      if iteration == 0 {
+        let high = "😀".unsafe_substring(start=0, end=1)
+        let low = "😀".unsafe_substring(start=1, end=2)
+        for lone_surrogate in [high, low] {
+          let invalid_text = @scene.TextItem(
+            id=8,
+            bounds=rect(10.0, 8.0),
+            text=lone_surrogate,
+            font_size=16.0,
+            color=match @primitives.Color::rgba(255, 255, 255, 255) {
+              Ok(c) => c
+              Err(_) => abort("fixture")
+            },
+            transform=@scene.AffineTransform::identity(),
+            opacity=1.0,
+            clip_chain_id=None,
+          )
+          let invalid_viewport = match
+            @primitives.Rect::new(
+              0.0,
+              0.0,
+              width.to_double(),
+              height.to_double(),
+            ) {
+            Ok(value) => value
+            Err(_) => abort("viewport fixture")
+          }
+          let invalid_snapshot = match
+            @scene.SceneSnapshot::new(invalid_viewport, scale, [], [], [
+              invalid_text,
+            ]) {
+            Ok(value) => value
+            Err(_) => abort("lone surrogate snapshot")
+          }
+          match host.present(window, invalid_snapshot) {
+            Err(error) =>
+              assert_eq(error.code().label(), "unsupported_capability")
+            Ok(_) => fail("isolated surrogate reached native submission")
+          }
+        }
+        // A valid mixed frame still submits immediately after both serializer
+        // rejections; neither failure leaves native frame state outstanding.
+        require_ok(
+          host.present(
+            window,
+            mixed_snapshot(width.to_double(), height.to_double(), scale),
+          ),
+        )
+        let mut resumed = false
+        for _attempt = 0; _attempt < 40 && !resumed; _attempt = _attempt + 1 {
+          for event in require_ok(host.dispatch(100)) {
+            if event.kind() is @platform.FrameCompleted {
+              resumed = true
+            }
+          }
+        }
+        assert_true(resumed)
+      }
       println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=resize-recover")
       require_ok(host.set_size(window, 180, 140))
       match
@@ -272,7 +571,7 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
       }
       require_ok(host.recover_renderer(window))
       println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=recovered-present")
-      require_ok(host.present(window, snapshot(180.0, 140.0, scale)))
+      require_ok(host.present(window, mixed_snapshot(180.0, 140.0, scale)))
       println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=destroy")
       require_ok(host.destroy_window(window))
       require_ok(host.destroy_window(window))

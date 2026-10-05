@@ -124,49 +124,134 @@ permission or capability differences.
 
 ## Verified starting point
 
-MZed `main` was inspected at `6752e76a24a64b24d28b6baba0f46994a635c747`: only a six-byte README exists, and the releases collection was empty. There is no existing application implementation to extend. The first implementation must establish a pinned working Zed-derived baseline before claiming to preserve one.
+Historical starting point: MZed's initial `main` commit was inspected at
+`6752e76a24a64b24d28b6baba0f46994a635c747`; it contained only a six-byte
+README. That is no longer the current MZed state. MZed PR3 merged as
+`59a4a2b6daa48967c79de114a9de2ed119115c7b`, and its [Linux run](https://github.com/gpui-mbt/MZed/actions/runs/37273659532)
+demonstrated a bounded 1x/2x mouse interaction, teardown/remount, and an
+original-editor save. This is useful same-window proof, not completion of all
+[0019 acceptance gates](0019-mzed-native-coexistence-proof.md), text/IME,
+accessibility, broad platform support, or release readiness. Pin and preserve
+the selected application baseline and keep Zed upstream read-only as the next
+component migration is planned.
 
 The inspected gpui.mbt revision is `35aae36e79588c47c030093bf64eaf54b15f715a`. Its native hosts use platform APIs directly and do not carry a Rust GPUI runtime. Rust source compatibility and binary compatibility are explicitly outside the current contract.
 
 Packet 0011 supplies a browser DOM-island example and bounded host-service envelopes. Its fake Electron/Tauri adapters do not demonstrate a native Rust GPUI/MoonBit embedding boundary. Reuse its principles of explicit ownership, copied values, cancellation and versioning; do not call the new native work an already-supported 0011 integration.
 
-Portable scene rendering remains quad/clip-first, with bounded browser text
-snapshot items; native text renderers reject those items explicitly. The text value model
-foundation has UTF-16 ranges, directional selection and immutable replacement;
-this source tree adds pure composition/commit/cancel transitions and strict
-UTF-16/UTF-8 scalar-boundary conversion. The conversion has no grapheme or
-shaped-geometry semantics. It does not draw text or provide an editable UI.
-Host sequencing, actual Japanese IME, text layout, candidate-window placement,
-rich text, production shaping, caret geometry, undo, multi-cursor editing,
-general accessibility and sustained performance evidence remain incomplete.
-A project tree or palette requires usable framework text capability before it
-can count as migrated UI.
+Portable scene snapshots remain quad-first and preserve the bounded plain-text
+v1 item. Browser Canvas uses its system font. Ubuntu now has a bounded grayscale
+PangoFT2-to-GLES drawing implementation, advertised through
+`platform.Capability::GrayscaleTextFrames`; other native hosts retain their
+existing unsupported text behavior. PR27's copied measured-text contract and
+Linux PangoFT2 geometry adapter are merged into main as
+`d0335f65f6758b5ecaf91353500ad6978f9ae13e`. Together these are useful
+rendering/measurement foundations, not an editable UI. The immutable text
+value model has UTF-16 ranges, directional selection, composition preview,
+commit/cancel, and strict UTF-16/UTF-8 scalar-boundary conversion. It has no
+grapheme-navigation policy or host input ownership.
 
 ### Foundation-first text gap and current slice
 
 See the source-grounded [codebase gap analysis](../../docs/codebase-gap-analysis.md)
-for the implementation order and evidence boundaries. The current `text/`
-package is a portable data model only. It does not implement a text field,
-grapheme navigation, rendering, caret mapping, a host input adapter, or actual
-OS input-method behavior. The MZed application
-milestones and their platform admission gates remain unchanged. See the
-[portable text model](../../docs/text-model.md) for the value-level contract.
+for implementation evidence and boundaries. The portable `text/` value model
+and `text_layout/` copied measurement contract are present; PR27 adds Linux
+PangoFT2 measurements. The Ubuntu native host now draws supported grayscale
+text frames. These foundations do not implement an editable control, key/text
+dispatch, visible caret/selection, grapheme navigation, host input ownership,
+or actual OS input-method behavior. The MZed application milestones and
+platform admission gates remain unchanged. See the [portable text model](../../docs/text-model.md)
+and [Linux text guide](../../docs/linux-text.md).
+
+### Framework capability status and application order — 2026-10-05
+
+This source-grounded status refresh separates building blocks from usable
+application behavior. The Linux renderer implementation is present in the
+current change. On Debian 13/PangoFT2 1.56.3/Fontconfig 2.15.0, the headless C
+mask consumer passes normally and with ASan+UBSan when leak detection is
+disabled. The leak-enabled LeakSanitizer run reports that it does not work
+under ptrace in this environment; that is not a leak pass or product leak
+failure. Integrated
+Weston/GLES text-frame checks remain pending because local AF_UNIX stream-socket
+creation returns `EPERM` before compositor testing, and hosted renderer CI is
+pending. Historical measurement and quad-only passes alone do not evidence
+frame-presentation acceptance.
+
+| Capability | Available foundation | Remaining app behavior |
+| --- | --- | --- |
+| App/entity ownership | Headless lifetimes, updates, observers, and capability revocation | Mutable aliases remain caller-managed; no destructor guarantee |
+| Asynchronous execution | Deterministic foreground queue/manual clock | Background or suspending execution and complete native endpoint topology |
+| Layout/element lifecycle | Bounded flex and request-layout/prepaint/paint | Reconciliation, invalidation, reusable controls |
+| Pointer/focus/keyboard | Pointer capture/bubble and focus ID exist | Focused key/text dispatch, shared bindings, input ownership |
+| Rendering | Native quads, bounded browser text, Ubuntu grayscale text frames | Other native hosts, richer resources, and renderer qualification |
+| Text model | Immutable UTF-16 document/selection/composition; strict UTF-8 bridge | Editable widget, undo history, multi-cursor editing |
+| Measured text | Merged PR27 copied caret/hit values and Linux PangoFT2 geometry; Ubuntu draws supported grayscale subset | Other-host drawing, wrapping policy, selection geometry, caching, workload evidence |
+| Editable controls | No framework text field or picker | Real input, visible caret/selection, focus, editing, composition/IME |
+| Large collections | No reusable virtualized list/picker | Visible-range realization, focus/selection preservation, bounded work |
+| Scroll/drag | Partial immutable scroll/gesture semantics and Weekboard lane behavior | General control integration and broader payload/reorder/navigation policy |
+| Clipboard/cursor | Native adapters exist on all three native hosts | Use through controls with host permission/lifetime rules |
+| File/host services | Bounded default-deny request/completion contracts | Native dialog/filesystem adapters and asynchronous integration |
+| Accessibility | Partial browser DOM projection | Shared semantic tree, native adapters, keyboard/screen-reader qualification |
+| Reliability/performance | Hosted experimental-host checks and one diagnostic recovery workload | Named app workload, retained-resource bounds, latency baselines, release gates |
+
+The implementation order now follows application outcomes:
+
+1. Keep [0019](0019-mzed-native-coexistence-proof.md) as the first MZed
+   integration boundary. Foundation work can proceed independently; a text
+   renderer is not a same-window island proof.
+2. Build a usable Linux text field on the portable model, merged PR27
+   measurement, and Ubuntu grayscale drawing. Connect focused key/text
+   dispatch, show caret and selection geometry, define clipboard and
+   composition/focus ownership, and qualify actual Japanese IME before
+   claiming input support. Keep scalar offsets, grapheme cursor stops, and
+   bidi affinity distinct. For caret/hit geometry to match the current v1
+   renderer, request the same generic `sans` family, font size, and Pango
+   context as drawing; measurements of another explicit family do not imply
+   parity, and no public font-family field exists. Design control
+   accessibility alongside behavior.
+3. Build a picker/command palette and scalable collection controls from input,
+   action/focus routing, selection/navigation, virtualized visible-range work,
+   and scroll/drag. Verify bounded work and keyboard operation.
+4. Continue app execution/host integration around concrete consumers: cancellable
+   work, late-result rejection, native dialogs/filesystem, and endpoint lifetime.
+   Independent work can proceed in parallel; extend accessibility and
+   resource/latency checks on the same controls.
+5. Qualify reference consumers at meaningful checkpoints. Return to MZed when
+   a real component can migrate, preserving working Zed islands and releasing
+   evidence per migration. Keep Yami-kumo as a separate familiar cross-platform
+   UX consumer. Neither app proof alone establishes release readiness.
+
+The next text-control work is not complete until it joins rendering to actual
+focus/input and shows editable caret/selection behavior. This renderer slice
+does not implement key/text dispatch, caret or selection presentation, an
+editable control, IME, accessibility, rich text, or color glyphs; its
+`GrayscaleTextFrames` capability flag does not imply any of those features. The
+[Linux text guide](../../docs/linux-text.md) and [Ubuntu guide](../../docs/ubuntu.md)
+record the exact supported frame boundary and limits.
 
 ### Upstream pin selection gate
 
-Before implementation, record and review one MZed source baseline:
+Before the next MZed component migration, record and review the applicable
+application and framework baselines:
 
-- gpui.mbt's current GPUI comparison pin is `d9afb21688e04f89d9e94d96d33eb530aef90886`.
+- The merged MZed PR3 coexistence proof used Zed v1.22.0 at
+  `76659a55a8c10ed355a070f8764a0b1733e3c115` and gpui.mbt
+  `bf965aebbeb1dfdfed26373d4a7a58bb51a5ad01`. These are the proof's recorded
+  source pins, not automatic pins for a later migration.
+- gpui.mbt's behavioral GPUI comparison pin is
+  `d9afb21688e04f89d9e94d96d33eb530aef90886`; keep it distinct from the
+  framework checkout used to build MZed.
 - Zed's moving main was observed at `a84689073d296dfd39987bc7dd478e43ef76d83a` during research. Observation does not select it as the migration baseline.
-- Select a suitable fixed Zed commit or release, verify its Linux build and licensing at the selected paths, and record its exact SHA and toolchain. Keep the gpui.mbt behavioral comparison pin separate unless a reviewed pin update is needed.
+- Reconfirm or select a fixed Zed commit/release for the next component, verify its Linux build and licensing at the affected paths, and record exact source/toolchain provenance. Keep the gpui.mbt behavioral comparison pin separate unless a reviewed pin update is needed.
 - Preserve all unrelated local branches and changes. Use an isolated implementation worktree/directory when implementation is approved.
 
 ## First increment
 
 The first detailed packet is [0019 native coexistence proof](0019-mzed-native-coexistence-proof.md).
-It establishes a pinned working Zed baseline and a reversible same-window
-MoonBit region before expanding into product features. A logic-only bridge may
-be a prerequisite, but does not count as a completed native visual island.
+Its initial bounded same-window interaction proof is now present in MZed PR3;
+the packet remains open for its complete baseline, ownership/input, recovery,
+resource and release evidence. A logic-only bridge may be a prerequisite, but
+does not count as a completed native visual island.
 
 ## Later increments
 
@@ -175,7 +260,7 @@ Keep these as behavior-level slices. Write detailed implementation packets only 
 ### Read-only project tree
 
 - Product behavior: display a bounded project tree, expand/collapse, select a file and request that the existing Rust editor opens it. Rust remains authoritative for filesystem/worktree/editor state.
-- Framework capabilities: text drawing, layout and clipping, scrolling, stable row identity, focus/keyboard selection and an accessibility representation appropriate to the declared target.
+- Framework capabilities: bounded Ubuntu grayscale drawing of existing text snapshot items is now present; the tree still needs layout/clipping, scrolling, stable row identity, focus/keyboard selection and an accessibility representation appropriate to the declared target.
 - Tool gaps: native targeted interaction and scalable tree fixtures; do not rely on global input injection or unqualified screenshots.
 - Evidence: deterministic tree/selection fixtures plus real file-open flow, Unicode filenames, large-tree bounds, cancellation and regression of the original editor.
 - Scope limit: `project_panel` depends on editor/project/worktree/workspace and more. Do not translate its complete dependency graph to claim one small slice.

@@ -1,6 +1,6 @@
 # Architecture and dependency contract
 
-Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; experimental macOS, Ubuntu/Wayland/GLES, and Windows native slices are present; the JS browser hosts Weekboard and the retained interaction lab with its in-process capability/MCP seam; a separate Node stdio fixture exercises the stateless MCP wire adapter; native and browser MCP endpoint topology remains planned.
+Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; experimental macOS, Ubuntu/Wayland/GLES (including bounded grayscale text frames), and Windows native slices are present; the JS browser hosts Weekboard and the retained interaction lab with its in-process capability/MCP seam; a separate Node stdio fixture exercises the stateless MCP wire adapter; native and browser MCP endpoint topology remains planned.
 
 This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, `element/`, `text/`, `text_layout/`, `capability/`, and optional `mcp/`, plus native and example adapters. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
 
@@ -42,6 +42,8 @@ primitives ──> MoonBit standard/core only
 text ─────────> MoonBit standard/core only
 text_layout ──> text + primitives + MoonBit standard/core
 platform/linux_text ──> text_layout + text + primitives + Linux PangoFT2/Fontconfig FFI
+ubuntu ──private raster ABI──> platform/linux_text
+ubuntu ──UTF-16 validation──> text
 diagnostics ─> MoonBit standard/core + primitives
 core       ──> MoonBit standard/core + diagnostics + primitives
 ```
@@ -65,14 +67,14 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `scene/` | stable, platform-neutral quad/clip commands, bounded text snapshot items, validation, and ordering | `primitives/` | live GPU handles or backend resource objects |
 | `text/` | UTF-16 ranges, directional selection, immutable documents, and composition transitions | MoonBit standard/core only | rendering, platform, or host-input types |
 | `text_layout/` | Portable intrinsic text-measurement request/results and copied layout/caret/hit geometry | `text/`, `primitives/`, MoonBit standard/core | Pango/Fontconfig objects, native handles, GUI/session state |
-| `platform/linux_text/` | Linux-only implementation of portable text-layout measurements and copied UTF-8/UTF-16 caret/hit results | `text_layout/`, `text/`, `primitives/`, MoonBit standard/core, Linux PangoFT2/Fontconfig via FFI | shared window `platform/` API, renderer, native object pointers, or persistent Pango handles |
+| `platform/linux_text/` | Linux-only implementation of portable text-layout measurements, copied UTF-8/UTF-16 caret/hit results, and a private grayscale A8 mask raster ABI | `text_layout/`, `text/`, `primitives/`, MoonBit standard/core, Linux PangoFT2/Fontconfig via FFI | shared window `platform/` API, concrete backend, public renderer API, native object pointers, or persistent Pango handles |
 | `capability/` | typed semantic operation descriptors, schema/value projection, registry, GUI binding, deterministic manifest generation | `core/`, `diagnostics/` | renderer/native/MCP transport state, host handles, duplicated domain handlers |
 | `mcp/` | optional MCP-facing inventory/dispatch adapter over semantic capabilities | `capability/`, `diagnostics/` | application state ownership, domain handlers, privileged host APIs |
 | `migration/host_services/` | portable service requests/completions, logical scopes, cancellation, bounded queues, and default-deny service policy for Electron/Tauri migration | `capability/`, `diagnostics/` | DOM, process APIs, native handles, or direct privileged service execution |
 | `renderer API` | render submission and resource-lifetime contract | `scene/`, `primitives/` | a concrete renderer vocabulary in public app APIs |
 | `platform API` | window, input, display, text, clipboard, timer, accessibility contracts | `core/`, `diagnostics/`, `primitives/`, renderer API | platform-specific types in core/facade signatures |
 | `platform/` (first slice) | shared Backend trait, logical window IDs, copied ordered events | `scene/`, `diagnostics/`, `primitives/` | native pointers or OS types |
-| `ubuntu/` | Wayland host/window, integer scale, basic input, EGL/GLES quad renderer | `platform/`, `scene/`, `diagnostics/`, `primitives/`, system native APIs | native handles in public application signatures |
+| `ubuntu/` | Wayland host/window, integer scale, basic input, EGL/GLES quad and bounded grayscale text renderer | `platform/`, `scene/`, `diagnostics/`, `primitives/`, `text/` for UTF-16 validation, private `platform/linux_text` raster ABI, system native APIs | native handles in public application signatures; Pango objects |
 | `examples/ubuntu/` | native executable consuming the shared scene/window contracts | `ubuntu/`, `platform/`, `scene/`, `diagnostics/`, `primitives/`, standard env | private backend tokens |
 | `windows/` | Win32 window/event loop, scale events, basic input, D3D11 hardware-or-WARP quad presentation | `platform/`, `scene/`, `diagnostics/`, `primitives/`, Windows system APIs | native handles in public application signatures |
 | `examples/windows/` | native executable consuming the shared scene/window contracts | `windows/`, `platform/`, `scene/`, `diagnostics/`, `primitives/`, standard env | private backend tokens |
@@ -143,11 +145,11 @@ Invalid or non-finite constraints are rejected before producing a layout tree. F
 
 ## Scene and renderer boundary
 
-Scene generation and pixel output are separate oracles. The current command stream emits quads and rectangle clip push/pop commands. `SceneSnapshot` v1 adds explicit clip-chain tables, transforms, opacity, and ordered `TextItem` values alongside quads. The bounded text item is copied plain text plus bounds, font size, color, transform, opacity, and clip reference; it does not carry a native font handle or implement a shaping/editor contract. Existing quad serialization remains byte-stable. The Canvas 2D host presents these text items using a system sans font and clips each run to its bounds; native renderers explicitly reject them as `UnsupportedCapability`. See [snapshot validation](../scene/snapshot.mbt), [text tests](../scene/snapshot_text_test.mbt), and [the Canvas renderer](../examples/browser/site/canvas-renderer.js).
+Scene generation and pixel output are separate oracles. The current command stream emits quads and rectangle clip push/pop commands. `SceneSnapshot` v1 adds explicit clip-chain tables, transforms, opacity, and ordered `TextItem` values alongside quads. The bounded text item is copied plain text plus bounds, font size, color, transform, opacity, and clip reference; it does not carry a native font handle or implement an editable-control contract. Existing quad serialization remains byte-stable. The Canvas 2D host presents these text items using a system sans font and clips each run to its bounds. Ubuntu's GLES host presents a bounded grayscale subset through PangoFT2 masks; `platform.Capability::GrayscaleTextFrames` is a discovery flag, while each frame still undergoes unsupported/resource preflight and color glyphs reject the whole frame. macOS and Windows retain their explicit `UnsupportedCapability` result for text items. See [snapshot validation](../scene/snapshot.mbt), [text tests](../scene/snapshot_text_test.mbt), the [Linux text guide](linux-text.md#ubuntu-grayscale-scene-text), and [the Canvas renderer](../examples/browser/site/canvas-renderer.js).
 
 The complete design also includes paths, images, richer text runs, and logical resource descriptors. IDs and serialized scene ordering must be deterministic for identical input. Image/font resources will use framework IDs plus validated descriptors, never raw GPU handles. Those broader resource and shaping contracts remain pending.
 
-The renderer consumes scene values and reports typed outcomes for invalid resources, allocation failure, surface/device loss, and submission/presentation failure. A headless scene implementation exists before a GPU renderer. A software raster path may be added for deterministic pixels, but pixel equality across native text/render stacks is not a cross-platform contract. Backend recovery and raster performance gates are specified in the platform and release packets.
+The renderer consumes scene values and reports typed outcomes for invalid resources, allocation failure, surface/device loss, and submission/presentation failure. The headless scene implementation supplies scene contracts; Ubuntu GLES now presents quads and the bounded grayscale text subset. A shared software raster path may still be added for deterministic pixels, but pixel equality across native text/render stacks is not a cross-platform contract. Backend recovery and raster performance gates are specified in the platform and release packets.
 
 ## Native and unsafe boundary
 
@@ -168,17 +170,25 @@ libc/pthread behind `ubuntu/`. This narrow native exception and its dependency
 inventory, licenses, upgrade sources and failure behavior are documented in
 [ubuntu.md](ubuntu.md#native-dependency-inventory-and-exception). No portable
 package imports the concrete backend. The executable package audit now permits
-`platform -> scene/diagnostics/primitives`, `ubuntu -> platform/scene/diagnostics/primitives`,
+`platform -> scene/diagnostics/primitives`; `ubuntu` may depend on
+`platform/scene/diagnostics/primitives`, `text`, and the private
+`platform/linux_text` raster ABI.
 and the native example edges above. It audits aliased imports and whitebox
 test imports as well as blackbox test imports. All other runtime dependencies
 continue to require a written exception.
 
-The headless Linux text adapter has a separate, Linux-only PangoFT2/Fontconfig
-system-library exception. `text_layout/` remains portable, while
-`platform/linux_text/` owns all native calls and copied geometry results. It
-does not import the shared window/backend API, start MZed or a display server,
-or render text. See the [Linux text guide](linux-text.md) for its FFI, build,
-font-fixture, and dependency/license boundaries.
+The Linux text adapter has a Linux-only PangoFT2/Fontconfig system-library
+exception. `text_layout/` remains portable, while `platform/linux_text/` owns
+all native calls, copied geometry results, and the private grayscale-mask
+raster boundary. The Ubuntu renderer consumes that raster ABI but does not
+expose Pango values or handles. Headless measurement remains independent of a
+window/backend or display server. The public
+`require_grayscale_raster()` admission check verifies the linked private ABI
+and Pango >= 1.50 glyph-color metadata at runtime. The executable package
+allowlist records the Ubuntu-to-`platform/linux_text` and Ubuntu-to-`text`
+edges; this exception does not permit other portable packages to depend on the
+adapter. See the [Linux text guide](linux-text.md)
+for FFI, build, font-fixture, and dependency/license boundaries.
 
 ## Initial native package edges
 

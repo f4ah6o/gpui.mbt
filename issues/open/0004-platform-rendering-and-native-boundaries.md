@@ -409,3 +409,49 @@ revision and the renderer gates have evidence.
 The recursive layout path scans the flat preorder node array per container and
 may repeat scans while measuring nested auto dimensions. Worst-case work grows
 quadratically with node count; the depth limit protects stack use only.
+
+
+## Merged measurement and Ubuntu grayscale drawing — 2026-10-05
+
+PR27's measured-text work is merged to main as
+`d0335f65f6758b5ecaf91353500ad6978f9ae13e` (tree
+`ae19ca012ac03cf3b4fed6c93f442d8a04f9fd8c`). It supplies the copied
+text-layout/caret/hit contract and the Linux PangoFT2 measurement adapter. The
+next bounded scene-presentation slice implements Ubuntu Wayland/GLES drawing
+for existing `SceneSnapshot` v1 text items, interleaved with quads in paint
+order. It rasterizes grayscale A8 masks at logical resolution with PangoFT2,
+then transforms/scales them with GLES and `GL_LINEAR`; higher output scale does
+not cause device-resolution rerasterization. Text-local bounds and independent
+viewport scissor clips retain their separate coordinate spaces.
+
+The host advertises `platform.Capability::GrayscaleTextFrames` only as a subset
+discovery flag. Each frame still undergoes preflight. Color glyphs and UTF-16
+strings containing a lone surrogate fail as `UnsupportedCapability` before
+presentation. Resource bounds include 256 text runs, 16,384 UTF-8 bytes per
+run, 1 MiB of UTF-8 bytes per frame, 512 logical pixels per font, 2,048-square
+maximum A8 tiles, 16 MiB of masks per frame and the actual GL texture-size
+limit. The additional `(Unicode scalar count + 1) * font_size_px` geometry
+guard rejects above 1,048,576 before rasterization. The remaining aggregate
+mask budget is checked before each next allocation. Rejections preserve the
+previous displayed frame; actual device/surface loss remains on the existing
+typed recovery path.
+
+This adds native grayscale scene drawing, not text input, caret/selection UI,
+an editable control, IME, accessibility, color glyphs, rich text, or other-host
+text rendering. The public SceneSnapshot schema and non-Linux behavior are
+unchanged. The local headless C mask consumer passes normally and with
+ASan+UBSan using leak detection disabled on Debian 13 / PangoFT2 1.56.3 /
+Fontconfig 2.15.0 with the declared DejaVu/Noto fixtures. Integrated
+Weston/GLES acceptance remains pending. The leak-enabled LeakSanitizer run
+reports that it does not work under ptrace in this environment; that is not a
+leak pass or a product leak failure. Local AF_UNIX stream-socket creation
+returns `EPERM` before the compositor can start, and hosted renderer CI is
+pending. Previous PR27 measurement tests and quad-only Ubuntu checks are not
+evidence for this new renderer. The public `require_grayscale_raster()` checks
+the private linked ABI and Pango >= 1.50 before Ubuntu advertises the subset.
+The next text control must request the same generic `sans` family, font size,
+and Pango context as the renderer when using caret/hit geometry;
+arbitrary-family measurement does not guarantee drawing parity. See the
+[Linux text guide](../../docs/linux-text.md#ubuntu-grayscale-scene-text),
+[Ubuntu guide](../../docs/ubuntu.md#grayscale-text-frame-subset), and
+[application roadmap refresh](0018-mzed-native-island-roadmap.md#framework-capability-status-and-application-order--2026-10-05).

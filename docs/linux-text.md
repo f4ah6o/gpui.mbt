@@ -1,15 +1,32 @@
-# Headless Linux text measurement
+# Linux text measurement and Ubuntu grayscale drawing
 
-`platform/linux_text/` is an experimental Linux-native text-geometry adapter.
-It uses PangoFT2 with FreeType and the installed Fontconfig font set to measure
-shaped text and answer copied caret/hit-test geometry queries. It runs without
-GTK, a window, an X11/Wayland display server, MZed, or a renderer. The portable
-`text/` value model and `primitives/` remain MoonBit-only; the native adapter
-does not add Pango values or handles to that public model.
+`platform/linux_text/` is an experimental Linux-native text adapter. Its
+measurement API uses PangoFT2 with FreeType and the installed Fontconfig font
+set to measure shaped text and answer copied caret/hit-test geometry queries.
+Its private raster boundary produces grayscale A8 glyph masks for the Ubuntu
+GLES renderer. Measurement still runs without GTK, a window, an X11/Wayland
+display server, MZed, or a renderer. The portable `text/` value model and
+`primitives/` remain MoonBit-only; Pango values and handles do not enter the
+public model.
 
-This package is a layout/measurement aid, not a text renderer or a full editor
-text system. Native pointers and Pango structs stay inside the Linux boundary;
-calls return copied values. The adapter retains no Pango font map, context,
+Measured-text [PR #27](https://github.com/f4ah6o/gpui.mbt/pull/27) is merged
+into main as `d0335f65f6758b5ecaf91353500ad6978f9ae13e`. It adds copied
+PangoFT2 measurement/caret/hit values; it does not add an
+editable control. The grayscale renderer described below is a separate,
+Ubuntu-only scene-presentation capability. It does not make the public text
+contract richer and does not change non-Linux rendering behavior.
+
+`require_grayscale_raster()` checks that the linked private raster ABI is
+available and that the runtime Pango library is at least 1.50, which provides
+the glyph-color metadata needed for safe whole-frame rejection. It returns
+`UnsupportedRaster` on ABI/runtime mismatch. Ubuntu checks this before
+advertising or using `GrayscaleTextFrames`; a supported host still applies
+per-frame validation and limits.
+
+Native pointers and Pango structs stay inside the Linux boundary; measurement
+calls return copied values. Raster requests use a private versioned ABI over
+borrowed input bytes, and the native mask allocation is released at the end of
+the frame. The adapter retains no Pango font map, context,
 layout, or other Pango object between calls. Each operation creates the
 required objects, uses them for that request, and unreferences them on success
 and failure. This
@@ -51,7 +68,7 @@ production cleanup behavior.
   glyphs. Exact pixel metrics depend on Pango, Fontconfig, FreeType, the chosen
   font files, and their versions; cross-distribution pixel goldens are not a
   contract. This does not define word-wrapping/editor policy, grapheme
-  navigation, IME behavior, accessibility, or visual raster output.
+  navigation, IME behavior, accessibility, or selection geometry.
 - Each native request rejects inputs exceeding 16,384 UTF-8 text bytes, a
   256-byte font-family name, or 512 logical pixels of font size. Inputs are
   rejected rather than truncated; embedded NUL is unsupported by Pango's
@@ -77,12 +94,15 @@ The native tests were also run locally on Debian 13 with Pango 1.56.3 and
 Fontconfig 2.15.0. `scripts/test_linux_text.sh` checks
 that both pkg-config modules and the fixture font faces resolve, supplies a
 restricted Fontconfig configuration, clears `DISPLAY` and `WAYLAND_DISPLAY`,
-and runs only the native Linux text package's MoonBit tests. The adapter's C
+and runs a standalone C consumer of the private mask ABI plus the native Linux
+text package's MoonBit tests. This exercises headless measurement and mask
+rasterization, not GLES frame presentation. The adapter's C
 compiler wrapper accepts the usual `PKG_CONFIG`, `CC`, `CPPFLAGS`, `CFLAGS`, and
 `LDFLAGS` overrides when a non-default toolchain is needed. This headless gate
 is separate from `scripts/test_ubuntu.sh`, which tests the Wayland/EGL window
-backend. Installing Pango is not needed for the Wayland demo or macOS/Windows
-builds. Use the repository-pinned MoonBit 0.10.14 toolchain shown in CI to run
+backend and grayscale text renderer. PangoFT2 and Fontconfig are now needed to
+build Ubuntu text drawing, but do not affect macOS/Windows builds. Use the
+repository-pinned MoonBit 0.10.14 toolchain shown in CI to run
 the MoonBit package tests.
 
 On Fedora, the corresponding development packages are `pango-devel`,
@@ -105,10 +125,71 @@ actual family/run where relevant rather than relying on a particular pixel
 width from those observations.
 
 The Noto Color Emoji fixture proves that a PangoFT2 layout can select the font
-and compute metrics for an emoji sequence. It does not prove that this package
-can rasterize or display color emoji. The adapter does not call a renderer;
-FT2 emoji metrics, including unusually tall fixed-strike metrics, are not a
-visual-rendering support claim.
+and compute metrics for an emoji sequence. It does not prove that grayscale
+mask rendering supports color emoji: Ubuntu preflights shaped glyphs and
+rejects the entire frame with `UnsupportedCapability` if any text item uses a
+color glyph. Missing-glyph boxes may follow Pango fallback behavior and do not
+prove that the requested glyph was available.
+
+## Ubuntu grayscale scene text
+
+The Ubuntu Wayland/GLES host can draw existing `SceneSnapshot` v1 plain-text
+items interleaved with quads in their original paint order. The renderer uses
+the same Pango layout implementation and defaults the v1 item to the generic
+`sans` family with the item's font size, then rasterizes grayscale A8 masks at
+logical resolution. A separate measurement request matches this rendered
+geometry only when it uses the same `sans` family, font size, and context; the
+measurement API's family-specific queries for other fonts (such as the Noto
+test fixtures) do not promise caret/drawing parity. The public scene has no
+font-family field. GLES uses `GL_LINEAR` filtering to
+transform and smoothly scale those masks to the output; it does not change
+Pango's context matrix or request device-resolution hinting. Enlarging or otherwise
+scaling a logical-resolution mask can therefore look softer than freshly
+rasterized device-resolution text. This is an explicit quality limit of this
+slice; filtering does not rerasterize at device scale.
+
+Text-item bounds are local to the item and clip the rasterized ink before or
+through the item's affine transform. Viewport clip chains remain independent
+viewport-space scissor rectangles. Frame preflight checks all items and
+resources before clearing or submitting; unsupported, invalid, and
+resource-limit failures preserve the previously displayed frame. All mask
+textures are staged before drawing and released on every exit. This guarantee
+covers preflight/presentation of an otherwise live surface; device or surface
+loss follows the existing typed recovery behavior and is not a promise that the
+last image survives a failed device.
+
+This is a bounded subset, not unrestricted text input. In addition to the
+existing total SceneSnapshot item cap, a frame accepts at most 256 text runs,
+16,384 UTF-8 bytes per run, 1 MiB total text bytes per frame, and 512 logical
+pixels per font size. Each A8 tile is at most 2,048 by 2,048 pixels, total mask
+storage is at most 16 MiB per frame, and actual `GL_MAX_TEXTURE_SIZE` is also
+enforced. A private resource guard also rejects with `ResourceExhausted` if
+`(Unicode scalar count + 1) * font_size_px` exceeds 1,048,576 before
+rasterization, bounding combined text/font layout geometry. Values are
+rejected, never truncated; arithmetic and size conversions are checked.
+Empty/whitespace runs still undergo input and
+unsupported-feature validation even if they need no mask. A color glyph
+rejects the whole frame before presentation, even when other text is grayscale.
+
+`platform.Capability::GrayscaleTextFrames` is a subset-discovery flag for this
+Ubuntu drawing capability. It does not promise that every frame is accepted,
+and it does not advertise keyboard text input, an editable control, caret or
+selection UI, composition, or IME. Per-frame unsupported checks remain active;
+macOS and Windows retain their existing text rejection behavior. The public
+`SceneSnapshot` v1 schema and browser behavior are unchanged. No atlas, retained
+raster cache, or persistent Pango raster handle is introduced.
+
+The renderer is an implementation slice whose acceptance checks are tracked in
+[issue 0007](../issues/open/0007-ubuntu-native-backend.md). On Debian 13 with
+PangoFT2 1.56.3, Fontconfig 2.15.0, and the declared DejaVu/Noto fixtures, the
+headless C mask consumer passes normally and under ASan+UBSan with leak
+detection disabled. The leak-enabled LeakSanitizer run reports that it does
+not work under ptrace in this environment; that is neither a leak pass nor a
+product leak failure. The integrated Weston/GLES text-frame
+check has not passed locally: this environment returns `EPERM` when creating
+the required AF_UNIX stream socket, before compositor testing. Hosted renderer
+CI remains pending. Earlier measurement results and quad-only checks do not
+establish GLES text-rendering acceptance or a platform support tier.
 
 ## Direct native dependency and license inventory
 

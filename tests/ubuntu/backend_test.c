@@ -13,8 +13,20 @@
 #include <time.h>
 #include <unistd.h>
 static int verify_pixels;
+static int verify_mixed_pixels;
+static int swap_count;
+struct expected_pixel {
+  int x, y;
+  unsigned char rgba[4];
+};
+static struct expected_pixel mixed_expected[4];
+static int mixed_expected_count;
+static int captured_once;
+static int capture_next_mixed;
 static int benchmark;
 static EGLBoolean verified_swap(EGLDisplay display, EGLSurface surface);
+static void verify_mixed_readback(void);
+static void capture_mixed_readback(void);
 enum { TEST_CAPABILITY_CLIPBOARD = 1, TEST_CAPABILITY_CURSOR = 2 };
 /* Inspect pixels before swap without introducing readback into the runtime. */
 #define eglSwapBuffers verified_swap
@@ -33,6 +45,7 @@ static void record_optional_capability(int host, int capability,
          service);
 }
 static EGLBoolean verified_swap(EGLDisplay display, EGLSurface surface) {
+  ++swap_count;
   if (verify_pixels) {
     unsigned char pixel[4];
     glReadPixels(5 * active->scale, (active->height - 5) * active->scale, 1, 1,
@@ -59,6 +72,12 @@ static EGLBoolean verified_swap(EGLDisplay display, EGLSurface surface) {
     glReadPixels(base + active->scale, row, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE,
                  pixel);
     assert(pixel[0] == 255 && pixel[1] == 0 && pixel[2] == 0);
+  }
+  if (verify_mixed_pixels)
+    verify_mixed_readback();
+  if (capture_next_mixed) {
+    capture_mixed_readback();
+    capture_next_mixed = 0;
   }
   return eglSwapBuffers(display, surface);
 }
@@ -88,6 +107,584 @@ static void await_frame(int host) {
   }
   assert(!active->frame);
 }
+
+static void read_top_pixel(int x, int y, unsigned char pixel[4]) {
+  int device_height = active->height * active->scale;
+  assert(x >= 0 && x < active->width * active->scale);
+  assert(y >= 0 && y < device_height);
+  glReadPixels(x, device_height - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE,
+               pixel);
+}
+
+static void expect_pixel(int index, int x, int y, int r, int g, int b, int a) {
+  assert(index >= 0 && index < (int)(sizeof(mixed_expected) /
+                                    sizeof(mixed_expected[0])));
+  mixed_expected[index].x = x;
+  mixed_expected[index].y = y;
+  mixed_expected[index].rgba[0] = (unsigned char)r;
+  mixed_expected[index].rgba[1] = (unsigned char)g;
+  mixed_expected[index].rgba[2] = (unsigned char)b;
+  mixed_expected[index].rgba[3] = (unsigned char)a;
+  if (mixed_expected_count <= index)
+    mixed_expected_count = index + 1;
+}
+
+static void capture_mixed_readback(void) {
+  const char *path = getenv("GPUI_UBUNTU_CAPTURE");
+  if (captured_once || !path || !*path)
+    return;
+  int width = active->width * active->scale;
+  int height = active->height * active->scale;
+  size_t bytes = (size_t)width * (size_t)height * 4;
+  unsigned char *rgba = malloc(bytes);
+  assert(rgba);
+  glPixelStorei(GL_PACK_ALIGNMENT, 1);
+  glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+  char head[80] = "unknown";
+  FILE *git = popen("git rev-parse HEAD 2>/dev/null", "r");
+  if (git) {
+    if (fgets(head, sizeof(head), git)) {
+      size_t n = strlen(head);
+      while (n && (head[n - 1] == '\n' || head[n - 1] == '\r'))
+        head[--n] = 0;
+    }
+    (void)pclose(git);
+  }
+  const char *renderer = (const char *)glGetString(GL_RENDERER);
+  if (!renderer)
+    renderer = "unknown";
+  FILE *file = fopen(path, "wb");
+  assert(file);
+  assert(fprintf(file, "P6\n# head=%s scale=%d renderer=%s\n%d %d\n255\n",
+                 head, active->scale, renderer, width, height) > 0);
+  /* Readback rows start at GL's bottom edge; PPM rows are top-down here. */
+  for (int row = height - 1; row >= 0; --row)
+    for (int col = 0; col < width; ++col) {
+      const unsigned char *pixel = rgba + ((size_t)row * width + col) * 4;
+      assert(fwrite(pixel, 1, 3, file) == 3);
+    }
+  assert(fclose(file) == 0);
+  free(rgba);
+  captured_once = 1;
+  printf("GPUI_UBUNTU_CAPTURE path=%s head=%s scale=%d renderer=%s width=%d "
+         "height=%d format=ppm\n",
+         path, head, active->scale, renderer, width, height);
+}
+
+static void verify_mixed_readback(void) {
+  for (int i = 0; i < mixed_expected_count; ++i) {
+    unsigned char actual[4];
+    read_top_pixel(mixed_expected[i].x, mixed_expected[i].y, actual);
+    for (int channel = 0; channel < 4; ++channel) {
+      int delta = (int)actual[channel] - mixed_expected[i].rgba[channel];
+      if (delta < 0)
+        delta = -delta;
+      assert(delta <= 5);
+    }
+  }
+}
+
+static double mask_linear_sample(const struct gpui_linux_text_mask *mask,
+                                 double u, double v) {
+  double fx = u * mask->width - 0.5;
+  double fy = v * mask->height - 0.5;
+  double tx = fx - floor(fx), ty = fy - floor(fy);
+  int x0 = (int)floor(fx), y0 = (int)floor(fy);
+  int x1 = x0 + 1, y1 = y0 + 1;
+  if (x0 < 0) x0 = 0;
+  if (y0 < 0) y0 = 0;
+  if (x1 >= mask->width) x1 = mask->width - 1;
+  if (y1 >= mask->height) y1 = mask->height - 1;
+  if (x0 >= mask->width) x0 = mask->width - 1;
+  if (y0 >= mask->height) y0 = mask->height - 1;
+  double a = mask->pixels[(size_t)y0 * mask->width + x0];
+  double b = mask->pixels[(size_t)y0 * mask->width + x1];
+  double c = mask->pixels[(size_t)y1 * mask->width + x0];
+  double d = mask->pixels[(size_t)y1 * mask->width + x1];
+  return ((a * (1.0 - tx) + b * tx) * (1.0 - ty) +
+          (c * (1.0 - tx) + d * tx) * ty) /
+         255.0;
+}
+
+static double expected_text_coverage(const struct gpui_linux_text_mask *mask,
+                                     const double *q, double sx, double sy) {
+  if (sx < q[15] || sy < q[16] || sx >= q[15] + q[17] ||
+      sy >= q[16] + q[18])
+    return 0.0;
+  double a = q[8], b = q[9], c = q[10], d = q[11];
+  double determinant = a * d - b * c;
+  assert(fabs(determinant) > 1e-9);
+  double dx = sx - q[12], dy = sy - q[13];
+  double px = (d * dx - c * dy) / determinant;
+  double py = (-b * dx + a * dy) / determinant;
+  if (px < q[0] + mask->left || py < q[1] + mask->top ||
+      px >= q[0] + mask->right || py >= q[1] + mask->bottom)
+    return 0.0;
+  double u = (px - q[0] - mask->left) / mask->width;
+  double v = (py - q[1] - mask->top) / mask->height;
+  return mask_linear_sample(mask, u, v);
+}
+
+static void projected_mask_point(const struct gpui_linux_text_mask *mask,
+                                 const double *q, int x, int y, double *sx,
+                                 double *sy) {
+  /* A8 texels stay at logical pixel centers. Fractional ink bounds and local
+   * item bounds crop the quad/UV range; they do not stretch the mask. */
+  double local_x = mask->left + x + 0.5;
+  double local_y = mask->top + y + 0.5;
+  double px = q[0] + local_x, py = q[1] + local_y;
+  *sx = q[8] * px + q[10] * py + q[12];
+  *sy = q[9] * px + q[11] * py + q[13];
+}
+
+static void set_mixed_common(double *record, double x, double y, double w,
+                             double h, double r, double g, double b, double a,
+                             double ta, double tb, double tc, double td,
+                             double tx, double ty, double opacity,
+                             double clip_x, double clip_y, double clip_w,
+                             double clip_h) {
+  double *q = record + 1;
+  record[0] = 0;
+  q[0] = x;
+  q[1] = y;
+  q[2] = w;
+  q[3] = h;
+  q[4] = r;
+  q[5] = g;
+  q[6] = b;
+  q[7] = a;
+  q[8] = ta;
+  q[9] = tb;
+  q[10] = tc;
+  q[11] = td;
+  q[12] = tx;
+  q[13] = ty;
+  q[14] = opacity;
+  q[15] = clip_x;
+  q[16] = clip_y;
+  q[17] = clip_w;
+  q[18] = clip_h;
+  record[20] = record[21] = record[22] = 0;
+}
+
+static void set_full_red_quad(double *record, double width, double height) {
+  set_mixed_common(record, 0, 0, width, height, 255, 0, 0, 255, 1, 0, 0, 1,
+                   0, 0, 1, 0, 0, width, height);
+}
+
+static void set_text_record(double *record, double x, double y, double w,
+                            double h, double opacity, double clip_x,
+                            double clip_y, double clip_w, double clip_h,
+                            double tx, double ty, int text_length,
+                            double font_size) {
+  set_mixed_common(record, x, y, w, h, 0, 0, 255, 255, 0.91, 0.27, -0.18,
+                   0.97, tx, ty, opacity, clip_x, clip_y, clip_w, clip_h);
+  record[0] = 1;
+  record[20] = 0;
+  record[21] = text_length;
+  record[22] = font_size;
+}
+
+static void init_mixed_frame(double *data, int count, int width, int height,
+                             int scale) {
+  memset(data, 0, (size_t)(5 + count * GPUI_MIXED_STRIDE) * sizeof(double));
+  data[0] = data[1] = 0;
+  data[2] = width;
+  data[3] = height;
+  data[4] = scale;
+}
+
+static void present_mixed_pixel_fixture(int host, int window, int *saved_x,
+                                        int *saved_y) {
+  static const uint8_t text[] = "MMMM";
+  static const uint8_t sans[] = "sans";
+  int width = active->width, height = active->height, scale = active->scale;
+  struct gpui_linux_text_mask mask = {0};
+  assert(gpui_linux_text_raster_v1(
+             GPUI_LINUX_TEXT_ABI, text, (int32_t)sizeof(text) - 1, sans, 4,
+             18.0, 44.25, 25.5, 4 * 1024 * 1024, &mask) ==
+         GPUI_LINUX_TEXT_OK);
+  assert(mask.pixels && mask.width > 0 && mask.height > 0);
+
+  double data[5 + 3 * GPUI_MIXED_STRIDE];
+  init_mixed_frame(data, 3, width, height, scale);
+  double *backdrop = data + 5;
+  double *text_record = data + 5 + GPUI_MIXED_STRIDE;
+  double *overlay = data + 5 + 2 * GPUI_MIXED_STRIDE;
+  set_full_red_quad(backdrop, width, height);
+  set_text_record(text_record, 5.25, 10.5, 44.25, 25.5, 0.5, 0, 0, width,
+                  height, 0, 0, (int)sizeof(text) - 1, 18.0);
+  double *q = text_record + 1;
+
+  int ax = 0, ay = 0;
+  unsigned int greatest = 0;
+  for (int y = 0; y < mask.height; ++y)
+    for (int x = 0; x < mask.width; ++x) {
+      unsigned int value = mask.pixels[(size_t)y * mask.width + x];
+      if (value > greatest) {
+        greatest = value;
+        ax = x;
+        ay = y;
+      }
+    }
+  assert(greatest >= 200);
+  double raw_ax, raw_ay;
+  projected_mask_point(&mask, q, ax, ay, &raw_ax, &raw_ay);
+  int target_x = 20 * scale, target_y = (height / 3) * scale;
+  double target_sx = (target_x + 0.5) / scale;
+  double target_sy = (target_y + 0.5) / scale;
+  q[12] = target_sx - raw_ax;
+  q[13] = target_sy - raw_ay;
+
+  int bx = -1, by = -1, target_bx = -1, target_by = -1;
+  double best_score = 1e30;
+  for (int y = 0; y < mask.height; ++y)
+    for (int x = 0; x < mask.width; ++x) {
+      unsigned int value = mask.pixels[(size_t)y * mask.width + x];
+      if (value < 180 || (x == ax && y == ay))
+        continue;
+      double sx, sy;
+      projected_mask_point(&mask, q, x, y, &sx, &sy);
+      int px = (int)floor(sx * scale), py = (int)floor(sy * scale);
+      if (px < 0 || py < 0 || px >= width * scale || py >= height * scale ||
+          (px == target_x && py == target_y))
+        continue;
+      double cx = (px + 0.5) / scale, cy = (py + 0.5) / scale;
+      double coverage = expected_text_coverage(&mask, q, cx, cy);
+      if (coverage < 0.35)
+        continue;
+      double dx = cx - target_sx, dy = cy - target_sy;
+      double score = dx * dx + dy * dy;
+      if (score < best_score) {
+        best_score = score;
+        bx = x;
+        by = y;
+        target_bx = px;
+        target_by = py;
+      }
+    }
+  assert(bx >= 0 && by >= 0);
+  double center_bx = (target_bx + 0.5) / scale;
+  double center_by = (target_by + 0.5) / scale;
+  double clip_x = fmin(target_sx, center_bx) - 0.63;
+  double clip_y = fmin(target_sy, center_by) - 0.71;
+  double clip_right = fmax(target_sx, center_bx) + 0.68;
+  double clip_bottom = fmax(target_sy, center_by) + 0.73;
+  q[15] = clip_x;
+  q[16] = clip_y;
+  q[17] = clip_right - clip_x;
+  q[18] = clip_bottom - clip_y;
+  double coverage_b = expected_text_coverage(&mask, q, center_bx, center_by);
+  assert(coverage_b > 0.35);
+
+  int cx = -1, cy = -1;
+  for (int y = 0; y < mask.height && cx < 0; ++y)
+    for (int x = 0; x < mask.width && cx < 0; ++x) {
+      unsigned int value = mask.pixels[(size_t)y * mask.width + x];
+      if (value < 160 || (x == ax && y == ay) || (x == bx && y == by))
+        continue;
+      double sx, sy;
+      projected_mask_point(&mask, q, x, y, &sx, &sy);
+      int px = (int)floor(sx * scale), py = (int)floor(sy * scale);
+      if (px < 0 || py < 0 || px >= width * scale || py >= height * scale ||
+          (px == target_x && py == target_y) ||
+          (px == target_bx && py == target_by))
+        continue;
+      double cx_center = (px + 0.5) / scale;
+      double cy_center = (py + 0.5) / scale;
+      if (cx_center >= q[15] && cx_center < q[15] + q[17] &&
+          cy_center >= q[16] && cy_center < q[16] + q[18])
+        continue;
+      double q_full[19];
+      memcpy(q_full, q, sizeof(q_full));
+      q_full[15] = q_full[16] = 0;
+      q_full[17] = width;
+      q_full[18] = height;
+      if (expected_text_coverage(&mask, q_full, cx_center, cy_center) < 0.25)
+        continue;
+      cx = px;
+      cy = py;
+    }
+  assert(cx >= 0 && cy >= 0);
+
+  double overlay_side = 0.36 / scale;
+  set_mixed_common(overlay, target_sx - overlay_side / 2,
+                   target_sy - overlay_side / 2, overlay_side, overlay_side,
+                   0, 255, 0, 255, 1, 0, 0, 1, 0, 0, 1, 0, 0, width, height);
+  double alpha = 0.5 * coverage_b;
+  expect_pixel(0, target_x, target_y, 0, 255, 0, 255);
+  expect_pixel(1, target_bx, target_by,
+               (int)lround(255.0 * (1.0 - alpha)), 0,
+               (int)lround(255.0 * alpha), 255);
+  expect_pixel(2, cx, cy, 255, 0, 0, 255);
+
+  int previous_verify = verify_pixels;
+  verify_pixels = 0;
+  mixed_expected_count = 3;
+  verify_mixed_pixels = 1;
+  int swaps_before = swap_count;
+  assert(gpui_present_v2(GPUI_MIXED_FRAME_ABI, host, window, data,
+                         (int32_t)(sizeof(data) / sizeof(data[0])), text,
+                         (int32_t)sizeof(text) - 1) == GPUI_OK);
+  assert(swap_count == swaps_before + 1);
+  verify_mixed_pixels = 0;
+  await_frame(host);
+  verify_pixels = previous_verify;
+  *saved_x = target_x;
+  *saved_y = target_y;
+  gpui_linux_text_mask_release_v1(&mask);
+}
+
+static void assert_preflight_preserves(int host, int window, const double *data,
+                                       int32_t length, const uint8_t *text,
+                                       int32_t text_length, int expected_status,
+                                       int x, int y) {
+  unsigned char before[4], after[4];
+  read_top_pixel(x, y, before);
+  int swaps_before = swap_count;
+  assert(gpui_present_v2(GPUI_MIXED_FRAME_ABI, host, window, data, length, text,
+                         text_length) == expected_status);
+  assert(swap_count == swaps_before);
+  read_top_pixel(x, y, after);
+  assert(memcmp(before, after, sizeof(before)) == 0);
+}
+
+static void test_v2_preflight_preservation(int host, int window, int x, int y) {
+  int width = active->width, height = active->height, scale = active->scale;
+  static const uint8_t one[] = "A";
+  double invalid[5 + 3 * GPUI_MIXED_STRIDE];
+  init_mixed_frame(invalid, 3, width, height, scale);
+  set_full_red_quad(invalid + 5, width, height);
+  set_text_record(invalid + 5 + GPUI_MIXED_STRIDE, 8, 8, 20, 20, 1, 0, 0,
+                  width, height, 0, 0, 1, 16);
+  set_text_record(invalid + 5 + 2 * GPUI_MIXED_STRIDE, 20, 20, 12, 12, 1, 0,
+                  0, width, height, 0, 0, 1, 16);
+  invalid[5 + 2 * GPUI_MIXED_STRIDE + 20] = 0;
+  invalid[5 + 2 * GPUI_MIXED_STRIDE + 21] = 2; /* invalid late UTF-8 span */
+  assert_preflight_preserves(host, window, invalid,
+                             (int32_t)(sizeof(invalid) / sizeof(invalid[0])),
+                             one, 1, GPUI_INVALID, x, y);
+
+  /* A valid first run allocates a mask, then a bounded no-wrap run exceeds
+   * the 2048px tile dimension. The whole frame must still leave the displayed
+   * pixels and swap count alone. */
+  uint8_t large_text[2048], large_blob[1 + sizeof(large_text)];
+  memset(large_text, 'M', sizeof(large_text));
+  large_blob[0] = 'H';
+  memcpy(large_blob + 1, large_text, sizeof(large_text));
+  double resource[5 + 3 * GPUI_MIXED_STRIDE];
+  init_mixed_frame(resource, 3, width, height, scale);
+  set_full_red_quad(resource + 5, width, height);
+  set_text_record(resource + 5 + GPUI_MIXED_STRIDE, 8, 8, 20, 20, 1, 0, 0,
+                  width, height, 0, 0, 1, 18);
+  set_text_record(resource + 5 + 2 * GPUI_MIXED_STRIDE, 20, 20, 50000, 24, 1,
+                  0, 0, width, height, 0, 0, (int)sizeof(large_text), 18);
+  resource[5 + 2 * GPUI_MIXED_STRIDE + 20] = 1;
+  assert_preflight_preserves(
+      host, window, resource,
+      (int32_t)(sizeof(resource) / sizeof(resource[0])), large_blob,
+      (int32_t)sizeof(large_blob), GPUI_RESOURCE, x, y);
+
+  static const uint8_t emoji[] = {0xf0, 0x9f, 0x91, 0xa9, 0xe2, 0x80,
+                                  0x8d, 0xf0, 0x9f, 0x92, 0xbb};
+  static const uint8_t sans[] = "sans";
+  struct gpui_linux_text_mask color_probe = {0};
+  int color_status = gpui_linux_text_raster_v1(
+      GPUI_LINUX_TEXT_ABI, emoji, (int32_t)sizeof(emoji), sans, 4, 16, 32, 24,
+      4 * 1024 * 1024, &color_probe);
+  assert(color_status == GPUI_LINUX_TEXT_UNSUPPORTED_COLOR);
+  {
+    double color_frame[5 + 3 * GPUI_MIXED_STRIDE];
+    uint8_t blob[1 + sizeof(emoji)];
+    blob[0] = 'H';
+    memcpy(blob + 1, emoji, sizeof(emoji));
+    init_mixed_frame(color_frame, 3, width, height, scale);
+    set_full_red_quad(color_frame + 5, width, height);
+    set_text_record(color_frame + 5 + GPUI_MIXED_STRIDE, 8, 8, 20, 20, 1, 0,
+                    0, width, height, 0, 0, 1, 16);
+    set_text_record(color_frame + 5 + 2 * GPUI_MIXED_STRIDE, 30, 20, 32, 24,
+                    1, 0, 0, width, height, 0, 0,
+                    (int32_t)sizeof(emoji), 16);
+    color_frame[5 + 2 * GPUI_MIXED_STRIDE + 20] = 1;
+    assert_preflight_preserves(
+        host, window, color_frame,
+        (int32_t)(sizeof(color_frame) / sizeof(color_frame[0])), blob,
+        (int32_t)sizeof(blob), GPUI_UNSUPPORTED, x, y);
+  }
+  gpui_linux_text_mask_release_v1(&color_probe);
+}
+
+static void test_fractional_local_bounds(int host, int window) {
+  static const uint8_t text[] = "MMMMMMMM";
+  static const uint8_t sans[] = "sans";
+  int width = active->width, height = active->height, scale = active->scale;
+  struct gpui_linux_text_mask full = {0}, bounded = {0};
+  assert(gpui_linux_text_raster_v1(
+             GPUI_LINUX_TEXT_ABI, text, (int32_t)sizeof(text) - 1, sans, 4,
+             18.0, 150.0, 30.5, 4 * 1024 * 1024, &full) ==
+         GPUI_LINUX_TEXT_OK);
+  assert(gpui_linux_text_raster_v1(
+             GPUI_LINUX_TEXT_ABI, text, (int32_t)sizeof(text) - 1, sans, 4,
+             18.0, 30.25, 30.5, 4 * 1024 * 1024, &bounded) ==
+         GPUI_LINUX_TEXT_OK);
+  assert(full.pixels && bounded.pixels && bounded.right <= 30.25);
+  int ix = 0, iy = 0;
+  unsigned int best = 0;
+  for (int y = 0; y < bounded.height; ++y)
+    for (int x = 0; x < bounded.width; ++x) {
+      unsigned int value = bounded.pixels[(size_t)y * bounded.width + x];
+      if (value > best) {
+        best = value;
+        ix = x;
+        iy = y;
+      }
+    }
+  assert(best >= 200);
+  int ox = -1, oy = -1;
+  for (int y = 0; y < full.height && ox < 0; ++y)
+    for (int x = 0; x < full.width && ox < 0; ++x) {
+      unsigned int value = full.pixels[(size_t)y * full.width + x];
+      double local_x = full.left +
+                       ((x + 0.5) * (full.right - full.left) / full.width);
+      if (value >= 160 && local_x > 32.0) {
+        ox = x;
+        oy = y;
+      }
+    }
+  assert(ox >= 0 && oy >= 0);
+
+  double data[5 + 2 * GPUI_MIXED_STRIDE];
+  init_mixed_frame(data, 2, width, height, scale);
+  set_full_red_quad(data + 5, width, height);
+  double *text_record = data + 5 + GPUI_MIXED_STRIDE;
+  set_text_record(text_record, 4.25, 12.25, 30.25, 30.5, 0.5, 0, 0, width,
+                  height, 0, 0, (int32_t)sizeof(text) - 1, 18.0);
+  double *q = text_record + 1;
+  double raw_x, raw_y;
+  projected_mask_point(&bounded, q, ix, iy, &raw_x, &raw_y);
+  int target_x = 26 * scale, target_y = (height / 3) * scale;
+  double target_sx = (target_x + 0.5) / scale;
+  double target_sy = (target_y + 0.5) / scale;
+  q[12] = target_sx - raw_x;
+  q[13] = target_sy - raw_y;
+  double outside_sx, outside_sy;
+  projected_mask_point(&full, q, ox, oy, &outside_sx, &outside_sy);
+  int outside_x = (int)floor(outside_sx * scale);
+  int outside_y = (int)floor(outside_sy * scale);
+  assert(outside_x >= 0 && outside_y >= 0 && outside_x < width * scale &&
+         outside_y < height * scale);
+  double inside_coverage = expected_text_coverage(
+      &bounded, q, target_sx, target_sy);
+  assert(inside_coverage > 0.5);
+  double outside_cx = (outside_x + 0.5) / scale;
+  double outside_cy = (outside_y + 0.5) / scale;
+  assert(expected_text_coverage(&bounded, q, outside_cx, outside_cy) == 0.0);
+  double text_alpha = 0.5 * inside_coverage;
+  expect_pixel(0, target_x, target_y,
+               (int)lround(255.0 * (1.0 - text_alpha)), 0,
+               (int)lround(255.0 * text_alpha), 255);
+  expect_pixel(1, outside_x, outside_y, 255, 0, 0, 255);
+
+  int previous_verify = verify_pixels;
+  verify_pixels = 0;
+  mixed_expected_count = 2;
+  verify_mixed_pixels = 1;
+  int swaps_before = swap_count;
+  assert(gpui_present_v2(GPUI_MIXED_FRAME_ABI, host, window, data,
+                         (int32_t)(sizeof(data) / sizeof(data[0])), text,
+                         (int32_t)sizeof(text) - 1) == GPUI_OK);
+  assert(swap_count == swaps_before + 1);
+  verify_mixed_pixels = 0;
+  await_frame(host);
+  verify_pixels = previous_verify;
+  gpui_linux_text_mask_release_v1(&full);
+  gpui_linux_text_mask_release_v1(&bounded);
+}
+
+static void test_empty_text_frame(int host, int window) {
+  static const uint8_t spaces[] = "   ";
+  static const uint8_t glyph[] = "H";
+  static const uint8_t sans[] = "sans";
+  struct gpui_linux_text_mask empty = {0}, whitespace = {0}, zero_area = {0};
+  assert(gpui_linux_text_raster_v1(
+             GPUI_LINUX_TEXT_ABI, NULL, 0, sans, 4, 18, 20, 20,
+             4 * 1024 * 1024, &empty) == GPUI_LINUX_TEXT_OK);
+  assert(gpui_linux_text_raster_v1(
+             GPUI_LINUX_TEXT_ABI, spaces, (int32_t)sizeof(spaces) - 1, sans,
+             4, 18, 20, 20, 4 * 1024 * 1024, &whitespace) ==
+         GPUI_LINUX_TEXT_OK);
+  assert(gpui_linux_text_raster_v1(
+             GPUI_LINUX_TEXT_ABI, glyph, 1, sans, 4, 18, 0, 20,
+             4 * 1024 * 1024, &zero_area) == GPUI_LINUX_TEXT_OK);
+  assert(!empty.pixels && !empty.width && !empty.height);
+  assert(!whitespace.pixels && !whitespace.width && !whitespace.height);
+  assert(!zero_area.pixels && !zero_area.width && !zero_area.height);
+
+  int width = active->width, height = active->height, scale = active->scale;
+  double data[5 + 3 * GPUI_MIXED_STRIDE];
+  uint8_t blob[sizeof(spaces)];
+  memcpy(blob, spaces, sizeof(spaces) - 1);
+  blob[sizeof(spaces) - 1] = glyph[0];
+  init_mixed_frame(data, 3, width, height, scale);
+  set_full_red_quad(data + 5, width, height);
+  double *space_record = data + 5 + GPUI_MIXED_STRIDE;
+  set_text_record(space_record, 20, 20, 24, 20, 1, 0, 0, width, height, 0,
+                  0, (int32_t)sizeof(spaces) - 1, 18);
+  double *zero_record = data + 5 + 2 * GPUI_MIXED_STRIDE;
+  set_text_record(zero_record, 60, 20, 0, 20, 1, 0, 0, width, height, 0, 0,
+                  1, 18);
+  zero_record[20] = (int32_t)sizeof(spaces) - 1;
+  mixed_expected_count = 0;
+  expect_pixel(0, 25 * scale, 22 * scale, 255, 0, 0, 255);
+  expect_pixel(1, 60 * scale, 22 * scale, 255, 0, 0, 255);
+  int previous_verify = verify_pixels;
+  verify_pixels = 0;
+  verify_mixed_pixels = 1;
+  int swaps_before = swap_count;
+  assert(gpui_present_v2(GPUI_MIXED_FRAME_ABI, host, window, data,
+                         (int32_t)(sizeof(data) / sizeof(data[0])), blob,
+                         (int32_t)sizeof(blob)) == GPUI_OK);
+  assert(swap_count == swaps_before + 1);
+  verify_mixed_pixels = 0;
+  await_frame(host);
+  verify_pixels = previous_verify;
+  gpui_linux_text_mask_release_v1(&empty);
+  gpui_linux_text_mask_release_v1(&whitespace);
+  gpui_linux_text_mask_release_v1(&zero_area);
+}
+
+static void test_capture_fixture(int host, int window) {
+  const char *path = getenv("GPUI_UBUNTU_CAPTURE");
+  if (!path || !*path)
+    return;
+  static const uint8_t text[] = "Hi 日本";
+  int width = active->width, height = active->height, scale = active->scale;
+  double data[5 + 3 * GPUI_MIXED_STRIDE];
+  init_mixed_frame(data, 3, width, height, scale);
+  set_full_red_quad(data + 5, width, height);
+  double *text_record = data + 5 + GPUI_MIXED_STRIDE;
+  set_text_record(text_record, 7.25, 13.5, 61.5, 28.25, 0.82, 12.25, 14.25,
+                  50.25, 27.5, 0.0, 0.0, (int32_t)sizeof(text) - 1, 20.0);
+  double *text_common = text_record + 1;
+  text_common[8] = 1.0;
+  text_common[9] = 0.0;
+  text_common[10] = 0.0;
+  text_common[11] = 1.0;
+  double *overlay = data + 5 + 2 * GPUI_MIXED_STRIDE;
+  set_mixed_common(overlay, 34.0, 21.0, 14.0, 10.0, 20, 225, 55, 255, 1, 0,
+                   0, 1, 0, 0, 1, 0, 0, width, height);
+  int previous_verify = verify_pixels;
+  verify_pixels = 0;
+  verify_mixed_pixels = 0;
+  capture_next_mixed = 1;
+  assert(gpui_present_v2(GPUI_MIXED_FRAME_ABI, host, window, data,
+                         (int32_t)(sizeof(data) / sizeof(data[0])), text,
+                         (int32_t)sizeof(text) - 1) == GPUI_OK);
+  assert(!capture_next_mixed);
+  await_frame(host);
+  verify_pixels = previous_verify;
+}
+
 static uint64_t monotonic_ns(void) {
   struct timespec now;
   assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
@@ -361,6 +958,17 @@ int main(int argc, char **argv) {
     assert(gpui_present(host, window, frame, sizeof(frame) / sizeof(double)) ==
            GPUI_OK);
     await_frame(host);
+    if (run == 0) {
+      int preserved_x, preserved_y;
+      present_mixed_pixel_fixture(host, window, &preserved_x, &preserved_y);
+      test_v2_preflight_preservation(host, window, preserved_x, preserved_y);
+      /* A fresh ordered frame after late invalid/color input proves that the
+       * rejected transaction left the renderer usable. */
+      present_mixed_pixel_fixture(host, window, &preserved_x, &preserved_y);
+      test_fractional_local_bounds(host, window);
+      test_empty_text_frame(host, window);
+      test_capture_fixture(host, window);
+    }
     drain(host);
     int seq = active->seq;
     pointer_motion(active, NULL, 0, wl_fixed_from_double(12.5),
@@ -384,6 +992,12 @@ int main(int argc, char **argv) {
     assert(gpui_present(host, window, frame, sizeof(frame) / sizeof(double)) ==
            GPUI_SURFACE_LOST);
     assert(gpui_recover(host, window) == GPUI_OK);
+    if (run == 0 && !benchmark) {
+      int recovered_x, recovered_y;
+      /* Exercise the same borrowed text/mask/texture path after GPU recovery
+       * and before the existing create-close cleanup check. */
+      present_mixed_pixel_fixture(host, window, &recovered_x, &recovered_y);
+    }
     uint64_t sample_start = benchmark ? monotonic_ns() : 0;
     assert(gpui_present(host, window, frame, sizeof(frame) / sizeof(double)) ==
            GPUI_OK);

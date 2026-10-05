@@ -38,8 +38,9 @@ jobs:
       - name: Install native system APIs and CI compositor
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri adwaita-icon-theme wayland-utils weston
-          dpkg-query -W libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri adwaita-icon-theme wayland-utils weston
+          sudo apt-get install -y build-essential pkg-config libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri adwaita-icon-theme wayland-utils weston libpango1.0-dev libfontconfig1-dev fontconfig fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji
+          dpkg-query -W libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri adwaita-icon-theme wayland-utils weston libpango1.0-dev libfontconfig1-dev fontconfig fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji
+          pkg-config --modversion pangoft2 fontconfig
           moon version --all
       - name: Native E2E and recovery-to-first-frame timing diagnostic
         env:

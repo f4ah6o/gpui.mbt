@@ -29,6 +29,19 @@ def pkg_config(*args: str) -> list[str]:
     return shlex.split(result.stdout)
 
 
+def supported_pangoft2() -> tuple[bool, str]:
+    pkg_config_command = environment_words("PKG_CONFIG", "pkg-config")
+    if not pkg_config_command:
+        raise FileNotFoundError("PKG_CONFIG is empty")
+    result = subprocess.run(
+        [*pkg_config_command, "--atleast-version=1.50", "pangoft2"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0, result.stderr
+
+
 def main() -> int:
     compiler = environment_words(
         "GPUI_LINUX_TEXT_CC", os.environ.get("CC", "cc")
@@ -37,6 +50,16 @@ def main() -> int:
         print("GPUI_LINUX_TEXT_CC must name a compiler", file=sys.stderr)
         return 2
     try:
+        has_supported_pango, version_stderr = supported_pangoft2()
+        if not has_supported_pango:
+            print(
+                "Linux grayscale text requires PangoFT2 1.50 or newer "
+                "(for shaped glyph color metadata).",
+                file=sys.stderr,
+            )
+            if version_stderr:
+                print(version_stderr.rstrip(), file=sys.stderr)
+            return 2
         cflags = pkg_config("--cflags")
         libraries = pkg_config("--libs")
     except (subprocess.CalledProcessError, FileNotFoundError) as error:

@@ -14,7 +14,8 @@ pkgtype(kind: "executable")
 options(
   link: {
     "native": {
-      "cc": "cc",
+      "cc": "script/linux_text_cc.py",
+      "cc-flags": "-O2 -std=c11 -Wall -Wextra",
       "cc-link-flags": "-lwayland-client -lwayland-cursor -lwayland-egl -lEGL -lGLESv2 -lxkbcommon -lpthread -lm",
     },
   },

@@ -5,6 +5,7 @@ pub enum LinuxTextError {
   InvalidFontSize
   InvalidCoordinates
   UnsupportedInput
+  UnsupportedRaster
   InputTooLarge
   BufferTooSmall
   NativeFailure
@@ -25,6 +26,21 @@ pub let max_font_size_px : Double = 512.0
 
 ///|
 const ABI_VERSION : Int = 1
+
+///|
+extern "C" fn native_require_raster(abi : Int) -> Int = "gpui_linux_text_require_raster_v1"
+
+///|
+/// Admit the linked grayscale raster adapter only with its expected private
+/// ABI and Pango >=1.50 glyph-color metadata. This does not promise color text,
+/// input, IME, a window, or a font match across machines.
+pub fn require_grayscale_raster() -> Result[Unit, LinuxTextError] {
+  if native_require_raster(ABI_VERSION) == 0 {
+    Ok(())
+  } else {
+    Err(UnsupportedRaster)
+  }
+}
 
 ///|
 const HEADER_DOUBLES : Int = 12
@@ -172,6 +188,7 @@ fn status_error(status : Int) -> LinuxTextError {
     4 => BufferTooSmall
     6 => InvalidNativeOutput
     7 => InvalidCoordinates
+    10 => UnsupportedRaster
     _ => NativeFailure
   }
 }
