@@ -1,5 +1,7 @@
 import {
   "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/platform/linux_text",
+  "f4ah6o/gpui/text",
   "f4ah6o/gpui/primitives",
   "f4ah6o/gpui/diagnostics",
   "f4ah6o/gpui/scene",
@@ -17,10 +19,10 @@ options(
   "native-stub": [ "backend.c", "xdg-shell-protocol.c" ],
   link: {
     "native": {
-      "cc": "cc",
-      "cc-flags": "-O2",
+      "cc": "script/linux_text_cc.py",
+      "cc-flags": "-O2 -std=c11 -Wall -Wextra",
       "cc-link-flags": "-lwayland-client -lwayland-cursor -lwayland-egl -lEGL -lGLESv2 -lxkbcommon -lpthread -lm",
-      "stub-cc": "cc",
+      "stub-cc": "script/linux_text_cc.py",
       "stub-cc-flags": "-std=c11 -Wall -Wextra",
     },
   },

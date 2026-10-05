@@ -24,11 +24,11 @@ reference dropping has no destructor guarantee. See
 
 ### Rendering
 
-The shared scene path provides quads, rectangle clip chains, affine transforms, opacity, and canonical snapshots. `SceneItem::TextItem` adds one bounded plain-text run without changing the v1 envelope or existing quad serialization. Canvas 2D presents it using a system sans font, with a maximum font size of 1024 logical pixels and 65,536 UTF-16 code units per run. Native renderers return `UnsupportedCapability` for text. Portable shaping, wrapping, caret/selection layout, rich text, paths, images, and broader resource rendering remain incomplete. See [the scene implementation](../scene/snapshot.mbt) and [text validation tests](../scene/snapshot_text_test.mbt).
+The shared scene path provides quads, rectangle clip chains, affine transforms, opacity, and canonical snapshots. `SceneItem::TextItem` adds one bounded plain-text run without changing the v1 envelope or existing quad serialization. Canvas 2D presents it using a system sans font, with a maximum font size of 1024 logical pixels and 65,536 UTF-16 code units per run. Ubuntu's experimental Wayland/GLES host now advertises `platform.Capability::GrayscaleTextFrames` and draws a bounded text subset using logical-resolution PangoFT2 grayscale masks; macOS and Windows retain their text rejection behavior. The capability is a discovery hint, not a guarantee for every frame and not text input/IME. Color glyphs reject the whole frame during preflight. Portable wrapping policy, caret/selection presentation, rich text, paths, images, and broader resource rendering remain incomplete. See [the Linux text guide](linux-text.md#ubuntu-grayscale-scene-text), [the Ubuntu guide](ubuntu.md#grayscale-text-frame-subset), [the scene implementation](../scene/snapshot.mbt), and [text validation tests](../scene/snapshot_text_test.mbt).
 
 ### Native services
 
-The macOS and Ubuntu backends implement native window/render/input slices. macOS also has clipboard, cursor, and renderer surface recovery/rebuild/rebind paths, but recovery is not advertised until a real Metal end-to-end run verifies it. Ubuntu now has bounded nonblocking clipboard and cursor services, and its configured Wayland/Weston checks pass in hosted CI. Local Wayland end-to-end verification remains blocked by AF_UNIX socket availability. Production text shaping, Japanese IME coverage, semantic accessibility, sustained-resource evidence, and production performance gates remain incomplete.
+The macOS and Ubuntu backends implement native window/render/input slices. macOS also has clipboard, cursor, and renderer surface recovery/rebuild/rebind paths, but recovery is not advertised until a real Metal end-to-end run verifies it. Ubuntu now has bounded nonblocking clipboard and cursor services plus the grayscale text-frame implementation; its earlier configured Wayland/Weston quad checks passed in hosted CI, but the current change's text-mask and mixed-scene renderer gates are still pending. Local Wayland end-to-end verification remains blocked by AF_UNIX socket availability. Editable controls, visible caret/selection, Japanese IME coverage, semantic accessibility, sustained-resource evidence, and production performance gates remain incomplete.
 
 macOS currently has the broader service slice, including clipboard and cursors. Ubuntu's clipboard and cursor APIs have bounded buffers and typed failure paths; see [the Ubuntu guide](ubuntu.md) for the host boundary and validation status.
 
@@ -52,7 +52,7 @@ host-specific security integration remain open.
 ### Platform coverage
 
 - macOS: native AppKit/Metal slice implemented; production gates remain open.
-- Ubuntu / Wayland: native Wayland/EGL/GLES2 slice implemented and exercised in hosted CI; production desktop gates remain open.
+- Ubuntu / Wayland: native Wayland/EGL/GLES2 slice with an experimental, bounded grayscale text-frame renderer; existing quad checks are exercised in hosted CI, while current text-renderer acceptance and production desktop gates remain open.
 - Browser / JavaScript: Canvas 2D Weekboard and interaction lab implemented; exact execution and test scope is recorded in [the browser guide](browser-demo.md).
 - Windows: experimental one-window Win32/D3D11 hardware-or-WARP slice and example implemented; the hosted Windows Server 2025 run passed the MSVC shim build, portable tests, native GPU E2E, shared backend conformance, and example smoke. See [the Windows guide](windows-native.md); this does not establish a support tier or production claim.
 - X11 / XWayland: no backend yet.
@@ -72,9 +72,9 @@ The project is independently implemented. Provenance rules and the pinned upstre
 | M0 | Product, architecture, compatibility, dependency, testing and release contracts | Delivered |
 | M1 | Deterministic App/Entity/Context core and scheduler | Implemented |
 | M2 | Element system, layout, hit testing, event dispatch and focus | Bounded recursive flex layout and headless Render/IntoElement request-layout/prepaint/paint lifecycle implemented; invalidation and broader style/text behavior remain open |
-| M3 | Stable scene data, primitives and renderer abstraction | In progress; quad/clip/transform/opacity snapshots and bounded plain-text items with Canvas 2D presentation implemented |
+| M3 | Stable scene data, primitives and renderer abstraction | In progress; quad/clip/transform/opacity snapshots and bounded plain-text items are implemented; Canvas 2D presents browser text and Ubuntu implements an experimental grayscale subset |
 | M4 | First native platform slices | macOS and Ubuntu/Wayland slices implemented; experimental Windows slice added; initial Ubuntu and Windows hosted checks pass, while broader service and production evidence remain incomplete |
-| M5 | Text and interaction completeness | In progress; portable scroll/drag state and bounded browser text implemented, while text editing/shaping/IME and general accessibility remain open |
+| M5 | Text and interaction completeness | In progress; portable text model, PR27 measured-text contract/adapter, and Ubuntu grayscale drawing are present; editable controls, caret/selection UI, IME and general accessibility remain open |
 | M6 | Multi-platform support gates, including Windows | Planned |
 | M7 | Production-ready 1.0 gates and sustained non-demo use | Planned |
 
@@ -84,10 +84,17 @@ M7 does not require implementing every upstream GPUI feature. It requires a stab
 
 [MZed's native island roadmap](../issues/open/0018-mzed-native-island-roadmap.md)
 uses a Zed-derived application to qualify framework capabilities incrementally.
-The [first native coexistence proof](../issues/open/0019-mzed-native-coexistence-proof.md)
-starts with Linux, preserves a working pinned Zed baseline, and requires a
-same-window boundary decision before product slices. These are planning packets,
-not implemented native embedding or production-support claims.
+The roadmap now orders the next Linux-facing work around a usable text field,
+then picker/collection controls, app execution and reference-consumer
+qualification. The grayscale text renderer and merged PR27 measurement are
+foundation capabilities only; they do not complete the first input control.
+The initial same-window interaction proof is now in [MZed PR3](https://github.com/gpui-mbt/MZed/pull/3),
+merged as `59a4a2b6daa48967c79de114a9de2ed119115c7b`; its [Linux run](https://github.com/gpui-mbt/MZed/actions/runs/37273659532)
+demonstrated bounded 1x/2x mouse interaction, teardown/remount, and saving the
+original editor. This does not complete the remaining [0019 proof gates](../issues/open/0019-mzed-native-coexistence-proof.md),
+or establish text/IME, accessibility, broad platform support, or release
+readiness. The roadmap returns to MZed when an actual reusable component can
+migrate, while bounded framework work continues in parallel.
 
 MZed supplies the functional and practical proof axis toward production
 readiness. The roadmap's

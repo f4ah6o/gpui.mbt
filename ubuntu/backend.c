@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "backend.h"
+#include "../platform/linux_text/linux_text.h"
 #include "xdg-shell-client-protocol.h"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -96,8 +97,8 @@ struct host {
   EGLContext context;
   EGLSurface egl_surface;
   EGLConfig config;
-  GLuint program;
-  GLint color_uniform;
+  GLuint program, mask_program;
+  GLint color_uniform, mask_color_uniform, mask_sampler_uniform;
   int width, height, pending_width, pending_height, scale, configured, seq;
   double px, py;
   int modifiers;
@@ -847,8 +848,8 @@ static void release_renderer(struct host *h, int terminate_display) {
   if (h->egl != EGL_NO_DISPLAY && h->context != EGL_NO_CONTEXT)
     eglDestroyContext(h->egl, h->context);
   h->context = EGL_NO_CONTEXT;
-  h->program = 0;
-  h->color_uniform = -1;
+  h->program = h->mask_program = 0;
+  h->color_uniform = h->mask_color_uniform = h->mask_sampler_uniform = -1;
   if (terminate_display && h->egl != EGL_NO_DISPLAY) {
     eglTerminate(h->egl);
     h->egl = EGL_NO_DISPLAY;
@@ -1131,6 +1132,33 @@ static int create_gpu(struct host *h) {
       return GPUI_DEVICE_LOST;
     h->color_uniform = glGetUniformLocation(h->program, "color");
   }
+  if (!h->mask_program) {
+    GLuint v = shader(GL_VERTEX_SHADER,
+        "attribute vec2 pos; attribute vec2 uv; varying vec2 texcoord; "
+        "void main(){gl_Position=vec4(pos,0.,1.);texcoord=uv;}");
+    GLuint f = shader(GL_FRAGMENT_SHADER,
+        "precision mediump float; uniform vec4 color; uniform sampler2D mask; "
+        "varying vec2 texcoord; "
+        "void main(){gl_FragColor=color*texture2D(mask,texcoord).a;}");
+    if (!v || !f) {
+      if (v) glDeleteShader(v);
+      if (f) glDeleteShader(f);
+      return GPUI_DEVICE_LOST;
+    }
+    h->mask_program = glCreateProgram();
+    glAttachShader(h->mask_program, v);
+    glAttachShader(h->mask_program, f);
+    glBindAttribLocation(h->mask_program, 0, "pos");
+    glBindAttribLocation(h->mask_program, 1, "uv");
+    glLinkProgram(h->mask_program);
+    glDeleteShader(v);
+    glDeleteShader(f);
+    GLint ok;
+    glGetProgramiv(h->mask_program, GL_LINK_STATUS, &ok);
+    if (!ok) return GPUI_DEVICE_LOST;
+    h->mask_color_uniform = glGetUniformLocation(h->mask_program, "color");
+    h->mask_sampler_uniform = glGetUniformLocation(h->mask_program, "mask");
+  }
   return GPUI_OK;
 }
 static int32_t start_impl(int32_t abi) {
@@ -1390,8 +1418,90 @@ int32_t gpui_next(int32_t token, double *out) {
   --h->count;
   return 1;
 }
-int32_t gpui_present(int32_t token, int32_t window, const double *data,
-                     int32_t length) {
+struct staged_text {
+  int item_index;
+  struct gpui_linux_text_mask mask;
+  GLuint texture;
+};
+
+static void release_staged_text(struct staged_text *texts, int count,
+                                 int textures_current) {
+  for (int i = 0; i < count; ++i) {
+    if (textures_current && texts[i].texture)
+      glDeleteTextures(1, &texts[i].texture);
+    gpui_linux_text_mask_release_v1(&texts[i].mask);
+  }
+}
+
+static int text_status(int status) {
+  switch (status) {
+  case GPUI_LINUX_TEXT_OK:
+    return GPUI_OK;
+  case GPUI_LINUX_TEXT_UNSUPPORTED_INPUT:
+  case GPUI_LINUX_TEXT_UNSUPPORTED_COLOR:
+  case GPUI_LINUX_TEXT_UNSUPPORTED_RASTER:
+    return GPUI_UNSUPPORTED;
+  case GPUI_LINUX_TEXT_INPUT_TOO_LARGE:
+  case GPUI_LINUX_TEXT_RESOURCE_LIMIT:
+  case GPUI_LINUX_TEXT_CAPACITY_TOO_SMALL:
+    return GPUI_RESOURCE;
+  case GPUI_LINUX_TEXT_INVALID_ARGUMENT:
+  case GPUI_LINUX_TEXT_INVALID_COORDINATES:
+    return GPUI_INVALID;
+  default:
+    return GPUI_NATIVE;
+  }
+}
+
+/* Validate all common fields and every transformed corner before rasterizing
+ * or touching GL. Same limits as the original private quad ABI. */
+static int valid_common_item(const double *q) {
+  if (q[2] < 0 || q[3] < 0 || q[14] < 0 || q[14] > 1 || q[17] < 0 ||
+      q[18] < 0)
+    return 0;
+  for (int c = 4; c < 8; ++c)
+    if (q[c] < 0 || q[c] > 255)
+      return 0;
+  for (int j = 0; j < 4; ++j) {
+    double px = q[0] + ((j == 1 || j == 3) ? q[2] : 0);
+    double py = q[1] + ((j >= 2) ? q[3] : 0);
+    double tx = q[8] * px + q[10] * py + q[12];
+    double ty = q[9] * px + q[11] * py + q[13];
+    if (!isfinite(tx) || !isfinite(ty) || fabs(tx) > 1e20 || fabs(ty) > 1e20)
+      return 0;
+  }
+  return 1;
+}
+
+static int item_scissor(struct host *h, const double *q) {
+  double left = fmax(0, q[15]), top = fmax(0, q[16]);
+  double right = fmin(h->width, q[15] + q[17]);
+  double bottom = fmin(h->height, q[16] + q[18]);
+  if (right <= left || bottom <= top)
+    return 0;
+  /* Device sample centers inside the logical half-open viewport-space clip. */
+  int x = (int)ceil(left * h->scale - 0.5);
+  int y = (int)ceil(top * h->scale - 0.5);
+  int r = (int)ceil(right * h->scale - 0.5);
+  int b = (int)ceil(bottom * h->scale - 0.5);
+  int dw = h->width * h->scale, dh = h->height * h->scale;
+  if (x < 0) x = 0;
+  if (y < 0) y = 0;
+  if (r < 0) r = 0;
+  if (b < 0) b = 0;
+  if (x > dw) x = dw;
+  if (r > dw) r = dw;
+  if (y > dh) y = dh;
+  if (b > dh) b = dh;
+  if (r <= x || b <= y)
+    return 0;
+  glScissor(x, dh - b, r - x, b - y);
+  return 1;
+}
+
+int32_t gpui_present_v2(int32_t abi, int32_t token, int32_t window,
+                        const double *data, int32_t length,
+                        const uint8_t *text, int32_t text_length) {
   struct host *h;
   int s = window_check(token, window, &h);
   if (s)
@@ -1400,30 +1510,41 @@ int32_t gpui_present(int32_t token, int32_t window, const double *data,
     return GPUI_STOPPING;
   if (h->error)
     return h->error;
-  /* Dispatch queued configure/scale events before checking the snapshot. */
   s = pump(h, 0);
   if (s)
     return s;
-  if (length < 5 || (length - 5) % GPUI_QUAD_STRIDE)
+  if (abi != GPUI_MIXED_FRAME_ABI || !data || length < 5 ||
+      (length - 5) % GPUI_MIXED_STRIDE || text_length < 0 ||
+      (text_length && !text))
     return GPUI_INVALID;
+  if ((length - 5) / GPUI_MIXED_STRIDE > GPUI_MAX_ITEMS ||
+      text_length > GPUI_MAX_FRAME_TEXT_BYTES)
+    return GPUI_RESOURCE;
   for (int i = 0; i < length; ++i)
     if (!isfinite(data[i]) || fabs(data[i]) > 1e20)
       return GPUI_INVALID;
-  for (int i = 5; i < length; i += GPUI_QUAD_STRIDE) {
-    const double *q = data + i;
-    if (q[2] < 0 || q[3] < 0 || q[14] < 0 || q[14] > 1 || q[17] < 0 ||
-        q[18] < 0)
+  int text_count = 0;
+  for (int i = 5; i < length; i += GPUI_MIXED_STRIDE) {
+    const double *record = data + i, *q = record + 1;
+    if (record[0] != 0 && record[0] != 1)
+      return GPUI_UNSUPPORTED;
+    if (!valid_common_item(q))
       return GPUI_INVALID;
-    for (int c = 4; c < 8; ++c)
-      if (q[c] < 0 || q[c] > 255)
+    if (record[0] == 0) {
+      if (record[20] != 0 || record[21] != 0 || record[22] != 0)
         return GPUI_INVALID;
-    for (int j = 0; j < 4; ++j) {
-      double px = q[0] + ((j == 1 || j == 3) ? q[2] : 0);
-      double py = q[1] + ((j >= 2) ? q[3] : 0);
-      double tx = q[8] * px + q[10] * py + q[12];
-      double ty = q[9] * px + q[11] * py + q[13];
-      if (!isfinite(tx) || !isfinite(ty) || fabs(tx) > 1e20 || fabs(ty) > 1e20)
+    } else {
+      if (++text_count > GPUI_MAX_TEXT_ITEMS)
+        return GPUI_RESOURCE;
+      if (record[20] < 0 || record[21] < 0 ||
+          record[20] > text_length || record[21] > text_length - record[20] ||
+          floor(record[20]) != record[20] || floor(record[21]) != record[21] ||
+          record[22] <= 0)
         return GPUI_INVALID;
+      if (record[21] > GPUI_LINUX_TEXT_MAX_TEXT_BYTES)
+        return GPUI_RESOURCE;
+      if (record[22] > GPUI_LINUX_TEXT_MAX_FONT_SIZE_PX)
+        return GPUI_UNSUPPORTED;
     }
   }
   if (data[0] != 0 || data[1] != 0)
@@ -1432,61 +1553,136 @@ int32_t gpui_present(int32_t token, int32_t window, const double *data,
     return GPUI_BUSY;
   if (!h->configured || h->frame)
     return GPUI_BUSY;
+
+  struct staged_text texts[GPUI_MAX_TEXT_ITEMS] = {0};
+  int staged = 0;
+  size_t total_mask_bytes = 0;
+  static const uint8_t sans[] = "sans";
+  for (int i = 5; i < length; i += GPUI_MIXED_STRIDE) {
+    const double *record = data + i, *q = record + 1;
+    if (record[0] == 0)
+      continue;
+    struct staged_text *item = texts + staged;
+    item->item_index = (i - 5) / GPUI_MIXED_STRIDE;
+    ++staged;
+    int offset = (int)record[20], bytes = (int)record[21];
+    const uint8_t *span = bytes ? text + offset : (const uint8_t *)"";
+    s = text_status(gpui_linux_text_raster_v1(
+        GPUI_LINUX_TEXT_ABI, span, bytes, sans, 4, record[22], q[2], q[3],
+        (int32_t)(GPUI_MAX_FRAME_MASK_BYTES - total_mask_bytes), &item->mask));
+    if (s)
+      goto preflight_failure;
+    size_t mask_bytes = (size_t)item->mask.width * (size_t)item->mask.height;
+    if (mask_bytes > GPUI_MAX_FRAME_MASK_BYTES - total_mask_bytes) {
+      s = GPUI_RESOURCE;
+      goto preflight_failure;
+    }
+    total_mask_bytes += mask_bytes;
+  }
   if (h->egl_surface == EGL_NO_SURFACE ||
-      !eglMakeCurrent(h->egl, h->egl_surface, h->egl_surface, h->context))
-    return GPUI_SURFACE_LOST;
+      !eglMakeCurrent(h->egl, h->egl_surface, h->egl_surface, h->context)) {
+    s = GPUI_SURFACE_LOST;
+    goto preflight_failure;
+  }
+  if (glGetError() != GL_NO_ERROR) {
+    s = GPUI_DEVICE_LOST;
+    goto preflight_failure;
+  }
+  GLint maximum_texture = 0;
+  glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maximum_texture);
+  if (maximum_texture <= 0 || glGetError() != GL_NO_ERROR) {
+    s = GPUI_DEVICE_LOST;
+    goto preflight_failure;
+  }
+  glActiveTexture(GL_TEXTURE0);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  for (int i = 0; i < staged; ++i) {
+    struct staged_text *item = texts + i;
+    if (!item->mask.pixels)
+      continue;
+    if (item->mask.width > maximum_texture || item->mask.height > maximum_texture) {
+      s = GPUI_RESOURCE;
+      goto texture_failure;
+    }
+    glGenTextures(1, &item->texture);
+    glBindTexture(GL_TEXTURE_2D, item->texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, item->mask.width, item->mask.height,
+                 0, GL_ALPHA, GL_UNSIGNED_BYTE, item->mask.pixels);
+    GLenum error = glGetError();
+    if (!item->texture || error != GL_NO_ERROR) {
+      s = error == GL_OUT_OF_MEMORY ? GPUI_RESOURCE : GPUI_DEVICE_LOST;
+      goto texture_failure;
+    }
+  }
+
+  /* All inputs, Pango layouts, allocations and uploads passed before clear.
+   * Device/surface failures after this point retain the existing typed recovery
+   * semantics; they are not an atomic-display guarantee. */
   glViewport(0, 0, h->width * h->scale, h->height * h->scale);
   glDisable(GL_SCISSOR_TEST);
   glClearColor(0, 0, 0, 0);
   glClear(GL_COLOR_BUFFER_BIT);
-  glUseProgram(h->program);
   glEnable(GL_BLEND);
   glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
   glEnableVertexAttribArray(0);
   glEnable(GL_SCISSOR_TEST);
-  for (int i = 5; i < length; i += GPUI_QUAD_STRIDE) {
-    const double *q = data + i;
-    double left = fmax(0, q[15]), top = fmax(0, q[16]);
-    double right = fmin(h->width, q[15] + q[17]),
-           bottom = fmin(h->height, q[16] + q[18]);
-    if (right <= left || bottom <= top)
+  int text_index = 0;
+  for (int i = 5; i < length; i += GPUI_MIXED_STRIDE) {
+    const double *record = data + i, *q = record + 1;
+    struct staged_text *item = NULL;
+    if (record[0] == 1)
+      item = texts + text_index++;
+    if (!item_scissor(h, q) || (item && !item->texture))
       continue;
-    /* Include exactly those device pixels whose sample centers lie in the
-     * logical half-open clip. */
-    int x = (int)ceil(left * h->scale - 0.5);
-    int y = (int)ceil(top * h->scale - 0.5);
-    int r = (int)ceil(right * h->scale - 0.5);
-    int b = (int)ceil(bottom * h->scale - 0.5);
-    int dw = h->width * h->scale, dh = h->height * h->scale;
-    if (x < 0) x = 0;
-    if (y < 0) y = 0;
-    if (r < 0) r = 0;
-    if (b < 0) b = 0;
-    if (x > dw) x = dw;
-    if (r > dw) r = dw;
-    if (y > dh) y = dh;
-    if (b > dh) b = dh;
-    if (r <= x || b <= y)
-      continue;
-    glScissor(x, h->height * h->scale - b, r - x, b - y);
+    double left = q[0], top = q[1], right = q[0] + q[2], bottom = q[1] + q[3];
+    GLfloat uvs[8];
+    GLint color_uniform;
+    if (item) {
+      const struct gpui_linux_text_mask *mask = &item->mask;
+      left += mask->left;
+      top += mask->top;
+      right = q[0] + mask->right;
+      bottom = q[1] + mask->bottom;
+      GLfloat u = (GLfloat)((mask->right - mask->left) / mask->width);
+      GLfloat v = (GLfloat)((mask->bottom - mask->top) / mask->height);
+      GLfloat mapped[8] = {0, 0, u, 0, 0, v, u, v};
+      memcpy(uvs, mapped, sizeof(uvs));
+      glUseProgram(h->mask_program);
+      glUniform1i(h->mask_sampler_uniform, 0);
+      glBindTexture(GL_TEXTURE_2D, item->texture);
+      glEnableVertexAttribArray(1);
+      glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, uvs);
+      color_uniform = h->mask_color_uniform;
+    } else {
+      glUseProgram(h->program);
+      glDisableVertexAttribArray(1);
+      color_uniform = h->color_uniform;
+    }
     GLfloat vertices[8];
     for (int j = 0; j < 4; ++j) {
-      double px = q[0] + ((j == 1 || j == 3) ? q[2] : 0);
-      double py = q[1] + ((j >= 2) ? q[3] : 0);
+      double px = (j == 1 || j == 3) ? right : left;
+      double py = j >= 2 ? bottom : top;
       double tx = q[8] * px + q[10] * py + q[12];
       double ty = q[9] * px + q[11] * py + q[13];
       vertices[j * 2] = (GLfloat)(2 * tx / h->width - 1);
       vertices[j * 2 + 1] = (GLfloat)(1 - 2 * ty / h->height);
     }
     float alpha = (float)(q[7] / 255.0 * q[14]);
-    glUniform4f(h->color_uniform, (float)(q[4] / 255.0) * alpha,
+    glUniform4f(color_uniform, (float)(q[4] / 255.0) * alpha,
                 (float)(q[5] / 255.0) * alpha, (float)(q[6] / 255.0) * alpha,
                 alpha);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, vertices);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
   }
   glDisableVertexAttribArray(0);
+  glDisableVertexAttribArray(1);
   glDisable(GL_SCISSOR_TEST);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  release_staged_text(texts, staged, 1);
   if (glGetError() != GL_NO_ERROR)
     return GPUI_DEVICE_LOST;
   h->frame = wl_surface_frame(h->surface);
@@ -1498,6 +1694,39 @@ int32_t gpui_present(int32_t token, int32_t window, const double *data,
                                              : GPUI_SURFACE_LOST;
   }
   return GPUI_OK;
+
+texture_failure:
+  glBindTexture(GL_TEXTURE_2D, 0);
+  release_staged_text(texts, staged, 1);
+  return s;
+preflight_failure:
+  release_staged_text(texts, staged, 0);
+  return s;
+}
+
+int32_t gpui_present(int32_t token, int32_t window, const double *data,
+                     int32_t length) {
+  if (!data || length < 5 || (length - 5) % GPUI_QUAD_STRIDE)
+    return GPUI_INVALID;
+  int count = (length - 5) / GPUI_QUAD_STRIDE;
+  if (count > GPUI_MAX_ITEMS)
+    return GPUI_RESOURCE;
+  int mixed_length = 5 + count * GPUI_MIXED_STRIDE;
+  double *mixed = malloc((size_t)mixed_length * sizeof(double));
+  if (!mixed)
+    return GPUI_RESOURCE;
+  memcpy(mixed, data, 5 * sizeof(double));
+  for (int i = 0; i < count; ++i) {
+    double *record = mixed + 5 + i * GPUI_MIXED_STRIDE;
+    record[0] = 0;
+    memcpy(record + 1, data + 5 + i * GPUI_QUAD_STRIDE,
+            GPUI_QUAD_STRIDE * sizeof(double));
+    record[20] = record[21] = record[22] = 0;
+  }
+  int status = gpui_present_v2(GPUI_MIXED_FRAME_ABI, token, window, mixed,
+                               mixed_length, NULL, 0);
+  free(mixed);
+  return status;
 }
 int32_t gpui_recover(int32_t token, int32_t window) {
   struct host *h;

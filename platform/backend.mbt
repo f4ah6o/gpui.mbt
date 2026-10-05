@@ -45,6 +45,8 @@ pub(all) enum Capability {
   NativeWindow
   LogicalViewport
   QuadFrames
+  /// Logical-resolution grayscale glyph masks; no color text, input or IME.
+  GrayscaleTextFrames
   FrameScheduling
   PointerKeyboard
   Clipboard

@@ -14,7 +14,8 @@ On Ubuntu 24.04 x86-64, install the system toolchain:
 sudo apt-get update
 sudo apt-get install -y build-essential pkg-config libwayland-dev wayland-protocols \
   libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri \
-  adwaita-icon-theme weston
+  libpango1.0-dev libfontconfig1-dev fonts-dejavu-core fonts-noto-cjk \
+  fonts-noto-color-emoji adwaita-icon-theme weston
 sh scripts/prepare_ubuntu.sh
 moon run examples/ubuntu --target native
 ```
@@ -33,10 +34,11 @@ checks the backend only for native; portable targets keep using the shared
 packages. Native builds currently require the Ubuntu system libraries; the
 backend is not a native macOS/Windows build target.
 
-The separate `platform/linux_text/` package provides headless PangoFT2 text
-geometry and has its own development-library/font-fixture prerequisites and
-test command. It is not needed by this Wayland window demo; see the [Linux text
-guide](linux-text.md).
+`platform/linux_text/` provides the PangoFT2/Fontconfig measurement adapter and
+private grayscale-mask raster ABI used by Ubuntu text-frame drawing. The
+PangoFT2/Fontconfig development packages are now also required to build the
+Ubuntu native renderer. See the [Linux text guide](linux-text.md) for the
+measurement contract, raster scope, and separate headless test command.
 
 ## Implemented behavior
 
@@ -62,10 +64,11 @@ guide](linux-text.md).
   per-window EGLSurface/wl_egl_window; explicit renderer recovery recreates the
   context/surface without repeatedly terminating the shared EGLDisplay.
 - SceneSnapshot v1 quads, affine transforms, opacity, paint order, and intersected
-  rectangle clips in logical viewport coordinates. Resources and nonzero
-  viewport origins return `UnsupportedCapability`; text/path/image rendering is
-  pending. Rendering uses premultiplied alpha with sRGB channel values; advanced
-  color management is pending.
+  rectangle clips in logical viewport coordinates. Supported text items draw in
+  order with quads using grayscale A8 masks; per-frame unsupported and resource
+  checks still apply. Other unsupported resources, nonzero viewport origins,
+  paths, and images return `UnsupportedCapability`. Rendering uses premultiplied
+  alpha with sRGB channel values; advanced color management is pending.
 - Presentation dispatches available protocol events, then verifies snapshot
   size/scale against the latest acknowledged configuration. A stale snapshot or
   outstanding frame returns `Busy`. Frame callbacks produce the shared `FrameCompleted`
@@ -101,9 +104,66 @@ guide](linux-text.md).
   terminal for that host: dispatch reports `NativeFailure`, quiesces, and the
   caller stops it and can start a new host once a session is available.
 
-Text-input/IME, semantic accessibility, menus, background enqueue, timers,
-fractional scaling, and broader service capability negotiation remain roadmap
-work. Native clipboard and cursor protocols are implemented, while a
+### Grayscale text-frame subset
+
+The Ubuntu host advertises the new
+`platform.Capability::GrayscaleTextFrames` discovery flag. This means the host
+implements a bounded subset of `SceneSnapshot` v1 text drawing; it does not
+promise that every frame is supported and does not imply committed text input,
+an editable control, caret or selection UI, composition, or IME. Color glyphs
+are detected during preflight and reject the entire frame with a typed
+unsupported result before presentation. The Linux text adapter exposes
+`require_grayscale_raster() -> Result[Unit, LinuxTextError]`; Ubuntu calls it
+to admit only a linked private raster ABI with Pango >= 1.50 glyph-color
+metadata. An unavailable ABI/runtime returns `UnsupportedRaster` at the
+adapter boundary and maps to typed `UnsupportedCapability` for the host.
+macOS and Windows keep their existing text rejection behavior.
+
+The v1 text item uses the generic `sans` font at its supplied size; its public
+schema has no font-family field. Caret/hit measurements used by a future
+editable control must request the same `sans` family, size, and context to
+match this drawing path. Measurements of another explicit family do not imply
+geometry parity. Text is shaped and rasterized into grayscale A8 masks at
+logical resolution; the packed, top-down masks upload as `GL_ALPHA` with
+`GL_UNPACK_ALIGNMENT=1`, clamp-to-edge and no mipmaps. GLES uses `GL_LINEAR`
+filtering to apply existing scene transforms/scaling to those masks and blends
+the premultiplied text color using the existing `ONE,
+ONE_MINUS_SRC_ALPHA` mode. Enlarged text can be softer than device-resolution
+rasterization because this slice does not use device-resolution hinting.
+Text-item bounds clip in item-local coordinates, while viewport clip chains
+continue to use viewport-space scissors.
+
+The per-frame bounds are at most 256 text runs, 16,384 UTF-8 bytes per run,
+1 MiB total UTF-8 bytes per frame, 512 logical pixels per font size, 2,048 by
+2,048 pixels per mask tile, and 16 MiB of mask storage, also limited by the
+actual `GL_MAX_TEXTURE_SIZE`. A private geometry guard also rejects with
+`ResourceExhausted` when `(Unicode scalar count + 1) * font_size_px` exceeds
+1,048,576 before rasterization. The existing total item cap remains. Invalid
+UTF-16 containing a lone surrogate is rejected as `UnsupportedCapability`
+during preflight, before UTF-8 encoding; it is neither replaced nor allowed to
+panic. Inputs are rejected rather than truncated. All items and resources are
+checked before the frame is cleared/submitted; the remaining 16 MiB mask budget
+is checked before each next mask allocation. Unsupported, invalid, and
+resource-limit failures preserve the previously displayed frame. Staged masks
+are released on all exit paths. Actual surface/device loss still follows the
+backend's typed recovery path; preflight preservation does not guarantee a
+prior image across device loss. The public `SceneSnapshot` schema is unchanged. See
+[the full Linux text boundary](linux-text.md#ubuntu-grayscale-scene-text).
+
+This renderer slice is implemented in the current change. The headless C mask
+consumer passes normally and under ASan+UBSan with leak detection disabled on
+Debian 13/PangoFT2 1.56.3/Fontconfig 2.15.0. The leak-enabled LeakSanitizer
+run reports that it does not work under ptrace in this environment; this is
+not a leak pass or a product leak failure. Integrated Weston/GLES text
+presentation remains unverified: local execution is blocked before compositor
+testing because AF_UNIX stream socket creation returns `EPERM`, and hosted
+renderer CI is pending. The existing Ubuntu quad/input/recovery run does not
+establish text-renderer acceptance or broader platform support.
+
+Text-input/IME, text-field controls, visible caret/selection, semantic
+accessibility, menus, background enqueue, timers, fractional scaling, and
+broader service capability negotiation remain roadmap work. Native clipboard
+and cursor protocols are implemented, while a
 cross-client clipboard roundtrip and visible cursor smoke under an input-capable
 desktop remain unverified. Native handles and borrowed buffers do not escape
 the backend. Call `stop` explicitly; dropping a MoonBit Host is not an implicit
@@ -163,10 +223,12 @@ G gates.
 
 ## Native dependency inventory and exception
 
-This is the narrow native system-library exception for the first Ubuntu slice.
-There are no new third-party MoonBit runtime packages or Rust GPUI dependencies.
-All native libraries are introduced and owned by `ubuntu/`; their headers and
-shared libraries come from the Ubuntu system package archive. Development tools
+This is the narrow native system-library exception for the Ubuntu slice. There
+are no new third-party MoonBit runtime packages or Rust GPUI dependencies.
+Wayland/GLES libraries are introduced and owned by `ubuntu/`; the Linux text
+adapter's PangoFT2/Fontconfig calls are owned by `platform/linux_text/` and are
+used by `ubuntu/` only through its private raster ABI. Their headers and shared
+libraries come from the Ubuntu system package archive. Development tools
 (Weston, wayland-scanner, pkg-config, C compiler) are not application runtime
 imports. Generated protocol code inherits the installed protocol XML's license.
 
@@ -174,6 +236,7 @@ imports. Generated protocol code inherits the installed protocol XML's license.
 | --- | --- | --- | --- |
 | Wayland client, wayland-cursor, wayland-egl, xdg-shell | MIT | Display, native window, cursor assets, EGL window wrapper | Ubuntu libwayland/wayland-protocols and installed Xcursor theme; typed startup/dispatch/service errors |
 | EGL, GLESv2 dispatch; Mesa implementation | MIT / Mesa component licenses | GPU context, surface, quad draw and swap | Ubuntu GLVND/Mesa; typed SurfaceLost/DeviceLost, explicit recreation |
+| PangoFT2 / Pango, Fontconfig | LGPL-2.1-or-later / MIT-style permissive license | Linux text shaping/measurement and grayscale A8 masks for Ubuntu scene text | Ubuntu `libpango1.0-dev`, `libfontconfig1-dev`; typed unsupported/invalid/resource outcomes; renderer remains experimental |
 | xkbcommon | MIT | System keymap and logical key/modifier translation | Ubuntu libxkbcommon; typed map/allocation errors |
 | libc, pthread, poll, eventfd, mmap | LGPL-2.1-or-later (glibc) | Owned buffers, owner-thread checks, loop wake and keymap mapping | Ubuntu glibc; typed NativeFailure/ResourceExhausted |
 

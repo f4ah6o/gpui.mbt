@@ -328,3 +328,9 @@ test "repeated synchronous layouts finalize all native objects" {
   assert_eq(counts[1], 64)
   assert_eq(counts[2], 64)
 }
+
+///|
+test "grayscale raster admission is a real linked runtime capability" {
+  assert_true(require_grayscale_raster() is Ok(_))
+  assert_eq(native_require_raster(99), 1)
+}

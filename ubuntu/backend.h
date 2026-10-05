@@ -9,6 +9,12 @@
  */
 #define GPUI_UBUNTU_ABI 1
 #define GPUI_QUAD_STRIDE 19
+#define GPUI_MIXED_FRAME_ABI 2
+#define GPUI_MIXED_STRIDE 23
+#define GPUI_MAX_ITEMS 100000
+#define GPUI_MAX_TEXT_ITEMS 256
+#define GPUI_MAX_FRAME_TEXT_BYTES (1024 * 1024)
+#define GPUI_MAX_FRAME_MASK_BYTES (16 * 1024 * 1024)
 enum gpui_status {
   GPUI_OK,
   GPUI_UNSUPPORTED,
@@ -39,6 +45,12 @@ int32_t gpui_dispatch(int32_t host, int32_t timeout_ms);
 int32_t gpui_next(int32_t host, double *event);
 int32_t gpui_present(int32_t host, int32_t window, const double *data,
                      int32_t length);
+/* v2 records: kind(0=quad,1=text), the same19 common fields as v1,
+ * then UTF8 blob offset/length/font_size. Quad text fields are zero. Both
+ * buffers are borrowed for this synchronous call; no pointers are retained. */
+int32_t gpui_present_v2(int32_t abi, int32_t host, int32_t window,
+                        const double *data, int32_t length,
+                        const uint8_t *text, int32_t text_length);
 int32_t gpui_recover(int32_t host, int32_t window);
 int32_t gpui_capability(int32_t host, int32_t capability);
 int32_t gpui_read_clipboard(int32_t host);

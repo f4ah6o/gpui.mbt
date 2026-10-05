@@ -1,6 +1,6 @@
 # Ubuntu native backend roadmap
 
-Status: in progress — first native slice implemented; remaining gates open
+Status: in progress — grayscale text-frame drawing implemented; input and support gates remain open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
 Updated: 2026-10-04
 
@@ -251,7 +251,54 @@ single headless run is not a reviewed performance baseline. Local Debian
 evidence is not an Ubuntu support claim.
 
 Still open are cross-client clipboard roundtrip and visible cursor smoke,
-fractional scaling/public display metadata, Japanese IME/text shaping,
+fractional scaling/public display metadata, Japanese IME/text-input integration,
 accessibility, menus, cross-thread enqueue, automatic recovery/reconnect and
 sustained resource/performance evidence. X11/XWayland, real Ubuntu desktop
 validation, and all Tier 1 gates remain pending.
+
+## Grayscale text-frame implementation — 2026-10-05
+
+PR27's measured-text work is merged as main commit
+`d0335f65f6758b5ecaf91353500ad6978f9ae13e`. The Ubuntu host now implements a
+bounded renderer slice for existing `SceneSnapshot` v1 `TextItem`s, in their
+original order with quads. It reuses the Linux PangoFT2 text-layout/font
+decisions, emits grayscale A8 masks at logical resolution, and draws them
+through GLES using existing affine/scale geometry and `GL_LINEAR` filtering.
+This is scaled-mask presentation rather than device-resolution rasterization;
+enlarging text may appear softer. Text bounds are item-local; viewport clip
+chains remain viewport-space scissors.
+
+`platform.Capability::GrayscaleTextFrames` discovers this subset only. It is
+not an input, focus, caret/selection, editable-control, composition, IME, or
+color-glyph capability. Preflight rejects any frame with a color glyph or an
+unpaired UTF-16 surrogate as `UnsupportedCapability`. Documented resource
+bounds are 256 runs, 16,384 UTF-8 bytes per run, 1 MiB UTF-8 per frame, 512
+logical font pixels, 2,048 by 2,048 A8 tiles, 16 MiB aggregate masks, actual
+`GL_MAX_TEXTURE_SIZE`, and an additional 1,048,576 limit on
+`(Unicode scalar count + 1) * font_size_px`. Aggregate mask budget is checked
+before the next allocation. No input is truncated. Invalid/unsupported/
+resource-limit failures discovered during preflight preserve the currently
+displayed frame; real device/surface loss retains existing typed recovery
+semantics. The public SceneSnapshot schema is unchanged.
+
+The local headless C mask consumer passes normally and with ASan+UBSan using
+leak detection disabled on Debian 13 / PangoFT2 1.56.3 / Fontconfig 2.15.0
+with the declared DejaVu/Noto fixtures. The leak-enabled LeakSanitizer run
+reports that it does not work under ptrace in this environment; that is not a
+leak pass or a product leak failure. Integrated mixed-scene Weston/GLES checks
+remain pending because AF_UNIX stream-socket creation returns `EPERM` before
+the compositor starts, and hosted renderer CI is pending. Earlier Wayland/
+Weston quad checks and merged PR27 measurement results do not establish this
+renderer acceptance. Ubuntu checks `require_grayscale_raster()` to admit the
+linked ABI and Pango >= 1.50 before discovering the capability. A future
+editable control must use the same generic `sans` family, font size, and Pango
+context as drawing for caret/hit geometry; arbitrary-family measurement does
+not guarantee parity. Use [the Linux text guide](../../docs/linux-text.md#ubuntu-grayscale-scene-text)
+and [Ubuntu guide](../../docs/ubuntu.md#grayscale-text-frame-subset) for the
+complete implementation boundary.
+
+The remaining text roadmap is focused on usable input controls: connect
+focused key/text dispatch; present caret and selection geometry; define
+composition/commit/cancel and focus-loss ownership; qualify Japanese IME;
+then add semantic accessibility and an actual text field/picker consumer.
+Text drawing alone does not satisfy packet D's text-input/IME acceptance.

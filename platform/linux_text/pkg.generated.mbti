@@ -18,6 +18,8 @@ pub let max_text_bytes : Int
 
 pub fn measure(@text.TextDocument, String, Double) -> Result[@text_layout.TextMeasurement, LinuxTextError]
 
+pub fn require_grayscale_raster() -> Result[Unit, LinuxTextError]
+
 // Errors
 
 // Types and methods
@@ -26,6 +28,7 @@ pub enum LinuxTextError {
   InvalidFontSize
   InvalidCoordinates
   UnsupportedInput
+  UnsupportedRaster
   InputTooLarge
   BufferTooSmall
   NativeFailure

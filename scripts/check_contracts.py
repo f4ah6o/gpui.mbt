@@ -647,8 +647,10 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "platform/macos": {"platform", "primitives", "diagnostics", "scene"},
         "platform/linux_text": {"text_layout", "text", "primitives"},
         "examples/native_macos": {"platform/macos", "platform", "primitives", "diagnostics", "scene"},
-        "ubuntu": {"platform", "primitives", "diagnostics", "scene"},
-        "examples/ubuntu": {"ubuntu", "platform", "primitives", "diagnostics", "scene"},
+        "ubuntu": {"platform", "platform/linux_text", "text", "primitives", "diagnostics", "scene"},
+        "examples/ubuntu": {
+            "ubuntu", "platform", "platform/linux_text", "text", "primitives", "diagnostics", "scene",
+        },
         "windows": {"platform", "primitives", "diagnostics", "scene"},
         "examples/windows": {"windows", "platform", "primitives", "diagnostics", "scene"},
         "element": {"core", "primitives", "layout", "scene"},

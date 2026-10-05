@@ -4,8 +4,21 @@ set -eu
 cd "$(dirname "$0")/.."
 sh scripts/prepare_ubuntu.sh
 mkdir -p _build/ubuntu-e2e
-cc -std=c11 -Wall -Wextra -Werror ${GPUI_TEST_CFLAGS:-} tests/ubuntu/backend_test.c ubuntu/xdg-shell-protocol.c \
-  -o _build/ubuntu-e2e/backend-test $(pkg-config --cflags --libs wayland-client wayland-cursor wayland-egl egl glesv2 xkbcommon) -lpthread -lm
+fontconfig_file=${GPUI_LINUX_TEXT_FONTCONFIG_FILE:-"$PWD/tests/linux_text/fonts.conf"}
+if [ ! -r "$fontconfig_file" ]; then
+  echo "Fontconfig fixture configuration is not readable: $fontconfig_file" >&2
+  exit 1
+fi
+export FONTCONFIG_FILE="$fontconfig_file"
+FONTCONFIG_PATH=$(dirname "$fontconfig_file")
+export FONTCONFIG_PATH
+export XDG_CACHE_HOME="$PWD/_build/ubuntu-e2e/font-cache"
+mkdir -p "$XDG_CACHE_HOME"
+script/linux_text_cc.py -std=c11 -Wall -Wextra -Werror ${GPUI_TEST_CFLAGS:-} \
+  tests/ubuntu/backend_test.c ubuntu/xdg-shell-protocol.c platform/linux_text/linux_text.c \
+  -o _build/ubuntu-e2e/backend-test \
+  $(pkg-config --cflags --libs wayland-client wayland-cursor wayland-egl egl glesv2 xkbcommon) \
+  -lpthread -lm
 _build/ubuntu-e2e/backend-test --clipboard-unit
 runtime=$(mktemp -d)
 chmod 700 "$runtime"
@@ -72,7 +85,8 @@ for scale in 1 2; do
   fi
   GPUI_UBUNTU_SMOKE=1 timeout 30 moon run examples/ubuntu --target native
   # Last test terminates this isolated compositor and checks disconnect handling.
-  GPUI_EXPECT_SCALE="$scale" timeout 120 _build/ubuntu-e2e/backend-test "$compositor_pid"
+  GPUI_UBUNTU_CAPTURE="$PWD/_build/ubuntu-e2e/grayscale-frame-scale-$scale.ppm" \
+    GPUI_EXPECT_SCALE="$scale" timeout 120 _build/ubuntu-e2e/backend-test "$compositor_pid"
   wait "$compositor_pid" || true
   compositor_pid=
 done
