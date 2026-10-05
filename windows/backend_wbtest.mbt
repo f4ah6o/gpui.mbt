@@ -235,6 +235,41 @@ test "Win32 frame serializer preserves quad transform opacity and clip" {
     Err(error) => assert_eq(error.code().label(), "unsupported_capability")
     Ok(_) => fail("bounded text must not silently render as a native quad")
   }
+  let text_origin = match @primitives.Point::new(3.5, 4.25) {
+    Ok(value) => value
+    Err(_) => abort("fixture")
+  }
+  let text_run = match
+    @scene.SceneItem::text_run(
+      3,
+      bounds,
+      text_origin,
+      "Origin-aware browser text",
+      16.0,
+      color,
+      transform,
+      1.0,
+      None,
+    ) {
+    Ok(value) => value
+    Err(_) => abort("fixture")
+  }
+  let text_run_scene = match
+    @scene.SceneSnapshot::new(
+      viewport,
+      1.0,
+      [],
+      [@scene.ClipChain::new(7, [viewport])],
+      [item, text_run],
+    ) {
+    Ok(value) => value
+    Err(_) => abort("fixture")
+  }
+  match frame_data(text_run_scene) {
+    Err(error) => assert_eq(error.code().label(), "unsupported_capability")
+    Ok(_) =>
+      fail("origin-aware text must be unsupported before quad serialization")
+  }
 }
 
 ///|

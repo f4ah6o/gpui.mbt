@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
+#include <glib.h>
 #include <assert.h>
 #include <float.h>
 #include <math.h>
@@ -15,18 +16,31 @@ static EGLBoolean field_verified_swap(EGLDisplay display, EGLSurface surface);
 #define eglSwapBuffers field_verified_swap
 #include "../../ubuntu/backend.c"
 #undef eglSwapBuffers
+static double expected_mask_coverage(
+    const struct gpui_linux_text_mask_v2 *reference, const double *record,
+    const double *q, double sx, double sy);
 
 enum {
-  FIELD_DOUBLE_LIMIT = 5 + 23 * 100000,
+  FIELD_DOUBLE_LIMIT = 5 + 25 * 100000,
+  FIELD_STRIDE_LEGACY = 23,
+  FIELD_STRIDE_ORIGIN = 25,
+  FIELD_FIXTURE_CAPACITY = 11,
   FIELD_TEXT_LIMIT = 1024 * 1024,
   FIELD_FILE_LIMIT = 20 * 1024 * 1024
 };
 _Static_assert(sizeof(double) == 8 && DBL_MANT_DIG == 53 && FLT_RADIX == 2,
-               "GPF1 requires IEEE-compatible binary64 storage");
+               "GPF1/GPF2 require IEEE-compatible binary64 storage");
 static const char *fixture_labels[] = {
     "end", "selected", "edited", "rejected_newline", "rejected_bidi",
-    "scroll_end", "blurred"};
+    "scroll_end", "blurred", "j_start", "accent_start", "j_scroll",
+    "accent_scroll"};
 static int field_swap_count;
+static int fixture_swap_count;
+static int fixture_count = 7;
+static int fixture_stride = FIELD_STRIDE_LEGACY;
+static int fixture_abi = GPUI_MIXED_FRAME_ABI;
+static char fixture_source_head[80];
+static char *fixture_manifest;
 
 struct field_fixture {
   const char *label;
@@ -39,12 +53,15 @@ struct field_fixture {
   const uint8_t *text;
   int revision, anchor, head, rejected;
   int text_record;
+  int text_kind;
   int caret_record;
 };
 
-static struct field_fixture fixtures[7];
+static struct field_fixture fixtures[FIELD_FIXTURE_CAPACITY];
 static struct field_fixture *swapping_fixture;
 static const char *capture_path;
+static int diagnostic_mode;
+static double *diagnostic_record;
 
 static void *read_file(const char *path, size_t *length_out) {
   FILE *file = fopen(path, "rb");
@@ -160,11 +177,12 @@ static struct field_fixture *load_fixture(const char *directory, int index) {
   join_path(path, sizeof(path), directory, "frames", fixture->label, ".gpf");
   fixture->file_bytes = read_file(path, &fixture->file_length);
   assert(fixture->file_length >= 12);
-  assert(!memcmp(fixture->file_bytes, "GPF1", 4));
+  assert(!memcmp(fixture->file_bytes, fixture_abi == GPUI_ORIGIN_FRAME_ABI
+                                      ? "GPF2" : "GPF1", 4));
   fixture->double_count = read_u32le(fixture->file_bytes + 4);
   fixture->text_length = read_u32le(fixture->file_bytes + 8);
   assert(fixture->double_count >= 5 && fixture->double_count <= FIELD_DOUBLE_LIMIT);
-  assert((fixture->double_count - 5) % 23 == 0);
+  assert((fixture->double_count - 5) % fixture_stride == 0);
   assert(fixture->text_length <= FIELD_TEXT_LIMIT);
   size_t expected_length = 12 + (size_t)fixture->double_count * sizeof(double) +
                            fixture->text_length;
@@ -177,18 +195,22 @@ static struct field_fixture *load_fixture(const char *directory, int index) {
                   (size_t)fixture->double_count * sizeof(double);
   for (uint32_t i = 0; i < fixture->double_count; ++i)
     assert(isfinite(fixture->data[i]));
-  uint32_t item_count = (fixture->double_count - 5) / 23;
+  uint32_t item_count = (fixture->double_count - 5) / fixture_stride;
   int expected_items = index == 1 ? 9 : (index == 6 ? 7 : 8);
   assert(item_count == (uint32_t)expected_items);
   fixture->text_record = -1;
   fixture->caret_record = -1;
   int text_records = 0;
   for (uint32_t i = 0; i < item_count; ++i) {
-    double *record = fixture->data + 5 + i * 23;
-    assert(record[0] == 0 || record[0] == 1);
-    if (record[0] == 1) {
+    double *record = fixture->data + 5 + i * fixture_stride;
+    assert(record[0] == 0 || record[0] == 1 ||
+           (fixture_abi == GPUI_ORIGIN_FRAME_ABI && record[0] == 2));
+    if (fixture_abi == GPUI_ORIGIN_FRAME_ABI && record[0] != 2)
+      assert(record[23] == 0 && record[24] == 0);
+    if (record[0] == 1 || record[0] == 2) {
       ++text_records;
       fixture->text_record = (int)i;
+      fixture->text_kind = (int)record[0];
       assert(record[20] >= 0 && record[21] > 0 && record[22] == 18);
       assert(floor(record[20]) == record[20] && floor(record[21]) == record[21]);
       assert(record[20] + record[21] <= fixture->text_length);
@@ -241,23 +263,111 @@ static size_t scene_json_length(const struct field_fixture *fixture,
   return length;
 }
 
+static char *manifest_value(const char *manifest, const char *label,
+                           const char *field) {
+  char label_key[128], field_key[128];
+  const char *start = manifest;
+  const char *end_object = manifest + strlen(manifest);
+  if (label) {
+    int n = snprintf(label_key, sizeof(label_key), "\"label\":\"%s\"", label);
+    assert(n > 0 && (size_t)n < sizeof(label_key));
+    start = strstr(manifest, label_key);
+    assert(start);
+    while (start > manifest && *start != '{')
+      --start;
+    end_object = strchr(start, '}');
+    assert(end_object);
+  }
+  int n = snprintf(field_key, sizeof(field_key), "\"%s\":\"", field);
+  assert(n > 0 && (size_t)n < sizeof(field_key));
+  const char *value = strstr(start, field_key);
+  assert(value && value < end_object);
+  value += strlen(field_key);
+  const char *end_value = strchr(value, '\"');
+  assert(end_value && end_value <= end_object);
+  return g_strndup(value, (gsize)(end_value - value));
+}
+
+static char *sha256_hex(const void *bytes, size_t length) {
+  return g_compute_checksum_for_data(G_CHECKSUM_SHA256, bytes, (gsize)length);
+}
+
+static int profile_has_sha256_file_line(const char *profile) {
+  const char *line = profile;
+  while (*line) {
+    const char *end = strchr(line, '\n');
+    if (!end)
+      end = line + strlen(line);
+    if ((size_t)(end - line) > 66) {
+      int valid = 1;
+      for (int i = 0; i < 64; ++i)
+        if (!((line[i] >= '0' && line[i] <= '9') ||
+              (line[i] >= 'a' && line[i] <= 'f') ||
+              (line[i] >= 'A' && line[i] <= 'F'))) {
+          valid = 0;
+          break;
+        }
+      if (valid && line[64] == ' ' && line[65] == ' ')
+        return 1;
+    }
+    line = *end ? end + 1 : end;
+  }
+  return 0;
+}
+
 static void check_manifest_head(const char *directory) {
-  char path[4096], expected[80] = "";
+  char path[4096];
   join_path(path, sizeof(path), directory, "", "manifest", ".json");
   size_t length = 0;
-  char *manifest = read_file(path, &length);
-  (void)length;
-  const char *key = "\"source_head\":\"";
-  char *found = strstr(manifest, key);
-  assert(found);
-  found += strlen(key);
-  char *end = strchr(found, '"');
-  assert(end && (size_t)(end - found) < sizeof(expected));
-  memcpy(expected, found, (size_t)(end - found));
-  expected[end - found] = 0;
-  assert(strstr(manifest, "\"font_family\":\"sans\""));
-  assert(strstr(manifest, "\"font_size\":18"));
-  free(manifest);
+  fixture_manifest = read_file(path, &length);
+  assert(length > 0);
+  const char *format = strstr(fixture_manifest, "\"format\":\"");
+  assert(format);
+  if (strstr(format, "\"format\":\"GPF2\"")) {
+    fixture_abi = GPUI_ORIGIN_FRAME_ABI;
+    fixture_stride = FIELD_STRIDE_ORIGIN;
+    fixture_count = 11;
+    assert(strstr(fixture_manifest, "\"abi\":3"));
+    assert(strstr(fixture_manifest, "\"stride_doubles\":25"));
+  } else {
+    fixture_abi = GPUI_MIXED_FRAME_ABI;
+    fixture_stride = FIELD_STRIDE_LEGACY;
+    fixture_count = 7;
+    assert(strstr(fixture_manifest, "\"format\":\"GPF1\""));
+    assert(strstr(fixture_manifest, "\"abi\":2"));
+    assert(strstr(fixture_manifest, "\"stride_doubles\":23"));
+  }
+  char *expected = manifest_value(fixture_manifest, NULL, "source_head");
+  snprintf(fixture_source_head, sizeof(fixture_source_head), "%s", expected);
+  g_free(expected);
+  assert(strstr(fixture_manifest, "\"font_family\":\"sans\""));
+  assert(strstr(fixture_manifest, "\"font_size\":18"));
+  if (fixture_abi == GPUI_ORIGIN_FRAME_ABI) {
+    const char *profile_sha_key = "\"font_profile\":{\"path\":\"../font-profile.txt\",\"sha256\":\"";
+    const char *profile_sha = strstr(fixture_manifest, profile_sha_key);
+    assert(profile_sha);
+    profile_sha += strlen(profile_sha_key);
+    const char *profile_sha_end = strchr(profile_sha, '\"');
+    assert(profile_sha_end && (size_t)(profile_sha_end - profile_sha) == 64);
+    char expected_profile_sha[65];
+    memcpy(expected_profile_sha, profile_sha, 64);
+    expected_profile_sha[64] = 0;
+    char profile_path[4096];
+    join_path(profile_path, sizeof(profile_path), directory, "..", "font-profile", ".txt");
+    size_t profile_length = 0;
+    char *profile = read_file(profile_path, &profile_length);
+    char *actual_profile_sha = sha256_hex(profile, profile_length);
+    assert(!strcmp(expected_profile_sha, actual_profile_sha));
+    char expected_head_line[96];
+    snprintf(expected_head_line, sizeof(expected_head_line), "source_head=%s", fixture_source_head);
+    assert(strstr(profile, expected_head_line));
+    assert(strstr(profile, "fc_match_request=sans\n"));
+    assert(strstr(profile, "fc_match_request=sans:charset=65e5\n"));
+    assert(strstr(profile, "fontconfig="));
+    assert(profile_has_sha256_file_line(profile));
+    g_free(actual_profile_sha);
+    free(profile);
+  }
   FILE *git = popen("git rev-parse HEAD 2>/dev/null", "r");
   assert(git);
   char executed_head[80] = "";
@@ -267,28 +377,42 @@ static void check_manifest_head(const char *directory) {
   size_t n = strlen(executed_head);
   while (n && (executed_head[n - 1] == '\n' || executed_head[n - 1] == '\r'))
     executed_head[--n] = 0;
-  assert(!strcmp(expected, executed_head));
+  assert(!strcmp(fixture_source_head, executed_head));
 }
 
 static void verify_fixture_set(const char *directory) {
   check_manifest_head(directory);
-  for (int i = 0; i < 7; ++i) {
+  for (int i = 0; i < fixture_count; ++i) {
     load_fixture(directory, i);
     parse_source_header(&fixtures[i], directory);
     struct field_fixture *fixture = &fixtures[i];
+    char *expected_line_sha = manifest_value(fixture_manifest, fixture->label,
+                                             "original_line_sha256");
+    char *actual_line_sha = sha256_hex(fixture->original_line,
+                                       fixture->original_length);
+    assert(!strcmp(expected_line_sha, actual_line_sha));
+    g_free(expected_line_sha);
+    g_free(actual_line_sha);
+    char *expected_frame_sha = manifest_value(fixture_manifest, fixture->label,
+                                              "frame_sha256");
+    char *actual_frame_sha = sha256_hex(fixture->file_bytes,
+                                        fixture->file_length);
+    assert(!strcmp(expected_frame_sha, actual_frame_sha));
+    g_free(expected_frame_sha);
+    g_free(actual_frame_sha);
     assert(fixture->data[0] == 0 && fixture->data[1] == 0 &&
            fixture->data[2] == 640 && fixture->data[3] == 240 &&
            fixture->data[4] == 1);
-    double *background = fixture->data + 6; /* first record common fields */
+    double *background = fixture->data + 6;
     assert(background[0] == 0 && background[1] == 0 &&
            background[2] == 640 && background[3] == 240);
     assert(background[4] == 24 && background[5] == 28 &&
            background[6] == 36 && background[7] == 255);
-    double *field = fixture->data + 5 + 23 + 1;
+    double *field = fixture->data + 5 + fixture_stride + 1;
     assert(field[0] == 32 && field[1] == 28 && field[2] == 180 &&
            field[3] == 44 && field[4] == 255 && field[5] == 255 &&
            field[6] == 255 && field[7] == 255);
-    double *text_record = fixture->data + 5 + fixture->text_record * 23;
+    double *text_record = fixture->data + 5 + fixture->text_record * fixture_stride;
     double *text = text_record + 1;
     assert(text[15] == 36 && text[16] == 32 && text[17] == 172 &&
            text[18] == 36);
@@ -296,19 +420,27 @@ static void verify_fixture_set(const char *directory) {
            text_record[22] == 18);
     int rejected = i == 3 || i == 4;
     assert(fixture->rejected == rejected);
-    if (i == 5) {
-      double *caret = fixture->data + 5 + fixture->caret_record * 23 + 1;
+    if (fixture_abi == GPUI_ORIGIN_FRAME_ABI)
+      assert(fixture->text_kind == 2);
+    else
+      assert(fixture->text_kind == 1);
+    if (i == 5 || i == 9 || i == 10) {
+      double *caret = fixture->data + 5 + fixture->caret_record * fixture_stride + 1;
       assert(text[12] < 36 && fabs(caret[0] - 207.0) < 1e-8 &&
              fabs(caret[2] - 1.0) < 1e-8);
     }
+    if (i == 7 || i == 8)
+      assert(fixture->anchor == 0 && fixture->head == 0);
   }
 
   static const uint8_t short_text[] = "Hi \xe6\x97\xa5\xe6\x9c\xac";
   static const uint8_t edited_text[] = "Edited \xe6\x97\xa5\xe6\x9c\xac";
   static const uint8_t long_text[] = "Wide \xe6\x97\xa5\xe6\x9c\xac ";
-  for (int i = 0; i < 7; ++i) {
+  static const uint8_t j_text[] = "jJ";
+  static const uint8_t accent_text[] = "\xc3\x81" "A" "\xcc\x81";
+  for (int i = 0; i < fixture_count; ++i) {
     struct field_fixture *fixture = &fixtures[i];
-    double *text_record = fixture->data + 5 + fixture->text_record * 23;
+    double *text_record = fixture->data + 5 + fixture->text_record * fixture_stride;
     size_t offset = (size_t)text_record[20], bytes = (size_t)text_record[21];
     const uint8_t *expected = NULL;
     size_t expected_length = 0;
@@ -318,13 +450,36 @@ static void verify_fixture_set(const char *directory) {
     } else if (i <= 4) {
       expected = edited_text;
       expected_length = sizeof(edited_text) - 1;
-    } else {
+    } else if (i <= 6 || i == 9) {
       expected = long_text;
       expected_length = sizeof(long_text) - 1;
+    } else if (i == 7) {
+      expected = j_text;
+      expected_length = sizeof(j_text) - 1;
+    } else if (i == 8) {
+      expected = accent_text;
+      expected_length = sizeof(accent_text) - 1;
+    } else {
+      expected = (const uint8_t *)"Wide ";
+      expected_length = 5;
     }
-    if (i <= 4) {
+    if (i <= 4 || i == 7 || i == 8) {
       assert(bytes == expected_length);
       assert(!memcmp(fixture->text + offset, expected, expected_length));
+    } else if (i == 9) {
+      assert(bytes == expected_length * 8 + sizeof(j_text) - 1);
+      for (int repeat = 0; repeat < 8; ++repeat)
+        assert(!memcmp(fixture->text + offset + (size_t)repeat * expected_length,
+                       expected, expected_length));
+      assert(!memcmp(fixture->text + offset + expected_length * 8,
+                     j_text, sizeof(j_text) - 1));
+    } else if (i == 10) {
+      assert(bytes == expected_length * 20 + sizeof(accent_text) - 1);
+      for (int repeat = 0; repeat < 20; ++repeat)
+        assert(!memcmp(fixture->text + offset + (size_t)repeat * expected_length,
+                       expected, expected_length));
+      assert(!memcmp(fixture->text + offset + expected_length * 20,
+                     accent_text, sizeof(accent_text) - 1));
     } else {
       assert(bytes == expected_length * 8);
       for (int repeat = 0; repeat < 8; ++repeat)
@@ -350,9 +505,9 @@ static void verify_fixture_set(const char *directory) {
 }
 
 static double *item_record(struct field_fixture *fixture, int index) {
-  uint32_t count = (fixture->double_count - 5) / 23;
+  uint32_t count = (fixture->double_count - 5) / fixture_stride;
   assert(index >= 0 && (uint32_t)index < count);
-  return fixture->data + 5 + index * 23;
+  return fixture->data + 5 + index * fixture_stride;
 }
 
 static void get_logical_pixel(double x, double y, unsigned char pixel[4]) {
@@ -396,8 +551,10 @@ static double mask_linear_sample(const struct gpui_linux_text_mask *mask,
           (c * (1 - tx) + d * tx) * ty) / 255.0;
 }
 
-static double expected_mask_coverage(const struct gpui_linux_text_mask *mask,
-                                     const double *q, double sx, double sy) {
+static double expected_mask_coverage(
+    const struct gpui_linux_text_mask_v2 *reference, const double *record,
+    const double *q, double sx, double sy) {
+  const struct gpui_linux_text_mask *mask = &reference->mask;
   if (sx < q[15] || sy < q[16] || sx >= q[15] + q[17] ||
       sy >= q[16] + q[18])
     return 0.0;
@@ -406,18 +563,25 @@ static double expected_mask_coverage(const struct gpui_linux_text_mask *mask,
   double dx = sx - q[12], dy = sy - q[13];
   double px = (q[11] * dx - q[10] * dy) / determinant;
   double py = (-q[9] * dx + q[8] * dy) / determinant;
-  if (px < q[0] + mask->left || py < q[1] + mask->top ||
-      px >= q[0] + mask->right || py >= q[1] + mask->bottom)
+  double offset_x = record[0] == 1 ? q[0] : 0.0;
+  double offset_y = record[0] == 1 ? q[1] : 0.0;
+  if (px < q[0] || py < q[1] || px >= q[0] + q[2] || py >= q[1] + q[3] ||
+      px < offset_x + mask->left || py < offset_y + mask->top ||
+      px >= offset_x + mask->right || py >= offset_y + mask->bottom)
     return 0.0;
-  double u = (px - q[0] - mask->left) / mask->width;
-  double v = (py - q[1] - mask->top) / mask->height;
+  double visible_width = mask->right - mask->left;
+  double visible_height = mask->bottom - mask->top;
+  double u = reference->u0 +
+      (px - offset_x - mask->left) / visible_width * (reference->u1 - reference->u0);
+  double v = reference->v0 +
+      (py - offset_y - mask->top) / visible_height * (reference->v1 - reference->v0);
   return mask_linear_sample(mask, u, v);
 }
 
 static int caret_geometry(const struct field_fixture *fixture, int utf16_offset,
                           double rect[4]) {
   static const uint8_t sans[] = "sans";
-  double *text_record = fixture->data + 5 + fixture->text_record * 23;
+  double *text_record = fixture->data + 5 + fixture->text_record * fixture_stride;
   size_t text_offset = (size_t)text_record[21 - 1];
   size_t text_length = (size_t)text_record[22 - 1];
   const uint8_t *text = fixture->text + text_offset;
@@ -445,26 +609,83 @@ static int caret_geometry(const struct field_fixture *fixture, int utf16_offset,
   return found;
 }
 
-static struct gpui_linux_text_mask make_mask(struct field_fixture *fixture) {
+static void assert_recorded_run_geometry(const struct field_fixture *fixture,
+                                         const double *measurement) {
+  if (fixture->text_kind != 2)
+    return;
+  const double *record = fixture->data + 5 + fixture->text_record * fixture_stride;
+  const double *q = record + 1;
+  double min_x = fmin(0.0, fmin(measurement[0], measurement[4]));
+  double min_y = fmin(0.0, fmin(measurement[1], measurement[5]));
+  double max_x = fmax(measurement[0] + measurement[2],
+                      measurement[4] + measurement[6]);
+  double max_y = fmax(measurement[1] + measurement[3],
+                      measurement[5] + measurement[7]);
+  double previous_x = -INFINITY;
+  for (int i = 0; i < (int)measurement[11]; ++i) {
+    const double *caret = measurement + GPUI_LINUX_TEXT_HEADER_DOUBLES +
+        i * GPUI_LINUX_TEXT_CARET_DOUBLES;
+    if (caret[1] != 1.0)
+      continue;
+    const double *strong = caret + 2, *weak = caret + 6;
+    assert(strong[0] >= measurement[0] &&
+           strong[0] + strong[2] <= measurement[0] + measurement[2] &&
+           strong[1] >= measurement[1] &&
+           strong[1] + strong[3] <= measurement[1] + measurement[3] &&
+           strong[3] > 0.0 && strong[0] >= previous_x);
+    for (int c = 0; c < 4; ++c) assert(strong[c] == weak[c]);
+    previous_x = strong[0];
+  }
+  double rounded_min_x = floor(min_x), rounded_min_y = floor(min_y);
+  double rounded_max_x = ceil(max_x), rounded_max_y = ceil(max_y);
+  double expected_width = fmax(1.0, rounded_max_x - rounded_min_x);
+  double expected_height = fmax(1.0, rounded_max_y - rounded_min_y);
+  assert(fabs(record[23] + rounded_min_x) < 1e-8 &&
+         fabs(record[24] + rounded_min_y) < 1e-8);
+  assert(fabs(q[0]) < 1e-8 && fabs(q[1]) < 1e-8 &&
+         fabs(q[2] - expected_width) < 1e-8 &&
+         fabs(q[3] - expected_height) < 1e-8);
+}
+
+static struct gpui_linux_text_mask_v2 make_reference_mask(
+    struct field_fixture *fixture) {
   static const uint8_t sans[] = "sans";
-  struct gpui_linux_text_mask mask = {0};
-  double *text_record = fixture->data + 5 + fixture->text_record * 23;
-  assert(gpui_linux_text_raster_v1(
-             GPUI_LINUX_TEXT_ABI,
-             fixture->text + (size_t)text_record[20],
-             (int32_t)text_record[21], sans, 4, text_record[22],
-             (text_record + 1)[2], (text_record + 1)[3],
-             4 * 1024 * 1024, &mask) == GPUI_LINUX_TEXT_OK);
-  assert(mask.pixels && mask.width > 0 && mask.height > 0);
-  return mask;
+  struct gpui_linux_text_mask_v2 reference = {0};
+  double *text_record = fixture->data + 5 + fixture->text_record * fixture_stride;
+  const uint8_t *text = fixture->text + (size_t)text_record[20];
+  int32_t text_length = (int32_t)text_record[21];
+  int capacity = GPUI_LINUX_TEXT_HEADER_DOUBLES +
+      (utf8_scalar_count(text, (size_t)text_length) + 1) *
+          GPUI_LINUX_TEXT_CARET_DOUBLES;
+  double *measurement = calloc((size_t)capacity, sizeof(double));
+  assert(measurement);
+  assert(gpui_linux_text_measure_v1(GPUI_LINUX_TEXT_ABI, text, text_length,
+                                    sans, 4, text_record[22], measurement,
+                                    capacity) == GPUI_LINUX_TEXT_OK);
+  double origin_x = fixture->text_kind == 2 ? text_record[23] : 0.0;
+  double origin_y = fixture->text_kind == 2 ? text_record[24] : 0.0;
+  double ink_x = measurement[4], ink_y = measurement[5];
+  double ink_width = measurement[6], ink_height = measurement[7];
+  free(measurement);
+  assert(ink_width > 0 && ink_height > 0);
+  assert(gpui_linux_text_raster_v2(
+             GPUI_LINUX_TEXT_RASTER_ABI, text, text_length, sans, 4,
+             text_record[22], origin_x, origin_y,
+             origin_x + ink_x - 1.0, origin_y + ink_y - 1.0,
+             ink_width + 2.0, ink_height + 2.0,
+             4 * 1024 * 1024, &reference) == GPUI_LINUX_TEXT_OK);
+  assert(reference.mask.pixels && reference.mask.width > 0 &&
+         reference.mask.height > 0);
+  return reference;
 }
 
 static void assert_text_coverage(struct field_fixture *fixture,
-                                 const struct gpui_linux_text_mask *mask) {
-  double *record = fixture->data + 5 + fixture->text_record * 23;
+                                 const struct gpui_linux_text_mask_v2 *reference) {
+  double *record = fixture->data + 5 + fixture->text_record * fixture_stride;
   double *q = record + 1;
   int height = active->height * active->scale;
   int found = 0;
+  int compared = 0;
   for (int y = (int)(32 * active->scale); y < (int)(68 * active->scale) && !found; ++y) {
     for (int x = (int)(36 * active->scale); x < (int)(208 * active->scale); ++x) {
       double sx = (x + 0.5) / active->scale;
@@ -475,18 +696,59 @@ static void assert_text_coverage(struct field_fixture *fixture,
             sy >= caret[1] && sy < caret[1] + caret[3])
           continue;
       }
-      if (expected_mask_coverage(mask, q, sx, sy) < 0.82)
+      if (fixture->label && !strcmp(fixture->label, "selected")) {
+        double *selection = item_record(fixture, 6) + 1;
+        if (sx >= selection[0] && sx < selection[0] + selection[2] &&
+            sy >= selection[1] && sy < selection[1] + selection[3])
+          continue;
+      }
+      double coverage = expected_mask_coverage(reference, record, q, sx, sy);
+      if (coverage < 0.82)
         continue;
       unsigned char pixel[4];
       glReadPixels(x, height - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
       assert(glGetError() == GL_NO_ERROR);
-      /* Independent A8 coverage samples must show the field's dark ink. */
       assert(pixel[0] < 105 && pixel[1] < 110 && pixel[2] < 120);
       found = 1;
       break;
     }
   }
   assert(found);
+  /* Compare sampled device pixels against a full-ink reference raster made
+   * with an uncut local clip. The production raster still uses the recorded
+   * item clip; this checks coverage without rerasterizing that clipped rect. */
+  for (int y = (int)(32 * active->scale); y < (int)(68 * active->scale); y += 2) {
+    for (int x = (int)(36 * active->scale); x < (int)(208 * active->scale); x += 2) {
+      double sx = (x + 0.5) / active->scale;
+      double sy = (y + 0.5) / active->scale;
+      if (fixture->caret_record >= 0) {
+        double *caret = item_record(fixture, fixture->caret_record) + 1;
+        if (sx >= caret[0] && sx < caret[0] + caret[2] &&
+            sy >= caret[1] && sy < caret[1] + caret[3])
+          continue;
+      }
+      if (!strcmp(fixture->label, "selected")) {
+        double *selection = item_record(fixture, 6) + 1;
+        if (sx >= selection[0] && sx < selection[0] + selection[2] &&
+            sy >= selection[1] && sy < selection[1] + selection[3])
+          continue;
+      }
+      double coverage = expected_mask_coverage(reference, record, q, sx, sy);
+      if (coverage < 0.08)
+        continue;
+      unsigned char pixel[4];
+      glReadPixels(x, height - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+      assert(glGetError() == GL_NO_ERROR);
+      int expected_r = (int)lround(255.0 * (1.0 - coverage) + 20.0 * coverage);
+      int expected_g = (int)lround(255.0 * (1.0 - coverage) + 24.0 * coverage);
+      int expected_b = (int)lround(255.0 * (1.0 - coverage) + 30.0 * coverage);
+      assert(abs((int)pixel[0] - expected_r) <= 10 &&
+             abs((int)pixel[1] - expected_g) <= 10 &&
+             abs((int)pixel[2] - expected_b) <= 10);
+      ++compared;
+    }
+  }
+  assert(compared > 0);
   /* All four logical padding regions stay white. This catches text escaping
    * the viewport-space content clip, including in the horizontally scrolled
    * fixture, without treating a captured frame as its own oracle. */
@@ -496,18 +758,62 @@ static void assert_text_coverage(struct field_fixture *fixture,
   expect_rgb_at(100.5, 69.5, 255, 255, 255, 2);
 }
 
-static void assert_selection_coverage(struct field_fixture *fixture,
-                                      const struct gpui_linux_text_mask *mask) {
+static void assert_bearing_overhang_pixels(
+    const struct field_fixture *fixture,
+    const struct gpui_linux_text_mask_v2 *reference) {
+  assert(!strcmp(fixture->label, "j_start") ||
+         !strcmp(fixture->label, "accent_start"));
+  const double *record = fixture->data + 5 + fixture->text_record * fixture_stride;
+  const double *q = record + 1;
+  double origin_x = record[23], origin_y = record[24];
+  int check_left = !strcmp(fixture->label, "j_start");
+  assert(check_left ? origin_x > 0.0 : origin_y > 0.0);
+  int height = active->height * active->scale;
+  int found = 0;
+  for (int y = (int)(32 * active->scale); y < (int)(68 * active->scale) && !found; ++y) {
+    for (int x = (int)(36 * active->scale); x < (int)(208 * active->scale); ++x) {
+      double sx = (x + 0.5) / active->scale;
+      double sy = (y + 0.5) / active->scale;
+      double determinant = q[8] * q[11] - q[9] * q[10];
+      double dx = sx - q[12], dy = sy - q[13];
+      double px = (q[11] * dx - q[10] * dy) / determinant;
+      double py = (-q[9] * dx + q[8] * dy) / determinant;
+      if (check_left ? px >= origin_x : py >= origin_y)
+        continue;
+      double coverage = expected_mask_coverage(reference, record, q, sx, sy);
+      if (coverage < 0.45)
+        continue;
+      unsigned char pixel[4];
+      glReadPixels(x, height - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+      assert(glGetError() == GL_NO_ERROR);
+      int expected_r = (int)lround(255.0 * (1.0 - coverage) + 20.0 * coverage);
+      int expected_g = (int)lround(255.0 * (1.0 - coverage) + 24.0 * coverage);
+      int expected_b = (int)lround(255.0 * (1.0 - coverage) + 30.0 * coverage);
+      assert(abs((int)pixel[0] - expected_r) <= 10 &&
+             abs((int)pixel[1] - expected_g) <= 10 &&
+             abs((int)pixel[2] - expected_b) <= 10);
+      found = 1;
+      break;
+    }
+  }
+  assert(found);
+}
+
+static void assert_selection_coverage(
+    struct field_fixture *fixture,
+    const struct gpui_linux_text_mask_v2 *reference) {
   assert(!strcmp(fixture->label, "selected"));
   int selection_record = 6;
   double *selection_q = item_record(fixture, selection_record) + 1;
-  double *text_record = fixture->data + 5 + fixture->text_record * 23;
+  double *text_record = fixture->data + 5 + fixture->text_record * fixture_stride;
   double *text_q = text_record + 1;
   double anchor[4], head[4];
   assert(caret_geometry(fixture, fixture->anchor, anchor));
   assert(caret_geometry(fixture, fixture->head, head));
-  double left = text_q[12] + fmin(anchor[0], head[0]);
-  double right = text_q[12] + fmax(anchor[0], head[0]);
+  double run_x = fixture->text_kind == 2 ? text_record[23] : 0.0;
+  double run_y = fixture->text_kind == 2 ? text_record[24] : 0.0;
+  double left = text_q[12] + run_x + fmin(anchor[0], head[0]);
+  double right = text_q[12] + run_x + fmax(anchor[0], head[0]);
   size_t text_offset = (size_t)text_record[20];
   size_t text_length = (size_t)text_record[21];
   const uint8_t *text = fixture->text + text_offset;
@@ -522,7 +828,7 @@ static void assert_selection_coverage(struct field_fixture *fixture,
                                     measurement, capacity) == GPUI_LINUX_TEXT_OK);
   /* Selection paint follows the full logical line; the caret below keeps the
    * selected head's mixed-font strong-caret metrics. */
-  double top = text_q[13] + measurement[1];
+  double top = text_q[13] + run_y + measurement[1];
   double bottom = top + measurement[3];
   free(measurement);
   assert(fabs(selection_q[0] - left) < 0.02 &&
@@ -538,7 +844,7 @@ static void assert_selection_coverage(struct field_fixture *fixture,
          x < (int)floor((right - 1) * active->scale + 0.5); ++x) {
       double sx = (x + 0.5) / active->scale;
       double sy = (y + 0.5) / active->scale;
-      if (expected_mask_coverage(mask, text_q, sx, sy) > 0.04)
+      if (expected_mask_coverage(reference, text_record, text_q, sx, sy) > 0.04)
         continue;
       unsigned char pixel[4];
       glReadPixels(x, height - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
@@ -576,24 +882,44 @@ static void verify_field_pixels(struct field_fixture *fixture) {
                 focused ? 220 : 150, 3);
   expect_rgb_at(100.5, 70.5, 255, 255, 255, 2);
 
-  struct gpui_linux_text_mask mask = make_mask(fixture);
-  assert_text_coverage(fixture, &mask);
+  struct gpui_linux_text_mask_v2 reference = make_reference_mask(fixture);
+  assert_text_coverage(fixture, &reference);
+  if (!strcmp(fixture->label, "j_start") ||
+      !strcmp(fixture->label, "accent_start"))
+    assert_bearing_overhang_pixels(fixture, &reference);
   if (!strcmp(fixture->label, "selected"))
-    assert_selection_coverage(fixture, &mask);
+    assert_selection_coverage(fixture, &reference);
+  double *text_record = fixture->data + 5 + fixture->text_record * fixture_stride;
+  int text_capacity = GPUI_LINUX_TEXT_HEADER_DOUBLES +
+      (utf8_scalar_count(fixture->text + (size_t)text_record[20],
+                         (size_t)text_record[21]) + 1) *
+          GPUI_LINUX_TEXT_CARET_DOUBLES;
+  double *text_measurement = calloc((size_t)text_capacity, sizeof(double));
+  assert(text_measurement);
+  assert(gpui_linux_text_measure_v1(
+             GPUI_LINUX_TEXT_ABI, fixture->text + (size_t)text_record[20],
+             (int32_t)text_record[21], (const uint8_t *)"sans", 4,
+             text_record[22], text_measurement, text_capacity) ==
+         GPUI_LINUX_TEXT_OK);
+  assert_recorded_run_geometry(fixture, text_measurement);
+  free(text_measurement);
 
   if (focused) {
     double caret[4];
     assert(caret_geometry(fixture, fixture->head, caret));
-    double *text_record = fixture->data + 5 + fixture->text_record * 23;
     double *text_q = text_record + 1;
-    double expected_x = text_q[12] + caret[0];
-    double expected_y = text_q[13] + caret[1];
+    double run_x = fixture->text_kind == 2 ? text_record[23] : 0.0;
+    double run_y = fixture->text_kind == 2 ? text_record[24] : 0.0;
+    double expected_x = text_q[12] + run_x + caret[0];
+    double expected_y = text_q[13] + run_y + caret[1];
     double *caret_q = item_record(fixture, fixture->caret_record) + 1;
     assert(fabs(caret_q[0] - expected_x) < 0.02 &&
            fabs(caret_q[1] - expected_y) < 0.02 &&
            fabs(caret_q[2] - 1.0) < 1e-9 &&
            fabs(caret_q[3] - caret[3]) < 0.02);
-    if (!strcmp(fixture->label, "scroll_end"))
+    if (!strcmp(fixture->label, "scroll_end") ||
+        !strcmp(fixture->label, "j_scroll") ||
+        !strcmp(fixture->label, "accent_scroll"))
       assert(fabs(expected_x - 207.0) < 0.02);
     get_logical_pixel(expected_x + 0.5, expected_y + caret[3] / 2,
                       pixel);
@@ -602,17 +928,19 @@ static void verify_field_pixels(struct field_fixture *fixture) {
     assert(fixture->caret_record == -1);
     /* The long fixture ends in a space, so this exact right-edge sample is
      * clear in the independent A8 oracle. Blur must remove its former caret. */
-    double *text_record = fixture->data + 5 + fixture->text_record * 23;
     double *text_q = text_record + 1;
     double caret[4];
     assert(caret_geometry(fixture, fixture->head, caret));
-    double x = text_q[12] + caret[0];
-    double y = text_q[13] + caret[1] + caret[3] / 2;
+    double run_x = fixture->text_kind == 2 ? text_record[23] : 0.0;
+    double run_y = fixture->text_kind == 2 ? text_record[24] : 0.0;
+    double x = text_q[12] + run_x + caret[0];
+    double y = text_q[13] + run_y + caret[1] + caret[3] / 2;
     assert(fabs(x - 207.0) < 0.02);
-    assert(expected_mask_coverage(&mask, text_q, x + 0.5, y) < 0.05);
+    assert(expected_mask_coverage(&reference, text_record, text_q,
+                                  x + 0.5, y) < 0.05);
     expect_rgb_at(x + 0.5, y, 255, 255, 255, 2);
   }
-  gpui_linux_text_mask_release_v1(&mask);
+  gpui_linux_text_mask_release_v2(&reference);
 }
 
 static void capture_field_ppm(const char *path) {
@@ -656,10 +984,110 @@ static void capture_field_ppm(const char *path) {
 
 static EGLBoolean field_verified_swap(EGLDisplay display, EGLSurface surface) {
   ++field_swap_count;
-  verify_field_pixels(swapping_fixture);
-  if (capture_path && swapping_fixture &&
-      !strcmp(swapping_fixture->label, "scroll_end"))
-    capture_field_ppm(capture_path);
+  if (diagnostic_mode) {
+    assert(swapping_fixture == NULL);
+    assert(diagnostic_record);
+    static const uint8_t sans[] = "sans";
+    static const uint8_t text[] = "jJ";
+    double measurement[GPUI_LINUX_TEXT_HEADER_DOUBLES +
+                       3 * GPUI_LINUX_TEXT_CARET_DOUBLES] = {0};
+    assert(gpui_linux_text_measure_v1(GPUI_LINUX_TEXT_ABI, text, 2, sans, 4,
+                                      18.0, measurement,
+                                      (int)(sizeof(measurement) / sizeof(double))) ==
+           GPUI_LINUX_TEXT_OK);
+    double *record = diagnostic_record;
+    double *q = record + 1;
+    double ox = record[23], oy = record[24];
+    struct gpui_linux_text_mask_v2 full = {0};
+    assert(gpui_linux_text_raster_v2(
+               GPUI_LINUX_TEXT_RASTER_ABI, text, 2, sans, 4, 18.0,
+               ox, oy, ox + measurement[4] - 1.0,
+               oy + measurement[5] - 1.0,
+               measurement[6] + 2.0, measurement[7] + 2.0,
+               4 * 1024 * 1024, &full) == GPUI_LINUX_TEXT_OK);
+    int height = active->height * active->scale;
+    int found = 0;
+    for (int y = 0; y < active->height * active->scale && !found; ++y) {
+      for (int x = 0; x < active->width * active->scale; ++x) {
+        double sx = (x + 0.5) / active->scale;
+        double sy = (y + 0.5) / active->scale;
+        double coverage = expected_mask_coverage(&full, record, q, sx, sy);
+        if (coverage < 0.80)
+          continue;
+        unsigned char pixel[4];
+        glReadPixels(x, height - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+        assert(glGetError() == GL_NO_ERROR);
+        int expected_r = (int)lround(255.0 * (1.0 - coverage) + 20.0 * coverage);
+        int expected_g = (int)lround(255.0 * (1.0 - coverage) + 24.0 * coverage);
+        int expected_b = (int)lround(255.0 * (1.0 - coverage) + 30.0 * coverage);
+        assert(abs((int)pixel[0] - expected_r) <= 10 &&
+               abs((int)pixel[1] - expected_g) <= 10 &&
+               abs((int)pixel[2] - expected_b) <= 10);
+        found = 1;
+        break;
+      }
+    }
+    assert(found);
+    /* The viewport scissor covers the full jJ reference, while the nonzero
+     * local bounds intentionally stop inside the following J. Prove that an
+     * uncut reference glyph sample beyond that local right edge stays white. */
+    double broad_record[FIELD_STRIDE_ORIGIN];
+    memcpy(broad_record, record, sizeof(broad_record));
+    broad_record[1] = -16.0;
+    broad_record[2] = -16.0;
+    broad_record[3] = 80.0;
+    broad_record[4] = 80.0;
+    double *broad_q = broad_record + 1;
+    int found_local_clip = 0;
+    for (int y = 0; y < active->height * active->scale && !found_local_clip; ++y) {
+      for (int x = 0; x < active->width * active->scale; ++x) {
+        double sx = (x + 0.5) / active->scale;
+        double sy = (y + 0.5) / active->scale;
+        double full_coverage = expected_mask_coverage(
+            &full, broad_record, broad_q, sx, sy);
+        if (full_coverage < 0.45)
+          continue;
+        double determinant = q[8] * q[11] - q[9] * q[10];
+        double dx = sx - q[12], dy = sy - q[13];
+        double px = (q[11] * dx - q[10] * dy) / determinant;
+        double py = (-q[9] * dx + q[8] * dy) / determinant;
+        int outside_clipped_right = px >= q[0] + q[2] &&
+                                    py >= q[1] && py < q[1] + q[3];
+        if (!outside_clipped_right)
+          continue;
+        unsigned char pixel[4];
+        glReadPixels(x, height - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+        assert(glGetError() == GL_NO_ERROR);
+        assert(abs((int)pixel[0] - 255) <= 2 &&
+               abs((int)pixel[1] - 255) <= 2 &&
+               abs((int)pixel[2] - 255) <= 2 && pixel[3] >= 250);
+        found_local_clip = 1;
+        break;
+      }
+    }
+    assert(found_local_clip);
+    expect_rgb_at(10.5, 10.5, 255, 255, 255, 2);
+    expect_rgb_at(276.5, 102.5, 255, 255, 255, 2);
+    gpui_linux_text_mask_release_v2(&full);
+  } else {
+    verify_field_pixels(swapping_fixture);
+  }
+  if (capture_path && swapping_fixture) {
+    const char *label = swapping_fixture->label;
+    if (!strcmp(label, "scroll_end")) {
+      capture_field_ppm(capture_path);
+    } else if (!strcmp(label, "j_start") || !strcmp(label, "accent_start") ||
+               !strcmp(label, "j_scroll") || !strcmp(label, "accent_scroll")) {
+      char bearing_path[4096];
+      size_t prefix = strlen(capture_path);
+      if (prefix >= 4 && !strcmp(capture_path + prefix - 4, ".ppm")) prefix -= 4;
+      assert(prefix < sizeof(bearing_path));
+      int length = snprintf(bearing_path, sizeof(bearing_path), "%.*s-%s.ppm",
+                             (int)prefix, capture_path, label);
+      assert(length > 0 && (size_t)length < sizeof(bearing_path));
+      capture_field_ppm(bearing_path);
+    }
+  }
   return eglSwapBuffers(display, surface);
 }
 
@@ -697,14 +1125,173 @@ static void present_fixture(int host, int window, struct field_fixture *fixture)
                      active->scale);
   int swaps_before = field_swap_count;
   swapping_fixture = fixture;
-  int status = gpui_present_v2(GPUI_MIXED_FRAME_ABI, host, window, normalized,
-                               (int32_t)fixture->double_count, fixture->text,
-                               (int32_t)fixture->text_length);
+  int status = fixture_abi == GPUI_ORIGIN_FRAME_ABI
+      ? gpui_present_v3(GPUI_ORIGIN_FRAME_ABI, host, window, normalized,
+                        (int32_t)fixture->double_count, fixture->text,
+                        (int32_t)fixture->text_length)
+      : gpui_present_v2(GPUI_MIXED_FRAME_ABI, host, window, normalized,
+                        (int32_t)fixture->double_count, fixture->text,
+                        (int32_t)fixture->text_length);
   assert(status == GPUI_OK);
   assert(field_swap_count == swaps_before + 1);
+  ++fixture_swap_count;
   await_field_frame(host);
   swapping_fixture = NULL;
   free(normalized);
+}
+
+static void init_origin_frame(double *data, int width, int height, int scale) {
+  data[0] = data[1] = 0.0;
+  data[2] = width;
+  data[3] = height;
+  data[4] = scale;
+}
+
+static void set_origin_quad(double *record, double width, double height,
+                            int red, int green, int blue, int alpha) {
+  memset(record, 0, FIELD_STRIDE_ORIGIN * sizeof(double));
+  record[0] = 0.0;
+  record[1] = record[2] = 0.0;
+  record[3] = width;
+  record[4] = height;
+  record[5] = red;
+  record[6] = green;
+  record[7] = blue;
+  record[8] = alpha;
+  record[9] = record[12] = 1.0;
+  record[15] = 1.0;
+  record[16] = record[17] = 0.0;
+  record[18] = width;
+  record[19] = height;
+}
+
+static void set_origin_text(double *record, double x, double y,
+                            double width, double height,
+                            double scissor_x, double scissor_y,
+                            double scissor_width, double scissor_height,
+                            double offset, double length, double font_size,
+                            double origin_x, double origin_y) {
+  memset(record, 0, FIELD_STRIDE_ORIGIN * sizeof(double));
+  record[0] = 2.0;
+  record[1] = x;
+  record[2] = y;
+  record[3] = width;
+  record[4] = height;
+  record[5] = 20;
+  record[6] = 24;
+  record[7] = 30;
+  record[8] = 255;
+  record[9] = record[12] = 1.0;
+  record[10] = 0.2;
+  record[11] = -0.25;
+  record[13] = 280.0;
+  record[14] = 100.0;
+  record[15] = 1.0;
+  record[16] = scissor_x;
+  record[17] = scissor_y;
+  record[18] = scissor_width;
+  record[19] = scissor_height;
+  record[20] = offset;
+  record[21] = length;
+  record[22] = font_size;
+  record[23] = origin_x;
+  record[24] = origin_y;
+}
+
+static void assert_origin_preflight_preserves(
+    int host, int window, double *data, int32_t double_count,
+    const uint8_t *text, int32_t text_length, int expected_status) {
+  unsigned char before[4], after[4];
+  get_logical_pixel(10.5, 10.5, before);
+  int swaps_before = field_swap_count;
+  assert(gpui_present_v3(GPUI_ORIGIN_FRAME_ABI, host, window, data,
+                         double_count, text, text_length) == expected_status);
+  assert(field_swap_count == swaps_before);
+  get_logical_pixel(10.5, 10.5, after);
+  assert(memcmp(before, after, sizeof(before)) == 0);
+}
+
+static void test_origin_gpu_diagnostic_and_late_preservation(int host,
+                                                              int window) {
+  int width = active->width, height = active->height, scale = active->scale;
+  static const uint8_t diagnostic_text[] = "jJ";
+  double diagnostic[5 + 2 * FIELD_STRIDE_ORIGIN] = {0};
+  init_origin_frame(diagnostic, width, height, scale);
+  set_origin_quad(diagnostic + 5, width, height, 255, 255, 255, 255);
+  double *diagnostic_text_record = diagnostic + 5 + FIELD_STRIDE_ORIGIN;
+  set_origin_text(diagnostic_text_record, 2.25, 1.25, 8.0, 23.75,
+                  279.0, 98.0, 30.0, 30.0, 0.0, 2.0, 18.0,
+                  1.25, 0.5);
+  diagnostic_text_record[9] = 1.0;
+  diagnostic_text_record[10] = 0.2;
+  diagnostic_text_record[11] = -0.25;
+  diagnostic_text_record[12] = 1.0;
+  diagnostic_text_record[13] = 280.0;
+  diagnostic_text_record[14] = 100.0;
+  diagnostic_mode = 1;
+  diagnostic_record = diagnostic_text_record;
+  swapping_fixture = NULL;
+  int swaps_before = field_swap_count;
+  assert(gpui_present_v3(GPUI_ORIGIN_FRAME_ABI, host, window, diagnostic,
+                         (int32_t)(sizeof(diagnostic) / sizeof(double)),
+                         diagnostic_text, 2) == GPUI_OK);
+  assert(field_swap_count == swaps_before + 1);
+  await_field_frame(host);
+  diagnostic_mode = 0;
+  diagnostic_record = NULL;
+
+  /* A valid first quad and run precede each late failure. Failed frames must
+   * not swap the red/other staged scene over the currently displayed frame. */
+  static const uint8_t one[] = "H";
+  double invalid[5 + 3 * FIELD_STRIDE_ORIGIN] = {0};
+  init_origin_frame(invalid, width, height, scale);
+  set_origin_quad(invalid + 5, width, height, 255, 0, 0, 255);
+  set_origin_text(invalid + 5 + FIELD_STRIDE_ORIGIN, 8, 8, 40, 24,
+                  0, 0, width, height, 0, 1, 18, 0, 0);
+  set_origin_text(invalid + 5 + 2 * FIELD_STRIDE_ORIGIN, 40, 8, 40, 24,
+                  0, 0, width, height, 0, 1, 18, 1.0e20, 0);
+  /* Finite common fields pass; translated clip precision fails only after
+   * the preceding ordinary run has staged its mask. */
+  assert_origin_preflight_preserves(host, window, invalid,
+      (int32_t)(sizeof(invalid) / sizeof(double)), one, 1, GPUI_INVALID);
+  double legacy_origin[5 + FIELD_STRIDE_ORIGIN] = {0};
+  init_origin_frame(legacy_origin, width, height, scale);
+  set_origin_quad(legacy_origin + 5, width, height, 255, 0, 0, 255);
+  legacy_origin[5 + 23] = 0.25;
+  assert_origin_preflight_preserves(host, window, legacy_origin,
+      (int32_t)(sizeof(legacy_origin) / sizeof(double)), NULL, 0, GPUI_INVALID);
+
+  static const uint8_t color_emoji[] = {
+      0xf0, 0x9f, 0x91, 0xa9, 0xe2, 0x80, 0x8d,
+      0xf0, 0x9f, 0x92, 0xbb};
+  uint8_t color_blob[1 + sizeof(color_emoji)];
+  color_blob[0] = 'H';
+  memcpy(color_blob + 1, color_emoji, sizeof(color_emoji));
+  double color[5 + 3 * FIELD_STRIDE_ORIGIN] = {0};
+  init_origin_frame(color, width, height, scale);
+  set_origin_quad(color + 5, width, height, 255, 0, 0, 255);
+  set_origin_text(color + 5 + FIELD_STRIDE_ORIGIN, 8, 8, 40, 24,
+                  0, 0, width, height, 0, 1, 18, 0, 0);
+  set_origin_text(color + 5 + 2 * FIELD_STRIDE_ORIGIN, 40, 8, 40, 24,
+                  0, 0, width, height, 1, sizeof(color_emoji), 18, 0, 0);
+  assert_origin_preflight_preserves(host, window, color,
+      (int32_t)(sizeof(color) / sizeof(double)), color_blob,
+      (int32_t)sizeof(color_blob), GPUI_UNSUPPORTED);
+
+  uint8_t large_text[2048], large_blob[1 + sizeof(large_text)];
+  memset(large_text, 'M', sizeof(large_text));
+  large_blob[0] = 'H';
+  memcpy(large_blob + 1, large_text, sizeof(large_text));
+  double resource[5 + 3 * FIELD_STRIDE_ORIGIN] = {0};
+  init_origin_frame(resource, width, height, scale);
+  set_origin_quad(resource + 5, width, height, 255, 0, 0, 255);
+  set_origin_text(resource + 5 + FIELD_STRIDE_ORIGIN, 8, 8, 40, 24,
+                  0, 0, width, height, 0, 1, 18, 0, 0);
+  set_origin_text(resource + 5 + 2 * FIELD_STRIDE_ORIGIN, 40, 8, 50000, 24,
+                  0, 0, width, height, 1, sizeof(large_text), 18, 0, 0);
+  assert_origin_preflight_preserves(host, window, resource,
+      (int32_t)(sizeof(resource) / sizeof(double)), large_blob,
+      (int32_t)sizeof(large_blob), GPUI_RESOURCE);
 }
 
 /* These rejected records were produced by actual headless control handling.
@@ -747,23 +1334,28 @@ int main(void) {
     assert(metrics[2] == (double)(expected_scale[0] - '0'));
   }
 
-  for (int i = 0; i < 7; ++i) {
+  for (int i = 0; i < fixture_count; ++i) {
     if (i == 3 || i == 4) {
       assert_rejected_fixture_identity(&fixtures[i]);
       continue;
     }
     present_fixture(host, window, &fixtures[i]);
   }
+  if (fixture_abi == GPUI_ORIGIN_FRAME_ABI)
+    test_origin_gpu_diagnostic_and_late_preservation(host, window);
 
   assert(gpui_close(host, window) == GPUI_OK);
   assert(gpui_destroy(host, window) == GPUI_OK);
   assert(gpui_stop(host) == GPUI_OK);
-  assert(field_swap_count == 5);
-  for (int i = 0; i < 7; ++i) {
+  assert(fixture_swap_count == fixture_count - 2);
+  assert(field_swap_count == fixture_count - 2 +
+         (fixture_abi == GPUI_ORIGIN_FRAME_ABI ? 1 : 0));
+  for (int i = 0; i < fixture_count; ++i) {
     free(fixtures[i].file_bytes);
     free(fixtures[i].original_line);
     free(fixtures[i].data);
   }
+  free(fixture_manifest);
   puts("Linux TextField injected accepted-frame GPU pixel oracle passed.");
   return 0;
 }

@@ -124,6 +124,18 @@ extern "C" fn native_present_mixed(
 ) -> Int = "gpui_present_v2"
 
 ///|
+#borrow(data, text)
+extern "C" fn native_present_origin(
+  abi : Int,
+  host : Int,
+  window : Int,
+  data : FixedArray[Double],
+  length : Int,
+  text : Bytes,
+  text_length : Int,
+) -> Int = "gpui_present_v3"
+
+///|
 extern "C" fn native_recover(host : Int, window : Int) -> Int = "gpui_recover"
 
 ///|
@@ -720,7 +732,8 @@ fn frame_data(
   let chains = snapshot.clip_chains()
   for index = 0; index < items.length(); index = index + 1 {
     match items[index] {
-      @scene.TextItem(..) => return Err(backend_error(1, "present"))
+      @scene.TextItem(..) | @scene.TextRunItem(..) =>
+        return Err(backend_error(1, "present"))
       @scene.QuadItem(bounds~, color~, transform~, opacity~, clip_chain_id~, ..) => {
         let mut clip = Some(viewport)
         if clip_chain_id is Some(id) {
@@ -765,6 +778,7 @@ fn frame_data(
 
 ///|
 priv struct MixedFrame {
+  abi : Int
   data : FixedArray[Double]
   text : Bytes
 }
@@ -783,7 +797,14 @@ fn mixed_frame_data(
   if items.length() > 100000 {
     return Err(backend_error(8, "present"))
   }
-  let data = FixedArray::make(5 + items.length() * 23, 0.0)
+  let mut has_origin = false
+  for item in items {
+    if item is @scene.TextRunItem(..) {
+      has_origin = true
+    }
+  }
+  let stride = if has_origin { 25 } else { 23 }
+  let data = FixedArray::make(5 + items.length() * stride, 0.0)
   data[0] = viewport.left()
   data[1] = viewport.top()
   data[2] = viewport.size().width()
@@ -793,9 +814,10 @@ fn mixed_frame_data(
   let chains = snapshot.clip_chains()
   let mut text_count = 0
   for index = 0; index < items.length(); index = index + 1 {
-    let offset = 5 + index * 23
+    let offset = 5 + index * stride
     match items[index] {
-      @scene.TextItem(text~, font_size~, ..) => {
+      @scene.TextItem(text~, font_size~, ..)
+      | @scene.TextRunItem(text~, font_size~, ..) => {
         text_count += 1
         if text_count > 256 {
           return Err(backend_error(8, "present"))
@@ -820,7 +842,11 @@ fn mixed_frame_data(
           blob.length() > 1048576 - bytes.length() {
           return Err(backend_error(8, "present"))
         }
-        data[offset] = 1.0
+        data[offset] = if items[index] is @scene.TextRunItem(..) {
+          2.0
+        } else {
+          1.0
+        }
         data[offset + 20] = blob.length().to_double()
         data[offset + 21] = bytes.length().to_double()
         data[offset + 22] = font_size
@@ -833,9 +859,21 @@ fn mixed_frame_data(
       }
       @scene.QuadItem(..) => ()
     }
+    if items[index] is @scene.TextRunItem(text_origin~, ..) {
+      data[offset + 23] = text_origin.x()
+      data[offset + 24] = text_origin.y()
+    }
     match items[index] {
       @scene.QuadItem(bounds~, color~, transform~, opacity~, clip_chain_id~, ..)
       | @scene.TextItem(
+        bounds~,
+        color~,
+        transform~,
+        opacity~,
+        clip_chain_id~,
+        ..
+      )
+      | @scene.TextRunItem(
         bounds~,
         color~,
         transform~,
@@ -880,7 +918,15 @@ fn mixed_frame_data(
       }
     }
   }
-  Ok({ data, text: Bytes::from_array(blob), })
+  Ok({
+    abi: if has_origin {
+      3
+    } else {
+      2
+    },
+    data,
+    text: Bytes::from_array(blob),
+  })
 }
 
 ///|
@@ -891,7 +937,7 @@ pub fn Host::present(
 ) -> Result[Unit, @diagnostics.FrameworkError] {
   let mut has_text = false
   for item in snapshot.items() {
-    if item is @scene.TextItem(..) {
+    if item is @scene.TextItem(..) || item is @scene.TextRunItem(..) {
       has_text = true
     }
   }
@@ -916,8 +962,18 @@ pub fn Host::present(
     }
     match mixed_frame_data(snapshot) {
       Err(error) => Err(error)
-      Ok(frame) =>
-        outcome(
+      Ok(frame) => {
+        let status = if frame.abi == 3 {
+          native_present_origin(
+            3,
+            self.token,
+            window.value().to_int(),
+            frame.data,
+            frame.data.length(),
+            frame.text,
+            frame.text.length(),
+          )
+        } else {
           native_present_mixed(
             2,
             self.token,
@@ -926,9 +982,10 @@ pub fn Host::present(
             frame.data.length(),
             frame.text,
             frame.text.length(),
-          ),
-          "present",
-        )
+          )
+        }
+        outcome(status, "present")
+      }
     }
   }
 }

@@ -29,7 +29,7 @@ env -u DISPLAY -u WAYLAND_DISPLAY _build/ubuntu-e2e/direct-text-test
 env -u DISPLAY -u WAYLAND_DISPLAY \
   moon test examples/linux_text_field --target native --deny-warn --no-parallelize
 # Preserve the original scenes emitted by actual control code with the same
-# real-font provider used by the renderer. GPF1 replay is a test-only injected
+# real-font provider used by the renderer. GPF1/GPF2 replay is test-only injected
 # control-to-renderer gate, distinct from actual compositor keyboard ingress.
 field_run=$(sh scripts/create_field_fixture_run.sh _build/ubuntu-e2e)
 printf 'GPUI_FIELD_RUN evidence_dir=%s source_head=%s\n' "$field_run" "$(git rev-parse HEAD)"

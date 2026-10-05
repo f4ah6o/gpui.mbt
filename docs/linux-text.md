@@ -11,10 +11,11 @@ public model.
 
 Measured-text [PR #27](https://github.com/f4ah6o/gpui.mbt/pull/27) is merged
 into main as `d0335f65f6758b5ecaf91353500ad6978f9ae13e`. It adds copied
-PangoFT2 measurement/caret/hit values; it does not add an
-editable control. The grayscale renderer described below is a separate,
-Ubuntu-only scene-presentation capability. It does not make the public text
-contract richer and does not change non-Linux rendering behavior.
+PangoFT2 measurement/caret/hit values; it does not add a general editable
+control. The Ubuntu-only renderer now has an origin-aware plain `TextRunItem`
+scene variant alongside legacy `TextItem`. This extension does not change
+`TextItem`'s meaning or canonical JSON, add portable shaping/editor semantics,
+or change non-Linux rendering behavior.
 
 `require_grayscale_raster()` checks that the linked private raster ABI is
 available and that the runtime Pango library is at least 1.50, which provides
@@ -43,6 +44,26 @@ these per-call allocations are the cost of avoiding persistent native-handle
 ownership in this slice. The lifecycle test waits on thread-safe finalizer
 notifications with a bounded post-measurement deadline; it does not change
 production cleanup behavior.
+
+The origin-aware presentation path is explicitly versioned. Private raster ABI
+v2 returns the existing v1 mask plus `u0/v0/u1/v1` crop coordinates in a
+separate `gpui_linux_text_mask_v2`; the v1 mask struct and v1 raster entry
+semantics remain unchanged. Ubuntu's private mixed-frame ABI3 uses 25 doubles
+per item, preserving the ABI2 23-field prefix and appending independent text
+origin x/y. ABI3 tag 2 selects an origin-aware plain run; quad and legacy-text
+tags must keep the appended fields zero.
+
+Raster v2 retains one layout-grid sampling texel at each interior crop edge,
+clipped to the full pixel ink tile, so linear filtering inside the local clip
+agrees with the full uncut mask. The visible rectangle stays exact and the UV
+coordinates map into this halo-backed allocation. Tile dimensions, per-call
+pixel budget and total frame A8 budget include the halo before allocation;
+an otherwise fitting visible tile may therefore return `ResourceLimit`.
+Empty results have zero geometry/UVs and no pixels; unknown-glyph count may
+remain nonzero. Success transfers owned pixels to the caller, failures leave
+the entire output unchanged, and `mask_release_v2` clears all fields safely on
+repeat. Raster v1 explicitly uses the unchanged legacy no-halo mode, preserving
+its pixel storage and filtering.
 
 ## Coordinates and query semantics
 
@@ -148,9 +169,14 @@ scaling a logical-resolution mask can therefore look softer than freshly
 rasterized device-resolution text. This is an explicit quality limit of this
 slice; filtering does not rerasterize at device scale.
 
-Text-item bounds are local to the item and clip the rasterized ink before or
-through the item's affine transform. Viewport clip chains remain independent
-viewport-space scissor rectangles. Frame preflight checks all items and
+Legacy `TextItem` remains positioned at the bounds' top-left. The new
+`TextRunItem` carries an independent item-local `text_origin`; its `bounds`
+remain the exact item-local clip for the rasterized ink before the affine
+transform. Viewport clip chains remain independent viewport-space scissor
+rectangles. The v1 scene envelope permits this item-variant extension without
+changing the existing `TextItem` JSON. Consumers that do not know
+`TextRunItem` must reject it, and public exhaustive matches need an explicit
+arm for it. Frame preflight checks all items and
 resources before clearing or submitting; unsupported, invalid, and
 resource-limit failures preserve the previously displayed frame. All mask
 textures are staged before drawing and released on every exit. This guarantee
@@ -176,8 +202,25 @@ Ubuntu drawing capability. It does not promise that every frame is accepted,
 and it does not advertise keyboard text input, an editable control, caret or
 selection UI, composition, or IME. Per-frame unsupported checks remain active;
 macOS and Windows retain their existing text rejection behavior. The public
-`SceneSnapshot` v1 schema and browser behavior are unchanged. No atlas, retained
+`SceneSnapshot` envelope version remains v1, and browser behavior is unchanged.
+No atlas, retained
 raster cache, or persistent Pango raster handle is introduced.
+
+The local origin-aware field uses one shared checked geometry: logical and ink
+extents are unioned; cursor-stop rectangles must stay in the logical line.
+Minimums are rounded down and
+maximums up to whole logical pixels, and the inset becomes the run origin with
+a zero-based clip rectangle. The same mapping feeds admission, caret and
+selection painting, hit testing, and horizontal scroll. Headless actual-font
+control and negative-mask tests now pass, including composed/decomposed accent
+cases and scroll. The source is unpublished local progress based on reviewed
+[PR #30](https://github.com/gpui-mbt/gpui.mbt/pull/30) tree `5ac17e9`; PR #30
+remains draft. Windows, macOS, docs, and headless Pango jobs passed, while GPU,
+core, browser, and mutation jobs remain unqualified. A bounded Ubuntu failed-job
+retry was again cancelled before runner start; no source or billing cause is
+established. New encoder/GPU acceptance cases compile; hosted execution
+is pending, and no GPU execution is claimed. See the [field status guide](linux-text-field.md)
+for the complete remaining limits and evidence tiers.
 
 The renderer is an implementation slice whose acceptance checks are tracked in
 [issue 0007](../issues/open/0007-ubuntu-native-backend.md). On Debian 13 with

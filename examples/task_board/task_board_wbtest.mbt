@@ -460,6 +460,7 @@ test "scene text and semantic DTO retain task ids and full titles" {
           lane_label = true
         }
       }
+      @scene.TextRunItem(..) => ()
       _ => ()
     }
   }
