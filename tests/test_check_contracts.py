@@ -341,6 +341,33 @@ class RuntimeDependencyTests(unittest.TestCase):
             any("forbidden runtime package edge" in error for error in errors)
         )
 
+    def test_task_board_host_is_a_leaf_above_the_portable_board(self) -> None:
+        board = self.root / "examples/task_board"
+        board.mkdir(parents=True)
+        (board / "moon.pkg").write_text(
+            'import { "f4ah6o/gpui/capability", "f4ah6o/gpui/core", '
+            '"f4ah6o/gpui/element", "f4ah6o/gpui/layout", '
+            '"f4ah6o/gpui/platform", "f4ah6o/gpui/primitives", '
+            '"f4ah6o/gpui/scene" }\n',
+            encoding="utf-8",
+        )
+        host = self.root / "examples/browser_board"
+        host.mkdir(parents=True)
+        (host / "moon.pkg").write_text(
+            'import { "f4ah6o/gpui/examples/task_board" }\n',
+            encoding="utf-8",
+        )
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+        (board / "moon.pkg").write_text(
+            'import { "f4ah6o/gpui/examples/browser_board" }\n',
+            encoding="utf-8",
+        )
+        self.assertTrue(any(
+            "examples/task_board/: forbidden runtime package edge" in error
+            for error in checker.validate_runtime_dependencies(self.root)
+        ))
+
     def test_mcp_stdio_host_is_a_leaf_above_the_mcp_adapter(self) -> None:
         directory = self.root / "examples/mcp_stdio"
         directory.mkdir(parents=True)

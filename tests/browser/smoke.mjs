@@ -111,7 +111,7 @@ try {
     };
   });
 
-  await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: "load" });
+  await page.goto(`http://127.0.0.1:${address.port}/proof.html`, { waitUntil: "load" });
   await page.waitForFunction(() => typeof window.__gpuiSmokeStatus === "function");
   const canvas = page.locator("#gpui-viewport");
   const readViewport = () => page.evaluate(() => {

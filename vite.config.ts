@@ -13,18 +13,20 @@ function initialMoonBitBuild(mode: "debug" | "release") {
     name: "gpui-initial-moonbit-build",
     enforce: "pre",
     configResolved() {
-      execFileSync(
-        process.env.MOON_BIN || "moon",
-        [
-          "build",
-          "examples/browser",
-          "--target",
-          "js",
-          mode === "release" ? "--release" : "--debug",
-          "--deny-warn",
-        ],
-        { cwd: repoRoot, stdio: "inherit" },
-      );
+      for (const entry of ["examples/browser", "examples/browser_board"]) {
+        execFileSync(
+          process.env.MOON_BIN || "moon",
+          [
+            "build",
+            entry,
+            "--target",
+            "js",
+            mode === "release" ? "--release" : "--debug",
+            "--deny-warn",
+          ],
+          { cwd: repoRoot, stdio: "inherit" },
+        );
+      }
     },
   };
 }
@@ -96,6 +98,12 @@ export default defineConfig(({ command }) => {
       outDir: resolve(repoRoot, "_build/browser-site"),
       emptyOutDir: true,
       sourcemap: true,
+      rollupOptions: {
+        input: {
+          board: resolve(siteRoot, "index.html"),
+          proof: resolve(siteRoot, "proof.html"),
+        },
+      },
     },
     check: {
       // MoonBit's formatter remains authoritative for this repository. Avoid

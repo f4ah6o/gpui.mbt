@@ -97,7 +97,7 @@ pub fn browser_host_error(kind : Int) -> String {
 /// on the secure context and native API methods before reporting live support.
 #export_name("gpui_browser_capabilities")
 pub fn browser_capabilities() -> String {
-  "{\"logicalViewport\":true,\"nativeWindow\":false,\"quadFrames\":true,\"frameScheduling\":\"requestAnimationFrame\",\"pointerKeyboard\":true,\"clipboard\":true,\"cursor\":true,\"committedTextInput\":true,\"textInputIme\":false,\"accessibility\":false,\"accessibilityFixture\":true,\"rendererRecovery\":true,\"crossThreadCommands\":false,\"renderer\":\"Canvas 2D\"}"
+  "{\"logicalViewport\":true,\"nativeWindow\":false,\"quadFrames\":true,\"textFrames\":true,\"frameScheduling\":\"requestAnimationFrame\",\"pointerKeyboard\":true,\"clipboard\":true,\"cursor\":true,\"committedTextInput\":true,\"textInputIme\":false,\"accessibility\":false,\"accessibilityFixture\":true,\"rendererRecovery\":true,\"crossThreadCommands\":false,\"renderer\":\"Canvas 2D\"}"
 }
 
 ///|

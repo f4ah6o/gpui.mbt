@@ -1,6 +1,6 @@
 # Architecture and dependency contract
 
-Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; experimental macOS, Ubuntu/Wayland/GLES, and Windows native slices are present; the JS browser proof includes an in-process capability/MCP seam; a separate Node stdio fixture exercises the stateless MCP wire adapter; native and browser MCP endpoint topology remains planned.
+Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; experimental macOS, Ubuntu/Wayland/GLES, and Windows native slices are present; the JS browser hosts Weekboard and the retained interaction lab with its in-process capability/MCP seam; a separate Node stdio fixture exercises the stateless MCP wire adapter; native and browser MCP endpoint topology remains planned.
 
 This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, `element/`, `capability/`, and optional `mcp/`, plus native and example adapters. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
 
@@ -53,11 +53,13 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `diagnostics/` | shared error categories and structured diagnostic values | MoonBit standard/core, `primitives/` | concrete backend types and framework state ownership |
 | `core/` | app/entity/task IDs, App/Entity/Context, lifecycle, subscriptions, deterministic foreground scheduler | MoonBit standard/core, `diagnostics/`, `primitives/` | window, OS, GPU, renderer, or concrete backend types |
 | `examples/headless/` | consumer usage example and executable API example test | public `core/`, `diagnostics/`, and `primitives/` interfaces | runtime imports, native/platform APIs, private core types |
-| `examples/browser_app/` | host-neutral demo app model, event processing, flex layout, hit testing, and portable scene fixture | `core/`, `diagnostics/`, `element/`, `layout/`, `platform/`, `primitives/`, `scene/` | DOM, Canvas, JS references, browser or native handles |
+| `examples/browser_app/` | host-neutral interaction-lab model, event processing, flex layout, hit testing, and portable scene fixture | `core/`, `diagnostics/`, `element/`, `layout/`, `platform/`, `primitives/`, `scene/`, `capability/`, `mcp/` | DOM, Canvas, JS references, browser or native handles |
 | `examples/browser/` | JS-only adapter translating browser callback values to framework events | `examples/browser_app/`, `diagnostics/`, `platform/`, `primitives/` | browser handles in shared packages or browser-to-model reverse dependencies |
+| `examples/task_board/` | portable Weekboard task state, filtering/history, input, responsive flex layout, clipped hit testing, scrolling, drag gestures, and quad/text scene data | `capability/`, `core/`, `element/`, `layout/`, `platform/`, `primitives/`, `scene/` | DOM, Canvas, JS references, browser or native handles |
+| `examples/browser_board/` | JS-only Weekboard exports over copied input, scene, status, and host-layout values | `examples/task_board/` | browser handles in shared packages or reverse dependencies from the task model |
 | `layout/` | style subset, constraints, intrinsic measure interface, layout result | `primitives/` | renderer or platform types |
-| `element/` | Render/IntoElement/Element, tree, hit-test and dispatch metadata | `core/`, `primitives/`, `layout/`, `scene/` contract | backend callbacks or OS event structs |
-| `scene/` | stable, platform-neutral paint commands and ordering | `primitives/` | live GPU handles or backend resource objects |
+| `element/` | Render/IntoElement/Element, tree, hit-test and dispatch metadata, immutable scroll state and drag gesture transitions | `core/`, `primitives/`, `layout/`, `scene/` contract | backend callbacks or OS event structs |
+| `scene/` | stable, platform-neutral quad/clip commands, bounded text snapshot items, validation, and ordering | `primitives/` | live GPU handles or backend resource objects |
 | `capability/` | typed semantic operation descriptors, schema/value projection, registry, GUI binding, deterministic manifest generation | `core/`, `diagnostics/` | renderer/native/MCP transport state, host handles, duplicated domain handlers |
 | `mcp/` | optional MCP-facing inventory/dispatch adapter over semantic capabilities | `capability/`, `diagnostics/` | application state ownership, domain handlers, privileged host APIs |
 | `migration/host_services/` | portable service requests/completions, logical scopes, cancellation, bounded queues, and default-deny service policy for Electron/Tauri migration | `capability/`, `diagnostics/` | DOM, process APIs, native handles, or direct privileged service execution |
@@ -124,7 +126,9 @@ Invalid or non-finite constraints are rejected before producing a layout tree. F
 
 ## Scene and renderer boundary
 
-Scene generation and pixel output are separate oracles. A scene is an immutable or frame-bounded list of stable paint commands: quads, paths, clips, images, text runs, transforms, and stacking order. IDs and serialized scene ordering must be deterministic for identical input. Image/font resources are referenced by framework IDs plus validated descriptors, never raw GPU handles.
+Scene generation and pixel output are separate oracles. The current command stream emits quads and rectangle clip push/pop commands. `SceneSnapshot` v1 adds explicit clip-chain tables, transforms, opacity, and ordered `TextItem` values alongside quads. The bounded text item is copied plain text plus bounds, font size, color, transform, opacity, and clip reference; it does not carry a native font handle or implement a shaping/editor contract. Existing quad serialization remains byte-stable. The Canvas 2D host presents these text items using a system sans font and clips each run to its bounds; native renderers explicitly reject them as `UnsupportedCapability`. See [snapshot validation](../scene/snapshot.mbt), [text tests](../scene/snapshot_text_test.mbt), and [the Canvas renderer](../examples/browser/site/canvas-renderer.js).
+
+The complete design also includes paths, images, richer text runs, and logical resource descriptors. IDs and serialized scene ordering must be deterministic for identical input. Image/font resources will use framework IDs plus validated descriptors, never raw GPU handles. Those broader resource and shaping contracts remain pending.
 
 The renderer consumes scene values and reports typed outcomes for invalid resources, allocation failure, surface/device loss, and submission/presentation failure. A headless scene implementation exists before a GPU renderer. A software raster path may be added for deterministic pixels, but pixel equality across native text/render stacks is not a cross-platform contract. Backend recovery and raster performance gates are specified in the platform and release packets.
 
@@ -138,7 +142,7 @@ Prefer a narrow C ABI when it keeps platform types out of MoonBit package interf
 
 Every dependency addition must identify whether it is runtime, development-only, or platform-native and list its owning package. The executable package-boundary check fails if test tooling reaches a runtime package or an unreviewed third-party MoonBit package enters the runtime graph. Native library inventories are separate per target. Dependency review must also check version pinning, license notices, and the lockfile/toolchain reproducibility policy.
 
-The package-boundary check validates the current graph, including `scene -> primitives`, `element -> core/primitives/layout/scene`, the consumer-only `examples/headless/` package, and the one-way `examples/browser -> examples/browser_app` adapter edge. A dedicated checker test ensures the portable browser app cannot import its JS host layer. Current contract, dependency, format, build, and test commands are listed in [README.md](../README.md) and the [browser proof guide](browser-demo.md).
+The [package-boundary check](../scripts/check_contracts.py) validates the current graph, including `scene -> primitives`, `element -> core/primitives/layout/scene`, the consumer-only `examples/headless/` package, and the one-way `examples/browser -> examples/browser_app` and `examples/browser_board -> examples/task_board` adapter edges. The task-board package may import only `capability/core/element/layout/platform/primitives/scene` plus standard/core. Checker regressions prevent the portable examples from importing their JS host layers. Current contract, dependency, format, build, and test commands are listed in [README.md](../README.md) and the [browser guide](browser-demo.md).
 
 ## Ubuntu native dependency exception
 
@@ -168,6 +172,8 @@ Win32/D3D11 calls remain in the native backend and C shim; this experimental
 slice does not establish a Windows support tier. Its native dependency and
 smoke boundaries are documented in [windows-native.md](windows-native.md).
 
-## JavaScript browser proof edges
+## JavaScript browser example edges
 
-The browser proof adds `examples/browser_app -> core/diagnostics/element/layout/platform/primitives/scene/capability/mcp` and `examples/browser -> examples/browser_app/diagnostics/platform/primitives`. The first package is host-neutral and compiles on all configured targets; its MCP seam is in-process dispatch through the registry, not MCP wire transport. The second is JavaScript-only. Its DOM and Canvas implementation remains in the static host bootstrap, below the adapter boundary. The package audit has a regression test for this one-way direction; see the [browser proof guide](browser-demo.md) for scope and limits.
+The interaction lab uses `examples/browser_app -> core/diagnostics/element/layout/platform/primitives/scene/capability/mcp` and `examples/browser -> examples/browser_app/diagnostics/platform/primitives`. The first package is host-neutral and compiles on all configured targets; its MCP seam is in-process dispatch through the registry, not MCP wire transport. The second is JavaScript-only.
+
+Weekboard adds `examples/task_board -> capability/core/element/layout/platform/primitives/scene` and `examples/browser_board -> examples/task_board`. Its model owns task operations, history, scroll/drag state, filtering, selection, and logical geometry. The JS leaf exposes only copied values. Canvas rendering and ordinary HTML search/add/detail controls live in the static host. The dynamic visible-card DOM projection consumes the model's layout DTO and returns actions to the model; it does not move layout or task ownership into the DOM or establish a general semantic tree. Both pages share the bounded Canvas renderer. See the [browser guide](browser-demo.md) for implementation, test links, and limits.

@@ -486,6 +486,7 @@ fn frame_data(
   let chains = snapshot.clip_chains()
   for index = 0; index < items.length(); index = index + 1 {
     match items[index] {
+      @scene.TextItem(..) => return Err(backend_error(1, "present"))
       @scene.QuadItem(bounds~, color~, transform~, opacity~, clip_chain_id~, ..) => {
         let mut clip = Some(viewport)
         if clip_chain_id is Some(id) {

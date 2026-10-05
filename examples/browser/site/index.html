@@ -3,160 +3,250 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light" />
     <meta
       name="description"
-      content="A MoonBit app model rendered through gpui.mbt's experimental JavaScript browser host."
+      content="A small, working project board built with gpui.mbt: canvas text, task cards, drag and drop, scrolling and keyboard controls."
     />
-    <title>gpui.mbt · Browser viewport proof</title>
-    <link rel="stylesheet" href="./style.css" />
+    <title>Weekboard · gpui.mbt</title>
+    <link rel="stylesheet" href="./board.css" />
   </head>
   <body>
-    <main class="page-shell">
-      <header class="topbar">
-        <a class="wordmark" href="#top" aria-label="gpui.mbt browser proof home">
-          <span class="brand-glyph" aria-hidden="true">g</span>
-          <span>gpui<span class="wordmark-muted">.mbt</span></span>
-        </a>
-        <div class="topbar-meta">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span>Browser backend · concept proof</span>
+    <div class="workspace">
+      <aside class="sidebar" aria-label="Project overview">
+        <a class="brand" href="./" aria-label="Weekboard home"
+          ><span class="brand-mark" aria-hidden="true">w</span>weekboard<span class="brand-period"
+            >.</span
+          ></a
+        >
+        <div class="workspace-name">
+          <span class="workspace-avatar" aria-hidden="true">S</span>
+          <div><strong>Small studio</strong><span>A little progress, every day.</span></div>
         </div>
-      </header>
-
-      <section class="intro" id="top" aria-labelledby="page-title">
-        <p class="eyebrow">ISSUE 0009 · BROWSER BACKEND</p>
-        <h1 id="page-title">One MoonBit scene.<br /><span>A browser host.</span></h1>
-        <p class="lede">
-          The app model, flex layout, hit testing, focus, event queue and
-          <code>SceneSnapshot</code> run in MoonBit. The browser owns one Canvas
-          2D viewport and feeds it typed input.
-        </p>
-        <div class="intro-tags" aria-label="Prototype facts">
-          <span>MoonBit JS</span>
-          <span>Canvas 2D</span>
-          <span>One logical viewport</span>
+        <p class="section-label">YOUR PROJECT</p>
+        <div class="project-current">
+          <span class="project-symbol" aria-hidden="true">↗</span><span>Website launch</span
+          ><span class="project-count" id="sidebar-total">—</span>
         </div>
-      </section>
-
-      <section class="demo-grid" aria-label="Browser backend demo">
-        <article class="viewport-card">
-          <header class="card-heading">
-            <div>
-              <p class="card-kicker">LIVE VIEWPORT</p>
-              <h2>Portable app fixture</h2>
-            </div>
-            <span class="frame-badge" id="frame-state">STARTING</span>
-          </header>
-          <div class="canvas-frame" id="canvas-frame">
-            <canvas
-              id="gpui-viewport"
-              tabindex="0"
-              aria-label="gpui.mbt canvas viewport. Use Tab and arrow keys to move focus, then Enter or Space to activate."
-            ></canvas>
-            <div class="canvas-sheen" aria-hidden="true"></div>
+        <section class="project-summary" aria-labelledby="progress-title">
+          <div class="summary-heading">
+            <h2 id="progress-title">Making headway</h2>
+            <span id="progress-percent">0%</span>
           </div>
-          <footer class="viewport-footer">
-            <p><kbd>Tab</kbd> focus <kbd>← →</kbd> move <kbd>Enter</kbd> activate</p>
-            <span class="input-owner-label">Input owner: <strong id="host-input-owner">gpui.mbt canvas</strong></span>
-            <button class="quiet-button" id="return-framework" type="button">Return focus to canvas</button>
-            <button class="quiet-button" id="remount" type="button">Remount viewport</button>
-          </footer>
-          <div class="service-grid" aria-label="Browser services">
-            <section class="service-panel" aria-labelledby="text-input-heading">
-              <p class="card-kicker">TEXT INPUT</p>
-              <h3 id="text-input-heading">Enter committed text</h3>
-              <p class="service-help">Start typing to send committed characters to the MoonBit app. Text appears below; editing, selection and caret display are still pending.</p>
-              <div class="service-actions">
-                <button class="quiet-button" id="text-input-start" type="button">Start text input</button>
-                <button class="quiet-button" id="text-input-stop" type="button" disabled>Stop text input</button>
-              </div>
-              <p class="service-result" id="text-input-state" role="status">Text input is off.</p>
-              <output class="committed-text" id="committed-text" dir="auto" aria-label="Last committed text">No committed text yet.</output>
-              <p class="service-help">Committed inserts: <span id="text-commit-count">0</span></p>
-            </section>
-            <section class="service-panel" aria-labelledby="clipboard-heading">
-              <p class="card-kicker">CLIPBOARD</p>
-              <h3 id="clipboard-heading">Copy and paste text</h3>
-              <label class="service-help" for="clipboard-value">Text to copy, or the result of Paste</label>
-              <textarea id="clipboard-value" rows="3" spellcheck="false">Hello from gpui.mbt · こんにちは</textarea>
-              <div class="service-actions">
-                <button class="quiet-button" id="clipboard-copy" type="button">Copy text</button>
-                <button class="quiet-button" id="clipboard-paste" type="button">Paste text</button>
-              </div>
-              <p class="service-result" id="clipboard-result" role="status">The browser may ask for clipboard permission.</p>
-            </section>
+          <progress id="project-progress" value="0" max="1" aria-label="Project completion">
+            0%
+          </progress>
+          <p>
+            <strong id="completed-count">0</strong> of <span id="total-count">0</span> tasks
+            complete
+          </p>
+        </section>
+        <div class="sidebar-note">
+          <span aria-hidden="true">✳</span>
+          <p>Small enough to understand.<br />Enough moving parts to try.</p>
+        </div>
+        <footer class="sidebar-footer">
+          <span class="made-with">Built with <strong>gpui.mbt</strong></span
+          ><a href="./proof.html">Open the interaction lab <span aria-hidden="true">↗</span></a>
+        </footer>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <p class="breadcrumb">Small studio <span aria-hidden="true">/</span> Website launch</p>
+          <div class="session-label">
+            <span class="status-dot" id="status-dot" aria-hidden="true"></span
+            ><span id="runtime-state">Starting…</span>
           </div>
-        </article>
-
-        <aside class="inspector" aria-label="Framework state and browser capabilities">
-          <section class="inspector-panel">
-            <div class="panel-heading">
-              <div>
-                <p class="card-kicker">FRAMEWORK STATE</p>
-                <h2>Event ingress</h2>
-              </div>
-              <span class="live-label">LIVE</span>
+        </header>
+        <section class="project-header" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">A SMALL PROJECT WITH A FEW MOVING PARTS</p>
+            <h1 id="page-title">Let's get it out the door<span>.</span></h1>
+            <p class="project-description">
+              A working board for a website launch. Pick a card, move it forward, make a little
+              room.
+            </p>
+          </div>
+          <div class="project-emblem" aria-hidden="true">
+            <span>↗</span><small>one step<br />at a time</small>
+          </div>
+        </section>
+        <section class="board-section" aria-label="Website launch task board">
+          <div class="toolbar">
+            <div class="view-title">
+              <span class="view-icon" aria-hidden="true">▥</span>
+              <h2>Project board</h2>
+              <span id="result-count" class="result-count">— tasks</span>
             </div>
-            <dl class="metrics">
-              <div><dt>Logical viewport</dt><dd id="logical-size">—</dd></div>
-              <div><dt>Backing store</dt><dd id="backing-size">—</dd></div>
-              <div><dt>Device scale</dt><dd id="device-scale">—</dd></div>
-              <div><dt>Accepted events</dt><dd id="event-count">0</dd></div>
-              <div><dt>Last sequence</dt><dd id="sequence">0</dd></div>
-              <div><dt>Hit target</dt><dd id="hit-target">—</dd></div>
-              <div><dt>Logical focus</dt><dd id="focus-target">—</dd></div>
-              <div><dt>Activations</dt><dd id="activation-count">0</dd></div>
-              <div><dt>Capability value</dt><dd id="capability-value">0</dd></div>
-            </dl>
-            <p class="last-event" id="last-event">Waiting for the first frame…</p>
-          </section>
-
-          <section class="inspector-panel capability-panel">
-            <div class="panel-heading">
-              <div>
-                <p class="card-kicker">DECLARED CAPABILITIES</p>
-                <h2>What this slice supports</h2>
+            <div class="toolbar-actions">
+              <label class="search-box"
+                ><span aria-hidden="true">⌕</span
+                ><input
+                  id="board-search"
+                  type="search"
+                  placeholder="Find a task…"
+                  aria-label="Find a task"
+                  maxlength="80"
+                  autocomplete="off" /></label
+              ><button id="undo" class="button button-quiet" type="button" disabled>
+                <span aria-hidden="true">↶</span> Undo</button
+              ><button id="new-task" class="button button-primary" type="button" disabled>
+                <span aria-hidden="true">+</span> New task
+              </button>
+            </div>
+          </div>
+          <div
+            class="mobile-lanes"
+            id="mobile-lanes"
+            role="group"
+            aria-label="Visible board column"
+            hidden
+          >
+            <button type="button" data-lane="0" aria-pressed="true">Backlog</button
+            ><button type="button" data-lane="1" aria-pressed="false">In progress</button
+            ><button type="button" data-lane="2" aria-pressed="false">Done</button>
+          </div>
+          <div class="board-and-detail">
+            <div class="board-main">
+              <div id="board-frame" class="board-frame">
+                <canvas
+                  id="board-canvas"
+                  tabindex="0"
+                  aria-label="Project task board. Arrow keys select tasks. Alt plus left or right moves a task between columns. Escape cancels a drag."
+                ></canvas>
+                <div
+                  id="board-accessibility"
+                  class="canvas-accessibility"
+                  role="group"
+                  aria-label="Task cards"
+                ></div>
+                <div id="board-empty" class="board-empty" hidden>
+                  <span aria-hidden="true">⌕</span>
+                  <h3>No matching tasks</h3>
+                  <p>Try a shorter search, or add something new.</p>
+                  <button type="button" id="clear-search" class="button button-quiet">
+                    Clear search
+                  </button>
+                </div>
+              </div>
+              <div id="mobile-scroll" class="mobile-scroll" hidden>
+                <button id="scroll-back" class="button button-quiet" type="button" disabled>
+                  ↑ Earlier tasks</button
+                ><button id="scroll-forward" class="button button-quiet" type="button" disabled>
+                  Later tasks ↓
+                </button>
+              </div>
+              <div class="board-footer">
+                <p>
+                  <span class="hint-dot" aria-hidden="true"></span
+                  ><span id="board-hint">Drag cards to move them. Scroll inside a column.</span>
+                </p>
+                <details class="keyboard-help">
+                  <summary>Keyboard controls</summary>
+                  <p>
+                    <kbd>↑</kbd> <kbd>↓</kbd> select · <kbd>Home</kbd> <kbd>End</kbd> first /
+                    last<br /><kbd>Alt</kbd> + <kbd>←</kbd> <kbd>→</kbd> move · <kbd>Ctrl</kbd>/<kbd
+                      >⌘</kbd
+                    >
+                    + <kbd>Z</kbd> undo<br /><kbd>Esc</kbd> cancel a drag · <kbd>Tab</kbd> move
+                    between controls
+                  </p>
+                </details>
               </div>
             </div>
-            <ul class="capability-list" id="capabilities"></ul>
-          </section>
-        </aside>
-      </section>
-
-      <section class="diagnostic" id="diagnostic" role="status" aria-live="polite" hidden>
-        <div class="diagnostic-mark" aria-hidden="true">!</div>
-        <div>
-          <p class="card-kicker">FRAMEWORK DIAGNOSTIC</p>
-          <h2 id="diagnostic-title">Browser host could not start</h2>
+            <aside class="task-detail" aria-labelledby="detail-heading">
+              <div class="detail-topline">
+                <p class="section-label">IN FOCUS</p>
+                <span id="detail-id" class="task-id">—</span>
+              </div>
+              <div id="detail-content">
+                <h2 id="detail-heading">Choose a task</h2>
+                <p id="detail-description" class="detail-description">
+                  Select any card to see its details and move it to the next stage.
+                </p>
+                <dl class="detail-meta">
+                  <div>
+                    <dt>Priority</dt>
+                    <dd id="detail-priority">—</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd id="detail-lane">—</dd>
+                  </div>
+                </dl>
+                <fieldset class="move-controls" id="move-controls" disabled>
+                  <legend>Move to</legend>
+                  <button type="button" data-move-lane="0">
+                    Backlog <span aria-hidden="true">→</span></button
+                  ><button type="button" data-move-lane="1">
+                    In progress <span aria-hidden="true">→</span></button
+                  ><button type="button" data-move-lane="2">
+                    Done <span aria-hidden="true">✓</span>
+                  </button>
+                </fieldset>
+                <button id="copy-task" class="button copy-task" type="button" disabled>
+                  Copy task summary <span aria-hidden="true">↗</span>
+                </button>
+                <p id="clipboard-status" class="clipboard-status" role="status"></p>
+              </div>
+              <p class="detail-tip">Changed your mind?<br />Undo brings the last change back.</p>
+            </aside>
+          </div>
+          <div class="activity-line">
+            <span aria-hidden="true">↳</span>
+            <p id="board-message" role="status" aria-live="polite">Preparing your board…</p>
+            <span class="session-note">Demo data · this session only</span>
+          </div>
+        </section>
+        <section id="board-diagnostic" class="diagnostic" role="alert" hidden>
+          <h2 id="diagnostic-title">The board is temporarily unavailable</h2>
           <p id="diagnostic-message"></p>
-          <code id="diagnostic-code"></code>
+          <code id="diagnostic-code"></code
+          ><button id="retry-renderer" type="button" class="button button-quiet">
+            Retry canvas
+          </button>
+        </section>
+        <details class="about-demo">
+          <summary>What is running here?</summary>
+          <div>
+            <p>
+              The task state, filtering, undo, flex layout, hit testing, scrolling, drag gestures
+              and scene data run in MoonBit. A browser host paints the same scene's rectangles and
+              text to a Canvas 2D viewport and projects visible cards to accessible buttons.
+            </p>
+            <p>
+              Text uses the browser's system font. This is an experimental browser slice: full text
+              editing and IME, a general accessibility adapter, WebGPU and cross-browser
+              qualification remain open. The <a href="./proof.html">interaction lab</a> exercises
+              clipboard, committed input, renderer restoration and the existing migration fixture.
+            </p>
+            <p id="render-facts" class="render-facts">Waiting for the first frame.</p>
+          </div>
+        </details>
+      </main>
+    </div>
+    <dialog id="task-dialog" aria-labelledby="new-task-heading">
+      <form id="new-task-form">
+        <p class="section-label">ONE THING AT A TIME</p>
+        <h2 id="new-task-heading">What needs doing?</h2>
+        <label for="task-title">Task name</label
+        ><input
+          id="task-title"
+          name="title"
+          type="text"
+          maxlength="80"
+          required
+          autocomplete="off"
+          placeholder="e.g. Review the launch checklist"
+        />
+        <p class="form-hint">New tasks start in Backlog. Keep the title under 80 characters.</p>
+        <p id="form-error" class="form-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button id="cancel-task" class="button button-quiet" type="button">Cancel</button
+          ><button id="submit-task" class="button button-primary" type="submit">Add task</button>
         </div>
-      </section>
-
-      <section class="notes" aria-label="Proof boundaries">
-        <div>
-          <span class="note-index">01</span>
-          <h2>Same portable model</h2>
-          <p>Flex layout and reverse-order element hit testing feed the shared quad scene.</p>
-        </div>
-        <div>
-          <span class="note-index">02</span>
-          <h2>Logical size stays logical</h2>
-          <p>Pointer coordinates and layout use CSS pixels; DPR only scales the canvas backing store.</p>
-        </div>
-        <div>
-          <span class="note-index">03</span>
-          <h2>Experimental by design</h2>
-          <p>Clipboard text, committed input and Canvas 2D restoration extend this slice. WebGPU, full text/IME, general accessibility and production support remain open.</p>
-        </div>
-      </section>
-
-      <footer class="page-footer">
-        <span>Independent MoonBit implementation of the GPUI programming model.</span>
-        <span>Canvas 2D is execution evidence, not the production renderer path.</span>
-      </footer>
-    </main>
-    <script type="module" src="./host.js"></script>
+      </form>
+    </dialog>
+    <script type="module" src="./board.js"></script>
   </body>
 </html>
