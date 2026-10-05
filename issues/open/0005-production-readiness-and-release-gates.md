@@ -309,15 +309,19 @@ pending.
 
 The `text/` package adds deterministic cases and fixed-seed QuickCheck
 properties for UTF-16 ranges, directional selection, well-formed text,
-immutable replacement, overflow checks, and composition transitions. The
-composition property uses seed `4169804048700389933`
-(`0x39de1eb091c5ba2d`), 256 cases, `max_size=32`, and `max_shrinks=500`; it
-compares three previews and a commit/cancel result against independently
-assembled reference strings. `moon fmt text --check`, `moon check text --target
-all --deny-warn`, and `moon test text --target all --deny-warn` pass; the text
-package reports 17/17 tests on Wasm, WasmGC, JS and native. The Python contract
-suite passes 61/61 tests and `scripts/check_contracts.py` passes. This remains
-development evidence only:
+immutable replacement, overflow checks, composition transitions, and strict
+UTF-16/UTF-8 scalar-boundary conversion. The composition property uses seed
+`4169804048700389933` (`0x39de1eb091c5ba2d`), 256 cases, `max_size=32`, and
+`max_shrinks=500`; it compares three previews and a commit/cancel result against
+independently assembled reference strings. The offset bridge property uses seed
+`4815306127957175914` (`0x42d3676929a62e6a`), 256 cases, `max_size=32`, and
+`max_shrinks=500`; it checks every boundary and interior position against
+independently accumulated scalar widths. Focused `moon test text` runs pass
+21/21 on Wasm, WasmGC, JS, and native, and `moon check text --target all
+--deny-warn` passes. `moon fmt --check`, `moon info text`, Python unit tests
+62/62, `scripts/check_contracts.py`, and `git diff --check` also pass. The
+regenerated `text/pkg.generated.mbti` exposes the three bridge methods and the
+new error variant. This remains development evidence only:
 host event sequencing, actual Japanese IME, text layout/candidate placement,
 shaping/rendering, undo, multi-cursor editing, accessibility, mutation
 evidence, and all 1.0 release gates remain pending. Issue0005 remains open.

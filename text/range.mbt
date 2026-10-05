@@ -1,10 +1,13 @@
 ///|
-/// Errors from the portable UTF-16 text model.
+/// Errors from the portable text model. SplitSurrogate marks a UTF-16 offset
+/// inside a supplementary scalar; SplitUtf8 marks a UTF-8 byte offset inside
+/// a scalar.
 pub enum TextError {
   NegativeOffset
   ReversedRange
   OutOfBounds
   SplitSurrogate
+  SplitUtf8
   MalformedUtf16
   LengthOverflow
 } derive(Eq)

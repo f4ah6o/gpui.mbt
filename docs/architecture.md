@@ -79,10 +79,13 @@ The current runtime edges include `primitives -> stdlib`, `text -> stdlib`, `dia
 The `text/` package is a pure immutable value model. `TextComposition` retains
 the original document and target range, rebuilds every preview from that
 original pair, maps relative UTF-16 selection endpoints into the resulting
-document, and yields a committed or cancelled value. It provides no mutable
-session owner, event sequencing, freshness guarantee, undo history, grapheme
-segmentation, host adapter, layout, or rendering. Host owners must enforce
-their own event ordering and ownership rules.
+document, and yields a committed or cancelled value. `TextDocument` also
+provides strict UTF-16/UTF-8 scalar-boundary conversion; each conversion is an
+O(n) scan with overflow-checked UTF-8 byte counts and no cached offset table.
+It provides no mutable session owner, event sequencing, freshness guarantee,
+undo history, grapheme segmentation, host adapter, layout, caret geometry, or
+rendering. Host owners must enforce their own event ordering and ownership
+rules.
 
 The approved `capability -> core` edge consumes only the portable application
 lifetime contract. `core` never imports capabilities, MCP, or platform code.

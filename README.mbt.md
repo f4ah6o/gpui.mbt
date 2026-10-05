@@ -105,7 +105,7 @@ Subscriptions are explicitly canceled with `unsubscribe`. Deterministic timer te
 | --- | --- |
 | `core/` | Application lifetime, entities, scoped contexts, subscriptions, scheduler and timers |
 | `primitives/` | Shared geometry, colors, input values, and portable primitives |
-| `text/` | UTF-16 documents, directional selections, and immutable composition values; no host IME or rendering |
+| `text/` | UTF-16 documents, strict UTF-8 scalar-offset conversion, directional selections, and immutable composition values; no host IME or rendering |
 | `layout/` | Deterministic flex layout and recursive layout trees |
 | `element/` | Element trees, hit testing, event routing, focus, scroll state, drag gestures, and element-to-scene bridging |
 | `scene/` | Quad paint commands, bounded text snapshot items, validation, canonical snapshots, transforms, opacity, and clips |
