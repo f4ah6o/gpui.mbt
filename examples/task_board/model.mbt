@@ -927,6 +927,17 @@ pub fn BoardDemo::cancel(self : BoardDemo) -> Result[Unit, BoardError] {
 }
 
 ///|
+/// Trim ECMAScript WhiteSpace and LineTerminator code points to match the
+/// browser's accessible-name validation. An explicit set keeps every target
+/// independent of MoonBit's narrower default trim policy.
+fn trim_title(value : String) -> String {
+  let whitespace = "\t\n\u000B\u000C\r \u00A0\u1680" +
+    "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A" +
+    "\u2028\u2029\u202F\u205F\u3000\uFEFF"
+  value.trim(chars=whitespace[:]).to_owned()
+}
+
+///|
 /// Commands share EventIngress sequence numbers with pointer, keyboard, and
 /// lifecycle events, so a command never jumps ahead of already queued input.
 pub fn BoardDemo::command(
@@ -961,7 +972,7 @@ pub fn BoardDemo::command(
       Move(id, lane)
     }
     "add" => {
-      let title = value.trim().to_owned()
+      let title = trim_title(value)
       if title.length() == 0 {
         return Err(InvalidInput)
       }

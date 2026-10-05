@@ -31,8 +31,10 @@ In progress, and two in Done. Selecting a card shows its detail and lane-move
 actions. Dragging moves a card between lanes; the detail buttons provide the
 same move without dragging. Moving within the same lane does not reorder cards.
 Search matches task titles and details without case sensitivity. Add accepts
-a nonempty, trimmed title of at most 80 UTF-16 code units, rejects control
-characters, and allows at most 100 tasks. A successful addition clears the
+at most 80 UTF-16 input code units and trims leading and trailing ECMAScript
+whitespace and line terminators, including nonbreaking space, ideographic space,
+and BOM. It rejects blank results and remaining ASCII control characters before
+queuing a change, and allows at most 100 tasks. A successful addition clears the
 filter and reveals the new Backlog task. Search is also bounded to 80 UTF-16
 code units. Undo retains the last 32 additions or lane moves; task IDs are
 never reused. There is no redo or storage service: reloading restores the

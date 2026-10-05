@@ -680,8 +680,52 @@ try {
   );
   complete(stage);
 
+  const beforeUnicodeBoard = await readBoard();
+  const beforeUnicodeTitles = beforeUnicodeBoard.status;
+  for (const [label, title] of [
+    ["U+3000 ideographic space", "\u3000"],
+    ["U+00A0 no-break space", "\u00a0"],
+    ["U+FEFF byte order mark", "\ufeff"],
+  ]) {
+    stage = `add-dialog rejects whitespace-only title: ${label}`;
+    await page.locator("#new-task").click();
+    assert.equal(await page.locator("#form-error").textContent(), "");
+    await page.locator("#task-title").fill(title);
+    assert.equal(
+      await page.locator("#task-title").evaluate((input) => input.validity.valid),
+      true,
+      "Unicode whitespace passes HTML required validation and reaches the application",
+    );
+    await page.locator("#submit-task").click();
+    await afterInputFrames();
+    await page.waitForFunction(() => !window.__gpuiBoardHost().pendingFrame, null, {
+      timeout: 10_000,
+    });
+    const rejected = await readBoard();
+    assert.equal(rejected.host.running, true);
+    assert.equal(rejected.host.lost, false, `${label} must not disable the renderer`);
+    assert.deepEqual(
+      rejected.status.tasks,
+      beforeUnicodeTitles.tasks,
+      `${label} must not add a task`,
+    );
+    assert.equal(rejected.status.selectedId, beforeUnicodeTitles.selectedId);
+    assert.equal(rejected.status.canUndo, beforeUnicodeTitles.canUndo);
+    assert.deepEqual(rejected.layout.nodes, beforeUnicodeBoard.layout.nodes);
+    await assertAccessibleCards();
+    assert.ok((await page.locator("#form-error").textContent()).length > 0);
+    assert.equal(await page.locator("#task-dialog").isVisible(), true);
+    assert.equal(await page.locator("#task-title").isEnabled(), true);
+    assert.equal(await page.locator("#submit-task").isEnabled(), true);
+    assert.equal(await page.locator("#board-diagnostic").isVisible(), false);
+    await page.locator("#cancel-task").click();
+    await page.locator("#task-dialog").waitFor({ state: "hidden" });
+  }
+  complete("Unicode whitespace-only titles leave tasks, renderer and dialog usable");
+
   stage = "add-dialog required and trimmed-title validation, success, undo and cancel";
   await page.locator("#new-task").click();
+  await page.locator("#task-title").fill("");
   await page.locator("#submit-task").click();
   assert.equal(
     await page.locator("#task-title").evaluate((input) => input.validity.valueMissing),
@@ -697,7 +741,9 @@ try {
   );
   assert.equal((await readBoard()).status.total, 12);
   assert.equal(await page.locator("#submit-task").isEnabled(), true);
-  await page.locator("#task-title").fill("  Verify the release 演習  ");
+  await page
+    .locator("#task-title")
+    .fill(" \u00a0\u3000\ufeff Verify the release 演習 \ufeff\u3000\u00a0 ");
   await page.locator("#submit-task").click();
   await waitForState({ total: 13, query: "" });
   await page.locator("#task-dialog").waitFor({ state: "hidden" });

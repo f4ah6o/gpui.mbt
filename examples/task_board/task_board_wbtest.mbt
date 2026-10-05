@@ -117,6 +117,70 @@ test "add is bounded normalized and undo restores selection without reusing ids"
 }
 
 ///|
+test "ECMAScript whitespace-only titles reject without changing the board" {
+  let board = test_board()
+  let before = board.status_json()
+  let blank_titles = [
+    "", "\t", "\n", "\u000B", "\u000C", "\r", " ", "\u00A0", "\u1680", "\u2000",
+    "\u2001", "\u2002", "\u2003", "\u2004", "\u2005", "\u2006", "\u2007", "\u2008",
+    "\u2009", "\u200A", "\u2028", "\u2029", "\u202F", "\u205F", "\u3000", "\uFEFF",
+    " \u00A0\u3000\uFEFF\t",
+  ]
+  for title in blank_titles {
+    assert_true(board.command("add", 0, title) is Err(InvalidInput))
+    assert_eq(board.commands.length(), 0)
+    assert_eq(board.ingress.pending_count(), 0)
+    assert_eq(board.status_json(), before)
+  }
+  let unchanged = frame(board)
+  assert_eq(board.status_json(), before)
+  assert_eq(unchanged.next_id, 13)
+  assert_eq(unchanged.history.length(), 0)
+  assert_true(board.command("add", 0, "After validation") is Ok(_))
+  let added = frame(board)
+  assert_eq(added.selected, Some(13))
+  assert_eq(added.events, 1)
+  assert_eq(added.last_sequence, 1L)
+  assert_true(board.command("undo", 0, "") is Ok(_))
+  assert_eq(frame(board).tasks.length(), 12)
+  board.dispose()
+}
+
+///|
+test "Unicode title edges normalize while content and input bounds stay intact" {
+  let board = test_board()
+  let whitespace = "\t\n\u000B\u000C\r \u00A0\u1680" +
+    "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A" +
+    "\u2028\u2029\u202F\u205F\u3000\uFEFF"
+  let title = "日本語\u00A0の\u3000確認 🚀"
+  assert_true(
+    board.command("add", 0, "\{whitespace}\{title}\{whitespace}") is Ok(_),
+  )
+  assert_eq(frame(board).tasks[12].title, title)
+  assert_true(
+    board.command("add", 0, "\u3000\{repeat_text(78)}\uFEFF") is Ok(_),
+  )
+  assert_eq(frame(board).tasks[13].title, repeat_text(78))
+  let before_rejected = board.status_json()
+  // The 80-code-unit limit applies before trimming, including Unicode edges.
+  assert_true(
+    board.command("add", 0, "\u3000\{repeat_text(79)}\uFEFF")
+    is Err(InvalidInput),
+  )
+  assert_true(
+    board.command("add", 0, "\u3000line\nbreak\uFEFF") is Err(InvalidInput),
+  )
+  assert_true(
+    board.command("add", 0, "\u00A0task\u0000\uFEFF") is Err(InvalidInput),
+  )
+  assert_eq(board.commands.length(), 0)
+  assert_eq(board.ingress.pending_count(), 0)
+  ignore(frame(board))
+  assert_eq(board.status_json(), before_rejected)
+  board.dispose()
+}
+
+///|
 test "history and total tasks have independent bounded limits" {
   let board = test_board()
   for index in 0..<40 {
