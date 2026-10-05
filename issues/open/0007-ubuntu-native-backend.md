@@ -1,8 +1,8 @@
 # Ubuntu native backend roadmap
 
-Status: in progress — grayscale text-frame drawing implemented; input and support gates remain open
+Status: in progress — grayscale drawing implemented; bounded experimental field/direct-keyboard work is active; compositor typing, IME, and support gates remain open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-04
+Updated: 2026-10-05
 
 ## Current-head acceptance triage — 2026-10-04
 
@@ -300,9 +300,44 @@ not guarantee parity. Use [the Linux text guide](../../docs/linux-text.md#ubuntu
 and [Ubuntu guide](../../docs/ubuntu.md#grayscale-text-frame-subset) for the
 complete implementation boundary.
 
-The remaining text roadmap is focused on usable input controls: connect
-the shared focused key/text dispatcher to actual native committed-text input
-and editing; present caret and selection geometry; define
-composition/commit/cancel and focus-loss ownership; qualify Japanese IME;
-then add semantic accessibility and an actual text field/picker consumer.
-Text drawing alone does not satisfy packet D's text-input/IME acceptance.
+## Experimental bounded field/direct-text slice — 2026-10-05
+
+The field prototype based on merged focused-input PR29
+(`18e8fadf470823b389feff3b9d496213b4d3f67a`, tree
+`7554a5f181724160e1be4a11ac0e47067ca79e3d`) adds a bounded, single-line LTR
+field example, portable edit snapshots, visible caret/selection, same-context
+Pango measurement and grayscale admission, guarded reuse of the Ubuntu
+clipboard path, and an owner-armed private XKB/locale-Compose committed-text
+target. This remains an experimental implementation, not a generally
+usable control or a capability advertised by `GrayscaleTextFrames`.
+
+Native direct input requires a live seat, usable keymap and Compose table, and
+current native keyboard focus. Its copied v2 ABI carries key and committed-text
+epochs; stale direct input is dropped, v1 reads refuse active/queued direct
+records, and epoch exhaustion fails closed until a fresh host. Blur, keymap or
+seat changes, re-arm, window release, and stop reset Compose and revoke the
+logical target. The public `TextInput`/IME route, Japanese IME, composition UI,
+and candidate positioning are still unsupported. Field bounds and
+fail-closed negative-ink-bearing behavior are documented in the
+[experimental field guide](../../docs/linux-text-field.md).
+
+Current evidence is local portable/model testing, real-font provider
+admission, headless native callback/queue/decoder tests, fixture encoding, and
+GPU-source strict compilation. Control-to-renderer fixtures are injected and
+do not show compositor keyboard delivery. Actual compositor-delivered typing
+is **unrun**: the stock Weston 13 headless setup lacks an admitted input
+injection driver for this qualification, and local AF_UNIX socket creation
+returns `EPERM`. The hosted field `Host.present`/injected-renderer result is
+pending review; no field-specific hosted pass or source SHA is claimed. Thus
+packet D's Japanese IME/text-input acceptance remains open, along with actual
+desktop typing, accessibility, recovery/reconnect, performance, resources,
+and all Ubuntu support gates. Do not treat this work as a support-tier change.
+
+Remaining packet D work is to qualify actual compositor-driven delivery through
+the direct-text target and implement a real text-input/IME path with
+composition start/update/commit/cancel, candidate/caret positioning, and
+Japanese IME qualification. The current XKB/Compose route does not satisfy
+those IME acceptance criteria. Also open are origin-aware negative-ink support,
+semantic accessibility, reusable field/picker behavior, and the backend
+recovery/resource/support gates. Text drawing or the local field prototype
+alone does not complete packet D.

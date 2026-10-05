@@ -1,0 +1,75 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/controls/text_field"
+
+import {
+  "f4ah6o/gpui/element",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/scene",
+  "f4ah6o/gpui/text",
+  "f4ah6o/gpui/text_layout",
+}
+
+// Values
+pub fn scene_text_bounds(@text_layout.TextMeasurement) -> Result[@primitives.Rect, TextFieldPaintError]
+
+// Errors
+
+// Types and methods
+pub struct TextField {
+  // private fields
+}
+pub fn TextField::bounds(Self) -> @primitives.Rect
+pub fn TextField::content_bounds(Self) -> @primitives.Rect
+pub fn TextField::document(Self) -> @text.TextDocument
+pub fn TextField::element_node(Self, UInt64?) -> @element.ElementNode
+pub fn TextField::font_size(Self) -> Double
+pub fn TextField::handle_input(Self, @primitives.InputEvent, (@text.TextDocument) -> Result[@text_layout.TextMeasurement, TextFieldError], (@text.TextDocument, @text_layout.TextMeasurement) -> Result[Unit, TextFieldError], (@text.TextDocument, @primitives.Point) -> Result[@text_layout.TextHit, TextFieldError]) -> Result[(Self, TextFieldAction?), TextFieldError]
+pub fn TextField::id(Self) -> UInt64
+pub fn TextField::is_focused(Self) -> Bool
+pub fn TextField::measurement(Self) -> @text_layout.TextMeasurement
+pub fn TextField::new(UInt64, @primitives.Rect, Double, @text.TextDocument, (@text.TextDocument) -> Result[@text_layout.TextMeasurement, TextFieldError], (@text.TextDocument, @text_layout.TextMeasurement) -> Result[Unit, TextFieldError]) -> Result[Self, TextFieldError]
+pub fn TextField::paint_items(Self, UInt64, Int) -> Result[(@scene.ClipChain, Array[@scene.SceneItem]), TextFieldPaintError]
+pub fn TextField::replace_selection(Self, String, (@text.TextDocument) -> Result[@text_layout.TextMeasurement, TextFieldError], (@text.TextDocument, @text_layout.TextMeasurement) -> Result[Unit, TextFieldError]) -> Result[Self, TextFieldError]
+pub fn TextField::revision(Self) -> Int
+pub fn TextField::scroll_offset(Self) -> Double
+pub fn TextField::selected_text(Self) -> String
+pub fn TextField::selection(Self) -> @text.TextSelection
+pub fn TextField::with_bounds(Self, @primitives.Rect) -> Result[Self, TextFieldError]
+pub fn TextField::with_focus(Self, Bool) -> Result[Self, TextFieldError]
+
+pub enum TextFieldAction {
+  Copy(String)
+  Cut(text~ : String, candidate~ : TextField)
+  Paste
+  Submit
+  Blur
+}
+
+pub(all) enum TextFieldError {
+  InvalidFontSize
+  InvalidBounds
+  MalformedText
+  ForbiddenInput
+  TextTooLarge
+  UnsupportedLayout
+  InvalidSelection
+  MeasurementFailed
+  AdmissionFailed
+  HitTestFailed
+  InvalidHitResult
+  RevisionExhausted
+} derive(Eq)
+pub fn TextFieldError::equal(Self, Self) -> Bool
+pub fn TextFieldError::not_equal(Self, Self) -> Bool
+
+pub enum TextFieldPaintError {
+  InvalidItemId
+  GeometryFailure
+  SceneFailure(@scene.SnapshotError)
+} derive(Eq)
+pub fn TextFieldPaintError::equal(Self, Self) -> Bool
+pub fn TextFieldPaintError::not_equal(Self, Self) -> Bool
+
+// Type aliases
+
+// Traits

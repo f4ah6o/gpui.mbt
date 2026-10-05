@@ -1,0 +1,27 @@
+import {
+  "f4ah6o/gpui/ubuntu" @native,
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/platform/linux_text",
+  "f4ah6o/gpui/controls/text_field",
+  "f4ah6o/gpui/text",
+  "f4ah6o/gpui/text_layout",
+  "f4ah6o/gpui/element",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/scene",
+  "f4ah6o/gpui/diagnostics",
+  "moonbitlang/core/env",
+}
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")
+
+options(
+  link: {
+    "native": {
+      "cc": "script/linux_text_cc.py",
+      "cc-flags": "-O2 -std=c11 -Wall -Wextra",
+      "cc-link-flags": "-lwayland-client -lwayland-cursor -lwayland-egl -lEGL -lGLESv2 -lxkbcommon -lpthread -lm",
+    },
+  },
+)

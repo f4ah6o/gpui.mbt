@@ -157,12 +157,14 @@ See the source-grounded [codebase gap analysis](../../docs/codebase-gap-analysis
 for implementation evidence and boundaries. The portable `text/` value model
 and `text_layout/` copied measurement contract are present; PR27 adds Linux
 PangoFT2 measurements. The Ubuntu native host now draws supported grayscale
-text frames; the shared element tree now routes focused key/text events.
-These foundations do not implement an editable control, visible caret/selection,
-grapheme navigation, native committed-text ingress, host input ownership,
-or actual OS input-method behavior. The MZed application milestones and
-platform admission gates remain unchanged. See the [portable text model](../../docs/text-model.md)
-and [Linux text guide](../../docs/linux-text.md).
+text frames; merged PR29 routes focused key/text events. A bounded single-line
+LTR field with private direct XKB/Compose ingress, caret/selection painting,
+and owner-managed focus exists as an experimental implementation; it is
+not a generally usable control and compositor-delivered typing is unrun. It
+does not implement IME or general host input support. The MZed application
+milestones and platform admission gates remain unchanged. See the [portable
+text model](../../docs/text-model.md), [Linux text guide](../../docs/linux-text.md),
+and [experimental field status](../../docs/linux-text-field.md).
 
 ### Framework capability status and application order — 2026-10-05
 
@@ -180,16 +182,43 @@ merged as `3cc72f548dc6138e17f949efad8eae92c70a1cb0`, tree
 because AF_UNIX stream-socket creation returns `EPERM`. This does not qualify
 hardware/text performance, an editable control, IME or a support tier.
 
+### Bounded field prototype — 2026-10-05
+
+The field prototype builds on merged focused-input PR29
+(`18e8fadf470823b389feff3b9d496213b4d3f67a`, base tree
+`7554a5f181724160e1be4a11ac0e47067ca79e3d`). It joins the portable model,
+same-context real-sans Pango measurement/raster admission, a bounded LTR
+single-line control, visible selection/caret and horizontal scroll, focused
+element dispatch, clipboard guards, and opt-in private XKB/Compose committed
+text for one native window. The field remains a bounded experimental
+implementation, not a general reusable control. Its detailed bounds, epoch/revocation,
+ABI, evidence tiers, negative-bearing rejection, and remaining work are in the
+[field status guide](../../docs/linux-text-field.md).
+
+The field explicitly rejects any edit whose `sans` ink extends left/above its
+logical origin; real 18 px fixture text including `j`/`J` and accent cases can
+have negative bearings, so this avoids clipping. That fail-closed policy is
+intentional. An origin-aware geometry/presentation follow-on is a separate
+design pending review. Model and controller tests, installed-font admission,
+native callback/queue/decoder checks, fixture encoding, and GPU-source strict
+compilation are local evidence tiers; injected-frame checks are not native
+keyboard input. Actual compositor-delivered typing is **unrun**: stock Weston
+13 headless has no admitted keyboard-injection driver for this qualification,
+and local AF_UNIX socket creation returns `EPERM`. The field `Host.present` /
+injected-renderer hosted result remains pending review; no field-specific
+hosted pass or source SHA is recorded. IME/Japanese input, accessibility,
+picker/reusable-control behavior, and desktop/support gates remain open.
+
 | Capability | Available foundation | Remaining app behavior |
 | --- | --- | --- |
 | App/entity ownership | Headless lifetimes, updates, observers, and capability revocation | Mutable aliases remain caller-managed; no destructor guarantee |
 | Asynchronous execution | Deterministic foreground queue/manual clock | Background or suspending execution and complete native endpoint topology |
 | Layout/element lifecycle | Bounded flex and request-layout/prepaint/paint | Reconciliation, invalidation, reusable controls |
-| Pointer/focus/keyboard | Position-based pointer and focused key/text capture/bubble routes exist | Native committed-text ingress, shared bindings, input ownership and controls |
+| Pointer/focus/keyboard | Position-based pointer and focused key/text routes merged in PR29; local field adds an owner-managed private direct-text target | Actual compositor-delivered typing qualification, shared bindings, general input ownership and controls |
 | Rendering | Native quads, bounded browser text, Ubuntu grayscale text frames | Other native hosts, richer resources, and renderer qualification |
 | Text model | Immutable UTF-16 document/selection/composition; strict UTF-8 bridge | Editable widget, undo history, multi-cursor editing |
 | Measured text | Merged PR27 copied caret/hit values and Linux PangoFT2 geometry; Ubuntu draws supported grayscale subset | Other-host drawing, wrapping policy, selection geometry, caching, workload evidence |
-| Editable controls | No framework text field or picker | Real input, visible caret/selection, focus, editing, composition/IME |
+| Editable controls | A bounded single-line LTR field exists as an experimental implementation; no general field API or picker | Compositor typing, broader layout/ink support, IME/composition, accessibility, reusable field/picker behavior |
 | Large collections | No reusable virtualized list/picker | Visible-range realization, focus/selection preservation, bounded work |
 | Scroll/drag | Partial immutable scroll/gesture semantics and Weekboard lane behavior | General control integration and broader payload/reorder/navigation policy |
 | Clipboard/cursor | Native adapters exist on all three native hosts | Use through controls with host permission/lifetime rules |
@@ -202,17 +231,18 @@ The implementation order now follows application outcomes:
 1. Keep [0019](0019-mzed-native-coexistence-proof.md) as the first MZed
    integration boundary. Foundation work can proceed independently; a text
    renderer is not a same-window island proof.
-2. Build a usable Linux text field on the portable model, merged PR27
-   measurement, and Ubuntu grayscale drawing. Connect actual native committed
-   text through the shared focused dispatcher, show caret and selection
-   geometry, define clipboard and
-   composition/focus ownership, and qualify actual Japanese IME before
-   claiming input support. Keep scalar offsets, grapheme cursor stops, and
-   bidi affinity distinct. For caret/hit geometry to match the current v1
-   renderer, request the same generic `sans` family, font size, and Pango
-   context as drawing; measurements of another explicit family do not imply
-   parity, and no public font-family field exists. Design control
-   accessibility alongside behavior.
+2. Qualify and extend the experimental Linux text field on the portable model,
+   merged PR27 measurement, and Ubuntu grayscale drawing. The prototype
+   already joins the focused dispatcher to opt-in native direct committed text,
+   shows caret/selection, and defines clipboard/focus rollback guards; actual
+   compositor-delivered typing and Japanese IME remain unrun. Keep scalar
+   offsets, measured cursor stops, and bidi affinity distinct. The bounded
+   field rejects negative ink bearings at the logical origin; origin-aware
+   geometry support needs separate review. For caret/hit geometry to match the
+   current v1 renderer, request the same generic `sans` family, font size, and
+   Pango context as drawing; measurements of another explicit family do not
+   imply parity, and no public font-family field exists. Add accessibility
+   alongside the next behavior expansion.
 3. Build a picker/command palette and scalable collection controls from input,
    action/focus routing, selection/navigation, virtualized visible-range work,
    and scroll/drag. Verify bounded work and keyboard operation.
@@ -225,14 +255,14 @@ The implementation order now follows application outcomes:
    evidence per migration. Keep Yami-kumo as a separate familiar cross-platform
    UX consumer. Neither app proof alone establishes release readiness.
 
-The next text-control work is not complete until it joins rendering to actual
-focus/input and shows editable caret/selection behavior. Shared focused
-routing is now present, but it does not create native committed-text ingress.
-The renderer itself does not implement caret or selection presentation, an
-editable control, IME, accessibility, rich text, or color glyphs; its
-`GrayscaleTextFrames` capability flag does not imply any of those features. The
-[Linux text guide](../../docs/linux-text.md) and [Ubuntu guide](../../docs/ubuntu.md)
-record the exact supported frame boundary and limits.
+The local field prototype joins rendering, focused dispatch, owner-controlled
+native focus, and a private direct-keyboard committed-text route, and paints
+caret/selection. It is still experimental: actual compositor typing has not
+been demonstrated, overhanging ink is rejected, and IME, accessibility, and a
+general reusable field remain open. The renderer's `GrayscaleTextFrames`
+capability still means drawing only, not any of those behaviors. See the
+[Linux text guide](../../docs/linux-text.md), [field status](../../docs/linux-text-field.md),
+and [Ubuntu guide](../../docs/ubuntu.md) for their separate boundaries.
 
 ### Upstream pin selection gate
 

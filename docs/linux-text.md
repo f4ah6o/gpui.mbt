@@ -195,6 +195,15 @@ PR28 merged as `3cc72f548dc6138e17f949efad8eae92c70a1cb0`, with that same tree.
 This bounded software-rendered acceptance does not establish a platform support
 tier, hardware performance, editable control or IME.
 
+The separate [experimental Linux text field](linux-text-field.md) guide
+documents a bounded single-line LTR field built on merged PR29. It combines
+copied text/renderer foundations with a private
+opt-in direct XKB/Compose route and an owner-integrated control, but its code is
+not part of the merged PR28 renderer and has no reviewed hosted field-CI
+result. Actual compositor-delivered typing is unrun. `GrayscaleTextFrames`
+still describes drawing only; neither it nor that experimental route qualifies
+general text input, IME, desktop support, or a reusable framework field.
+
 ## Direct native dependency and license inventory
 
 The Linux-only FFI boundary is the owner of these system libraries. They are
