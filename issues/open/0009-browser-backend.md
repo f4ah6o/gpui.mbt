@@ -4,7 +4,38 @@ Status: open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
 Updated: 2026-10-05
 
-## Increment — 2026-10-05
+## Weekboard and shared interaction increment — 2026-10-05
+
+- [x] `index.html` hosts Weekboard, a website-launch board with 12 initial
+  tasks and three lanes. The original interaction lab remains at `proof.html`.
+- [x] The portable [task model and view](../../examples/task_board/) own search,
+  additions (100 tasks, 80 UTF-16 code units per title), lane moves, 32-action
+  undo, selection, responsive flex layout, and session-only state. The
+  [JS adapter](../../examples/browser_board/) remains a leaf above that model.
+- [x] Shared [ScrollState](../../element/scroll.mbt) and
+  [DragGesture](../../element/drag.mbt) provide clamped scroll/visibility
+  geometry and explicit threshold/commit/cancel transitions. The board adds
+  clipped card hit testing, keyboard reveal, mobile lane selectors, and scroll
+  and lane-move buttons.
+- [x] Shared [bounded TextItem](../../scene/snapshot.mbt) values render through
+  [Canvas 2D](../../examples/browser/site/canvas-renderer.js), preserving the
+  v1 envelope and quad JSON. Native text presentation returns
+  `UnsupportedCapability`; portable shaping and editor behavior remain open.
+- [x] [Visible-card DOM proxies](../../examples/browser/site/canvas-accessibility.js)
+  reconcile stable IDs, clipping, node order/lifetime, and keyboard focus.
+  They are an application projection, not a shared accessibility tree.
+- [x] Local all-target MoonBit, Node/Python contract, Vite+ build/check,
+  dev-watch/source-map, Weekboard Chromium, and retained interaction-lab smoke
+  checks passed. Hosted execution is reported separately by the PR checks.
+- [ ] Full text editing/shaping/IME, general/native accessibility, Wasm/WasmGC
+  browser execution, WebGPU, cross-browser qualification, and production gates.
+
+See [the Weekboard guide](../../docs/browser-demo.md#weekboard-increment--2026-10-05)
+for behavior bounds and implementation/test evidence. HTML search/add controls
+use browser editing; they do not implement framework text input or IME.
+This increment does not close the browser roadmap.
+
+## Browser services increment — 2026-10-05
 
 - [x] Scoped async plain-text clipboard read/write using the existing
   host-service envelope, typed permission/unsupported failures, and stale
@@ -23,7 +54,7 @@ See [the browser guide](../../docs/browser-demo.md#browser-service-increment--20
 for the precise scope. The historical triage below predates these additions;
 the overall browser backend and production gates remain open.
 
-## Current-head acceptance triage — 2026-10-04
+## Historical acceptance triage — 2026-10-04
 
 Basis: merged main HEAD `1dea499e34a36a64927791c94f35965a91c305a2`; PR #13
 head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
@@ -82,11 +113,13 @@ with `vite-plugin-moonbit` as the MoonBit/Vite integration. This is a tooling
 choice only: it must not introduce a JavaScript UI/runtime framework or move
 portable gpui.mbt semantics into Vite.
 
-The current manual `moon build` + static-file copy proof remains transitional
-until the Vite+ path reproduces the existing production-build Chromium smoke and
-GitHub Pages artifact. The migration, dependency/CI policy, source-map
-requirements, and removal gates are tracked in
-[0010-browser-vite-plus-toolchain.md](0010-browser-vite-plus-toolchain.md).
+Vite+ now builds the Weekboard and interaction-lab entries, runs the MoonBit
+watch integration during development, and packages both pages into the same
+GitHub Pages artifact. The completed migration, dependency/CI policy,
+source-map requirements, and historical evidence are recorded in
+[0010-browser-vite-plus-toolchain.md](../done/0010-browser-vite-plus-toolchain.md).
+Current commands and separate browser smoke scopes are in
+[the browser guide](../../docs/browser-demo.md#browser-development-toolchain).
 
 ## Browser host model
 
@@ -425,7 +458,7 @@ host-neutral MoonBit app fixture. The fixture uses the shared app/entity,
 flex-tree layout, element hit testing, focus, common event ingress, and
 `SceneSnapshot` v1 quad data. The host owns the canvas, CSS-pixel/DPR measurement,
 pointer and keyboard callbacks, focus/visibility/lifecycle listeners, and
-on-demand `requestAnimationFrame` presentation. Its current capability report
+on-demand `requestAnimationFrame` presentation. At that stage its capability report
 keeps native top-level windows, clipboard, IME, a general accessibility
 bridge, renderer recovery, and worker commands unavailable; it separately
 reports the fixture-only ARIA adapter.
@@ -440,10 +473,11 @@ Actions configuration. Local Chromium was unavailable in the implementation
 environment. Build and test instructions are in
 [`docs/browser-demo.md`](../../docs/browser-demo.md).
 
-This is the first JavaScript proof slice only. This packet remains open for CI
-browser evidence, WasmGC and Wasm browser targets, broader input and text
-services, WebGPU, accessibility, renderer recovery, native/backend conformance,
-and the production gates above.
+That first JavaScript slice left CI browser evidence, WasmGC and Wasm browser
+targets, broader input and text services, WebGPU, accessibility, renderer
+recovery, native/backend conformance, and production gates open. Later
+increments and their narrower evidence are recorded above; the overall packet
+remains open.
 
 ## Browser migration bridge slice — 2026-10-04
 
@@ -481,8 +515,9 @@ focus ownership, resize and hidden-page scheduling, context-loss handling, and
 repeated teardown. It packaged the Pages artifact; the deploy job was skipped
 for the pull request.
 
-This is execution evidence for the experimental JavaScript Canvas 2D slice,
-not production browser support. WasmGC/Wasm browser targets, WebGPU, Japanese
-IME and broader text input, general accessibility, clipboard services,
-renderer recovery, native/backend conformance, and worker commands remain
-open.
+This is historical execution evidence for the experimental JavaScript Canvas 2D
+slice, not production browser support. At that revision, clipboard services and
+renderer recovery remained open alongside WasmGC/Wasm browser targets, WebGPU,
+Japanese IME and broader text input, general accessibility, native/backend
+conformance, and worker commands. The later scoped clipboard, committed-input,
+Canvas restoration, and Weekboard increments are recorded above.

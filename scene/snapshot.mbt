@@ -7,6 +7,8 @@ pub const SCENE_SNAPSHOT_SCHEMA_VERSION : Int = 1
 pub enum SnapshotError {
   InvalidScale
   InvalidOpacity
+  InvalidFontSize
+  TextTooLong
   NonFiniteTransform
   UnknownClipChain
   DuplicateClipChain
@@ -83,9 +85,8 @@ pub fn AffineTransform::ty(self : AffineTransform) -> Double {
 }
 
 ///|
-/// Logical resource-table entry. R0 currently emits no resources because the
-/// implemented paint surface is quad-only; the table is present so image/text
-/// resources can be added without changing the snapshot envelope.
+/// Logical resource-table entry. Quads and bounded host-font text need no
+/// resources; the table is reserved for resource-backed paint variants.
 pub struct SceneResource {
   id : UInt64
 }
@@ -123,12 +124,23 @@ pub fn ClipChain::rects(self : ClipChain) -> Array[@primitives.Rect] {
 }
 
 ///|
-/// Flat ordered scene item. The first v1 subset contains quads only; future
-/// path/image/text variants extend this enum while preserving the envelope.
+/// Flat ordered scene item. Bounded plain text uses a host system sans font;
+/// it does not promise portable shaping, wrapping, caret layout, or bidi layout.
+/// New paint variants extend this enum while preserving the v1 envelope.
 pub(all) enum SceneItem {
   QuadItem(
     id~ : UInt64,
     bounds~ : @primitives.Rect,
+    color~ : @primitives.Color,
+    transform~ : AffineTransform,
+    opacity~ : Double,
+    clip_chain_id~ : Int?
+  )
+  TextItem(
+    id~ : UInt64,
+    bounds~ : @primitives.Rect,
+    text~ : String,
+    font_size~ : Double,
     color~ : @primitives.Color,
     transform~ : AffineTransform,
     opacity~ : Double,
@@ -147,22 +159,62 @@ pub fn SceneItem::quad(
 ) -> Result[SceneItem, SnapshotError] {
   if !snapshot_finite(opacity) || opacity < 0.0 || opacity > 1.0 {
     Err(InvalidOpacity)
+  } else if !snapshot_transform_finite(transform) {
+    Err(NonFiniteTransform)
   } else {
     Ok(QuadItem(id~, bounds~, color~, transform~, opacity~, clip_chain_id~))
   }
 }
 
 ///|
+/// One plain-text run, positioned at the bounds' top-left and clipped to them.
+/// Font sizes are logical pixels in (0, 1024]; text is at most 65,536 UTF-16
+/// code units. Empty text is valid. Clip references are checked by the snapshot.
+pub fn SceneItem::text(
+  id : UInt64,
+  bounds : @primitives.Rect,
+  text : String,
+  font_size : Double,
+  color : @primitives.Color,
+  transform : AffineTransform,
+  opacity : Double,
+  clip_chain_id : Int?,
+) -> Result[SceneItem, SnapshotError] {
+  match snapshot_validate_text(text, font_size) {
+    Err(error) => Err(error)
+    Ok(_) =>
+      if !snapshot_finite(opacity) || opacity < 0.0 || opacity > 1.0 {
+        Err(InvalidOpacity)
+      } else if !snapshot_transform_finite(transform) {
+        Err(NonFiniteTransform)
+      } else {
+        Ok(
+          TextItem(
+            id~,
+            bounds~,
+            text~,
+            font_size~,
+            color~,
+            transform~,
+            opacity~,
+            clip_chain_id~,
+          ),
+        )
+      }
+  }
+}
+
+///|
 pub fn SceneItem::id(self : SceneItem) -> UInt64 {
   match self {
-    QuadItem(id~, ..) => id
+    QuadItem(id~, ..) | TextItem(id~, ..) => id
   }
 }
 
 ///|
 pub fn SceneItem::clip_chain_id(self : SceneItem) -> Int? {
   match self {
-    QuadItem(clip_chain_id~, ..) => clip_chain_id
+    QuadItem(clip_chain_id~, ..) | TextItem(clip_chain_id~, ..) => clip_chain_id
   }
 }
 
@@ -214,8 +266,15 @@ fn snapshot_validate_items(
   let mut failure : SnapshotError? = None
   let mut item_index = 0
   while item_index < items.length() && failure is None {
+    if items[item_index] is TextItem(text~, font_size~, ..) {
+      match snapshot_validate_text(text, font_size) {
+        Err(error) => return Err(error)
+        Ok(_) => ()
+      }
+    }
     match items[item_index] {
-      QuadItem(transform~, opacity~, clip_chain_id~, ..) =>
+      QuadItem(transform~, opacity~, clip_chain_id~, ..)
+      | TextItem(transform~, opacity~, clip_chain_id~, ..) =>
         if !snapshot_finite(opacity) || opacity < 0.0 || opacity > 1.0 {
           failure = Some(InvalidOpacity)
         } else if !snapshot_transform_finite(transform) {
@@ -235,6 +294,20 @@ fn snapshot_validate_items(
   match failure {
     Some(error) => Err(error)
     None => Ok(())
+  }
+}
+
+///|
+fn snapshot_validate_text(
+  text : String,
+  font_size : Double,
+) -> Result[Unit, SnapshotError] {
+  if !snapshot_finite(font_size) || font_size <= 0.0 || font_size > 1024.0 {
+    Err(InvalidFontSize)
+  } else if text.length() > 65_536 {
+    Err(TextTooLong)
+  } else {
+    Ok(())
   }
 }
 
@@ -478,7 +551,55 @@ fn snapshot_item_json(item : SceneItem) -> String {
       }
       "{\"kind\":\"quad\",\"id\":\{id},\"bounds\":\{snapshot_rect_json(bounds)},\"color\":\{snapshot_color_json(color)},\"transform\":\{snapshot_transform_json(transform)},\"opacity\":\{snapshot_double(opacity)},\"clip_chain_id\":\{clip_json}}"
     }
+    TextItem(
+      id~,
+      bounds~,
+      text~,
+      font_size~,
+      color~,
+      transform~,
+      opacity~,
+      clip_chain_id~
+    ) => {
+      let clip_json = match clip_chain_id {
+        None => "null"
+        Some(value) => "\{value}"
+      }
+      "{\"kind\":\"text\",\"id\":\{id},\"bounds\":\{snapshot_rect_json(bounds)},\"text\":\{snapshot_text_json(text)},\"font_size\":\{snapshot_double(font_size)},\"color\":\{snapshot_color_json(color)},\"transform\":\{snapshot_transform_json(transform)},\"opacity\":\{snapshot_double(opacity)},\"clip_chain_id\":\{clip_json}}"
+    }
   }
+}
+
+///|
+/// Escape by UTF-16 code unit so surrogate pairs (and lone surrogates) round
+/// trip without normalization. Non-ASCII and control characters use lowercase
+/// \u escapes; this also keeps line separators safe in embedded JSON fixtures.
+fn snapshot_text_json(text : String) -> String {
+  let builder = StringBuilder()
+  let hex = "0123456789abcdef"
+  builder.write_string("\"")
+  for index = 0; index < text.length(); index = index + 1 {
+    let code = text[index].to_int()
+    match code {
+      0x22 => builder.write_string("\\\"")
+      0x5c => builder.write_string("\\\\")
+      0x0a => builder.write_string("\\n")
+      0x0d => builder.write_string("\\r")
+      0x09 => builder.write_string("\\t")
+      _ =>
+        if code < 0x20 || code >= 0x7f {
+          builder.write_string("\\u")
+          for divisor in [4096, 256, 16, 1] {
+            let digit = code / divisor % 16
+            builder.write_substring(hex, digit, 1)
+          }
+        } else {
+          builder.write_substring(text, index, 1)
+        }
+    }
+  }
+  builder.write_string("\"")
+  builder.to_string()
 }
 
 ///|

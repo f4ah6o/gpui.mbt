@@ -872,6 +872,7 @@ fn scene_snapshot(
           let items : Array[@scene.SceneItem] = []
           for item in base.items() {
             match item {
+              @scene.TextItem(..) => return Err(SceneSnapshotFailed)
               @scene.QuadItem(id~, bounds~, color~, transform~, opacity~, ..) => {
                 let hover_transform = if model.hover_id == Some(id) {
                   match

@@ -130,7 +130,8 @@ The inspected gpui.mbt revision is `35aae36e79588c47c030093bf64eaf54b15f715a`. I
 
 Packet 0011 supplies a browser DOM-island example and bounded host-service envelopes. Its fake Electron/Tauri adapters do not demonstrate a native Rust GPUI/MoonBit embedding boundary. Reuse its principles of explicit ownership, copied values, cancellation and versioning; do not call the new native work an already-supported 0011 integration.
 
-Portable scene rendering is currently centered on quads. The text value model
+Portable scene rendering remains quad/clip-first, with bounded browser text
+snapshot items; native text renderers reject those items explicitly. The text value model
 foundation has UTF-16 ranges, directional selection and immutable replacement;
 this composition worktree slice adds pure composition/commit/cancel transitions.
 It does not draw text or provide an editable UI. Host sequencing, actual

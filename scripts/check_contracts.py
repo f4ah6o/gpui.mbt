@@ -665,6 +665,11 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "examples/browser": {
             "examples/browser_app", "diagnostics", "platform", "primitives",
         },
+        # The task-board demo has the same portable-model / JS-leaf boundary.
+        "examples/task_board": {
+            "capability", "core", "element", "layout", "platform", "primitives", "scene",
+        },
+        "examples/browser_board": {"examples/task_board"},
         "examples/mcp_stdio": {"capability", "diagnostics", "mcp"},
     }
     required_runtime_packages = {

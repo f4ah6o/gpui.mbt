@@ -7,13 +7,13 @@ Build GPUI-style user interfaces in MoonBit.
 ## What you can use today
 
 - **Application state** — `App`, typed `Entity[T]`, scoped updates, subscriptions, explicit notifications, deterministic queued work, and manually advanced timers.
-- **Layout and interaction** — deterministic row/column flex layout, recursive layout trees, hit testing, capture/bubble pointer dispatch, stop-propagation, and focus state.
-- **Scene data** — ordered quads, rectangle clip chains, affine transforms, opacity, and canonical `SceneSnapshot` data.
+- **Layout and interaction** — deterministic row/column flex layout, recursive layout trees, hit testing, capture/bubble pointer dispatch, stop-propagation, focus state, and portable [scroll state](element/scroll.mbt) and [drag gestures](element/drag.mbt).
+- **Scene data** — ordered quads and bounded plain-text items, rectangle clip chains, affine transforms, opacity, and canonical `SceneSnapshot` data. Text presentation currently uses the browser's system font; native renderers still reject text items explicitly.
 - **Semantic capabilities** — one typed operation can be bound to GUI actions, direct MoonBit calls, and optional MCP dispatch with shared domain validation. A checked JavaScript stdio fixture exercises the pinned stateless MCP wire adapter.
 - **macOS** — an AppKit + Metal native host with windows, input, clipboard/cursors, scale/resize events, quad presentation, and an experimental renderer-recovery path.
 - **Ubuntu / Wayland** — a Wayland + EGL/OpenGL ES 2 native host with window lifecycle, input, clipboard/cursor services, scale handling, and quad presentation.
 - **Windows** — an experimental one-window Win32/D3D11 hardware-or-WARP slice with basic input and quad presentation. For prior HEAD `0f7bdfd`, the hosted [Windows Server 2025/MSVC run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37189793257) passed portable checks (6/6), native GPU E2E (1/1), shared backend conformance (1/1), and the example smoke. This is evidence for the experimental slice, not a Windows support-tier or production claim; see the [Windows native guide](docs/windows-native.md).
-- **Browser** — a JavaScript-target proof using the same MoonBit app/layout/event/scene model and a Canvas 2D host.
+- **Browser** — Weekboard, a small website-launch task board using the shared MoonBit app/layout/event/scene model and a Canvas 2D host, plus the retained interaction lab for service and lifecycle proofs.
 - **Headless testing** — portable model, layout, event, focus, and scene behavior can be exercised without a window system.
 
 The native and browser hosts are development slices rather than production support. See [status, limits, and roadmap](docs/status.md) for the current boundary.
@@ -58,7 +58,11 @@ vp install --frozen-lockfile
 vp dev
 ```
 
-Open the URL printed by Vite+. The browser proof uses the shared MoonBit app, flex-tree layout, element hit testing/focus, event ingress, and `SceneSnapshot` data. Use `vp build` for the production artifact in `_build/browser-site`. See [the browser guide](docs/browser-demo.md).
+Open the URL printed by Vite+ to use **Weekboard**: 12 initial tasks across Backlog, In progress, and Done. Search, add tasks, move cards between lanes by drag or buttons, undo changes, and scroll each lane. Narrow viewports show one lane with lane selectors and scroll buttons. Data stays in the current page session; reloading starts again with the sample tasks.
+
+The board's state, filtering, history, layout, hit testing, scrolling, drag gestures, and scene data live in [the portable task-board package](examples/task_board/). The browser hosts the canvas, ordinary HTML search/add controls, and visible-card focus proxies. This is bounded text presentation and a demo-specific accessibility projection, not a complete text editor or general accessibility adapter.
+
+The original interaction lab remains at **`/proof.html`**, linked from Weekboard. It retains the GUI/direct/MCP counter, clipboard, committed-input, legacy-island, and renderer-restoration proofs. Use `vp build` for both pages in `_build/browser-site`. See [the browser guide](docs/browser-demo.md) for limits and separate test commands.
 
 ### MCP stdio adapter
 
@@ -103,8 +107,8 @@ Subscriptions are explicitly canceled with `unsubscribe`. Deterministic timer te
 | `primitives/` | Shared geometry, colors, input values, and portable primitives |
 | `text/` | UTF-16 documents, directional selections, and immutable composition values; no host IME or rendering |
 | `layout/` | Deterministic flex layout and recursive layout trees |
-| `element/` | Element trees, hit testing, event routing, focus, and element-to-scene bridging |
-| `scene/` | Paint commands, validation, canonical snapshots, transforms, opacity, and clips |
+| `element/` | Element trees, hit testing, event routing, focus, scroll state, drag gestures, and element-to-scene bridging |
+| `scene/` | Quad paint commands, bounded text snapshot items, validation, canonical snapshots, transforms, opacity, and clips |
 | `platform/` | Portable backend/window/event contracts plus the macOS backend |
 | `ubuntu/` | Ubuntu Wayland/EGL/GLES2 native backend |
 | `windows/` | Experimental Win32/D3D11 WARP backend slice |
@@ -122,7 +126,7 @@ Subscriptions are explicitly canceled with `unsubscribe`. Deterministic timer te
 - [GPUI compatibility matrix](docs/compatibility.md)
 - [macOS native host](docs/macos-native.md)
 - [Ubuntu / Wayland host](docs/ubuntu.md)
-- [Browser proof](docs/browser-demo.md)
+- [Browser demos and interaction lab](docs/browser-demo.md)
 - [MCP adapter and stdio fixture](docs/mcp-adapter.md)
 - [Testing strategy and gates](docs/testing.md)
 - [Open implementation packets](issues/open/)

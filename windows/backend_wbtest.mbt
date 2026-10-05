@@ -210,6 +210,31 @@ test "Win32 frame serializer preserves quad transform opacity and clip" {
     Err(error) => assert_eq(error.code().label(), "unsupported_capability")
     Ok(_) => fail("resource table is unsupported")
   }
+  let text = @scene.TextItem(
+    id=2,
+    bounds=viewport,
+    text="Browser text",
+    font_size=16.0,
+    color~,
+    transform~,
+    opacity=1.0,
+    clip_chain_id=None,
+  )
+  let text_scene = match
+    @scene.SceneSnapshot::new(
+      viewport,
+      1.0,
+      [],
+      [@scene.ClipChain::new(7, [viewport])],
+      [item, text],
+    ) {
+    Ok(value) => value
+    Err(_) => abort("text fixture rejected")
+  }
+  match frame_data(text_scene) {
+    Err(error) => assert_eq(error.code().label(), "unsupported_capability")
+    Ok(_) => fail("bounded text must not silently render as a native quad")
+  }
 }
 
 ///|
