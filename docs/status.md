@@ -76,6 +76,21 @@ The project is independently implemented. Provenance rules and the pinned upstre
 
 M7 does not require implementing every upstream GPUI feature. It requires a stable documented API, explicit supported-platform matrix, reproducible builds/tests/releases, no release-blocking correctness issues, performance and accessibility evidence, diagnostics, and an audited dependency/provenance boundary.
 
+## Application driven qualification plan
+
+[MZed's native island roadmap](../issues/open/0018-mzed-native-island-roadmap.md)
+uses a Zed-derived application to qualify framework capabilities incrementally.
+The [first native coexistence proof](../issues/open/0019-mzed-native-coexistence-proof.md)
+starts with Linux, preserves a working pinned Zed baseline, and requires a
+same-window boundary decision before product slices. These are planning packets,
+not implemented native embedding or production-support claims.
+
+The roadmap includes formal Linux native vlmkit support with explicit X11 and
+Wayland capability profiles. The eventual goal is macOS/Linux/Windows across
+applications and tools; new Windows-specific work is deferred while macOS/Linux
+work remains and until a user-provided Windows environment is available. Existing
+Windows functionality and checks stay intact.
+
 ## Where future work lives
 
 - [`issues/open/`](../issues/open/) contains implementation packets.
