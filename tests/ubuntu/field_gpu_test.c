@@ -36,6 +36,8 @@ static const char *fixture_labels[] = {
     "scroll_end", "blurred", "j_start", "accent_start", "j_scroll",
     "accent_scroll"};
 static int field_swap_count;
+static int bootstrap_swap_count;
+static int bootstrap_mode;
 static int fixture_swap_count;
 static int fixture_count = 7;
 static int fixture_stride = FIELD_STRIDE_LEGACY;
@@ -999,6 +1001,15 @@ static void capture_field_ppm(const char *path) {
 }
 
 static EGLBoolean field_verified_swap(EGLDisplay display, EGLSurface surface) {
+  if (bootstrap_mode) {
+    assert(swapping_fixture == NULL);
+    unsigned char pixel[4];
+    glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    assert(glGetError() == GL_NO_ERROR);
+    assert(pixel[0] == 255 && pixel[1] == 255 && pixel[2] == 255);
+    ++bootstrap_swap_count;
+    return eglSwapBuffers(display, surface);
+  }
   ++field_swap_count;
   if (diagnostic_mode) {
     assert(swapping_fixture == NULL);
@@ -1147,6 +1158,57 @@ static void await_field_frame(int host) {
   assert(!active->frame);
 }
 /* FIELD_FRAME_WAIT_END */
+
+/* FIELD_SCALE_BOOTSTRAP_BEGIN: test-only first-map/output-scale admission. */
+static void bootstrap_field_scale(int host, int window, int expected_scale) {
+  const uint64_t timeout_ns = UINT64_C(5000000000);
+  uint64_t start = field_monotonic_ns();
+  int presented = 0;
+  assert(expected_scale == 0 || expected_scale == 1 || expected_scale == 2);
+  for (;;) {
+    drain_field_events(host);
+    uint64_t now = field_monotonic_ns();
+    assert(now >= start && now - start < timeout_ns);
+    double metrics[3] = {0};
+    assert(gpui_metrics(host, window, metrics) == GPUI_OK);
+    assert(metrics[0] > 0 && metrics[1] > 0 && metrics[2] >= 1 &&
+           metrics[0] == active->width && metrics[1] == active->height &&
+           metrics[2] == active->scale);
+    if (presented && !active->frame &&
+        (!expected_scale || metrics[2] == (double)expected_scale))
+      return;
+    if (!presented && !active->frame) {
+      /* wl_surface.enter/output scale may require the first attached buffer.
+       * Map with a neutral frame at actual current metrics, never the requested
+       * scale. This swap is separate from every qualified fixture replay. */
+      double frame[5 + GPUI_QUAD_STRIDE] = {0};
+      frame[2] = metrics[0]; frame[3] = metrics[1]; frame[4] = metrics[2];
+      double *q = frame + 5;
+      q[2] = metrics[0]; q[3] = metrics[1];
+      q[4] = q[5] = q[6] = q[7] = 255;
+      q[8] = q[11] = q[14] = 1;
+      q[17] = metrics[0]; q[18] = metrics[1];
+      bootstrap_mode = 1;
+      int result = gpui_present(host, window, frame,
+                                (int)(sizeof(frame) / sizeof(double)));
+      bootstrap_mode = 0;
+      assert(result == GPUI_OK || result == GPUI_BUSY);
+      if (result == GPUI_OK) {
+        presented = 1;
+        continue;
+      }
+      /* Busy can report a legitimate metric/frame race. Re-read and rebuild
+       * after pumping; do not retry unsupported/native/preflight failures. */
+    }
+    now = field_monotonic_ns();
+    assert(now >= start && now - start < timeout_ns);
+    uint64_t remaining = timeout_ns - (now - start);
+    int timeout_ms = (int)((remaining + UINT64_C(999999)) / UINT64_C(1000000));
+    if (timeout_ms > 100) timeout_ms = 100;
+    assert(gpui_dispatch(host, timeout_ms) == GPUI_OK);
+  }
+}
+/* FIELD_SCALE_BOOTSTRAP_END */
 
 static void normalize_viewport(struct field_fixture *fixture,
                                double *normalized, int width, int height,
@@ -1392,18 +1454,25 @@ int main(void) {
   static const uint8_t title[] = "TextField GPU fixture";
   int window = gpui_create(host, 640, 240, title, (int32_t)sizeof(title) - 1);
   assert(window > 0);
-  for (int attempt = 0; attempt < 50 && !active->configured; ++attempt)
+  for (int attempt = 0; attempt < 50 && !active->configured; ++attempt) {
+    drain_field_events(host);
     assert(gpui_dispatch(host, 100) == GPUI_OK);
+  }
   assert(active->configured && active->width >= 220 && active->height >= 80);
+  const char *expected_scale = getenv("GPUI_EXPECT_SCALE");
+  int target_scale = 0;
+  if (expected_scale) {
+    assert(!strcmp(expected_scale, "1") || !strcmp(expected_scale, "2"));
+    target_scale = expected_scale[0] - '0';
+  }
+  bootstrap_field_scale(host, window, target_scale);
   double metrics[3] = {0};
   assert(gpui_metrics(host, window, metrics) == GPUI_OK);
   assert(metrics[0] == active->width && metrics[1] == active->height &&
          metrics[2] == active->scale);
-  const char *expected_scale = getenv("GPUI_EXPECT_SCALE");
-  if (expected_scale) {
-    assert(!strcmp(expected_scale, "1") || !strcmp(expected_scale, "2"));
-    assert(metrics[2] == (double)(expected_scale[0] - '0'));
-  }
+  if (target_scale)
+    assert(metrics[2] == (double)target_scale);
+  assert(bootstrap_swap_count == 1);
 
   for (int i = 0; i < fixture_count; ++i) {
     if (i == 3 || i == 4) {
