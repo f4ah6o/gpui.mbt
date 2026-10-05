@@ -33,6 +33,11 @@ checks the backend only for native; portable targets keep using the shared
 packages. Native builds currently require the Ubuntu system libraries; the
 backend is not a native macOS/Windows build target.
 
+The separate `platform/linux_text/` package provides headless PangoFT2 text
+geometry and has its own development-library/font-fixture prerequisites and
+test command. It is not needed by this Wayland window demo; see the [Linux text
+guide](linux-text.md).
+
 ## Implemented behavior
 
 - One UI-owner host and one live window at a time. A second host/window returns

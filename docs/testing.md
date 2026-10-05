@@ -71,6 +71,14 @@ Semantic scene changes and raster changes have separate oracles. The optional
 vlmkit workflow may inspect PNG output, but it does not drive native windows and
 does not become a runtime dependency.
 
+Linux text layout has a separate headless native test gate. It installs
+PangoFT2/Fontconfig only on Ubuntu Linux, installs the DejaVu and Noto test
+fixtures, and runs without `DISPLAY` or `WAYLAND_DISPLAY`; it does not use the
+Wayland compositor or test raster output. Resolved system-library/font versions
+are logged because exact metrics vary by distro and font revision. See the
+[Linux text guide](linux-text.md) and
+[`ubuntu-native.yml`](../.github/workflows/ubuntu-native.yml).
+
 ## Determinism and workload budgets
 
 Every property or generated model test uses a recorded unsigned 64-bit seed.

@@ -9,6 +9,7 @@ Build GPUI-style user interfaces in MoonBit.
 - **Application state** — `App`, typed `Entity[T]`, scoped updates, subscriptions, explicit notifications, deterministic queued work, and manually advanced timers.
 - **Layout and interaction** — deterministic row/column flex layout, recursive layout trees, hit testing, capture/bubble pointer dispatch, stop-propagation, focus state, and portable [scroll state](element/scroll.mbt) and [drag gestures](element/drag.mbt).
 - **Scene data** — ordered quads and bounded plain-text items, rectangle clip chains, affine transforms, opacity, and canonical `SceneSnapshot` data. Text presentation currently uses the browser's system font; native renderers still reject text items explicitly.
+- **Linux text geometry** — an experimental headless PangoFT2 adapter measures shaping, caret, and hit-test geometry with installed Linux fonts. It needs no window server or renderer and does not rasterize text; see the [Linux text guide](docs/linux-text.md).
 - **Semantic capabilities** — one typed operation can be bound to GUI actions, direct MoonBit calls, and optional MCP dispatch with shared domain validation. A checked JavaScript stdio fixture exercises the pinned stateless MCP wire adapter.
 - **macOS** — an AppKit + Metal native host with windows, input, clipboard/cursors, scale/resize events, quad presentation, and an experimental renderer-recovery path.
 - **Ubuntu / Wayland** — a Wayland + EGL/OpenGL ES 2 native host with window lifecycle, input, clipboard/cursor services, scale handling, and quad presentation.
@@ -48,6 +49,16 @@ moon run examples/ubuntu --target native
 ```
 
 The demo opens a Wayland window and presents the shared scene model through EGL/OpenGL ES 2.
+
+### Headless Linux text geometry
+
+Install the native development libraries and fixture fonts listed in the [Linux text guide](docs/linux-text.md), then run:
+
+```sh
+sh scripts/test_linux_text.sh
+```
+
+This is a separate headless geometry test from the Wayland window/backend smoke.
 
 ### Browser
 
@@ -106,6 +117,8 @@ Subscriptions are explicitly canceled with `unsubscribe`. Deterministic timer te
 | `core/` | Application lifetime, entities, scoped contexts, subscriptions, scheduler and timers |
 | `primitives/` | Shared geometry, colors, input values, and portable primitives |
 | `text/` | UTF-16 documents, strict UTF-8 scalar-offset conversion, directional selections, and immutable composition values; no host IME or rendering |
+| `text_layout/` | Portable intrinsic text-measurement contract and copied layout/caret/hit values; depends only on `text/` and `primitives/` |
+| `platform/linux_text/` | Linux-only PangoFT2 implementation of headless layout, caret, and hit-test geometry; native handles stay behind the FFI boundary |
 | `layout/` | Deterministic flex layout and recursive layout trees |
 | `element/` | Element trees, hit testing, event routing, focus, scroll state, drag gestures, and element-to-scene bridging |
 | `scene/` | Quad paint commands, bounded text snapshot items, validation, canonical snapshots, transforms, opacity, and clips |
@@ -123,6 +136,7 @@ Subscriptions are explicitly canceled with `unsubscribe`. Deterministic timer te
 - [Product model](docs/product.md)
 - [Architecture and dependency boundaries](docs/architecture.md)
 - [Portable text value model](docs/text-model.md)
+- [Headless Linux text measurement](docs/linux-text.md)
 - [GPUI compatibility matrix](docs/compatibility.md)
 - [macOS native host](docs/macos-native.md)
 - [Ubuntu / Wayland host](docs/ubuntu.md)

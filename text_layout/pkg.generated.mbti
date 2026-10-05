@@ -1,0 +1,65 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/text_layout"
+
+import {
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/text",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct CaretGeometry {
+  // private fields
+}
+pub fn CaretGeometry::is_cursor_position(Self) -> Bool
+pub fn CaretGeometry::new(Int, Bool, @primitives.Rect, @primitives.Rect) -> Result[Self, TextLayoutError]
+pub fn CaretGeometry::strong(Self) -> @primitives.Rect
+pub fn CaretGeometry::utf16_offset(Self) -> Int
+pub fn CaretGeometry::weak(Self) -> @primitives.Rect
+
+pub struct TextHit {
+  // private fields
+}
+pub fn TextHit::cluster_start_utf16(Self) -> Int
+pub fn TextHit::document(Self) -> @text.TextDocument
+pub fn TextHit::inside(Self) -> Bool
+pub fn TextHit::new(@text.TextDocument, Int, Int, Int, Bool, Bool) -> Result[Self, TextLayoutError]
+pub fn TextHit::resolved_is_cursor_position(Self) -> Bool
+pub fn TextHit::resolved_utf16_offset(Self) -> Int
+pub fn TextHit::trailing_scalars(Self) -> Int
+
+pub enum TextLayoutError {
+  InvalidMetrics
+  InvalidBaseline
+  InvalidLineCount
+  InvalidUnknownGlyphCount
+  InvalidCaretOffset
+  MissingCaret
+  ExtraCaret
+  DuplicateCaret
+  InvalidHitOffset
+  InvalidTrailingScalarCount
+  HitOffsetMismatch
+} derive(Eq)
+pub fn TextLayoutError::equal(Self, Self) -> Bool
+pub fn TextLayoutError::not_equal(Self, Self) -> Bool
+
+pub struct TextMeasurement {
+  // private fields
+}
+pub fn TextMeasurement::caret_at(Self, Int) -> Result[CaretGeometry, TextLayoutError]
+pub fn TextMeasurement::carets(Self) -> Array[CaretGeometry]
+pub fn TextMeasurement::document(Self) -> @text.TextDocument
+pub fn TextMeasurement::first_line_baseline(Self) -> Double
+pub fn TextMeasurement::ink_rect(Self) -> @primitives.Rect
+pub fn TextMeasurement::line_count(Self) -> Int
+pub fn TextMeasurement::logical_rect(Self) -> @primitives.Rect
+pub fn TextMeasurement::new(@text.TextDocument, @primitives.Rect, @primitives.Rect, Double, Int, Int, Array[CaretGeometry]) -> Result[Self, TextLayoutError]
+pub fn TextMeasurement::unknown_glyph_count(Self) -> Int
+
+// Type aliases
+
+// Traits
