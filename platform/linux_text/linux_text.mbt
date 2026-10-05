@@ -5,7 +5,9 @@ pub enum LinuxTextError {
   InvalidFontSize
   InvalidCoordinates
   UnsupportedInput
+  UnsupportedColor
   UnsupportedRaster
+  ResourceLimit
   InputTooLarge
   BufferTooSmall
   NativeFailure
@@ -25,10 +27,33 @@ pub let max_font_family_bytes : Int = 256
 pub let max_font_size_px : Double = 512.0
 
 ///|
+const MAX_SCENE_TEXT_BYTES : Int = 4096
+
+///|
+const MAX_SCENE_FONT_SIZE_PX : Double = 32.0
+
+///|
+const MAX_SCENE_BOUNDS_WIDTH : Double = 2048.0
+
+///|
+const MAX_SCENE_BOUNDS_HEIGHT : Double = 128.0
+
+///|
 const ABI_VERSION : Int = 1
 
 ///|
 extern "C" fn native_require_raster(abi : Int) -> Int = "gpui_linux_text_require_raster_v1"
+
+///|
+#borrow(text)
+extern "C" fn native_admit_scene_text_run(
+  abi : Int,
+  text : Bytes,
+  text_length : Int,
+  font_size_px : Double,
+  bounds_width : Double,
+  bounds_height : Double,
+) -> Int = "gpui_linux_text_admit_scene_text_run_v1"
 
 ///|
 /// Admit the linked grayscale raster adapter only with its expected private
@@ -188,8 +213,68 @@ fn status_error(status : Int) -> LinuxTextError {
     4 => BufferTooSmall
     6 => InvalidNativeOutput
     7 => InvalidCoordinates
+    8 => UnsupportedColor
     10 => UnsupportedRaster
+    9 => ResourceLimit
     _ => NativeFailure
+  }
+}
+
+///|
+/// Qualify a candidate single-line field run against the same generic sans
+/// PangoFT2 grayscale raster path used by Ubuntu scene presentation. This is
+/// only native run admission: it does not validate GPU upload, texture limits,
+/// or surface readiness. The temporary native mask is released synchronously.
+pub fn admit_scene_text_run(
+  document : @text.TextDocument,
+  font_size_px : Double,
+  bounds_width : Double,
+  bounds_height : Double,
+) -> Result[Unit, LinuxTextError] {
+  if !valid_font_size(font_size_px) {
+    return Err(InvalidFontSize)
+  }
+  if font_size_px > MAX_SCENE_FONT_SIZE_PX {
+    return Err(ResourceLimit)
+  }
+  if bounds_width.is_nan() ||
+    bounds_width.is_inf() ||
+    bounds_width < 0.0 ||
+    bounds_height.is_nan() ||
+    bounds_height.is_inf() ||
+    bounds_height < 0.0 {
+    return Err(InvalidCoordinates)
+  }
+  if bounds_width > MAX_SCENE_BOUNDS_WIDTH ||
+    bounds_height > MAX_SCENE_BOUNDS_HEIGHT {
+    return Err(ResourceLimit)
+  }
+  let byte_length = match document.utf8_length() {
+    Ok(length) => length
+    Err(_) => return Err(InputTooLarge)
+  }
+  if byte_length > MAX_SCENE_TEXT_BYTES {
+    return Err(ResourceLimit)
+  }
+  let text = match prepare_text(document) {
+    Ok(bytes) => bytes
+    Err(error) => return Err(error)
+  }
+  if text.length() != byte_length {
+    return Err(InvalidNativeOutput)
+  }
+  let status = native_admit_scene_text_run(
+    ABI_VERSION,
+    text,
+    text.length(),
+    font_size_px,
+    bounds_width,
+    bounds_height,
+  )
+  if status == 0 {
+    Ok(())
+  } else {
+    Err(status_error(status))
   }
 }
 

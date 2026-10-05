@@ -67,6 +67,11 @@ script/linux_text_cc.py -std=c11 -Wall -Wextra -Werror \
   -o "$build_root/raster-test" -pthread -lm
 env -u DISPLAY -u WAYLAND_DISPLAY "$build_root/raster-test"
 
+script/linux_text_cc.py -std=c11 -Wall -Wextra -Werror \
+  tests/linux_text/field_admission_test.c platform/linux_text/linux_text.c \
+  -o "$build_root/field-admission-test" -pthread -lm
+env -u DISPLAY -u WAYLAND_DISPLAY "$build_root/field-admission-test"
+
 # A private XDG cache keeps concurrent jobs isolated.
 env -u DISPLAY -u WAYLAND_DISPLAY \
   moon test --package f4ah6o/gpui/platform/linux_text --target native \

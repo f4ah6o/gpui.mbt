@@ -40,6 +40,11 @@ int32_t gpui_linux_text_hit_test_v1(
  * left/top/right/bottom are the exact visible item-local rectangle. Failure
  * leaves output unchanged. pixel_budget caps the allocation before it occurs. Release is idempotent and clears the result. */
 #define GPUI_LINUX_TEXT_MAX_MASK_DIMENSION 2048
+#define GPUI_LINUX_TEXT_MAX_SCENE_TEXT_BYTES 4096
+#define GPUI_LINUX_TEXT_MAX_SCENE_FONT_SIZE_PX 32.0
+#define GPUI_LINUX_TEXT_MAX_SCENE_BOUNDS_WIDTH 2048.0
+#define GPUI_LINUX_TEXT_MAX_SCENE_BOUNDS_HEIGHT 128.0
+#define GPUI_LINUX_TEXT_MAX_SCENE_MASK_PIXELS 262144
 struct gpui_linux_text_mask {
   uint8_t *pixels;
   int32_t width, height;
@@ -55,6 +60,18 @@ int32_t gpui_linux_text_raster_v1(
     double bounds_width, double bounds_height, int32_t pixel_budget,
     struct gpui_linux_text_mask *output);
 void gpui_linux_text_mask_release_v1(struct gpui_linux_text_mask *mask);
+
+/* Private field qualification: same generic sans PangoFT2 layout and A8
+ * raster path as Ubuntu presentation, with no result retained or exposed. */
+int32_t gpui_linux_text_admit_scene_text_run_v1(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    double font_size_px, double bounds_width, double bounds_height);
+/* Native-test-only admission seams: configurable budget and a post-release
+ * observation so tests can prove the helper does not retain its temporary. */
+int32_t gpui_linux_text_test_admit_scene_text_run_v1(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    double font_size_px, double bounds_width, double bounds_height,
+    int32_t pixel_budget, int32_t *released_output);
 
 int32_t gpui_linux_text_test_raster_admission_v1(int32_t abi,
                                                 int32_t runtime_version);

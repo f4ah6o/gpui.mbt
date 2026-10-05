@@ -17,6 +17,7 @@ pub(all) enum Capability {
   LogicalViewport
   QuadFrames
   GrayscaleTextFrames
+  DirectKeyboardText
   FrameScheduling
   PointerKeyboard
   Clipboard

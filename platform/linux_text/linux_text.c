@@ -645,6 +645,67 @@ int32_t gpui_linux_text_raster_v1(
                            pixel_budget, output, NULL);
 }
 
+/* Field admission deliberately delegates shaping, color-glyph detection and
+ * grayscale rasterization to the same implementation used by Ubuntu frame
+ * presentation. Its temporary mask is always released before this call
+ * returns, including empty and unsupported-glyph successes. */
+static int32_t admit_scene_text_run_impl(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    double font_size_px, double bounds_width, double bounds_height,
+    int32_t pixel_budget, int32_t *released_output) {
+  static const uint8_t sans[] = "sans";
+  if (abi != GPUI_LINUX_TEXT_ABI || text_length < 0 ||
+      (text_length > 0 && text == NULL) || !isfinite(font_size_px) ||
+      font_size_px <= 0.0 || pixel_budget < 0 ||
+      pixel_budget > GPUI_LINUX_TEXT_MAX_SCENE_MASK_PIXELS)
+    return GPUI_LINUX_TEXT_INVALID_ARGUMENT;
+  if (!isfinite(bounds_width) || !isfinite(bounds_height) ||
+      bounds_width < 0.0 || bounds_height < 0.0)
+    return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+  if (text_length > GPUI_LINUX_TEXT_MAX_SCENE_TEXT_BYTES ||
+      font_size_px > GPUI_LINUX_TEXT_MAX_SCENE_FONT_SIZE_PX ||
+      bounds_width > GPUI_LINUX_TEXT_MAX_SCENE_BOUNDS_WIDTH ||
+      bounds_height > GPUI_LINUX_TEXT_MAX_SCENE_BOUNDS_HEIGHT)
+    return GPUI_LINUX_TEXT_RESOURCE_LIMIT;
+
+  if (released_output)
+    *released_output = 0;
+  struct gpui_linux_text_mask mask = {0};
+  int32_t status = raster_layout_v1(
+      abi, text, text_length, sans, (int32_t)(sizeof(sans) - 1),
+      font_size_px, bounds_width, bounds_height,
+      pixel_budget, &mask, NULL);
+  if (status == GPUI_LINUX_TEXT_OK && mask.unknown_glyph_count != 0)
+    status = GPUI_LINUX_TEXT_UNSUPPORTED_INPUT;
+  gpui_linux_text_mask_release_v1(&mask);
+  if (released_output)
+    *released_output = mask.pixels == NULL && mask.width == 0 &&
+                       mask.height == 0 && mask.left == 0.0 &&
+                       mask.top == 0.0 && mask.right == 0.0 &&
+                       mask.bottom == 0.0 &&
+                       mask.unknown_glyph_count == 0;
+  return status;
+}
+
+int32_t gpui_linux_text_admit_scene_text_run_v1(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    double font_size_px, double bounds_width, double bounds_height) {
+  return admit_scene_text_run_impl(
+      abi, text, text_length, font_size_px, bounds_width, bounds_height,
+      GPUI_LINUX_TEXT_MAX_SCENE_MASK_PIXELS, NULL);
+}
+
+int32_t gpui_linux_text_test_admit_scene_text_run_v1(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    double font_size_px, double bounds_width, double bounds_height,
+    int32_t pixel_budget, int32_t *released_output) {
+  if (!released_output)
+    return GPUI_LINUX_TEXT_INVALID_ARGUMENT;
+  return admit_scene_text_run_impl(
+      abi, text, text_length, font_size_px, bounds_width, bounds_height,
+      pixel_budget, released_output);
+}
+
 static int32_t test_lifecycle_v1(int32_t cycles, int32_t *output,
                                   int32_t output_capacity, int raster) {
   if (cycles < 1 || cycles > 1024 || !output || output_capacity < 3)
