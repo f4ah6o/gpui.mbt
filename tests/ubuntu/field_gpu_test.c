@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 struct gpui_host;
@@ -1091,11 +1092,46 @@ static EGLBoolean field_verified_swap(EGLDisplay display, EGLSurface surface) {
   return eglSwapBuffers(display, surface);
 }
 
+/* FIELD_FRAME_WAIT_BEGIN: shared test-only deadline/queue contract. */
+static uint64_t field_monotonic_ns(void) {
+  struct timespec now;
+  assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+  assert(now.tv_sec >= 0 && now.tv_nsec >= 0 && now.tv_nsec < 1000000000L);
+  uint64_t seconds = (uint64_t)now.tv_sec, nanos = (uint64_t)now.tv_nsec;
+  assert(seconds <= (UINT64_MAX - nanos) / UINT64_C(1000000000));
+  return seconds * UINT64_C(1000000000) + nanos;
+}
+
+static void drain_field_events(int host) {
+  double event[10];
+  int result;
+  while ((result = gpui_next(host, event)) == 1) {
+    /* This renderer-only fixture never arms direct text. Close/destroy are
+     * unexpected, and native/transport errors must not masquerade as empty. */
+    assert(event[0] != 3.0 && event[0] != 4.0);
+  }
+  assert(result == 0);
+}
+
 static void await_field_frame(int host) {
-  for (int i = 0; i < 50 && active->frame; ++i)
-    assert(gpui_dispatch(host, 100) == GPUI_OK);
+  const uint64_t timeout_ns = UINT64_C(5000000000);
+  uint64_t start = field_monotonic_ns();
+  for (;;) {
+    /* Dispatch deliberately uses timeout0 while framework events are queued.
+     * Consume those events first so a pending frame can actually block/pump. */
+    drain_field_events(host);
+    if (!active->frame)
+      break;
+    uint64_t now = field_monotonic_ns();
+    assert(now >= start && now - start < timeout_ns);
+    uint64_t remaining = timeout_ns - (now - start);
+    int timeout_ms = (int)((remaining + UINT64_C(999999)) / UINT64_C(1000000));
+    if (timeout_ms > 100) timeout_ms = 100;
+    assert(gpui_dispatch(host, timeout_ms) == GPUI_OK);
+  }
   assert(!active->frame);
 }
+/* FIELD_FRAME_WAIT_END */
 
 static void normalize_viewport(struct field_fixture *fixture,
                                double *normalized, int width, int height,
