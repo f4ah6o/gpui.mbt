@@ -79,8 +79,53 @@ test "portable browser app preserves logical dimensions across DPR changes" {
   assert_true(status.contains("\"logicalHeight\":492"))
   assert_true(status.contains("\"dpr\":2"))
   assert_true(status.contains("\"hover\":4"))
+  assert_true(status.contains("\"cursor\":\"pointing-hand\""))
   assert_true(status.contains("\"events\":4"))
   assert_true(status.contains("\"lastSequence\":5"))
+  assert_true(
+    @browser_app.BrowserDemo::enqueue_event(
+      demo,
+      @platform.Input(
+        @primitives.PointerMoved(position=browser_test_point(20.0, 20.0)),
+      ),
+    )
+    is Ok(_),
+  )
+  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  assert_true(
+    @browser_app.BrowserDemo::status_json(demo).contains("\"cursor\":\"arrow\""),
+  )
+  @browser_app.BrowserDemo::dispose(demo)
+}
+
+///|
+test "browser resize refreshes cursor without another pointer move" {
+  let demo = create_browser_demo()
+  assert_true(
+    @browser_app.BrowserDemo::set_viewport(demo, 820.0, 492.0, 1.0) is Ok(_),
+  )
+  assert_true(
+    @browser_app.BrowserDemo::enqueue_event(
+      demo,
+      @platform.Input(
+        @primitives.PointerMoved(position=browser_test_point(120.0, 238.0)),
+      ),
+    )
+    is Ok(_),
+  )
+  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  let hovered = @browser_app.BrowserDemo::status_json(demo)
+  assert_true(hovered.contains("\"hover\":4"))
+  assert_true(hovered.contains("\"cursor\":\"pointing-hand\""))
+
+  assert_true(
+    @browser_app.BrowserDemo::set_viewport(demo, 820.0, 180.0, 1.0) is Ok(_),
+  )
+  ignore(@browser_app.BrowserDemo::render_frame(demo))
+  let resized = @browser_app.BrowserDemo::status_json(demo)
+  assert_true(resized.contains("\"logicalHeight\":180"))
+  assert_true(resized.contains("\"hover\":null"))
+  assert_true(resized.contains("\"cursor\":\"arrow\""))
   @browser_app.BrowserDemo::dispose(demo)
 }
 

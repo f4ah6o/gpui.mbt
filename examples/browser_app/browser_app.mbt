@@ -311,6 +311,11 @@ fn apply_event(model : DemoModel, event : @platform.Event) -> DemoModel {
     @platform.Resized(width~, height~) => {
       updated.width = width
       updated.height = height
+      match (updated.pointer_x, updated.pointer_y) {
+        (Some(x), Some(y)) =>
+          updated.hover_id = hit_test(updated.width, updated.height, x, y)
+        _ => ()
+      }
       updated.last_event = "logical viewport resized"
     }
     @platform.ScaleChanged => {
@@ -433,6 +438,28 @@ fn semantic_name(id : UInt64) -> String {
     6 => "Copper amber action"
     7 => "Violet dusk action"
     _ => "Unknown action"
+  }
+}
+
+///|
+fn cursor_for_hover(hover : UInt64?) -> @platform.Cursor {
+  match hover {
+    None => @platform.Arrow
+    Some(id) =>
+      if is_focusable_id(id) {
+        @platform.PointingHand
+      } else {
+        @platform.Arrow
+      }
+  }
+}
+
+///|
+fn cursor_label(cursor : @platform.Cursor) -> String {
+  match cursor {
+    @platform.Arrow => "arrow"
+    @platform.PointingHand => "pointing-hand"
+    @platform.Text => "text"
   }
 }
 
@@ -1063,9 +1090,10 @@ pub fn BrowserDemo::status_json(self : BrowserDemo) -> String {
     Err(_) => "{\"active\":false,\"error\":\"model_unavailable\"}"
     Ok(model) => {
       let hover = id_json(model.hover_id)
+      let cursor = json_quote(cursor_label(cursor_for_hover(model.hover_id)))
       let focus = id_json(model.focus_id)
       let target = id_json(model.last_target)
-      "{\"active\":\{!self.stopped},\"logicalWidth\":\{model.width},\"logicalHeight\":\{model.height},\"dpr\":\{model.scale},\"hover\":\{hover},\"focus\":\{focus},\"target\":\{target},\"clicks\":\{model.clicks},\"capabilityValue\":\{model.capability_value},\"scrollX\":\{model.scroll_x},\"scrollY\":\{model.scroll_y},\"events\":\{model.processed_events},\"lastSequence\":\{model.last_sequence},\"lastEvent\":\{json_quote(model.last_event)},\"lastKey\":\{json_quote(model.last_key)},\"focused\":\{model.focused},\"visible\":\{model.visible}}"
+      "{\"active\":\{!self.stopped},\"logicalWidth\":\{model.width},\"logicalHeight\":\{model.height},\"dpr\":\{model.scale},\"hover\":\{hover},\"cursor\":\{cursor},\"focus\":\{focus},\"target\":\{target},\"clicks\":\{model.clicks},\"capabilityValue\":\{model.capability_value},\"scrollX\":\{model.scroll_x},\"scrollY\":\{model.scroll_y},\"events\":\{model.processed_events},\"lastSequence\":\{model.last_sequence},\"lastEvent\":\{json_quote(model.last_event)},\"lastKey\":\{json_quote(model.last_key)},\"focused\":\{model.focused},\"visible\":\{model.visible}}"
     }
   }
 }

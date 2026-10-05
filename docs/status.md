@@ -34,7 +34,7 @@ macOS currently has the broader service slice, including clipboard and cursors. 
 
 ### Browser
 
-The browser implementation is a JavaScript-target proof hosted by Canvas 2D. It shares the MoonBit application/layout/event/scene model, normalizes pointer/keyboard/wheel input, schedules only requested frames, and has a fixture-specific semantic DOM focus/action layer plus a legacy DOM island with explicit focus ownership. The browser counter's GUI, direct, and in-process MCP calls update the same observed state and are checked through a canvas redraw seam. These fixtures are not a general accessibility bridge or MCP transport. WebGPU, text/IME, full accessibility, clipboard/cursor services, worker command support, renderer recovery, and production browser gates remain future work.
+The browser implementation is a JavaScript-target proof hosted by Canvas 2D. It shares the MoonBit application/layout/event/scene model, normalizes pointer/keyboard/wheel input, schedules only requested frames, and has a fixture-specific semantic DOM focus/action layer plus a legacy DOM island with explicit focus ownership. The browser counter's GUI, direct, and in-process MCP calls update the same observed state and are checked through a canvas redraw seam. These fixtures are not a general accessibility bridge or MCP transport. The host also maps the portable Arrow/PointingHand/Text cursor intent to browser CSS cursor values after framework event dispatch. WebGPU, text/IME, full accessibility, clipboard services, worker command support, renderer recovery, and production browser gates remain future work.
 
 ### Electron and Tauri migration
 

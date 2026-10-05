@@ -12,8 +12,8 @@ logical layout region and reports focus ownership back to the host.
 This is execution evidence for the experimental JavaScript slice. It does not close
 [`issues/open/0009-browser-backend.md`](../issues/open/0009-browser-backend.md)
 or establish a production browser backend. WasmGC and Wasm targets, WebGPU,
-text and Japanese IME, a general accessibility tree/adapter, clipboard and
-cursor services, renderer recovery, and production support remain open work.
+text and Japanese IME, a general accessibility tree/adapter, clipboard
+services, renderer recovery, and production support remain open work.
 The rendered counter fixture also exercises one shared typed capability through
 its GUI binding, direct API, and an in-process MCP adapter call. That adapter
 does not start MCP wire transport or expose browser host privileges.
@@ -101,7 +101,7 @@ deployment was skipped for the pull request.
 
 This is browser execution evidence for the experimental JavaScript Canvas 2D
 slice. WasmGC and Wasm browser targets, WebGPU, Japanese IME and broader text
-input, a general accessibility adapter, clipboard and cursor services,
+input, a general accessibility adapter, clipboard services,
 renderer recovery, native/backend conformance, worker commands, and production
 browser support remain open.
 
@@ -114,11 +114,18 @@ branch and pull request runs never target that protected environment.
 ## Boundaries and current capability report
 
 The browser host reports one logical viewport, Canvas 2D quad frames, browser
-pointer/keyboard/wheel input, request-animation-frame scheduling, and the
-fixture-specific ARIA layer. It reports no native top-level window, clipboard,
-cursor control, IME/text input, general accessibility bridge, renderer recovery,
-or worker command support. Browser callbacks enqueue framework-owned events;
-only a scheduled frame drains them into the app. Hidden pages cancel pending
+pointer/keyboard/wheel input, request-animation-frame scheduling, portable
+Arrow/PointingHand/Text cursor mapping, and the fixture-specific ARIA layer. It
+reports no native top-level window, clipboard, IME/text input, general
+accessibility bridge, renderer recovery, or worker command support.
+
+Cursor intent stays framework-owned: the portable demo derives a
+`platform.Cursor` from its post-dispatch hover state, the host reads that state
+after the scheduled frame drain, and only then maps `Arrow`, `PointingHand`,
+and `Text` to the browser's `default`, `pointer`, and `text` CSS cursor
+values. Browser callbacks still only enqueue framework-owned events; they do not
+directly re-enter framework dispatch. Only a scheduled frame drains them into
+the app. Hidden pages cancel pending
 frames and wait for visibility before requesting another.
 
 Canvas coordinates and layout use CSS pixels. The canvas backing store follows

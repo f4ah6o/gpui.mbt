@@ -38,6 +38,12 @@ const capabilityRows = [
   ["Worker commands", "crossThreadCommands"],
 ];
 
+const browserCursorValues = {
+  arrow: "default",
+  "pointing-hand": "pointer",
+  text: "text",
+};
+
 let canvas = null;
 let context = null;
 let resizeObserver = null;
@@ -204,8 +210,18 @@ function drawSnapshot(snapshot) {
   context.globalAlpha = 1;
 }
 
+function syncCursor(status) {
+  if (!canvas) return;
+  const value = browserCursorValues[status.cursor];
+  if (!value) {
+    throw new FrameworkHostError(JSON.parse(gpui.gpui_browser_host_error(6)).error);
+  }
+  canvas.style.cursor = value;
+}
+
 function refreshStatus() {
   const status = JSON.parse(gpui.gpui_browser_status());
+  syncCursor(status);
   elements.events.textContent = String(status.events ?? 0);
   elements.sequence.textContent = String(status.lastSequence ?? 0);
   elements.target.textContent = status.target == null ? "—" : `#${status.target}`;

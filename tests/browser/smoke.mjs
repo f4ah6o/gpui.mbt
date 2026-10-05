@@ -217,6 +217,43 @@ try {
   const targetPoint = { x: 120, y: 238 };
   await page.mouse.move(canvasBounds.x + targetPoint.x, canvasBounds.y + targetPoint.y);
   await page.waitForFunction(() => [4, 5, 6, 7].includes(window.__gpuiSmokeStatus().hover));
+  await page.waitForFunction(() => (
+    window.__gpuiSmokeStatus().cursor === "pointing-hand"
+    && document.querySelector("#gpui-viewport")?.style.cursor === "pointer"
+  ));
+
+  // Keep the physical pointer still while the logical viewport shrinks below
+  // its saved CSS-pixel position. Resize must re-hit-test the saved pointer and
+  // clear the pointing-hand cursor without waiting for another pointermove.
+  await page.evaluate(() => {
+    const frame = document.querySelector("#canvas-frame");
+    frame.style.minHeight = "180px";
+    frame.style.height = "180px";
+  });
+  await page.waitForFunction(() => (
+    window.__gpuiSmokeStatus().logicalHeight <= 180
+    && window.__gpuiSmokeStatus().hover == null
+    && window.__gpuiSmokeStatus().cursor === "arrow"
+    && document.querySelector("#gpui-viewport")?.style.cursor === "default"
+  ), null, { polling: "raf" });
+  await page.evaluate(() => {
+    const frame = document.querySelector("#canvas-frame");
+    frame.style.removeProperty("min-height");
+    frame.style.removeProperty("height");
+  });
+  await waitForCoherentViewport(1.5);
+  await page.waitForFunction(() => (
+    window.__gpuiSmokeStatus().cursor === "pointing-hand"
+    && document.querySelector("#gpui-viewport")?.style.cursor === "pointer"
+  ), null, { polling: "raf" });
+
+  await page.mouse.move(canvasBounds.x + 20, canvasBounds.y + 20);
+  await page.waitForFunction(() => (
+    window.__gpuiSmokeStatus().cursor === "arrow"
+    && document.querySelector("#gpui-viewport")?.style.cursor === "default"
+  ));
+  await page.mouse.move(canvasBounds.x + targetPoint.x, canvasBounds.y + targetPoint.y);
+  await page.waitForFunction(() => document.querySelector("#gpui-viewport")?.style.cursor === "pointer");
   await page.mouse.click(canvasBounds.x + targetPoint.x, canvasBounds.y + targetPoint.y);
   await page.waitForFunction(() => Number(document.querySelector("#activation-count")?.textContent) >= 2);
   await page.waitForFunction(() => Number(window.__gpuiSmokeStatus().capabilityValue) >= 1);
@@ -403,7 +440,7 @@ try {
   assert.equal(remounted.backingHeight, Math.round(remounted.cssHeight * 2));
   assert.deepEqual(pageErrors, [], "browser callbacks and renderer complete without uncaught errors");
   await context.close();
-  console.log("Browser smoke passed: Canvas2D snapshot, DPR, pointer/wheel/focus, GUI/direct/in-process MCP redraw, ARIA and legacy-island ownership, resize/lifecycle, hidden-tab scheduling, context loss, and repeated teardown.");
+  console.log("Browser smoke passed: Canvas2D snapshot, DPR, pointer/wheel/focus/cursor including resize re-hit-testing, GUI/direct/in-process MCP redraw, ARIA and legacy-island ownership, resize/lifecycle, hidden-tab scheduling, context loss, and repeated teardown.");
 } catch (error) {
   console.error("Browser smoke failed:", error);
   if (page) {
