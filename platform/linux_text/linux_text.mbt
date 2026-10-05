@@ -56,6 +56,21 @@ extern "C" fn native_admit_scene_text_run(
 ) -> Int = "gpui_linux_text_admit_scene_text_run_v1"
 
 ///|
+#borrow(text)
+extern "C" fn native_admit_scene_text_run_at(
+  abi : Int,
+  text : Bytes,
+  text_length : Int,
+  font_size_px : Double,
+  origin_x : Double,
+  origin_y : Double,
+  clip_x : Double,
+  clip_y : Double,
+  clip_width : Double,
+  clip_height : Double,
+) -> Int = "gpui_linux_text_admit_scene_text_run_v2"
+
+///|
 /// Admit the linked grayscale raster adapter only with its expected private
 /// ABI and Pango >=1.50 glyph-color metadata. This does not promise color text,
 /// input, IME, a window, or a font match across machines.
@@ -270,6 +285,56 @@ pub fn admit_scene_text_run(
     font_size_px,
     bounds_width,
     bounds_height,
+  )
+  if status == 0 {
+    Ok(())
+  } else {
+    Err(status_error(status))
+  }
+}
+
+///|
+/// Admit the same plain sans run, independent layout origin and local clip used
+/// by origin-aware presentation. No mask or Pango handle survives this call.
+pub fn admit_scene_text_run_at(
+  document : @text.TextDocument,
+  font_size_px : Double,
+  text_origin : @primitives.Point,
+  bounds : @primitives.Rect,
+) -> Result[Unit, LinuxTextError] {
+  if !valid_font_size(font_size_px) {
+    return Err(InvalidFontSize)
+  }
+  if font_size_px > MAX_SCENE_FONT_SIZE_PX ||
+    bounds.size().width() > MAX_SCENE_BOUNDS_WIDTH ||
+    bounds.size().height() > MAX_SCENE_BOUNDS_HEIGHT {
+    return Err(ResourceLimit)
+  }
+  let byte_length = match document.utf8_length() {
+    Ok(length) => length
+    Err(_) => return Err(InputTooLarge)
+  }
+  if byte_length > MAX_SCENE_TEXT_BYTES {
+    return Err(ResourceLimit)
+  }
+  let text = match prepare_text(document) {
+    Ok(bytes) => bytes
+    Err(error) => return Err(error)
+  }
+  if text.length() != byte_length {
+    return Err(InvalidNativeOutput)
+  }
+  let status = native_admit_scene_text_run_at(
+    2,
+    text,
+    text.length(),
+    font_size_px,
+    text_origin.x(),
+    text_origin.y(),
+    bounds.left(),
+    bounds.top(),
+    bounds.size().width(),
+    bounds.size().height(),
   )
   if status == 0 {
     Ok(())

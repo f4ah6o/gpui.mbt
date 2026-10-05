@@ -11,6 +11,8 @@
 #define GPUI_QUAD_STRIDE 19
 #define GPUI_MIXED_FRAME_ABI 2
 #define GPUI_MIXED_STRIDE 23
+#define GPUI_ORIGIN_FRAME_ABI 3
+#define GPUI_ORIGIN_STRIDE 25
 #define GPUI_MAX_ITEMS 100000
 #define GPUI_MAX_TEXT_ITEMS 256
 #define GPUI_MAX_FRAME_TEXT_BYTES (1024 * 1024)
@@ -71,6 +73,12 @@ int32_t gpui_present(int32_t host, int32_t window, const double *data,
  * then UTF8 blob offset/length/font_size. Quad text fields are zero. Both
  * buffers are borrowed for this synchronous call; no pointers are retained. */
 int32_t gpui_present_v2(int32_t abi, int32_t host, int32_t window,
+                        const double *data, int32_t length,
+                        const uint8_t *text, int32_t text_length);
+/* ABI3 keeps all23 existing fields and appends independent origin_x/y.
+ * Kinds0quad/1legacyText require zero origin fields; kind2 is a plain run
+ * clipped to common local bounds, with independent item-local text origin. */
+int32_t gpui_present_v3(int32_t abi, int32_t host, int32_t window,
                         const double *data, int32_t length,
                         const uint8_t *text, int32_t text_length);
 int32_t gpui_recover(int32_t host, int32_t window);

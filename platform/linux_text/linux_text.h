@@ -51,6 +51,26 @@ struct gpui_linux_text_mask {
   double left, top, right, bottom;
   int32_t unknown_glyph_count;
 };
+/* Version2 retains the v1 mask ABI and adds exact logical-grid UV cropping.
+ * At an interior crop edge its pixel tile retains one sampling texel, clipped
+ * to full pixel ink. Width/height and all budgets include this halo; visible
+ * geometry stays exact and UVs crop into it. V1 uses explicit no-halo mode.
+ * Success transfers mask.pixels to the caller. Empty results have zero geometry
+ * and UVs (unknown count may be nonzero). Failure leaves the whole output
+ * unchanged; release_v2 clears all fields and is safe to repeat. */
+#define GPUI_LINUX_TEXT_RASTER_ABI 2
+struct gpui_linux_text_mask_v2 {
+  struct gpui_linux_text_mask mask;
+  double u0, v0, u1, v1;
+};
+int32_t gpui_linux_text_raster_v2(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    const uint8_t *family, int32_t family_length, double font_size_px,
+    double origin_x, double origin_y, double clip_x, double clip_y,
+    double clip_width, double clip_height, int32_t pixel_budget,
+    struct gpui_linux_text_mask_v2 *output);
+void gpui_linux_text_mask_release_v2(struct gpui_linux_text_mask_v2 *mask);
+
 /* Real linked ABI/runtime admission; grayscale glyph-color metadata requires
  * Pango >=1.50. No native handles or runtime version number are exposed. */
 int32_t gpui_linux_text_require_raster_v1(int32_t abi);
@@ -66,6 +86,15 @@ void gpui_linux_text_mask_release_v1(struct gpui_linux_text_mask *mask);
 int32_t gpui_linux_text_admit_scene_text_run_v1(
     int32_t abi, const uint8_t *text, int32_t text_length,
     double font_size_px, double bounds_width, double bounds_height);
+int32_t gpui_linux_text_admit_scene_text_run_v2(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    double font_size_px, double origin_x, double origin_y,
+    double clip_x, double clip_y, double clip_width, double clip_height);
+int32_t gpui_linux_text_test_admit_scene_text_run_v2(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    double font_size_px, double origin_x, double origin_y,
+    double clip_x, double clip_y, double clip_width, double clip_height,
+    int32_t pixel_budget, int32_t *released_output);
 /* Native-test-only admission seams: configurable budget and a post-release
  * observation so tests can prove the helper does not retain its temporary. */
 int32_t gpui_linux_text_test_admit_scene_text_run_v1(

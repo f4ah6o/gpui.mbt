@@ -1880,6 +1880,7 @@ struct staged_text {
   int item_index;
   struct gpui_linux_text_mask mask;
   GLuint texture;
+  double u0, v0, u1, v1;
 };
 
 static void release_staged_text(struct staged_text *texts, int count,
@@ -1957,9 +1958,10 @@ static int item_scissor(struct host *h, const double *q) {
   return 1;
 }
 
-int32_t gpui_present_v2(int32_t abi, int32_t token, int32_t window,
-                        const double *data, int32_t length,
-                        const uint8_t *text, int32_t text_length) {
+static int32_t present_mixed(int32_t abi, int32_t expected_abi, int stride,
+                            int origin_enabled, int32_t token, int32_t window,
+                            const double *data, int32_t length,
+                            const uint8_t *text, int32_t text_length) {
   struct host *h;
   int s = window_check(token, window, &h);
   if (s)
@@ -1971,21 +1973,25 @@ int32_t gpui_present_v2(int32_t abi, int32_t token, int32_t window,
   s = pump(h, 0);
   if (s)
     return s;
-  if (abi != GPUI_MIXED_FRAME_ABI || !data || length < 5 ||
-      (length - 5) % GPUI_MIXED_STRIDE || text_length < 0 ||
+  if (abi != expected_abi || !data || length < 5 ||
+      (length - 5) % stride || text_length < 0 ||
       (text_length && !text))
     return GPUI_INVALID;
-  if ((length - 5) / GPUI_MIXED_STRIDE > GPUI_MAX_ITEMS ||
+  if ((length - 5) / stride > GPUI_MAX_ITEMS ||
       text_length > GPUI_MAX_FRAME_TEXT_BYTES)
     return GPUI_RESOURCE;
   for (int i = 0; i < length; ++i)
     if (!isfinite(data[i]) || fabs(data[i]) > 1e20)
       return GPUI_INVALID;
   int text_count = 0;
-  for (int i = 5; i < length; i += GPUI_MIXED_STRIDE) {
+  for (int i = 5; i < length; i += stride) {
     const double *record = data + i, *q = record + 1;
-    if (record[0] != 0 && record[0] != 1)
+    if (record[0] != 0 && record[0] != 1 &&
+        (!origin_enabled || record[0] != 2))
       return GPUI_UNSUPPORTED;
+    if (origin_enabled && record[0] != 2 &&
+        (record[23] != 0 || record[24] != 0))
+      return GPUI_INVALID;
     if (!valid_common_item(q))
       return GPUI_INVALID;
     if (record[0] == 0) {
@@ -2016,18 +2022,36 @@ int32_t gpui_present_v2(int32_t abi, int32_t token, int32_t window,
   int staged = 0;
   size_t total_mask_bytes = 0;
   static const uint8_t sans[] = "sans";
-  for (int i = 5; i < length; i += GPUI_MIXED_STRIDE) {
+  for (int i = 5; i < length; i += stride) {
     const double *record = data + i, *q = record + 1;
     if (record[0] == 0)
       continue;
     struct staged_text *item = texts + staged;
-    item->item_index = (i - 5) / GPUI_MIXED_STRIDE;
+    item->item_index = (i - 5) / stride;
     ++staged;
     int offset = (int)record[20], bytes = (int)record[21];
     const uint8_t *span = bytes ? text + offset : (const uint8_t *)"";
-    s = text_status(gpui_linux_text_raster_v1(
-        GPUI_LINUX_TEXT_ABI, span, bytes, sans, 4, record[22], q[2], q[3],
-        (int32_t)(GPUI_MAX_FRAME_MASK_BYTES - total_mask_bytes), &item->mask));
+    int32_t budget = (int32_t)(GPUI_MAX_FRAME_MASK_BYTES - total_mask_bytes);
+    if (record[0] == 2) {
+      struct gpui_linux_text_mask_v2 mask = {0};
+      s = text_status(gpui_linux_text_raster_v2(
+          GPUI_LINUX_TEXT_RASTER_ABI, span, bytes, sans, 4, record[22],
+          record[23], record[24], q[0], q[1], q[2], q[3], budget, &mask));
+      if (!s) {
+        item->mask = mask.mask; // Transfer the successful pixel ownership.
+        item->u0 = mask.u0; item->v0 = mask.v0;
+        item->u1 = mask.u1; item->v1 = mask.v1;
+        memset(&mask, 0, sizeof(mask));
+      }
+    } else {
+      s = text_status(gpui_linux_text_raster_v1(
+          GPUI_LINUX_TEXT_ABI, span, bytes, sans, 4, record[22], q[2], q[3],
+          budget, &item->mask));
+      if (!s && item->mask.pixels) {
+        item->u1 = (item->mask.right - item->mask.left) / item->mask.width;
+        item->v1 = (item->mask.bottom - item->mask.top) / item->mask.height;
+      }
+    }
     if (s)
       goto preflight_failure;
     size_t mask_bytes = (size_t)item->mask.width * (size_t)item->mask.height;
@@ -2089,10 +2113,10 @@ int32_t gpui_present_v2(int32_t abi, int32_t token, int32_t window,
   glEnableVertexAttribArray(0);
   glEnable(GL_SCISSOR_TEST);
   int text_index = 0;
-  for (int i = 5; i < length; i += GPUI_MIXED_STRIDE) {
+  for (int i = 5; i < length; i += stride) {
     const double *record = data + i, *q = record + 1;
     struct staged_text *item = NULL;
-    if (record[0] == 1)
+    if (record[0] != 0)
       item = texts + text_index++;
     if (!item_scissor(h, q) || (item && !item->texture))
       continue;
@@ -2101,13 +2125,17 @@ int32_t gpui_present_v2(int32_t abi, int32_t token, int32_t window,
     GLint color_uniform;
     if (item) {
       const struct gpui_linux_text_mask *mask = &item->mask;
-      left += mask->left;
-      top += mask->top;
-      right = q[0] + mask->right;
-      bottom = q[1] + mask->bottom;
-      GLfloat u = (GLfloat)((mask->right - mask->left) / mask->width);
-      GLfloat v = (GLfloat)((mask->bottom - mask->top) / mask->height);
-      GLfloat mapped[8] = {0, 0, u, 0, 0, v, u, v};
+      double offset_x = record[0] == 1 ? q[0] : 0;
+      double offset_y = record[0] == 1 ? q[1] : 0;
+      left = offset_x + mask->left;
+      top = offset_y + mask->top;
+      right = offset_x + mask->right;
+      bottom = offset_y + mask->bottom;
+      GLfloat mapped[8] = {
+          (GLfloat)item->u0, (GLfloat)item->v0,
+          (GLfloat)item->u1, (GLfloat)item->v0,
+          (GLfloat)item->u0, (GLfloat)item->v1,
+          (GLfloat)item->u1, (GLfloat)item->v1};
       memcpy(uvs, mapped, sizeof(uvs));
       glUseProgram(h->mask_program);
       glUniform1i(h->mask_sampler_uniform, 0);
@@ -2160,6 +2188,19 @@ texture_failure:
 preflight_failure:
   release_staged_text(texts, staged, 0);
   return s;
+}
+
+int32_t gpui_present_v2(int32_t abi, int32_t token, int32_t window,
+                        const double *data, int32_t length,
+                        const uint8_t *text, int32_t text_length) {
+  return present_mixed(abi, GPUI_MIXED_FRAME_ABI, GPUI_MIXED_STRIDE, 0,
+      token, window, data, length, text, text_length);
+}
+int32_t gpui_present_v3(int32_t abi, int32_t token, int32_t window,
+                        const double *data, int32_t length,
+                        const uint8_t *text, int32_t text_length) {
+  return present_mixed(abi, GPUI_ORIGIN_FRAME_ABI, GPUI_ORIGIN_STRIDE, 1,
+      token, window, data, length, text, text_length);
 }
 
 int32_t gpui_present(int32_t token, int32_t window, const double *data,
