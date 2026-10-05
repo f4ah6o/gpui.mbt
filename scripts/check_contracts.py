@@ -634,6 +634,8 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
 
     allowed_internal_edges = {
         "primitives": set(),
+        # Text editing semantics stay portable and depend only on core values.
+        "text": set(),
         "diagnostics": {"primitives"},
         "core": {"primitives", "diagnostics"},
         "layout": {"primitives"},

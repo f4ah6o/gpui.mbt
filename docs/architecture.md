@@ -2,7 +2,7 @@
 
 Status: M1 core plus M2 layout/element and M3 headless scene package boundaries are implemented; experimental macOS, Ubuntu/Wayland/GLES, and Windows native slices are present; the JS browser hosts Weekboard and the retained interaction lab with its in-process capability/MCP seam; a separate Node stdio fixture exercises the stateless MCP wire adapter; native and browser MCP endpoint topology remains planned.
 
-This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, `element/`, `capability/`, and optional `mcp/`, plus native and example adapters. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
+This is the dependency and package boundary for M1 through M5. The module is `f4ah6o/gpui` in [`moon.mod`](../moon.mod), with current runtime packages `primitives/`, `diagnostics/`, `core/`, `layout/`, `scene/`, `element/`, `text/`, `capability/`, and optional `mcp/`, plus native and example adapters. The lifecycle and entity semantics are in [product.md](product.md), while implementation evidence is tracked in [compatibility.md](compatibility.md).
 
 ## Runtime dependency budget
 
@@ -39,6 +39,7 @@ target backend ──> platform API + renderer API + scene
 target FFI     ──> native OS / graphics / text APIs
 
 primitives ──> MoonBit standard/core only
+text ─────────> MoonBit standard/core only
 diagnostics ─> MoonBit standard/core + primitives
 core       ──> MoonBit standard/core + diagnostics + primitives
 ```
@@ -60,6 +61,7 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `layout/` | style subset, constraints, intrinsic measure interface, layout result | `primitives/` | renderer or platform types |
 | `element/` | Render/IntoElement/Element, tree, hit-test and dispatch metadata, immutable scroll state and drag gesture transitions | `core/`, `primitives/`, `layout/`, `scene/` contract | backend callbacks or OS event structs |
 | `scene/` | stable, platform-neutral quad/clip commands, bounded text snapshot items, validation, and ordering | `primitives/` | live GPU handles or backend resource objects |
+| `text/` | UTF-16 ranges, directional selection, and immutable document slicing/replacement | MoonBit standard/core only | rendering, platform, or host-input types |
 | `capability/` | typed semantic operation descriptors, schema/value projection, registry, GUI binding, deterministic manifest generation | `core/`, `diagnostics/` | renderer/native/MCP transport state, host handles, duplicated domain handlers |
 | `mcp/` | optional MCP-facing inventory/dispatch adapter over semantic capabilities | `capability/`, `diagnostics/` | application state ownership, domain handlers, privileged host APIs |
 | `migration/host_services/` | portable service requests/completions, logical scopes, cancellation, bounded queues, and default-deny service policy for Electron/Tauri migration | `capability/`, `diagnostics/` | DOM, process APIs, native handles, or direct privileged service execution |
@@ -72,7 +74,7 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `examples/windows/` | native executable consuming the shared scene/window contracts | `windows/`, `platform/`, `scene/`, `diagnostics/`, `primitives/`, standard env | private backend tokens |
 | target backend / FFI | event loop and native resources/adapters | platform and renderer APIs; native APIs | types that leak upward through the public facade |
 
-The current runtime edges include `primitives -> stdlib`, `diagnostics -> stdlib`, `core -> stdlib + diagnostics`, `capability -> core + diagnostics`, `mcp -> capability + diagnostics`, and `migration/host_services -> capability + diagnostics`; the executable allowlist also records current layout, scene, element, native, and example edges. The browser app fixture is portable and can use the semantic registry plus an in-process optional MCP dispatch seam; the JS host adapter remains a leaf above it. The host-service bridge queues bounded JSON-compatible requests and completions over copied framework values; browser/Electron/Tauri adapters must enforce their own permission and host allowlists before acting. The executable dependency check covers these boundaries and test-only imports; new runtime packages still require an explicit layer entry and reject unlisted edges. The dependency direction must remain acyclic; cross-cutting code belongs in a lower-level contract rather than a reverse import.
+The current runtime edges include `primitives -> stdlib`, `text -> stdlib`, `diagnostics -> stdlib`, `core -> stdlib + diagnostics`, `capability -> core + diagnostics`, `mcp -> capability + diagnostics`, and `migration/host_services -> capability + diagnostics`; the executable allowlist also records current layout, scene, element, native, and example edges. The browser app fixture is portable and can use the semantic registry plus an in-process optional MCP dispatch seam; the JS host adapter remains a leaf above it. The host-service bridge queues bounded JSON-compatible requests and completions over copied framework values; browser/Electron/Tauri adapters must enforce their own permission and host allowlists before acting. The executable dependency check covers these boundaries and test-only imports; new runtime packages still require an explicit layer entry and reject unlisted edges. The dependency direction must remain acyclic; cross-cutting code belongs in a lower-level contract rather than a reverse import.
 
 The approved `capability -> core` edge consumes only the portable application
 lifetime contract. `core` never imports capabilities, MCP, or platform code.

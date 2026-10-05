@@ -130,7 +130,22 @@ The inspected gpui.mbt revision is `35aae36e79588c47c030093bf64eaf54b15f715a`. I
 
 Packet 0011 supplies a browser DOM-island example and bounded host-service envelopes. Its fake Electron/Tauri adapters do not demonstrate a native Rust GPUI/MoonBit embedding boundary. Reuse its principles of explicit ownership, copied values, cancellation and versioning; do not call the new native work an already-supported 0011 integration.
 
-Portable scene rendering is currently centered on quads. Rich text, production text shaping, IME, general accessibility and sustained performance evidence remain incomplete. A project tree or palette requires real framework text capability before it can count as migrated UI.
+Portable scene rendering is currently centered on quads. A small UTF-16
+editing-semantics model now exists for ranges, directional selection and
+immutable replacement, but it does not draw text or provide an editable UI.
+Rich text, production text shaping, caret geometry, composition/IME, general
+accessibility and sustained performance evidence remain incomplete. A project
+tree or palette requires usable framework text capability before it can count
+as migrated UI.
+
+### Foundation-first text gap and current slice
+
+See the source-grounded [codebase gap analysis](../../docs/codebase-gap-analysis.md)
+for the implementation order and evidence boundaries. The current `text/`
+package is a portable data model only. It does not implement a text field,
+marked/composition state, grapheme navigation, rendering, caret mapping, a host
+input adapter, or Japanese IME behavior. The MZed application milestones and
+their platform admission gates remain unchanged.
 
 ### Upstream pin selection gate
 

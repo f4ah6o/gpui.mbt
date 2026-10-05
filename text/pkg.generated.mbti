@@ -1,0 +1,61 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/text"
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct TextDocument {
+  text : String
+  selection : TextSelection
+} derive(Eq)
+pub fn TextDocument::equal(Self, Self) -> Bool
+pub fn TextDocument::new(String) -> Result[Self, TextError]
+pub fn TextDocument::not_equal(Self, Self) -> Bool
+pub fn TextDocument::replace(Self, TextRange, String) -> Result[Self, TextError]
+pub fn TextDocument::replace_selection(Self, String) -> Result[Self, TextError]
+pub fn TextDocument::selected_text(Self) -> String
+pub fn TextDocument::selection(Self) -> TextSelection
+pub fn TextDocument::slice(Self, TextRange) -> Result[String, TextError]
+pub fn TextDocument::text(Self) -> String
+pub fn TextDocument::utf16_length(Self) -> Int
+pub fn TextDocument::with_selection(Self, TextSelection) -> Result[Self, TextError]
+
+pub enum TextError {
+  NegativeOffset
+  ReversedRange
+  OutOfBounds
+  SplitSurrogate
+  MalformedUtf16
+  LengthOverflow
+} derive(Eq)
+pub fn TextError::equal(Self, Self) -> Bool
+pub fn TextError::not_equal(Self, Self) -> Bool
+
+pub struct TextRange {
+  start : Int
+  end : Int
+} derive(Eq)
+pub fn TextRange::end(Self) -> Int
+pub fn TextRange::equal(Self, Self) -> Bool
+pub fn TextRange::length(Self) -> Int
+pub fn TextRange::new(Int, Int) -> Result[Self, TextError]
+pub fn TextRange::not_equal(Self, Self) -> Bool
+pub fn TextRange::start(Self) -> Int
+
+pub struct TextSelection {
+  anchor : Int
+  head : Int
+} derive(Eq)
+pub fn TextSelection::anchor(Self) -> Int
+pub fn TextSelection::equal(Self, Self) -> Bool
+pub fn TextSelection::head(Self) -> Int
+pub fn TextSelection::is_collapsed(Self) -> Bool
+pub fn TextSelection::new(Int, Int) -> Result[Self, TextError]
+pub fn TextSelection::normalized_range(Self) -> TextRange
+pub fn TextSelection::not_equal(Self, Self) -> Bool
+
+// Type aliases
+
+// Traits

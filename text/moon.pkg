@@ -1,0 +1,8 @@
+import {
+  "moonbitlang/core/int",
+}
+
+import {
+  "moonbitlang/core/quickcheck",
+  "f4ah6o/gpui/text",
+} for "test"

@@ -303,3 +303,15 @@ passing schema-2 report audit. The survivors have not yet been reviewed. This
 single observation is not a reviewed/repeated mutation baseline or clean
 release-candidate result; mutation and all production release gates remain
 pending.
+
+
+## Portable text model evidence — 2026-10-05
+
+The new `text/` package adds deterministic cases and a fixed-seed QuickCheck
+property for UTF-16 ranges, directional selection, well-formed text, immutable
+replacement, and overflow checks. `moon check text --target all --deny-warn`,
+`moon test text --target all --deny-warn` (9/9 tests on each supported fast
+target), and `moon fmt text --check` pass. This remains development evidence
+only: composition/marked text, shaping/rendering, caret mapping, platform input,
+Japanese IME, accessibility, mutation evidence, and all 1.0 release gates
+remain pending.
