@@ -16,6 +16,91 @@ Make gpui.mbt usable for real applications by progressively migrating useful Zed
 - Keep source-derived Zed application work in MZed. Keep gpui.mbt framework work independently authored and consistent with its provenance policy.
 - This packet records the approved plan only. It does not resume packet 0016 or implement/build/release MZed, gpui.mbt, or the supporting tools. Preserve unrelated work in progress.
 
+## Complementary qualification: familiar cross-platform UX
+
+MZed is the functional and practical application milestone toward gpui.mbt
+production readiness: preserving real editor workflows exercises a broad set of
+framework capabilities. Yami-kumo adds the complementary UX axis: a familiar,
+SaaS-style GUI whose navigation, task structure and interaction outcomes remain
+intuitive across applications, devices and supported platforms. Neither track
+alone closes the framework's 1.0 release gates.
+
+[Yami-kumo PR 3](https://github.com/f4ah6o/Yami-kumo/pull/3) was verified on
+2026-10-05 as an open draft at `b78a32ed9e129dfc4d2d1a6433fadddc6cb953d8`.
+Its [shared UX plan](https://github.com/f4ah6o/Yami-kumo/blob/b78a32ed9e129dfc4d2d1a6433fadddc6cb953d8/issues/open/20261005-kumo-gpui-shared-ux.md)
+is documentation only: extraction/generation, native adapters and native UX
+qualification are not implemented. Its successful
+[web CI run](https://github.com/f4ah6o/Yami-kumo/actions/runs/37254976357)
+does not establish native conformance. Recheck the plan and actual dependencies
+before implementation; the referenced PR is not an adopted release dependency.
+
+### Ownership and sequence
+
+- Cloudflare Kumo supplies upstream web components, tokens and variant facts.
+  Yami-kumo owns the shared UX contract, shell policy, extraction/generation,
+  maintained native component adapters and web/native conformance fixtures.
+- gpui.mbt owns reusable rendering, layout, text, input/IME, focus, accessibility
+  and platform primitives. Kumo-specific policy stays outside framework core;
+  its public API must not acquire a React or Kumo dependency. Applications own
+  domain state/actions, content, labels and optional shell regions.
+- First pin package integrity/source correspondence and toolchain/framework
+  revisions, then qualify the existing web shell against the contract. The
+  current Yami-kumo `latest` dependency and region-list tests are not a
+  reproducible interaction reference.
+- Next build deterministic token/variant generation with explicit unsupported
+  mappings and headless fixtures. Keep generated facts separate from reviewed,
+  hand-maintained behavior adapters; upstream updates must not silently rewrite
+  interaction expectations or overwrite manual work. Preserve theme/token
+  namespaces, conversion rules and source/style/dependency provenance.
+- Qualify a usable native shell on one declared target, then text/IME and
+  compound controls, followed by a real upstream-update qualification cycle.
+  Start with actual starter needs: Button, Input, LayerCard and shell controls.
+  Keep ordinary web template development independent of native setup.
+
+Standalone native Yami-kumo does not depend on MZed's same-window island proof.
+Use [0004](0004-platform-rendering-and-native-boundaries.md) for framework
+capability gaps; [0009](0009-browser-backend.md) and
+[0011](0011-electron-tauri-migration.md) apply only to paths that use those hosts.
+Do not expand [0019](0019-mzed-native-coexistence-proof.md)'s first proof to
+implement a design system. Sequence Yami-kumo work after the current MZed/vlmkit
+checkpoint while preserving unrelated work and the platform priorities below.
+
+### Shared UX and admission gates
+
+- Preserve navigation versus contextual support, optional shell regions, task
+  state and selection across compact/docked layouts. Required task controls
+  remain in the main task. Specify keyboard/pointer activation, disabled,
+  loading, error, retry and success outcomes rather than screenshot similarity.
+- Verify modal focus containment, background-action suppression, dismissal
+  without click-through and focus restoration. Docked panels remain nonmodal;
+  hidden or removed controls must not retain keyboard interaction. Tab focus
+  and selection follow an explicit activation policy.
+- Require visible usable text, real input and native accessible names, roles,
+  values and state feedback. Qualify Japanese IME composition, selection,
+  commit and cancellation separately from submit/dismiss. A quad placeholder,
+  compiled component or headless pass is not a usable native Button/Input.
+- Document intentional OS differences in primary shortcut modifiers, fonts,
+  window chrome and display scale. Test viewport/input-device adaptation,
+  reduced motion and theme changes without losing task discoverability or
+  understandable state. Familiar UX is not identical pixels on every platform.
+- Record coverage by target, component/part, variant/state and scenario, with
+  exact pins and PASS/FAIL/UNRUN/BLOCKED/UNSUPPORTED results. Separate generated
+  definitions, compilation, headless checks, rendering, physical input and
+  semantic accessibility. A DOM island running original Kumo qualifies only
+  that web path. vlmkit visual evidence supplements deterministic focus/action/
+  IME assertions and requires a verified driver profile for the actual target.
+- Preserve upstream notices and inspect each redistributed dependency/asset.
+  [Kumo's inspected license](https://github.com/cloudflare/kumo/blob/3d9331280781bf9ea67bb6c38321a7c6b98b0cee/LICENSE)
+  is MIT; retain required copyright/permission notices with copied or derived
+  material. Confirm Yami-kumo's own distribution license and generated-output
+  provenance before distributing a reusable native package; acknowledgements
+  alone do not establish licensing. The separate Zed provenance rules still
+  apply to MZed.
+
+An unsupported required interaction prevents that target's qualification.
+Cross-device familiarity is the goal, not a new support claim. Existing Windows
+checks stay intact; new Windows work remains deferred under the priorities below.
+
 ## Platform priorities
 
 The long-term goal for every application and tool in this effort is macOS,

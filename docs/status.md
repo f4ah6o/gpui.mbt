@@ -85,6 +85,17 @@ starts with Linux, preserves a working pinned Zed baseline, and requires a
 same-window boundary decision before product slices. These are planning packets,
 not implemented native embedding or production-support claims.
 
+MZed supplies the functional and practical proof axis toward production
+readiness. The roadmap's
+[complementary Yami-kumo track](../issues/open/0018-mzed-native-island-roadmap.md#complementary-qualification-familiar-cross-platform-ux)
+adds familiar SaaS-style task structure and predictable UX across applications,
+devices and supported platforms, based on
+[Yami-kumo PR 3](https://github.com/f4ah6o/Yami-kumo/pull/3). That draft is a
+shared-UX design plan, not an implemented generator or native component library.
+Yami-kumo owns Kumo-specific generation/adapters and conformance; gpui.mbt owns
+the reusable primitives. Real text/input, focus, IME and accessibility evidence
+remain prerequisites, and neither application track replaces M7 release gates.
+
 The roadmap includes formal Linux native vlmkit support with explicit X11 and
 Wayland capability profiles. The eventual goal is macOS/Linux/Windows across
 applications and tools; new Windows-specific work is deferred while macOS/Linux
