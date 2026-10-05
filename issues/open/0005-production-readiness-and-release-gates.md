@@ -307,11 +307,17 @@ pending.
 
 ## Portable text model evidence — 2026-10-05
 
-The new `text/` package adds deterministic cases and a fixed-seed QuickCheck
-property for UTF-16 ranges, directional selection, well-formed text, immutable
-replacement, and overflow checks. `moon check text --target all --deny-warn`,
-`moon test text --target all --deny-warn` (9/9 tests on each supported fast
-target), and `moon fmt text --check` pass. This remains development evidence
-only: composition/marked text, shaping/rendering, caret mapping, platform input,
-Japanese IME, accessibility, mutation evidence, and all 1.0 release gates
-remain pending.
+The `text/` package adds deterministic cases and fixed-seed QuickCheck
+properties for UTF-16 ranges, directional selection, well-formed text,
+immutable replacement, overflow checks, and composition transitions. The
+composition property uses seed `4169804048700389933`
+(`0x39de1eb091c5ba2d`), 256 cases, `max_size=32`, and `max_shrinks=500`; it
+compares three previews and a commit/cancel result against independently
+assembled reference strings. `moon fmt text --check`, `moon check text --target
+all --deny-warn`, and `moon test text --target all --deny-warn` pass; the text
+package reports 17/17 tests on Wasm, WasmGC, JS and native. The Python contract
+suite passes 61/61 tests and `scripts/check_contracts.py` passes. This remains
+development evidence only:
+host event sequencing, actual Japanese IME, text layout/candidate placement,
+shaping/rendering, undo, multi-cursor editing, accessibility, mutation
+evidence, and all 1.0 release gates remain pending. Issue0005 remains open.

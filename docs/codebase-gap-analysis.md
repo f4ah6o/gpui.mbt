@@ -10,7 +10,7 @@ The existing same-window proof is retained: [MZed PR3](https://github.com/gpui-m
 
 ## Source pins and evidence categories
 
-- gpui.mbt main: `01dff466d4c8025f578cb2d11fa7658c6f811088`.
+- gpui.mbt main before this composition slice: `d3c142ef9ac2b856277059e41526f32e5845447a` (portable text foundation merged; composition not yet in this audited base).
 - Zed application reference: `76659a55a8c10ed355a070f8764a0b1733e3c115` (v1.22.0). This is separate from the framework's existing upstream comparison pin.
 - Turtles main: `4d9baaa258c695e803a487283076e979e2c260ba`.
 - Hotpath main: `be4cb98a3eb61bd5ab176c9e5e6bd921b74d1dce`.
@@ -22,15 +22,15 @@ Distinguish source capability present, partial contract, missing implementation,
 
 | Area | Verified current boundary | Foundation work | Later runtime gate |
 | --- | --- | --- | --- |
-| Text editing semantics | Main has a committed `TextInput(String)` event, no text document, selection/range or marked-text model. | Independent UTF-16 ranges, directional selection and immutable replacement; then explicit composition/commit/cancel and history semantics. | Native/browser input-method adapters, candidate placement and Japanese IME behavior. |
+| Text editing semantics | At audited main base `d3c142e`, the portable `text/` package has validated UTF-16 ranges, directional selections and immutable documents, but no composition value yet. | This worktree proposes pure composition/commit/cancel values with original-range preview replacement and relative-selection rebasing; then host-owned sequencing/freshness and history semantics, text layout/offset geometry and a focused input adapter. | Actual native/browser IME behavior, Japanese IME, candidate placement, rendering, undo, multi-cursor, accessibility and production gates. |
 | Text measurement/rendering | Main scene is quad-only. Open browser PR23 adds a limited host-font text item, not portable shaping or native text rendering. | Measured runs, offset-to-geometry contract, shaping/font-fallback adapters, wrapping/caret/selection mapping. Avoid duplicating PR23. | Font/script/scale-specific metrics, clipping, raster output and hit testing on each admitted host. |
 | Input and focus | ElementTree routes pointer events and stores focused IDs; native backends expose character keys, not full TextInput capability. | Focused key/text dispatch, explicit composition ownership, cancellation and stale-input rules. | Native focus transitions, lost input pairs, IME and accessibility input behavior. |
 | Lists and reusable controls | Flex layout and element lifecycle exist; editor-facing virtualization and editable control contracts are not complete. | Build list/picker/text-field behavior from tested primitives, with bounded visible-range work. | Real large-tree/scroll performance and semantic accessibility. |
 | Host services and asynchronous work | Portable host-service envelopes exist; real native adapters and complete asynchronous endpoint topology do not. | Add only adapters/execution semantics required by a concrete consumer. Keep parked0016 work distinct from accepted main. | Actual file-dialog/clipboard/permission behavior, lifetime/cancel races and real host integration. |
 
-First bounded implementation: the portable text range/selection/replacement model. It does not include shaping, grapheme navigation, composition, undo or an editable widget. Strict checked ranges are a foundation contract; platform-specific clipping and adjustment remain an explicit adapter responsibility rather than an implicit claim of Zed source compatibility.
+The first bounded implementation is the portable UTF-16 range, selection, and immutable document model. The proposed second slice adds `TextComposition`: previews always replace the original target range, relative directional selections rebase to absolute document offsets, commit applies caller-supplied final text, and cancel restores the original selection. Values are snapshots with no session IDs or freshness guarantees; hosts must own sequencing and reject stale or cross-owner events. Neither slice provides shaping, grapheme navigation, a widget, host IME input, undo history, or platform-specific clipping. Strict checked ranges remain a foundation contract, not a claim of Zed source compatibility. Composition notes in this snapshot describe the unmerged worktree and do not change the pinned audited base above.
 
-Subsequent slices should be chosen after reviewing the prior slice: composition state and cancellation; measured text and geometry; focused input/native adapter; an actual reusable input/picker control. Return to MZed when a consumer can exercise meaningful new behavior, not just when another low-level test is added.
+Next, add measured text and geometry, then a focused input/native adapter, followed by an actual reusable input/picker control. Keep host event sequencing, Japanese IME, candidate-window placement, rendering, undo, multi-cursor, accessibility, and production gates explicit. Return to MZed when a consumer can exercise meaningful new behavior, not just when another low-level test is added.
 
 ## Why text is a shared dependency
 

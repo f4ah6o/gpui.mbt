@@ -51,7 +51,12 @@ reference-model property uses seed `584118800423729943`
 The portable text editing property `text.utf16-replacement.invariants` uses seed
 `17836885540012499121` (`0xf78958e50fbf20b1`), 256 cases, `max_size=32`, and
 `max_shrinks=500`; its reference strings are independently assembled from
-generated Unicode scalar fragments. These exact counts and seeds are active.
+generated Unicode scalar fragments. The portable composition property
+`text.utf16-composition.invariants` uses seed `4169804048700389933`
+(`0x39de1eb091c5ba2d`), 256 cases, `max_size=32`, and `max_shrinks=500`. It
+generates three previews followed by either commit or cancel, independently
+assembles prefix/preview/suffix/final strings, and checks that prior immutable
+snapshots remain unchanged. These exact counts and seeds are active.
 The larger nightly and stress budgets below are policy targets and are not
 scheduled jobs yet.
 

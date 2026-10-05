@@ -6,6 +6,32 @@ package "f4ah6o/gpui/text"
 // Errors
 
 // Types and methods
+pub enum CompositionError {
+  NotActive
+  InvalidText(TextError)
+} derive(Eq)
+pub fn CompositionError::equal(Self, Self) -> Bool
+pub fn CompositionError::not_equal(Self, Self) -> Bool
+
+pub enum CompositionStatus {
+  Active
+  Committed
+  Cancelled
+} derive(Eq)
+pub fn CompositionStatus::equal(Self, Self) -> Bool
+pub fn CompositionStatus::not_equal(Self, Self) -> Bool
+
+pub struct TextComposition {
+  // private fields
+}
+pub fn TextComposition::begin(TextDocument, TextRange) -> Result[Self, CompositionError]
+pub fn TextComposition::cancel(Self) -> Result[Self, CompositionError]
+pub fn TextComposition::commit(Self, String) -> Result[Self, CompositionError]
+pub fn TextComposition::document(Self) -> TextDocument
+pub fn TextComposition::marked_range(Self) -> TextRange?
+pub fn TextComposition::status(Self) -> CompositionStatus
+pub fn TextComposition::update(Self, String, TextSelection) -> Result[Self, CompositionError]
+
 pub struct TextDocument {
   text : String
   selection : TextSelection
