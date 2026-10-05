@@ -1254,6 +1254,26 @@ static void test_origin_gpu_diagnostic_and_late_preservation(int host,
    * the preceding ordinary run has staged its mask. */
   assert_origin_preflight_preserves(host, window, invalid,
       (int32_t)(sizeof(invalid) / sizeof(double)), one, 1, GPUI_INVALID);
+  /* A large origin and matching local clip can cancel back onscreen through
+   * an affine translation. Its positive but distorted ink endpoints must
+   * still reject before allocation/clear, not stretch the mask's UV span. */
+  const double huge = 18014398509481984.0; /* 2^54 */
+  for (int axis = 0; axis < 2; ++axis) {
+    double precision[5 + 3 * FIELD_STRIDE_ORIGIN] = {0};
+    init_origin_frame(precision, width, height, scale);
+    set_origin_quad(precision + 5, width, height, 255, 0, 0, 255);
+    set_origin_text(precision + 5 + FIELD_STRIDE_ORIGIN, 8, 8, 40, 24,
+                    0, 0, width, height, 0, 1, 18, 0, 0);
+    double *record = precision + 5 + 2 * FIELD_STRIDE_ORIGIN;
+    set_origin_text(record, axis == 0 ? huge : 0, axis == 1 ? huge : 0,
+                    128, 64, 0, 0, width, height, 0, 1, 32,
+                    axis == 0 ? huge : 0, axis == 1 ? huge : 0);
+    record[10] = record[11] = 0;
+    record[13] = axis == 0 ? -huge : 0;
+    record[14] = axis == 1 ? -huge : 0;
+    assert_origin_preflight_preserves(host, window, precision,
+        (int32_t)(sizeof(precision) / sizeof(double)), one, 1, GPUI_INVALID);
+  }
   double legacy_origin[5 + FIELD_STRIDE_ORIGIN] = {0};
   init_origin_frame(legacy_origin, width, height, scale);
   set_origin_quad(legacy_origin + 5, width, height, 255, 0, 0, 255);

@@ -143,7 +143,9 @@ v1 mask struct and entry semantics. The v2 tile includes one sampling texel at
 interior crop edges, clipped to full pixel ink; exact visible geometry and UV
 crop stay independent of that halo. All tile and A8 budgets include it before
 allocation. The v1/legacy renderer explicitly keeps no-halo storage and
-filtering. Consumers that do not understand the new
+filtering. V2 rejects clip/ink endpoint or extent roundtrip error above a fixed
+1/4096 logical pixel before allocating, including huge origins later cancelled
+by a transform. Consumers that do not understand the new
 item must reject it, and public exhaustive matches need an explicit
 `TextRunItem` arm. This remains a narrow plain run, not portable shaping or a
 richer general text contract.

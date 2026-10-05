@@ -540,6 +540,21 @@ static int32_t raster_layout_core(
       fabs(layout_left) > 3e20 || fabs(layout_top) > 3e20 ||
       fabs(layout_right) > 3e20 || fabs(layout_bottom) > 3e20)
     return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+  if (tile_mode == RASTER_FILTER_HALO) {
+    /* Positive extents alone do not admit catastrophic cancellation: even a
+     * representable huge origin can distort a small clip/ink rectangle by
+     * whole pixels. Permit only a fixed sub-Pango-quantum logical error. */
+    const double tolerance = GPUI_LINUX_TEXT_COORDINATE_TOLERANCE;
+    if (fabs((clip_right - clip_x) - bounds_width) > tolerance ||
+        fabs((clip_bottom - clip_y) - bounds_height) > tolerance ||
+        fabs((layout_right - layout_left) - bounds_width) > tolerance ||
+        fabs((layout_bottom - layout_top) - bounds_height) > tolerance ||
+        fabs((layout_left + text_origin_x) - clip_x) > tolerance ||
+        fabs((layout_top + text_origin_y) - clip_y) > tolerance ||
+        fabs((layout_right + text_origin_x) - clip_right) > tolerance ||
+        fabs((layout_bottom + text_origin_y) - clip_bottom) > tolerance)
+      return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+  }
   int32_t admission = gpui_linux_text_require_raster_v1(GPUI_LINUX_TEXT_ABI);
   if (admission != GPUI_LINUX_TEXT_OK)
     return admission;
@@ -652,6 +667,18 @@ static int32_t raster_layout_core(
       result.u1 <= result.u0 || result.v1 <= result.v0) {
     free_layout(&objects);
     return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+  }
+  if (tile_mode == RASTER_FILTER_HALO) {
+    const double tolerance = GPUI_LINUX_TEXT_COORDINATE_TOLERANCE;
+    if (fabs((result.mask.left - text_origin_x) - left) > tolerance ||
+        fabs((result.mask.top - text_origin_y) - top) > tolerance ||
+        fabs((result.mask.right - text_origin_x) - right) > tolerance ||
+        fabs((result.mask.bottom - text_origin_y) - bottom) > tolerance ||
+        fabs((result.mask.right - result.mask.left) - (right - left)) > tolerance ||
+        fabs((result.mask.bottom - result.mask.top) - (bottom - top)) > tolerance) {
+      free_layout(&objects);
+      return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+    }
   }
   result.mask.width = (int32_t)width;
   result.mask.height = (int32_t)height;

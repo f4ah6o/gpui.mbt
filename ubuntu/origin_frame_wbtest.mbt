@@ -81,6 +81,59 @@ test "mixed ABI3 preserves legacy fields and independently carries run origin" {
 }
 
 ///|
+test "ABI3 serializer preserves large origin and clip through affine cancellation" {
+  // This fixture exercises only scene-to-ABI3 serialization. Precision
+  // rejection belongs to the native raster renderer, not this serializer.
+  let large = 1.4411518807585587e17
+  let bounds = origin_frame_rect(large, large, 128.0, 64.0)
+  let viewport = origin_frame_rect(0.0, 0.0, large + 128.0, large + 64.0)
+  let text_origin = @primitives.Point::new(large, large).unwrap()
+  let transform = @scene.AffineTransform::new(
+    1.0,
+    0.0,
+    0.0,
+    1.0,
+    -large,
+    -large,
+  ).unwrap()
+  let run = @scene.SceneItem::text_run(
+    11,
+    bounds,
+    text_origin,
+    "H",
+    32.0,
+    @primitives.Color::rgba(20, 24, 30, 255).unwrap(),
+    transform,
+    1.0,
+    Some(12),
+  ).unwrap()
+  let chain = @scene.ClipChain::new(12, [bounds])
+  let snapshot = @scene.SceneSnapshot::new(viewport, 1.0, [], [chain], [run]).unwrap()
+  let frame = mixed_frame_data(snapshot).unwrap()
+  let offset = 5
+  assert_eq(frame.abi, 3)
+  assert_eq(frame.data.length(), 5 + 25)
+  assert_eq(frame.text, b"H")
+  assert_eq(frame.data[offset], 2.0)
+  assert_eq(frame.data[offset + 1], large)
+  assert_eq(frame.data[offset + 2], large)
+  assert_eq(frame.data[offset + 3], 128.0)
+  assert_eq(frame.data[offset + 4], 64.0)
+  assert_eq(frame.data[offset + 9], 1.0)
+  assert_eq(frame.data[offset + 10], 0.0)
+  assert_eq(frame.data[offset + 11], 0.0)
+  assert_eq(frame.data[offset + 12], 1.0)
+  assert_eq(frame.data[offset + 13], -large)
+  assert_eq(frame.data[offset + 14], -large)
+  assert_eq(frame.data[offset + 16], large)
+  assert_eq(frame.data[offset + 17], large)
+  assert_eq(frame.data[offset + 18], 128.0)
+  assert_eq(frame.data[offset + 19], 64.0)
+  assert_eq(frame.data[offset + 23], large)
+  assert_eq(frame.data[offset + 24], large)
+}
+
+///|
 test "legacy-only text still selects unchanged ABI2 layout" {
   let viewport = origin_frame_rect(0.0, 0.0, 100.0, 80.0)
   let item = @scene.SceneItem::text(

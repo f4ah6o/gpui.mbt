@@ -59,6 +59,8 @@ struct gpui_linux_text_mask {
  * and UVs (unknown count may be nonzero). Failure leaves the whole output
  * unchanged; release_v2 clears all fields and is safe to repeat. */
 #define GPUI_LINUX_TEXT_RASTER_ABI 2
+/* Fixed logical-pixel roundtrip tolerance, below the 1/1024 Pango unit. */
+#define GPUI_LINUX_TEXT_COORDINATE_TOLERANCE (1.0 / 4096.0)
 struct gpui_linux_text_mask_v2 {
   struct gpui_linux_text_mask mask;
   double u0, v0, u1, v1;

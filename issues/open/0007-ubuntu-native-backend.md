@@ -346,7 +346,7 @@ PR #30 remains draft after pre-start runner cancellation. Its Windows, macOS,
 documentation, and headless Pango jobs passed; GPU, core, browser, and mutation
 jobs are not qualified. A bounded retry of an Ubuntu failed job was again
 cancelled before runner start; no source or billing cause is established. New
-encoder/GPU acceptance cases are being prepared and hosted proof remains
+encoder/GPU acceptance cases compile and hosted execution remains
 pending. No GPU execution or publication is claimed. Control-to-renderer
 fixtures are injected and do not show compositor keyboard delivery. Actual
 compositor-delivered typing is **unrun**: the stock Weston 13 headless setup

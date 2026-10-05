@@ -705,6 +705,51 @@ static void test_far_origin_preflight_and_checked_coordinates(void) {
       0.0, 1.0e20, 0.0, 64.0, 32.0, test_mask_budget);
 }
 
+static void test_large_translated_origin_precision_gate(void) {
+  static const uint8_t text[] = "H";
+  static const double large_origins[] = {0x1p54, 0x1p57};
+
+  /* The item-local H ink is only about 18 logical pixels wide. Adding it to
+   * these origins rounds the returned visible endpoints onto a coarser grid
+   * (at 2^54 the returned span used to shrink to 16 px; at 2^57 it expanded
+   * to 32 px). The renderer must reject before allocation and leave even a
+   * caller's pre-populated result untouched. Exercise x and y independently. */
+  for (size_t i = 0; i < sizeof(large_origins) / sizeof(large_origins[0]);
+       ++i) {
+    double origin = large_origins[i];
+    expect_raster_v2_failure(
+        GPUI_LINUX_TEXT_INVALID_COORDINATES, GPUI_LINUX_TEXT_RASTER_ABI,
+        text, 1, dejavu, (int32_t)(sizeof(dejavu) - 1), 32.0, origin, 0.0,
+        origin, 0.0, 128.0, 64.0, test_mask_budget);
+    expect_raster_v2_failure(
+        GPUI_LINUX_TEXT_INVALID_COORDINATES, GPUI_LINUX_TEXT_RASTER_ABI,
+        text, 1, dejavu, (int32_t)(sizeof(dejavu) - 1), 32.0, 0.0, origin,
+        0.0, origin, 128.0, 64.0, test_mask_budget);
+  }
+
+  /* A positive extent can still be distorted even when adding it to the clip
+   * endpoint yields a distinct double. 6 px becomes a 4- or 8-px delta at
+   * 2^54, so both axis extent checks must fail closed too. */
+  const double large = 0x1p54;
+  expect_raster_v2_failure(
+      GPUI_LINUX_TEXT_INVALID_COORDINATES, GPUI_LINUX_TEXT_RASTER_ABI, text,
+      1, dejavu, (int32_t)(sizeof(dejavu) - 1), 32.0, large, 0.0, large,
+      0.0, 6.0, 64.0, test_mask_budget);
+  expect_raster_v2_failure(
+      GPUI_LINUX_TEXT_INVALID_COORDINATES, GPUI_LINUX_TEXT_RASTER_ABI, text,
+      1, dejavu, (int32_t)(sizeof(dejavu) - 1), 32.0, 0.0, large, 0.0,
+      large, 128.0, 6.0, test_mask_budget);
+
+  /* Ordinary fractional origins remain supported at logical-pixel precision. */
+  struct gpui_linux_text_mask_v2 fractional = {0};
+  CHECK(raster_v2(text, 1, dejavu, (int32_t)(sizeof(dejavu) - 1), 32.0,
+                  13.25, 7.5, 13.25, 7.5, 128.0, 64.0,
+                  test_mask_budget, &fractional) == GPUI_LINUX_TEXT_OK);
+  CHECK(fractional.mask.pixels != NULL && mask_sum(&fractional.mask) > 0);
+  check_uv_for_origin(&fractional, 13.25, 7.5);
+  gpui_linux_text_mask_release_v2(&fractional);
+}
+
 static void test_raster_budget_caps_and_release(void) {
   static const uint8_t text[] = "H";
   static const uint8_t too_wide[] = "WWWWWWWWWWWWWWWW";
@@ -882,6 +927,7 @@ int main(void) {
   test_h18_fractional_crop_linear_halo();
   test_zero_coverage_crop_release();
   test_far_origin_preflight_and_checked_coordinates();
+  test_large_translated_origin_precision_gate();
   test_raster_budget_caps_and_release();
   test_scene_admission_v2();
   test_scene_admission_v2_validation();

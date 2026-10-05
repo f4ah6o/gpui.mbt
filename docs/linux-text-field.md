@@ -96,7 +96,9 @@ v1 mask plus UV crop coordinates in a separate v2 result, preserving the v1
 mask struct and entry semantics. V2 keeps a one-texel sampling halo at interior
 crop edges, bounded by full pixel ink and charged to all mask budgets before
 allocation; exact visible geometry and UV crop remain independent. V1 keeps its
-legacy no-halo storage and filtering. Envelope v1 permits item-variant additions,
+legacy no-halo storage and filtering. V2 also rejects clip/ink roundtrip error
+above a fixed 1/4096 logical pixel before allocation. Envelope v1 permits
+item-variant additions,
 so consumers must reject unknown variants, and public exhaustive matches must
 add an explicit `TextRunItem` case. The backend and native contracts are
 documented in the [Linux text guide](linux-text.md#ubuntu-grayscale-scene-text)

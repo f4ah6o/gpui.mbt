@@ -65,6 +65,13 @@ the entire output unchanged, and `mask_release_v2` clears all fields safely on
 repeat. Raster v1 explicitly uses the unchanged legacy no-halo mode, preserving
 its pixel storage and filtering.
 
+V2 admits clip/layout/translated visible endpoints and extents only when their
+roundtrip error is at most 1/4096 logical pixel, a fixed tolerance below one
+Pango unit (1/1024 px). Positive-but-distorted geometry at huge finite origins
+returns `InvalidCoordinates` before mask allocation, even when a later affine
+translation could bring it onscreen. Ordinary fractional origins remain valid.
+This does not extend the legacy v1 coordinate/storage contract.
+
 ## Coordinates and query semantics
 
 - The adapter fixes PangoFT2 resolution at 96 DPI and accepts absolute pixel
