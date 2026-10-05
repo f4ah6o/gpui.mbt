@@ -98,7 +98,6 @@ test "portable browser app preserves logical dimensions across DPR changes" {
   @browser_app.BrowserDemo::dispose(demo)
 }
 
-
 ///|
 test "browser resize refreshes cursor without another pointer move" {
   let demo = create_browser_demo()
