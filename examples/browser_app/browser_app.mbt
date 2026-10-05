@@ -36,6 +36,16 @@ struct DemoModel {
   mut last_key : String
   mut last_committed_text : String
   mut text_commit_count : Int
+  pressed_buttons : Array[@primitives.MouseButton]
+  pressed_keys : Array[@primitives.Key]
+  mut pointer_downs : Int
+  mut pointer_ups : Int
+  mut key_downs : Int
+  mut key_ups : Int
+  mut key_repeats : Int
+  mut unmatched_pointer_ups : Int
+  mut unmatched_key_ups : Int
+  mut last_modifiers : @primitives.Modifiers
 }
 
 ///|
@@ -82,6 +92,16 @@ fn initial_model() -> DemoModel {
     last_key: "—",
     last_committed_text: "",
     text_commit_count: 0,
+    pressed_buttons: [],
+    pressed_keys: [],
+    pointer_downs: 0,
+    pointer_ups: 0,
+    key_downs: 0,
+    key_ups: 0,
+    key_repeats: 0,
+    unmatched_pointer_ups: 0,
+    unmatched_key_ups: 0,
+    last_modifiers: @primitives.Modifiers::none(),
   }
 }
 
@@ -308,6 +328,19 @@ fn valid_point(x : Double, y : Double) -> @primitives.Point? {
 }
 
 ///|
+/// Keep one entry per accepted down: distinct physical keys can have the same
+/// logical key, so each release removes only one matching held entry.
+fn[T : Eq] release_pressed(pressed : Array[T], value : T) -> Bool {
+  for index in 0..<pressed.length() {
+    if pressed[index] == value {
+      ignore(pressed.remove(index))
+      return true
+    }
+  }
+  false
+}
+
+///|
 fn apply_event(model : DemoModel, event : @platform.Event) -> DemoModel {
   let updated = model
   updated.last_sequence = event.sequence()
@@ -352,7 +385,10 @@ fn apply_event(model : DemoModel, event : @platform.Event) -> DemoModel {
           )
           updated.last_event = "pointer move"
         }
-        @primitives.PointerButtonPressed(position~, button~, ..) => {
+        @primitives.PointerButtonPressed(position~, button~, modifiers~) => {
+          updated.last_modifiers = modifiers
+          updated.pressed_buttons.push(button)
+          updated.pointer_downs += 1
           updated.pointer_x = Some(position.x())
           updated.pointer_y = Some(position.y())
           let target = hit_test(
@@ -377,9 +413,22 @@ fn apply_event(model : DemoModel, event : @platform.Event) -> DemoModel {
             }
           }
         }
-        @primitives.PointerButtonReleased(..) =>
+        @primitives.PointerButtonReleased(button~, modifiers~, ..) => {
+          updated.last_modifiers = modifiers
+          updated.pointer_ups += 1
+          if !release_pressed(updated.pressed_buttons, button) {
+            updated.unmatched_pointer_ups += 1
+          }
           updated.last_event = "pointer up"
-        @primitives.KeyPressed(key~, modifiers~, ..) => {
+        }
+        @primitives.KeyPressed(key~, modifiers~, repeat~) => {
+          updated.last_modifiers = modifiers
+          if repeat {
+            updated.key_repeats += 1
+          } else {
+            updated.pressed_keys.push(key)
+            updated.key_downs += 1
+          }
           updated.last_key = key_label(key)
           updated.last_event = "key down"
           match key {
@@ -403,7 +452,12 @@ fn apply_event(model : DemoModel, event : @platform.Event) -> DemoModel {
               }
           }
         }
-        @primitives.KeyReleased(key~, ..) => {
+        @primitives.KeyReleased(key~, modifiers~) => {
+          updated.last_modifiers = modifiers
+          updated.key_ups += 1
+          if !release_pressed(updated.pressed_keys, key) {
+            updated.unmatched_key_ups += 1
+          }
           updated.last_key = key_label(key)
           updated.last_event = "key up"
         }
@@ -532,6 +586,45 @@ fn key_label(key : @primitives.Key) -> String {
     @primitives.PageUp => "PageUp"
     @primitives.PageDown => "PageDown"
   }
+}
+
+///|
+fn input_state_json(model : DemoModel) -> String {
+  let builder = StringBuilder()
+  builder.write_string("{\"pressedButtons\":[")
+  for index, button in model.pressed_buttons {
+    if index > 0 {
+      builder.write_string(",")
+    }
+    let browser_button = match button {
+      @primitives.Primary => 0
+      @primitives.Middle => 1
+      @primitives.Secondary => 2
+      @primitives.Back => 3
+      @primitives.Forward => 4
+    }
+    builder.write_string("\{browser_button}")
+  }
+  builder.write_string("],\"pressedKeys\":[")
+  for index, key in model.pressed_keys {
+    if index > 0 {
+      builder.write_string(",")
+    }
+    let logical_key = match key {
+      @primitives.Character(value) => value
+      @primitives.Space => " "
+      _ => key_label(key)
+    }
+    builder.write_string(json_quote(logical_key))
+  }
+  builder.write_string(
+    "],\"pointerDowns\":\{model.pointer_downs},\"pointerUps\":\{model.pointer_ups},\"keyDowns\":\{model.key_downs},\"keyUps\":\{model.key_ups},\"keyRepeats\":\{model.key_repeats},\"unmatchedPointerUps\":\{model.unmatched_pointer_ups},\"unmatchedKeyUps\":\{model.unmatched_key_ups}",
+  )
+  let modifiers = model.last_modifiers
+  builder.write_string(
+    ",\"lastModifiers\":{\"shift\":\{modifiers.shift()},\"control\":\{modifiers.control()},\"alt\":\{modifiers.alt()},\"meta\":\{modifiers.meta()}}}",
+  )
+  builder.to_string()
 }
 
 ///|
@@ -914,6 +1007,30 @@ fn enqueue(
 }
 
 ///|
+/// Semantic host actions are discrete keyboard taps, with both halves queued
+/// so they cannot leave a framework-owned key held after activation or focus.
+fn enqueue_key_tap(
+  runtime : BrowserDemo,
+  key : @primitives.Key,
+  modifiers : @primitives.Modifiers,
+) -> Result[Unit, BrowserDemoError] {
+  match
+    enqueue(
+      runtime,
+      @platform.Input(@primitives.KeyPressed(key~, modifiers~, repeat=false)),
+      runtime.host_scale,
+    ) {
+    Err(error) => Err(error)
+    Ok(_) =>
+      enqueue(
+        runtime,
+        @platform.Input(@primitives.KeyReleased(key~, modifiers~)),
+        runtime.host_scale,
+      )
+  }
+}
+
+///|
 /// Start one portable demo app instance. The app owns its model entity and the
 /// common event ingress; no browser references enter this package.
 pub fn BrowserDemo::new() -> Result[BrowserDemo, @diagnostics.FrameworkError] {
@@ -1122,7 +1239,7 @@ pub fn BrowserDemo::status_json(self : BrowserDemo) -> String {
       let cursor = json_quote(cursor_label(cursor_for_hover(model.hover_id)))
       let focus = id_json(model.focus_id)
       let target = id_json(model.last_target)
-      "{\"active\":\{!self.stopped},\"logicalWidth\":\{model.width},\"logicalHeight\":\{model.height},\"dpr\":\{model.scale},\"hover\":\{hover},\"cursor\":\{cursor},\"focus\":\{focus},\"target\":\{target},\"clicks\":\{model.clicks},\"capabilityValue\":\{model.capability_value},\"scrollX\":\{model.scroll_x},\"scrollY\":\{model.scroll_y},\"events\":\{model.processed_events},\"lastSequence\":\{model.last_sequence},\"lastEvent\":\{json_quote(model.last_event)},\"lastKey\":\{json_quote(model.last_key)},\"lastCommittedText\":\{json_quote(model.last_committed_text)},\"textCommitCount\":\{model.text_commit_count},\"focused\":\{model.focused},\"visible\":\{model.visible}}"
+      "{\"active\":\{!self.stopped},\"logicalWidth\":\{model.width},\"logicalHeight\":\{model.height},\"dpr\":\{model.scale},\"hover\":\{hover},\"cursor\":\{cursor},\"focus\":\{focus},\"target\":\{target},\"clicks\":\{model.clicks},\"capabilityValue\":\{model.capability_value},\"scrollX\":\{model.scroll_x},\"scrollY\":\{model.scroll_y},\"events\":\{model.processed_events},\"lastSequence\":\{model.last_sequence},\"lastEvent\":\{json_quote(model.last_event)},\"lastKey\":\{json_quote(model.last_key)},\"lastCommittedText\":\{json_quote(model.last_committed_text)},\"textCommitCount\":\{model.text_commit_count},\"focused\":\{model.focused},\"visible\":\{model.visible},\"inputState\":\{input_state_json(model)}}"
     }
   }
 }
@@ -1271,18 +1388,7 @@ pub fn BrowserDemo::focus_semantic_node(
           meta=false,
         )
         for _ in 0..<steps {
-          match
-            enqueue(
-              self,
-              @platform.Input(
-                @primitives.KeyPressed(
-                  key=@primitives.Tab,
-                  modifiers~,
-                  repeat=false,
-                ),
-              ),
-              self.host_scale,
-            ) {
+          match enqueue_key_tap(self, @primitives.Tab, modifiers) {
             Err(error) => return Err(error)
             Ok(_) => ()
           }
@@ -1309,21 +1415,7 @@ pub fn BrowserDemo::activate_semantic_node(
     Err(error) => Err(error)
     Ok(_) => {
       let modifiers = @primitives.Modifiers::none()
-      match
-        enqueue(
-          self,
-          @platform.Input(
-            @primitives.KeyPressed(
-              key=@primitives.Enter,
-              modifiers~,
-              repeat=false,
-            ),
-          ),
-          self.host_scale,
-        ) {
-        Err(error) => Err(error)
-        Ok(_) => Ok(())
-      }
+      enqueue_key_tap(self, @primitives.Enter, modifiers)
     }
   }
 }

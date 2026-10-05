@@ -506,5 +506,384 @@ export async function runRendererRecoverySmoke({ page, context }) {
     await cdp.detach();
   }
   await ready();
-  console.log("Renderer recovery smoke passed: synthetic context lifecycle, retained state and pixels, blocked input, single repaint, failed acquisition/paint, focus changes before first paint, hidden restoration, live DPR/resize, and stale remount callbacks.");
+  await runInputCancellationSmoke(page, ready);
+  console.log("Renderer recovery smoke passed: synthetic context lifecycle, retained state and pixels, blocked input, balanced pointer/key cancellation, trusted capture release, failed acquisition/paint, focus changes before first paint, hidden restoration, live DPR/resize, and stale remount callbacks.");
+}
+
+async function runInputCancellationSmoke(page, ready) {
+  const read = () => page.evaluate(() => window.__gpuiSmokeStatus());
+  const actual = [];
+  const expected = [];
+  try {
+    for (const source of ["pointer", "canvas-key", "aria-key"]) {
+      for (const drained of [false, true]) {
+        await page.locator("#remount").click();
+        await ready();
+        await page.locator("#gpui-accessibility-node-4").focus();
+        await ready();
+        if (source !== "aria-key") {
+          await page.locator("#gpui-viewport").focus();
+          await ready();
+        }
+        const before = await read();
+        assert.ok(before.inputState, "the portable app reports its admitted input state");
+        await page.evaluate((kind) => {
+          const canvas = document.querySelector("#gpui-viewport");
+          const target = kind === "aria-key" ? document.querySelector("#gpui-accessibility-node-4") : canvas;
+          const bounds = canvas.getBoundingClientRect();
+          const pointer = {
+            bubbles: true, cancelable: true, pointerId: 311, pointerType: "mouse",
+            clientX: bounds.left + 120, clientY: bounds.top + 238, button: 0,
+          };
+          const key = { bubbles: true, cancelable: true, key: "Enter", code: "Enter", location: 0 };
+          window.__gpuiHeldInput = {
+            down() {
+              target.dispatchEvent(kind === "pointer"
+                ? new PointerEvent("pointerdown", { ...pointer, buttons: 1 })
+                : new KeyboardEvent("keydown", key));
+            },
+            up() {
+              target.dispatchEvent(kind === "pointer"
+                ? new PointerEvent("pointerup", { ...pointer, buttons: 0 })
+                : new KeyboardEvent("keyup", key));
+            },
+            lose() { canvas.dispatchEvent(new Event("contextlost", { cancelable: true })); },
+            restore() { canvas.dispatchEvent(new Event("contextrestored")); },
+          };
+        }, source);
+        await page.evaluate((isDrained) => {
+          const input = window.__gpuiHeldInput;
+          input.down();
+          if (!isDrained) {
+            input.lose();
+            input.up();
+          }
+        }, drained);
+        if (drained) {
+          await ready();
+          const held = (await read()).inputState;
+          assert.deepEqual(held.pressedButtons, source === "pointer" ? [0] : []);
+          assert.deepEqual(held.pressedKeys, source === "pointer" ? [] : ["Enter"]);
+          await page.evaluate(() => {
+            window.__gpuiHeldInput.lose();
+            window.__gpuiHeldInput.up();
+          });
+        }
+        await page.evaluate(() => window.__gpuiHeldInput.restore());
+        await ready();
+        const recovered = await read();
+        await page.evaluate(() => window.__gpuiHeldInput.up());
+        await ready();
+        const late = await read();
+        await page.evaluate(() => {
+          window.__gpuiHeldInput.down();
+          window.__gpuiHeldInput.up();
+        });
+        await ready();
+        const fresh = await read();
+        const name = `${source}: ${drained ? "already drained" : "queued before loss"}`;
+        actual.push({
+          name,
+          pressedButtons: recovered.inputState.pressedButtons,
+          pressedKeys: recovered.inputState.pressedKeys,
+          pointerDowns: recovered.inputState.pointerDowns - before.inputState.pointerDowns,
+          pointerUps: recovered.inputState.pointerUps - before.inputState.pointerUps,
+          keyDowns: recovered.inputState.keyDowns - before.inputState.keyDowns,
+          keyUps: recovered.inputState.keyUps - before.inputState.keyUps,
+          counterDelta: recovered.capabilityValue - before.capabilityValue,
+          lateUpIgnored: JSON.stringify(late.inputState) === JSON.stringify(recovered.inputState),
+          freshGestureBalanced: fresh.inputState.pressedButtons.length === 0
+            && fresh.inputState.pressedKeys.length === 0
+            && fresh.inputState.unmatchedPointerUps === before.inputState.unmatchedPointerUps
+            && fresh.inputState.unmatchedKeyUps === before.inputState.unmatchedKeyUps,
+          freshCounterDelta: fresh.capabilityValue - before.capabilityValue,
+        });
+        expected.push({
+          name, pressedButtons: [], pressedKeys: [],
+          pointerDowns: source === "pointer" ? 1 : 0,
+          pointerUps: source === "pointer" ? 1 : 0,
+          keyDowns: source === "pointer" ? 0 : 1,
+          keyUps: source === "pointer" ? 0 : 1,
+          counterDelta: 1, lateUpIgnored: true, freshGestureBalanced: true, freshCounterDelta: 2,
+        });
+      }
+    }
+    assert.deepEqual(actual, expected, "each accepted down is paired once across loss, including queued downs and late physical ups");
+    await runInputCancellationEdges(page, ready);
+  } finally {
+    await page.evaluate(() => { delete window.__gpuiHeldInput; });
+    await page.locator("#remount").click();
+    await ready();
+  }
+}
+
+async function runInputCancellationEdges(page, ready) {
+  const read = () => page.evaluate(() => window.__gpuiSmokeStatus());
+  const delta = (state, before) => Object.fromEntries([
+    "pointerDowns", "pointerUps", "keyDowns", "keyUps", "keyRepeats",
+    "unmatchedPointerUps", "unmatchedKeyUps",
+  ].map((key) => [key, state.inputState[key] - before.inputState[key]]));
+  const clearFixture = () => page.evaluate(() => {
+    for (const cleanup of window.__gpuiInputEdges?.cleanups.reverse() || []) cleanup();
+    delete window.__gpuiInputEdges;
+  });
+  const reset = async () => {
+    await clearFixture();
+    await page.locator("#remount").click();
+    await ready();
+    await page.locator("#gpui-viewport").focus();
+    await ready();
+    await page.evaluate(() => {
+      const canvas = document.querySelector("#gpui-viewport");
+      window.__gpuiInputEdges = {
+        canvas, context: canvas.getContext("2d"), cleanups: [],
+        patch(object, property, value) {
+          const descriptor = Object.getOwnPropertyDescriptor(object, property);
+          Object.defineProperty(object, property, { configurable: true, value });
+          const undo = () => {
+            if (descriptor) Object.defineProperty(object, property, descriptor);
+            else delete object[property];
+          };
+          this.cleanups.push(undo);
+          return undo;
+        },
+        key(type, key, code, options = {}, target = canvas) {
+          target.dispatchEvent(new KeyboardEvent(type, { bubbles: true, cancelable: true, key, code, ...options }));
+        },
+        pointer(type, button = 0, pointerId = 311, options = {}, target = canvas) {
+          const bounds = canvas.getBoundingClientRect();
+          target.dispatchEvent(new PointerEvent(type, {
+            bubbles: true, cancelable: true, pointerId, pointerType: "mouse", button,
+            clientX: bounds.left + 120, clientY: bounds.top + 238,
+            buttons: type === "pointerdown" ? 1 : 0, ...options,
+          }));
+        },
+        lose() { canvas.dispatchEvent(new Event("contextlost", { cancelable: true })); },
+        restore() { canvas.dispatchEvent(new Event("contextrestored")); },
+      };
+    });
+    return read();
+  };
+
+  try {
+    // Multiple physical keys can share one logical key. Repeats and duplicate
+    // downs must still leave only one release debt per admitted physical hold.
+    const beforeAliases = await reset();
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      const modified = { shiftKey: true, ctrlKey: true, altKey: true, metaKey: true };
+      for (let button = 0; button < 5; button += 1) input.pointer("pointerdown", button, 311, modified);
+      input.pointer("pointerdown", 0, 311, modified);
+      input.pointer("pointerdown", 0, 312, modified);
+      input.key("keydown", "Shift", "ShiftLeft", { ...modified, location: 1 });
+      input.key("keydown", "Shift", "ShiftRight", { ...modified, location: 2 });
+      input.key("keydown", "A", "KeyA", modified);
+      input.key("keydown", "A", "KeyA", { ...modified, repeat: true });
+      input.key("keydown", "A", "KeyA", modified);
+    });
+    await ready();
+    const heldAliases = await read();
+    assert.deepEqual(heldAliases.inputState.pressedButtons, [0, 1, 2, 3, 4, 0]);
+    assert.deepEqual(heldAliases.inputState.pressedKeys, ["Shift", "Shift", "A"]);
+    assert.deepEqual(heldAliases.inputState.lastModifiers, { shift: true, control: true, alt: true, meta: true });
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      input.lose();
+      input.lose();
+      for (let button = 0; button < 5; button += 1) input.pointer("pointerup", button);
+      input.pointer("pointerup", 0, 312);
+      input.key("keyup", "Shift", "ShiftLeft", { location: 1 });
+      input.key("keyup", "Shift", "ShiftRight", { location: 2 });
+      input.key("keyup", "a", "KeyA");
+      input.restore();
+    });
+    await ready();
+    const releasedAliases = await read();
+    assert.deepEqual(delta(releasedAliases, beforeAliases), {
+      pointerDowns: 6, pointerUps: 6, keyDowns: 3, keyUps: 3, keyRepeats: 2,
+      unmatchedPointerUps: 0, unmatchedKeyUps: 0,
+    });
+    assert.deepEqual(releasedAliases.inputState.pressedButtons, []);
+    assert.deepEqual(releasedAliases.inputState.pressedKeys, []);
+    assert.deepEqual(releasedAliases.inputState.lastModifiers, { shift: false, control: false, alt: false, meta: false }, "cancellation clears modifier latches");
+    assert.equal(releasedAliases.capabilityValue - beforeAliases.capabilityValue, 2, "only the two accepted primary downs activate");
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      input.key("keydown", "a", "KeyA", { repeat: true });
+      input.key("keyup", "a", "KeyA");
+      input.key("keyup", "Shift", "ShiftLeft", { location: 1 });
+      input.pointer("pointerup");
+      input.pointer("lostpointercapture", -1);
+    });
+    await ready();
+    assert.deepEqual((await read()).inputState, releasedAliases.inputState, "cancelled auto-repeat and delayed native releases remain suppressed");
+
+    // A normal matching up uses the original logical key and follows a hold
+    // into legacy DOM. Unrelated keys in that editor remain local.
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      input.key("keydown", "A", "KeyA", { shiftKey: true });
+      input.key("keyup", "a", "KeyA");
+      input.key("keydown", "b", "KeyB");
+      const editor = document.querySelector("#legacy-island textarea");
+      editor.focus();
+      input.key("keyup", "b", "KeyB", {}, editor);
+      input.key("keydown", "z", "KeyZ", {}, editor);
+      input.key("keyup", "z", "KeyZ", {}, editor);
+    });
+    await ready();
+    const afterLegacyUp = await read();
+    assert.deepEqual(delta(afterLegacyUp, releasedAliases), {
+      pointerDowns: 0, pointerUps: 0, keyDowns: 2, keyUps: 2, keyRepeats: 0,
+      unmatchedPointerUps: 0, unmatchedKeyUps: 0,
+    });
+    assert.deepEqual(afterLegacyUp.inputState.pressedKeys, []);
+
+    // Semantic Tab is a discrete balanced tap, but its physical repeat stream
+    // must still stop at loss instead of moving selection after restoration.
+    const beforeTab = await reset();
+    await page.evaluate(() => window.__gpuiInputEdges.key("keydown", "Tab", "Tab"));
+    await ready();
+    assert.equal((await read()).focus, 4);
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      input.lose();
+      input.restore();
+    });
+    await ready();
+    const cancelledTab = await read();
+    assert.deepEqual(delta(cancelledTab, beforeTab), {
+      pointerDowns: 0, pointerUps: 0, keyDowns: 1, keyUps: 1, keyRepeats: 0,
+      unmatchedPointerUps: 0, unmatchedKeyUps: 0,
+    });
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      input.key("keydown", "Tab", "Tab", { repeat: true }, document.activeElement);
+      input.key("keyup", "Tab", "Tab", {}, document.activeElement);
+    });
+    await ready();
+    assert.equal((await read()).focus, 4);
+    assert.deepEqual((await read()).inputState, cancelledTab.inputState);
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      input.key("keydown", "Tab", "Tab", {}, document.activeElement);
+      input.key("keyup", "Tab", "Tab", {}, document.activeElement);
+    });
+    await ready();
+    const freshTab = await read();
+    assert.equal(freshTab.focus, 5);
+    assert.deepEqual(freshTab.inputState.pressedKeys, []);
+    assert.equal(freshTab.inputState.unmatchedKeyUps, 0);
+
+    // Failed acquisition preserves release debt. Once ingress accepts it, a
+    // failed paint or a second restore must not enqueue the releases again.
+    const beforeFailures = await reset();
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      input.pointer("pointerdown");
+      input.key("keydown", "Enter", "Enter");
+      input.lose();
+      input.pointer("pointerup");
+      input.key("keyup", "Enter", "Enter");
+      const undoContext = input.patch(input.canvas, "getContext", () => null);
+      input.restore();
+      undoContext();
+    });
+    assert.deepEqual((await read()).inputState, beforeFailures.inputState, "failed acquisition has not drained pending downs or releases");
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      input.undoPaint = input.patch(input.context, "fillRect", () => { throw new Error("cancelled-input paint failure"); });
+      input.restore();
+    });
+    await page.waitForFunction(() => window.__gpuiSmokeStatus().renderer.state === "lost"
+      && document.querySelector("#diagnostic-code").textContent.startsWith("callback_failure"));
+    const failedPaint = await read();
+    assert.deepEqual(delta(failedPaint, beforeFailures), {
+      pointerDowns: 1, pointerUps: 1, keyDowns: 1, keyUps: 1, keyRepeats: 0,
+      unmatchedPointerUps: 0, unmatchedKeyUps: 0,
+    });
+    assert.deepEqual(failedPaint.inputState.pressedButtons, []);
+    assert.deepEqual(failedPaint.inputState.pressedKeys, []);
+    assert.equal(failedPaint.capabilityValue - beforeFailures.capabilityValue, 2);
+    await page.evaluate(() => {
+      window.__gpuiInputEdges.lose();
+      window.__gpuiInputEdges.restore();
+    });
+    await page.waitForFunction(() => window.__gpuiSmokeStatus().renderer.state === "lost"
+      && window.__gpuiSmokeStatus().renderer.restoreAttempts === 3);
+    assert.deepEqual((await read()).inputState, failedPaint.inputState, "a second failed paint cannot replay consumed releases");
+    await page.evaluate(() => {
+      window.__gpuiInputEdges.undoPaint();
+      window.__gpuiInputEdges.restore();
+    });
+    await ready();
+    const afterFailures = await read();
+    assert.deepEqual(afterFailures.inputState, failedPaint.inputState);
+    assert.equal(afterFailures.capabilityValue, failedPaint.capabilityValue);
+    assert.equal(afterFailures.renderer.recoveries, 1);
+
+    // This down is trusted browser input, so host capture really is active.
+    // The renderer lifecycle itself is still a deterministic synthetic event.
+    const beforeCapture = await reset();
+    await page.locator("#gpui-viewport").scrollIntoViewIfNeeded();
+    const bounds = await page.locator("#gpui-viewport").boundingBox();
+    await page.mouse.move(bounds.x + 120, bounds.y + 238);
+    await ready();
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      const loseAfterDown = (event) => {
+        input.capture = { trusted: event.isTrusted, before: input.canvas.hasPointerCapture(event.pointerId) };
+        input.lose();
+        input.capture.after = input.canvas.hasPointerCapture(event.pointerId);
+      };
+      input.canvas.addEventListener("pointerdown", loseAfterDown, { once: true });
+      input.cleanups.push(() => input.canvas.removeEventListener("pointerdown", loseAfterDown));
+    });
+    try {
+      await page.mouse.down();
+    } finally {
+      await page.mouse.up();
+    }
+    assert.deepEqual(await page.evaluate(() => window.__gpuiInputEdges.capture), { trusted: true, before: true, after: false });
+    await page.evaluate(() => window.__gpuiInputEdges.restore());
+    await ready();
+    const afterCapture = await read();
+    assert.deepEqual(delta(afterCapture, beforeCapture), {
+      pointerDowns: 1, pointerUps: 1, keyDowns: 0, keyUps: 0, keyRepeats: 0,
+      unmatchedPointerUps: 0, unmatchedKeyUps: 0,
+    });
+    assert.deepEqual(afterCapture.inputState.pressedButtons, []);
+    assert.equal(afterCapture.capabilityValue - beforeCapture.capabilityValue, 1);
+
+    // Teardown discards the old app and its debts together. Neither detached
+    // events nor old physical releases may become input in the new generation.
+    await reset();
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      input.pointer("pointerdown");
+      input.key("keydown", "Enter", "Enter");
+      input.lose();
+      document.querySelector("#remount").click();
+    });
+    await ready();
+    const remounted = await read();
+    await page.evaluate(() => {
+      const input = window.__gpuiInputEdges;
+      input.restore();
+      input.pointer("lostpointercapture", -1);
+      input.pointer("pointerup");
+      input.key("keyup", "Enter", "Enter");
+      const canvas = document.querySelector("#gpui-viewport");
+      input.pointer("pointerup", 0, 311, {}, canvas);
+      input.key("keyup", "Enter", "Enter", {}, canvas);
+      input.key("keydown", "Enter", "Enter", { repeat: true }, canvas);
+    });
+    await ready();
+    assert.deepEqual((await read()).inputState, remounted.inputState);
+    assert.deepEqual(remounted.inputState.pressedButtons, []);
+    assert.deepEqual(remounted.inputState.pressedKeys, []);
+    assert.equal((await read()).capabilityValue, 0);
+  } finally {
+    await clearFixture();
+  }
 }

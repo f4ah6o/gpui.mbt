@@ -177,6 +177,18 @@ Moving from an ARIA proxy to the legacy island clears the old action target,
 including when the canvas regains focus before the restored repaint. A later
 ARIA selection supersedes that clearing intent.
 
+The host also cancels its admitted pointer and keyboard holds across loss.
+Queued input is retained in acceptance order; each outstanding hold gets
+a matching release before the first restored drain, whether its press was
+still queued or had already reached the app. This cleanup does not depend on
+the browser delivering `lostpointercapture` or a native release while rendering
+is suspended. A release is recorded as delivered when the framework accepts
+it, so a failed repaint or repeated restoration cannot send it twice. Late
+native releases and repeats from the cancelled hold are ignored until a fresh
+press starts another gesture. Cancellation releases clear modifier flags as
+well. Semantic navigation and activation helpers send
+balanced key taps through the same portable input stream.
+
 Restoration is event-driven: one acquisition attempt per restoration event,
 with no polling or automatic retry loop. Failed acquisition stays unavailable
 until another restoration event or an explicit remount. Remount continues to
@@ -190,7 +202,11 @@ The production-artifact Chromium smoke adds clipboard round trips and denial,
 committed input and composition/lifecycle cases, and state/pixel preservation
 across context restoration. Regressions include real Ctrl+V during CDP
 composition and ARIA-to-legacy focus clearing across restoration followed by a
-return to the canvas and Enter. Context loss/restoration and hidden-document cases
+return to the canvas and Enter. Pointer/key regressions cross the boundary from
+an accepted press through loss and a suspended release to restoration; they
+inspect the shared app model's held inputs, release counts, and modifier flags
+after the drain.
+Context loss/restoration and hidden-document cases
 use explicitly dispatched browser lifecycle events; they do not establish real
 GPU fault recovery or operating-system tab/IME behavior. Test-only clipboard
 permissions apply only to the isolated Chromium context.

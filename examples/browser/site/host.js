@@ -75,6 +75,8 @@ let logicalHeight = 0;
 let deviceScale = 0;
 let listeners = [];
 const activePointerButtons = new Map();
+const activeKeys = new Map();
+const pendingInputReleases = [];
 const accessibilityButtons = new Map();
 let accessibilityLayer = null;
 let legacySurface = null;
@@ -212,6 +214,60 @@ function releasePointerCaptures() {
   }
 }
 
+function cancelHeldInputs() {
+  // Accepted downs remain in ingress (or in the app). Preserve their matching
+  // releases before clearing capture bookkeeping; native capture callbacks may
+  // be deferred, and physical ups are no longer framework input after loss.
+  for (const buttons of activePointerButtons.values()) {
+    for (const [button, position] of buttons) {
+      pendingInputReleases.push({
+        callback: "gpui_browser_pointer_button",
+        args: [position.x, position.y, button, false, false, false, false, false],
+      });
+    }
+  }
+  for (const held of activeKeys.values()) {
+    if (held.release) {
+      pendingInputReleases.push({
+        callback: "gpui_browser_key",
+        args: [held.key, false, false, false, false, false, false],
+      });
+    }
+  }
+  activeKeys.clear();
+  releasePointerCaptures();
+}
+
+function flushInputReleases() {
+  while (pendingInputReleases.length > 0) {
+    const release = pendingInputReleases[0];
+    call(release.callback, ...release.args);
+    // Ingress acceptance consumes the debt, even if the later paint fails.
+    pendingInputReleases.shift();
+  }
+}
+
+function enqueueKeyTap(key, ...keyModifiers) {
+  call("gpui_browser_key", key, true, false, ...keyModifiers);
+  pendingInputReleases.push({
+    callback: "gpui_browser_key", args: [key, false, false, ...keyModifiers],
+  });
+  flushInputReleases();
+}
+
+function queueKeyTap(key, ...keyModifiers) {
+  if (!running || surfaceLost) return false;
+  try {
+    syncViewport();
+    enqueueKeyTap(key, ...keyModifiers);
+    scheduleFrame();
+    return true;
+  } catch (error) {
+    showDiagnostic(error);
+    return false;
+  }
+}
+
 function loseRenderer(error) {
   if (!surfaceLost || restorationPending) rendererStats.lossCount += 1;
   surfaceLost = true;
@@ -219,7 +275,7 @@ function loseRenderer(error) {
   textInputBridge?.stop();
   context = null;
   cancelFrame();
-  releasePointerCaptures();
+  cancelHeldInputs();
   showDiagnostic(error);
 }
 
@@ -436,7 +492,7 @@ function currentFocusedSemanticId() {
 }
 
 function navigateSemanticFocus(from, backwards) {
-  if (!running || surfaceLost) return;
+  if (!running || surfaceLost) return false;
   const current = from ?? currentFocusedSemanticId();
   let target;
   if (current == null) target = backwards ? 7 : 4;
@@ -444,12 +500,12 @@ function navigateSemanticFocus(from, backwards) {
   else target = current >= 7 ? 4 : current + 1;
   const button = accessibilityButtons.get(target);
   if (!button) {
-    queueInput("gpui_browser_key", "Tab", true, false, backwards, false, false, false);
-    return;
+    return queueKeyTap("Tab", backwards, false, false, false);
   }
   call("gpui_browser_accessibility_focus", target, backwards);
   scheduleFrame();
   button.focus({ preventScroll: true });
+  return true;
 }
 
 function createAccessibilityLayer() {
@@ -465,7 +521,7 @@ function createAccessibilityLayer() {
         suspendedSemanticFocus = null;
         return;
       }
-      queueInput("gpui_browser_key", "Escape", true, false, false, false, false, false);
+      queueKeyTap("Escape", false, false, false, false);
     }
   });
 }
@@ -493,17 +549,11 @@ function ensureAccessibilityButton(node) {
     queueInput("gpui_browser_accessibility_activate", id);
   });
   listen(button, "keydown", (event) => {
-    if (event.key === "Tab") {
-      event.preventDefault();
-      navigateSemanticFocus(id, event.shiftKey);
-      return;
-    }
-    if (event.key === "Enter" || event.key === " ") event.preventDefault();
-    queueInput("gpui_browser_key", event.key, true, event.repeat, ...modifiers(event));
+    if (["Tab", "Enter", " "].includes(event.key)) event.preventDefault();
+    keyDown(event, id);
   });
   listen(button, "keyup", (event) => {
     if (event.key === "Enter" || event.key === " ") event.preventDefault();
-    queueInput("gpui_browser_key", event.key, false, false, ...modifiers(event));
   });
   accessibilityLayer.appendChild(button);
   accessibilityButtons.set(id, button);
@@ -580,6 +630,7 @@ function renderFrame() {
   try {
     checkRenderer();
     syncViewport();
+    flushInputReleases();
     if (restorationPending) {
       // Focus can move while restoration waits for this frame (or a hidden
       // page to become visible). Read lifecycle state just before the drain.
@@ -592,7 +643,7 @@ function renderFrame() {
       // final target (or clear), not Escape followed by relative Tab traversal.
       const semanticTarget = semanticFocused ? Number(active.dataset.semanticNode) : suspendedSemanticFocus;
       if (semanticTarget === null) {
-        call("gpui_browser_key", "Escape", true, false, false, false, false, false);
+        enqueueKeyTap("Escape", false, false, false, false);
       } else if (semanticTarget !== undefined) {
         call("gpui_browser_accessibility_focus", semanticTarget, false);
       }
@@ -628,13 +679,52 @@ function renderFrame() {
 }
 
 function queueInput(callback, ...args) {
-  if (!running || surfaceLost) return;
+  if (!running || surfaceLost) return false;
   try {
     syncViewport();
     call(callback, ...args);
     scheduleFrame();
+    return true;
   } catch (error) {
     showDiagnostic(error);
+    return false;
+  }
+}
+
+function physicalKey(event) {
+  return `${event.code || event.key}:${event.location || 0}`;
+}
+
+function keyDown(event, semanticFrom = null) {
+  if (!running || surfaceLost) return;
+  const identity = physicalKey(event);
+  const held = activeKeys.get(identity);
+  // A cancelled held key cannot resume through auto-repeat. A fresh down is
+  // required, while duplicate downs on an admitted key stay one physical hold.
+  if (event.repeat && !held) return;
+  const key = held?.key ?? event.key;
+  let release = true;
+  try {
+    if (key === "Tab" && accessibilityButtons.size > 0) {
+      if (!navigateSemanticFocus(semanticFrom, event.shiftKey)) return;
+      release = false;
+    } else if (!queueInput("gpui_browser_key", key, true, Boolean(held) || event.repeat, ...modifiers(event))) {
+      return;
+    }
+    if (held) held.release ||= release;
+    else activeKeys.set(identity, { key, release });
+  } catch (error) {
+    showDiagnostic(error);
+  }
+}
+
+function keyUp(event) {
+  const identity = physicalKey(event);
+  const held = activeKeys.get(identity);
+  if (!held) return;
+  // Use the admitted logical key even if Shift/layout changed the DOM key.
+  if (!held.release || queueInput("gpui_browser_key", held.key, false, false, ...modifiers(event))) {
+    activeKeys.delete(identity);
   }
 }
 
@@ -672,43 +762,52 @@ function onDprChange() {
 function attachCanvasEvents() {
   listen(canvas, "pointermove", (event) => {
     const bounds = canvas.getBoundingClientRect();
-    queueInput("gpui_browser_pointer_move", event.clientX - bounds.left, event.clientY - bounds.top);
+    const x = event.clientX - bounds.left;
+    const y = event.clientY - bounds.top;
+    if (queueInput("gpui_browser_pointer_move", x, y)) {
+      for (const position of activePointerButtons.get(event.pointerId)?.values() || []) {
+        position.x = x;
+        position.y = y;
+      }
+    }
   });
   const pointerButton = (event, button, pressed) => {
     if (pressed) canvas.focus({ preventScroll: true });
     const bounds = canvas.getBoundingClientRect();
-    queueInput("gpui_browser_pointer_button", event.clientX - bounds.left, event.clientY - bounds.top, button, pressed, ...modifiers(event));
+    const position = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+    return queueInput("gpui_browser_pointer_button", position.x, position.y, button, pressed, ...modifiers(event)) ? position : null;
   };
   listen(canvas, "pointerdown", (event) => {
     if (surfaceLost) return;
-    if (event.button >= 0 && event.button <= 4) {
-      const buttons = activePointerButtons.get(event.pointerId) || new Set();
-      buttons.add(event.button);
-      activePointerButtons.set(event.pointerId, buttons);
-      pointerButton(event, event.button, true);
-    }
+    if (event.button < 0 || event.button > 4) return;
+    const buttons = activePointerButtons.get(event.pointerId) || new Map();
+    if (buttons.has(event.button)) return;
+    const position = pointerButton(event, event.button, true);
+    if (!position) return;
+    buttons.set(event.button, position);
+    activePointerButtons.set(event.pointerId, buttons);
     try { canvas.setPointerCapture(event.pointerId); } catch { /* Some synthetic events cannot be captured. */ }
   });
   listen(canvas, "pointerup", (event) => {
     if (surfaceLost) return;
     if (event.button < 0 || event.button > 4) return;
     const buttons = activePointerButtons.get(event.pointerId);
-    buttons?.delete(event.button);
-    if (buttons?.size === 0) activePointerButtons.delete(event.pointerId);
-    pointerButton(event, event.button, false);
+    if (!buttons?.has(event.button) || !pointerButton(event, event.button, false)) return;
+    buttons.delete(event.button);
+    if (buttons.size === 0) activePointerButtons.delete(event.pointerId);
   });
-  listen(canvas, "pointercancel", (event) => {
+  const cancelPointer = (event) => {
     const buttons = activePointerButtons.get(event.pointerId);
-    activePointerButtons.delete(event.pointerId);
     if (!buttons) return;
-    for (const button of buttons) pointerButton(event, button, false);
-  });
-  listen(canvas, "lostpointercapture", (event) => {
-    const buttons = activePointerButtons.get(event.pointerId);
-    activePointerButtons.delete(event.pointerId);
-    if (!buttons) return;
-    for (const button of buttons) pointerButton(event, button, false);
-  });
+    for (const [button, position] of buttons) {
+      if (queueInput("gpui_browser_pointer_button", position.x, position.y, button, false, ...modifiers(event))) {
+        buttons.delete(button);
+      }
+    }
+    if (buttons.size === 0) activePointerButtons.delete(event.pointerId);
+  };
+  listen(canvas, "pointercancel", cancelPointer);
+  listen(canvas, "lostpointercapture", cancelPointer);
   listen(canvas, "wheel", (event) => {
     event.preventDefault();
     const bounds = canvas.getBoundingClientRect();
@@ -727,13 +826,13 @@ function attachCanvasEvents() {
   listen(canvas, "keydown", (event) => {
     if (event.key === "Tab" && accessibilityButtons.size > 0) {
       event.preventDefault();
-      navigateSemanticFocus(null, event.shiftKey);
-      return;
     }
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(event.key)) event.preventDefault();
-    queueInput("gpui_browser_key", event.key, true, event.repeat, ...modifiers(event));
+    keyDown(event);
   });
-  listen(canvas, "keyup", (event) => queueInput("gpui_browser_key", event.key, false, false, ...modifiers(event)));
+  // A matching up may arrive on the legacy editor after focus changed. Only
+  // previously admitted physical holds are eligible; unrelated keys stay local.
+  listen(document, "keyup", keyUp, true);
   listen(canvas, "focus", () => queueInput("gpui_browser_focus", true));
   listen(canvas, "blur", () => queueInput("gpui_browser_focus", false));
   listen(canvas, "contextlost", () => {
@@ -761,6 +860,8 @@ function stop() {
   surfaceLost = false;
   restorationPending = false;
   suspendedSemanticFocus = undefined;
+  activeKeys.clear();
+  pendingInputReleases.length = 0;
   hostGeneration += 1;
   cancelFrame();
   if (resizeObserver) resizeObserver.disconnect();

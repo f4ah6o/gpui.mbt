@@ -29,6 +29,10 @@
 
 ### Fixed
 
+- Balance browser pointer and key presses across renderer loss, including a
+  press queued before the cancelled frame. The first restored drain receives
+  matching releases, and later native releases cannot release the same hold
+  twice.
 - Preserve semantic target clearing and subsequent selections across browser
   renderer loss, including a return from the legacy island to the canvas before
   the restored frame. Enter cannot reactivate the cleared action.
