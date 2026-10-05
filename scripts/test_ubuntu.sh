@@ -76,29 +76,8 @@ for scale in 1 2; do
   # The Wayland socket appears before Weston has necessarily completed shell
   # initialization. In CI, require one successful protocol roundtrip before
   # starting the stress test so a just-created socket is not treated as ready.
-  ready=0
-  for _attempt in $(seq 1 200); do
-    if ! kill -0 "$compositor_pid" 2>/dev/null; then
-      break
-    fi
-    if [ -S "$runtime/$WAYLAND_DISPLAY" ]; then
-      if command -v wayland-info >/dev/null 2>&1; then
-        if timeout 1s wayland-info >/dev/null 2>&1; then
-          ready=1
-          break
-        fi
-      else
-        # Keep non-CI/local environments compatible when wayland-utils is absent.
-        sleep .25
-        if kill -0 "$compositor_pid" 2>/dev/null; then
-          ready=1
-          break
-        fi
-      fi
-    fi
-    sleep .05
-  done
-  if [ "$ready" -ne 1 ]; then
+  if ! python3 scripts/wait_wayland_ready.py --pid "$compositor_pid" \
+      --socket "$runtime/$WAYLAND_DISPLAY" --timeout-seconds 30; then
     echo "Weston did not become protocol-ready; see _build/ubuntu-e2e logs" >&2
     tail -n 120 "$PWD/_build/ubuntu-e2e/weston-scale-$scale.log" >&2 || true
     exit 1
