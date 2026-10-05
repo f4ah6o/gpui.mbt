@@ -2,7 +2,26 @@
 
 Status: open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-04
+Updated: 2026-10-05
+
+## Increment — 2026-10-05
+
+- [x] Scoped async plain-text clipboard read/write using the existing
+  host-service envelope, typed permission/unsupported failures, and stale
+  completion suppression on teardown.
+- [x] Opt-in committed-text bridge into shared `InputEvent.TextInput`, with
+  composition commit deduplication and cancellation/lifecycle cleanup.
+  This is `committedTextInput`; full `textInputIme` remains unsupported.
+- [x] Event-driven Canvas 2D context restoration preserves the live application,
+  resynchronizes size/DPR, and resumes input after a successful repaint.
+- [x] Dedicated service tests and production-artifact Chromium smoke are wired
+  into the browser workflow for these increments.
+- [ ] Real GPU context loss, native Japanese IME/candidate positioning, a full
+  text editing/selection/rendering contract, and cross-browser qualification.
+
+See [the browser guide](../../docs/browser-demo.md#browser-service-increment--2026-10-05)
+for the precise scope. The historical triage below predates these additions;
+the overall browser backend and production gates remain open.
 
 ## Current-head acceptance triage — 2026-10-04
 

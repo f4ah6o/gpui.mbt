@@ -353,6 +353,12 @@ function makeAdapter(invoke, operations) {
   return Object.freeze(adapter);
 }
 
+/// Shared scoped dispatcher for repository-owned host adapters. Operation
+/// grants remain explicit; browser/native handles stay inside the invoke closure.
+export function createHostServices(invoke, { allowedOperations = [] } = {}) {
+  return makeAdapter(invoke, allowedOperations);
+}
+
 /// Electron renderer APIs are exposed only through contextBridge. The channel
 /// is fixed and each portable operation still needs an explicit allowlist.
 export function createElectronHostServices(ipcRenderer, { allowedOperations = [] } = {}) {

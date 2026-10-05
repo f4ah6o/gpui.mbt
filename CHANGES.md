@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added browser plain-text clipboard services, committed-text input through the
+  shared event queue, and event-driven Canvas 2D restoration that preserves the
+  live app state. The demo includes explicit clipboard/text controls and focused
+  service/browser regressions. Full text/IME and production support remain open;
+  see [the browser guide](docs/browser-demo.md).
+
 - Added 41 capability/MCP mutation regression tests, independently reviewed per-operator baselines, survivor-identity checks, and retained CI reports. Bounded semantic conformance closes on verified merge after final-head stability and CI gates; async endpoint lifecycle/topology remains open in 0016. See the [semantic mutation contract](docs/semantic-mutation.md).
 
 - Added portable `AppLifetime` tokens and app-owned capability registry creation/adoption. Stop now invalidates registered typed, GUI, and adapter handles and rejects cached or late results. See the [owner lifecycle contract](docs/capability-lifecycle.md).
@@ -22,6 +28,16 @@
 - Extended the executable package-boundary policy with approved `layout -> primitives`, `scene -> primitives`, and `element -> core/primitives/layout/scene` runtime edges; all remain third-party-runtime-free.
 
 ### Fixed
+
+- Balance browser pointer and key presses across renderer loss, including a
+  press queued before the cancelled frame. The first restored drain receives
+  matching releases, and later native releases cannot release the same hold
+  twice.
+- Preserve semantic target clearing and subsequent selections across browser
+  renderer loss, including a return from the legacy island to the canvas before
+  the restored frame. Enter cannot reactivate the cleared action.
+- Deliver independent committed paste text during an active browser composition
+  without discarding it or clearing the provisional composition range.
 
 ### Deprecated
 

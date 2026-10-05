@@ -34,7 +34,15 @@ macOS currently has the broader service slice, including clipboard and cursors. 
 
 ### Browser
 
-The browser implementation is a JavaScript-target proof hosted by Canvas 2D. It shares the MoonBit application/layout/event/scene model, normalizes pointer/keyboard/wheel input, schedules only requested frames, and has a fixture-specific semantic DOM focus/action layer plus a legacy DOM island with explicit focus ownership. The browser counter's GUI, direct, and in-process MCP calls update the same observed state and are checked through a canvas redraw seam. These fixtures are not a general accessibility bridge or MCP transport. The host also maps the portable Arrow/PointingHand/Text cursor intent to browser CSS cursor values after framework event dispatch. WebGPU, text/IME, full accessibility, clipboard services, worker command support, renderer recovery, and production browser gates remain future work.
+The browser implementation is a JavaScript-target proof hosted by Canvas 2D. It shares the MoonBit application/layout/event/scene model, normalizes pointer/keyboard/wheel input, schedules only requested frames, and has a fixture-specific semantic DOM focus/action layer plus a legacy DOM island with explicit focus ownership. The browser counter's GUI, direct, and in-process MCP calls update the same observed state and are checked through a canvas redraw seam. These fixtures are not a general accessibility bridge or MCP transport. The host also maps the portable Arrow/PointingHand/Text cursor intent to browser CSS cursor values after framework event dispatch.
+
+The next browser increment adds scoped async plain-text clipboard services with
+availability/permission separation, opt-in committed-text ingress through the
+shared `TextInput` event, and event-driven Canvas 2D context restoration that
+preserves the app state. Full text editing/Japanese IME, WebGPU, general
+accessibility, worker command support, GPU fault qualification, and production
+browser gates remain open. See [the browser guide](browser-demo.md) for the
+exact controls, capability boundaries, and test scope.
 
 ### Electron and Tauri migration
 

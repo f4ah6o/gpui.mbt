@@ -25,7 +25,7 @@
       </header>
 
       <section class="intro" id="top" aria-labelledby="page-title">
-        <p class="eyebrow">ISSUE 0009 · FIRST JS SLICE</p>
+        <p class="eyebrow">ISSUE 0009 · BROWSER BACKEND</p>
         <h1 id="page-title">One MoonBit scene.<br /><span>A browser host.</span></h1>
         <p class="lede">
           The app model, flex layout, hit testing, focus, event queue and
@@ -62,6 +62,31 @@
             <button class="quiet-button" id="return-framework" type="button">Return focus to canvas</button>
             <button class="quiet-button" id="remount" type="button">Remount viewport</button>
           </footer>
+          <div class="service-grid" aria-label="Browser services">
+            <section class="service-panel" aria-labelledby="text-input-heading">
+              <p class="card-kicker">TEXT INPUT</p>
+              <h3 id="text-input-heading">Enter committed text</h3>
+              <p class="service-help">Start typing to send committed characters to the MoonBit app. Text appears below; editing, selection and caret display are still pending.</p>
+              <div class="service-actions">
+                <button class="quiet-button" id="text-input-start" type="button">Start text input</button>
+                <button class="quiet-button" id="text-input-stop" type="button" disabled>Stop text input</button>
+              </div>
+              <p class="service-result" id="text-input-state" role="status">Text input is off.</p>
+              <output class="committed-text" id="committed-text" dir="auto" aria-label="Last committed text">No committed text yet.</output>
+              <p class="service-help">Committed inserts: <span id="text-commit-count">0</span></p>
+            </section>
+            <section class="service-panel" aria-labelledby="clipboard-heading">
+              <p class="card-kicker">CLIPBOARD</p>
+              <h3 id="clipboard-heading">Copy and paste text</h3>
+              <label class="service-help" for="clipboard-value">Text to copy, or the result of Paste</label>
+              <textarea id="clipboard-value" rows="3" spellcheck="false">Hello from gpui.mbt · こんにちは</textarea>
+              <div class="service-actions">
+                <button class="quiet-button" id="clipboard-copy" type="button">Copy text</button>
+                <button class="quiet-button" id="clipboard-paste" type="button">Paste text</button>
+              </div>
+              <p class="service-result" id="clipboard-result" role="status">The browser may ask for clipboard permission.</p>
+            </section>
+          </div>
         </article>
 
         <aside class="inspector" aria-label="Framework state and browser capabilities">
@@ -123,7 +148,7 @@
         <div>
           <span class="note-index">03</span>
           <h2>Experimental by design</h2>
-          <p>Fixture ARIA and a legacy web island are browser adapter examples. WebGPU, Japanese IME, general accessibility, clipboard, and production support remain open.</p>
+          <p>Clipboard text, committed input and Canvas 2D restoration extend this slice. WebGPU, full text/IME, general accessibility and production support remain open.</p>
         </div>
       </section>
 

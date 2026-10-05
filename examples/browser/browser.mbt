@@ -93,9 +93,11 @@ pub fn browser_host_error(kind : Int) -> String {
 }
 
 ///|
+/// Compiled adapter features. The JS host further gates clipboard availability
+/// on the secure context and native API methods before reporting live support.
 #export_name("gpui_browser_capabilities")
 pub fn browser_capabilities() -> String {
-  "{\"logicalViewport\":true,\"nativeWindow\":false,\"quadFrames\":true,\"frameScheduling\":\"requestAnimationFrame\",\"pointerKeyboard\":true,\"clipboard\":false,\"cursor\":true,\"textInputIme\":false,\"accessibility\":false,\"accessibilityFixture\":true,\"rendererRecovery\":false,\"crossThreadCommands\":false,\"renderer\":\"Canvas 2D\"}"
+  "{\"logicalViewport\":true,\"nativeWindow\":false,\"quadFrames\":true,\"frameScheduling\":\"requestAnimationFrame\",\"pointerKeyboard\":true,\"clipboard\":true,\"cursor\":true,\"committedTextInput\":true,\"textInputIme\":false,\"accessibility\":false,\"accessibilityFixture\":true,\"rendererRecovery\":true,\"crossThreadCommands\":false,\"renderer\":\"Canvas 2D\"}"
 }
 
 ///|
@@ -270,6 +272,31 @@ pub fn browser_key(
     @platform.Input(@primitives.KeyReleased(key=logical_key, modifiers~))
   }
   enqueue_event(event)
+}
+
+///|
+/// Accept one committed insert. Composition ranges and selection replacement
+/// remain host-owned and are not represented by this narrow input bridge.
+#export_name("gpui_browser_text_input")
+pub fn browser_text_input(text : String) -> String {
+  match adapter_runtime.val {
+    None => error_json(host_error(3))
+    Some(adapter) =>
+      match @browser_app.BrowserDemo::enqueue_text_input(adapter.demo, text) {
+        Err(@browser_app.InvalidTextInput) =>
+          error_json(
+            @diagnostics.FrameworkError::new(
+              @diagnostics.InvalidInput,
+              "BrowserBackend::text_input",
+              subsystem="browser",
+              backend="js/canvas-2d",
+              message="a committed insert must contain between one and 65536 UTF-16 code units",
+            ),
+          )
+        Err(_) => error_json(host_error(3))
+        Ok(_) => ok_json("true")
+      }
+  }
 }
 
 ///|

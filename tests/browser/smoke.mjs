@@ -4,6 +4,9 @@ import { createServer } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { runClipboardSmoke } from "./clipboard.mjs";
+import { runTextInputSmoke } from "./text-input.mjs";
+import { runRendererRecoverySmoke } from "./renderer-recovery.mjs";
 
 const repoRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const siteRoot = join(repoRoot, "_build/browser-site");
@@ -438,9 +441,12 @@ try {
   assert.ok(Math.abs(remounted.status.logicalHeight - remounted.cssHeight) < 0.1);
   assert.equal(remounted.backingWidth, Math.round(remounted.cssWidth * 2), "remount reapplies the measured viewport instead of stale model defaults");
   assert.equal(remounted.backingHeight, Math.round(remounted.cssHeight * 2));
+  await runClipboardSmoke({ page, context });
+  await runTextInputSmoke({ page, context });
+  await runRendererRecoverySmoke({ page, context });
   assert.deepEqual(pageErrors, [], "browser callbacks and renderer complete without uncaught errors");
   await context.close();
-  console.log("Browser smoke passed: Canvas2D snapshot, DPR, pointer/wheel/focus/cursor including resize re-hit-testing, GUI/direct/in-process MCP redraw, ARIA and legacy-island ownership, resize/lifecycle, hidden-tab scheduling, context loss, and repeated teardown.");
+  console.log("Browser smoke passed: Canvas2D snapshot, DPR, pointer/wheel/focus/cursor including resize re-hit-testing, GUI/direct/in-process MCP redraw, ARIA and legacy-island ownership, resize/lifecycle, hidden-tab scheduling, clipboard text, committed text, renderer restoration, and repeated teardown.");
 } catch (error) {
   console.error("Browser smoke failed:", error);
   if (page) {

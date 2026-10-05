@@ -45,6 +45,8 @@ jobs:
         run: vp check
       - name: Test Electron/Tauri host bridge contracts
         run: vp run migration:host:test
+      - name: Test browser clipboard and committed-text contracts
+        run: vp run browser:services:test
       - name: Install Chromium and system dependencies
         run: vp run browser:install
       - name: Exercise Vite+ MoonBit dev watch and source maps
