@@ -16,9 +16,12 @@ head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
 - [x] Chromium verifies GUI, direct API, and in-process MCP mutations redraw
   the observed counter; it also covers wheel input and legacy-island focus
   ownership and teardown.
+- [x] Browser cursor intent uses the portable `Cursor` enum and maps
+  Arrow/PointingHand/Text to CSS default/pointer/text after queued input is
+  drained; Chromium covers pointing-hand and arrow transitions.
 - [ ] Wasm/WasmGC browser targets, WebGPU, broad text/Japanese IME, general
-  accessibility, clipboard/cursor services, worker commands, and production
-  browser evidence remain open.
+  accessibility, clipboard services, worker commands, and production browser
+  evidence remain open.
 
 The Chromium run proves the experimental JS slice only; it does not promote
 browser support.
@@ -404,7 +407,7 @@ flex-tree layout, element hit testing, focus, common event ingress, and
 `SceneSnapshot` v1 quad data. The host owns the canvas, CSS-pixel/DPR measurement,
 pointer and keyboard callbacks, focus/visibility/lifecycle listeners, and
 on-demand `requestAnimationFrame` presentation. Its current capability report
-keeps native top-level windows, clipboard, cursor, IME, a general accessibility
+keeps native top-level windows, clipboard, IME, a general accessibility
 bridge, renderer recovery, and worker commands unavailable; it separately
 reports the fixture-only ARIA adapter.
 
@@ -461,6 +464,6 @@ for the pull request.
 
 This is execution evidence for the experimental JavaScript Canvas 2D slice,
 not production browser support. WasmGC/Wasm browser targets, WebGPU, Japanese
-IME and broader text input, general accessibility, clipboard/cursor services,
+IME and broader text input, general accessibility, clipboard services,
 renderer recovery, native/backend conformance, and worker commands remain
 open.
