@@ -46,6 +46,9 @@ pub fn TextDocument::selection(Self) -> TextSelection
 pub fn TextDocument::slice(Self, TextRange) -> Result[String, TextError]
 pub fn TextDocument::text(Self) -> String
 pub fn TextDocument::utf16_length(Self) -> Int
+pub fn TextDocument::utf16_offset(Self, Int) -> Result[Int, TextError]
+pub fn TextDocument::utf8_length(Self) -> Result[Int, TextError]
+pub fn TextDocument::utf8_offset(Self, Int) -> Result[Int, TextError]
 pub fn TextDocument::with_selection(Self, TextSelection) -> Result[Self, TextError]
 
 pub enum TextError {
@@ -53,6 +56,7 @@ pub enum TextError {
   ReversedRange
   OutOfBounds
   SplitSurrogate
+  SplitUtf8
   MalformedUtf16
   LengthOverflow
 } derive(Eq)

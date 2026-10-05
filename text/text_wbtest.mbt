@@ -31,3 +31,14 @@ test "checked text length detects overflow without allocating strings" {
   )
   assert_true(checked_resulting_length(4, 5, 0) is Err(OutOfBounds))
 }
+
+///|
+test "checked UTF-8 byte addition detects overflow without allocating strings" {
+  assert_true(
+    checked_utf8_length_add(@int.MAX_VALUE - 4, 4) is Ok(@int.MAX_VALUE),
+  )
+  assert_true(
+    checked_utf8_length_add(@int.MAX_VALUE - 3, 4) is Err(LengthOverflow),
+  )
+  assert_true(checked_utf8_length_add(@int.MAX_VALUE, 1) is Err(LengthOverflow))
+}

@@ -133,13 +133,14 @@ Packet 0011 supplies a browser DOM-island example and bounded host-service envel
 Portable scene rendering remains quad/clip-first, with bounded browser text
 snapshot items; native text renderers reject those items explicitly. The text value model
 foundation has UTF-16 ranges, directional selection and immutable replacement;
-this composition worktree slice adds pure composition/commit/cancel transitions.
-It does not draw text or provide an editable UI. Host sequencing, actual
-Japanese IME, text layout,
-candidate-window placement, rich text, production shaping, caret geometry,
-undo, multi-cursor editing, general accessibility and sustained performance
-evidence remain incomplete. A project tree or palette requires usable
-framework text capability before it can count as migrated UI.
+this source tree adds pure composition/commit/cancel transitions and strict
+UTF-16/UTF-8 scalar-boundary conversion. The conversion has no grapheme or
+shaped-geometry semantics. It does not draw text or provide an editable UI.
+Host sequencing, actual Japanese IME, text layout, candidate-window placement,
+rich text, production shaping, caret geometry, undo, multi-cursor editing,
+general accessibility and sustained performance evidence remain incomplete.
+A project tree or palette requires usable framework text capability before it
+can count as migrated UI.
 
 ### Foundation-first text gap and current slice
 

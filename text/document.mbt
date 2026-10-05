@@ -128,6 +128,41 @@ fn checked_resulting_length(
 }
 
 ///|
+/// Add one scalar's UTF-8 width without overflowing an Int byte count.
+fn checked_utf8_length_add(total : Int, width : Int) -> Result[Int, TextError] {
+  if total < 0 || width < 1 || width > 4 {
+    return Err(LengthOverflow)
+  }
+  if width > @int.MAX_VALUE - total {
+    Err(LengthOverflow)
+  } else {
+    Ok(total + width)
+  }
+}
+
+///|
+fn utf8_scalar_width(scalar : Int) -> Int {
+  if scalar <= 0x7F {
+    1
+  } else if scalar <= 0x7FF {
+    2
+  } else if scalar <= 0xFFFF {
+    3
+  } else {
+    4
+  }
+}
+
+///|
+fn utf16_scalar_width(scalar : Int) -> Int {
+  if scalar <= 0xFFFF {
+    1
+  } else {
+    2
+  }
+}
+
+///|
 fn validated_view_to_string(text : String, start : Int, end : Int) -> String {
   match text.get_view(start~, end~) {
     Some(view) => view.to_owned()
@@ -158,6 +193,122 @@ pub fn TextDocument::text(self : TextDocument) -> String {
 ///|
 pub fn TextDocument::utf16_length(self : TextDocument) -> Int {
   self.text.length()
+}
+
+///|
+/// Return the UTF-8 byte length, or LengthOverflow when it cannot fit in Int.
+/// This scans Unicode scalars in O(n) time and does not allocate a UTF-8 copy.
+pub fn TextDocument::utf8_length(self : TextDocument) -> Result[Int, TextError] {
+  let mut length = 0
+  // Documents contain well-formed UTF-16, so safe string iteration yields
+  // Unicode scalar values and these widths are defined for every item.
+  for scalar in self.text.iter() {
+    length = match
+      checked_utf8_length_add(length, utf8_scalar_width(scalar.to_int())) {
+      Err(error) => return Err(error)
+      Ok(next) => next
+    }
+  }
+  Ok(length)
+}
+
+///|
+/// Convert a UTF-16 code-unit offset to the equivalent UTF-8 byte offset.
+/// A negative offset returns NegativeOffset. An offset past the UTF-16 length
+/// returns OutOfBounds before scanning. Scalar interiors return SplitSurrogate,
+/// unless the complete UTF-8 length overflows Int, which returns LengthOverflow
+/// first. Each call scans the document in O(n) time; no offset table is cached.
+pub fn TextDocument::utf8_offset(
+  self : TextDocument,
+  utf16_offset : Int,
+) -> Result[Int, TextError] {
+  if utf16_offset < 0 {
+    return Err(NegativeOffset)
+  }
+  if utf16_offset > self.utf16_length() {
+    return Err(OutOfBounds)
+  }
+
+  let mut current_utf16 = 0
+  let mut current_utf8 = 0
+  let mut mapped : Int? = None
+  let mut splits_surrogate = false
+  // Scalar iteration consumes exactly the document's UTF-16 units, so this
+  // counter never exceeds the already-representable String::length().
+  for scalar in self.text.iter() {
+    if utf16_offset == current_utf16 {
+      mapped = Some(current_utf8)
+    }
+    let scalar_value = scalar.to_int()
+    let utf16_width = utf16_scalar_width(scalar_value)
+    if utf16_width == 2 && utf16_offset == current_utf16 + 1 {
+      splits_surrogate = true
+    }
+    current_utf16 += utf16_width
+    current_utf8 = match
+      checked_utf8_length_add(current_utf8, utf8_scalar_width(scalar_value)) {
+      Err(error) => return Err(error)
+      Ok(next) => next
+    }
+  }
+  if utf16_offset == current_utf16 {
+    mapped = Some(current_utf8)
+  }
+  match mapped {
+    Some(byte_offset) => Ok(byte_offset)
+    None if splits_surrogate => Err(SplitSurrogate)
+    None => Err(OutOfBounds)
+  }
+}
+
+///|
+/// Convert a UTF-8 byte offset to the equivalent UTF-16 code-unit offset.
+/// A negative offset returns NegativeOffset. Byte positions inside a scalar
+/// return SplitUtf8; offsets past the UTF-8 length return OutOfBounds. If the
+/// complete UTF-8 length overflows Int, LengthOverflow takes precedence over
+/// those two errors. Each call scans the document in O(n) time; no offset table
+/// is cached.
+pub fn TextDocument::utf16_offset(
+  self : TextDocument,
+  utf8_offset : Int,
+) -> Result[Int, TextError] {
+  if utf8_offset < 0 {
+    return Err(NegativeOffset)
+  }
+
+  let mut current_utf16 = 0
+  let mut current_utf8 = 0
+  let mut mapped : Int? = None
+  let mut splits_scalar = false
+  // Scalar iteration consumes exactly the document's UTF-16 units, so this
+  // counter never exceeds the already-representable String::length().
+  for scalar in self.text.iter() {
+    if utf8_offset == current_utf8 {
+      mapped = Some(current_utf16)
+    }
+    let scalar_value = scalar.to_int()
+    let utf8_width = utf8_scalar_width(scalar_value)
+    let next_utf8 = match checked_utf8_length_add(current_utf8, utf8_width) {
+      Err(error) => return Err(error)
+      Ok(next) => next
+    }
+    if utf8_offset > current_utf8 && utf8_offset < next_utf8 {
+      splits_scalar = true
+    }
+    current_utf8 = next_utf8
+    current_utf16 += utf16_scalar_width(scalar_value)
+  }
+  if utf8_offset == current_utf8 {
+    mapped = Some(current_utf16)
+  }
+  if utf8_offset > current_utf8 {
+    return Err(OutOfBounds)
+  }
+  match mapped {
+    Some(utf16_value) => Ok(utf16_value)
+    None if splits_scalar => Err(SplitUtf8)
+    None => Err(OutOfBounds)
+  }
 }
 
 ///|

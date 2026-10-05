@@ -48,20 +48,26 @@ and resource-lifetime gates remain pending.
 
 ## Portable text editing semantics foundation — 2026-10-05
 
-This worktree slice follows the foundation merged at
-`d3c142ef9ac2b856277059e41526f32e5845447a`.
+The portable text foundation was added at
+`d3c142ef9ac2b856277059e41526f32e5845447a`; the immutable composition model
+merged to main in PR25 at
+`231400425d06f6be157f84ff27bb53134fa18ef3`. This current offset-bridge patch
+is based on that main tree.
 
 The new `text/` package provides UTF-16 half-open ranges, directional
 selections, strict surrogate-boundary validation, immutable document
-slicing/replacement, and now a pure immutable composition transaction.
-`TextComposition` retains the original document/range, makes repeated previews
-replace that original range, rebases relative UTF-16 selection, and provides
-commit/cancel values with typed failures. Tests cover public transitions,
-error precedence, snapshot stability, Unicode cases, and a seeded independent
-reference property. This remains a model-only advance. Host event sequencing,
-actual Japanese IME behavior, text layout and candidate-window placement,
-shaping/rendering, undo, multi-cursor editing, accessibility, and production
-platform gates remain open; no support tier is promoted. See the
+slicing/replacement, a pure immutable composition transaction, and this patch's
+strict UTF-16/UTF-8 scalar-boundary conversion. `TextComposition` retains the
+original document/range, makes repeated previews replace that original range, rebases
+relative UTF-16 selection, and provides commit/cancel values with typed
+failures. The offset conversion uses overflow-checked O(n) scans without a
+persistent offset cache; it does not implement grapheme navigation or shaped
+geometry. Tests cover public transitions, boundary/error precedence, snapshot
+stability, Unicode cases, and seeded independent reference properties. This
+remains a model-only advance. Host event sequencing, actual Japanese IME
+behavior, text layout and candidate-window placement, shaping/rendering, undo,
+multi-cursor editing, accessibility, and production platform gates remain
+open; no support tier is promoted. See the
 [portable text model](../../docs/text-model.md).
 
 ## Platform-specific child packets
