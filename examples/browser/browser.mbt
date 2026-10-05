@@ -64,6 +64,12 @@ fn host_error(kind : Int) -> @diagnostics.FrameworkError {
         "BrowserBackend::present",
         "the SceneSnapshot is invalid or unsupported by the Canvas 2D slice",
       )
+    6 =>
+      (
+        @diagnostics.ConversionFailed,
+        "BrowserBackend::set_cursor",
+        "the framework returned an unsupported cursor value",
+      )
     _ =>
       (
         @diagnostics.SurfaceLost,
@@ -89,7 +95,7 @@ pub fn browser_host_error(kind : Int) -> String {
 ///|
 #export_name("gpui_browser_capabilities")
 pub fn browser_capabilities() -> String {
-  "{\"logicalViewport\":true,\"nativeWindow\":false,\"quadFrames\":true,\"frameScheduling\":\"requestAnimationFrame\",\"pointerKeyboard\":true,\"clipboard\":false,\"cursor\":false,\"textInputIme\":false,\"accessibility\":false,\"accessibilityFixture\":true,\"rendererRecovery\":false,\"crossThreadCommands\":false,\"renderer\":\"Canvas 2D\"}"
+  "{\"logicalViewport\":true,\"nativeWindow\":false,\"quadFrames\":true,\"frameScheduling\":\"requestAnimationFrame\",\"pointerKeyboard\":true,\"clipboard\":false,\"cursor\":true,\"textInputIme\":false,\"accessibility\":false,\"accessibilityFixture\":true,\"rendererRecovery\":false,\"crossThreadCommands\":false,\"renderer\":\"Canvas 2D\"}"
 }
 
 ///|
