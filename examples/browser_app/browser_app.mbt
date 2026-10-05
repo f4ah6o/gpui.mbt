@@ -311,6 +311,11 @@ fn apply_event(model : DemoModel, event : @platform.Event) -> DemoModel {
     @platform.Resized(width~, height~) => {
       updated.width = width
       updated.height = height
+      match (updated.pointer_x, updated.pointer_y) {
+        (Some(x), Some(y)) =>
+          updated.hover_id = hit_test(updated.width, updated.height, x, y)
+        _ => ()
+      }
       updated.last_event = "logical viewport resized"
     }
     @platform.ScaleChanged => {
