@@ -1,4 +1,5 @@
 #include "backend.h"
+#include "../platform/windows_text/windows_text.h"
 
 #if defined(_WIN32)
 
@@ -16,6 +17,10 @@
 
 #define GPUI_EVENT_CAPACITY 4096
 #define GPUI_MAX_QUADS 100000
+#define GPUI_MIXED_FRAME_ABI 2
+#define GPUI_MIXED_FRAME_STRIDE 25
+#define GPUI_MAX_TEXT_RUNS 64
+#define GPUI_MAX_FRAME_TEXT_BYTES 262144
 #define GPUI_WAKE_MESSAGE (WM_APP + 0x41)
 #define GPUI_EXIT_MESSAGE (WM_APP + 0x42)
 #define GPUI_CLASS_NAME L"gpui_mbt_windows_host_v1"
@@ -23,7 +28,15 @@
 typedef struct gpui_vertex {
   float position[2];
   float color[4];
+  float uv[2];
 } gpui_vertex;
+
+typedef struct gpui_staged_text {
+  int32_t item_index;
+  GpuiWindowsTextMask mask;
+  ID3D11Texture2D *texture;
+  ID3D11ShaderResourceView *view;
+} gpui_staged_text;
 
 typedef BOOL(WINAPI *fn_set_process_dpi_awareness_context)(DPI_AWARENESS_CONTEXT);
 typedef DPI_AWARENESS_CONTEXT(WINAPI *fn_get_thread_dpi_awareness_context)(void);
@@ -48,6 +61,7 @@ typedef BOOL(WINAPI *fn_get_client_rect)(HWND, LPRECT);
 typedef BOOL(WINAPI *fn_get_window_rect)(HWND, LPRECT);
 typedef LRESULT(WINAPI *fn_send_message_w)(HWND, UINT, WPARAM, LPARAM);
 typedef HWND(WINAPI *fn_get_capture)(void);
+typedef HWND(WINAPI *fn_get_focus)(void);
 typedef BOOL(WINAPI *fn_adjust_window_rect_ex_for_dpi)(LPRECT, DWORD, BOOL,
                                                        DWORD, UINT);
 typedef BOOL(WINAPI *fn_adjust_window_rect_ex)(LPRECT, DWORD, BOOL, DWORD);
@@ -110,6 +124,7 @@ typedef struct gpui_windows_api {
   fn_get_window_rect get_window_rect;
   fn_send_message_w send_message_w;
   fn_get_capture get_capture;
+  fn_get_focus get_focus;
   fn_adjust_window_rect_ex_for_dpi adjust_window_rect_ex_for_dpi;
   fn_adjust_window_rect_ex adjust_window_rect_ex;
   fn_screen_to_client screen_to_client;
@@ -159,6 +174,19 @@ typedef struct gpui_windows_host {
   double events[GPUI_EVENT_CAPACITY][10];
   int32_t event_read;
   int32_t event_count;
+  /* PeekMessage can remove a queued MSG after synchronously dispatching a
+   * sent message. Retain that one bounded result across the editor FIFO fence. */
+  MSG deferred_message;
+  BOOL deferred_message_pending;
+  /* Metadata/payload sidecars share the event ring indices. editor_events is
+   * a visibility marker for the typed reader; legacy next_event must preserve
+   * records whose marker is set. */
+  BOOL editor_events[GPUI_EVENT_CAPACITY];
+  double editor_fields[GPUI_EVENT_CAPACITY][10];
+  uint8_t *editor_payloads[GPUI_EVENT_CAPACITY];
+  int32_t editor_payload_bytes[GPUI_EVENT_CAPACITY];
+  int32_t editor_payload_total;
+  volatile LONG editor_error;
   BOOL class_registered;
   BOOL destroying;
   BOOL mouse_tracking;
@@ -174,6 +202,8 @@ typedef struct gpui_windows_host {
   ID3D11RenderTargetView *render_target;
   ID3D11VertexShader *vertex_shader;
   ID3D11PixelShader *pixel_shader;
+  ID3D11PixelShader *mask_pixel_shader;
+  ID3D11SamplerState *text_sampler;
   ID3D11InputLayout *input_layout;
   ID3D11Buffer *vertex_buffer;
   ID3D11Query *frame_query;
@@ -186,6 +216,11 @@ typedef struct gpui_windows_host {
   BOOL readback_enabled;
   BOOL readback_valid;
   BOOL frame_pending;
+  int64_t test_clear_count;
+  int64_t test_draw_count;
+  int64_t test_present_count;
+  int32_t test_text_mask_width;
+  int32_t test_text_mask_height;
   double readback_rgba[12];
 } gpui_windows_host;
 
@@ -207,6 +242,16 @@ static const GUID gpui_iid_texture2d =
 
 static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
                                          WPARAM wparam, LPARAM lparam);
+static void gpui_text_session_set_platform_slot(gpui_windows_host *host,
+                                                int32_t slot);
+static void gpui_text_session_discard_slot(gpui_windows_host *host,
+                                           int32_t slot);
+static void gpui_text_session_move_slot(gpui_windows_host *host,
+                                        int32_t source, int32_t destination);
+static BOOL gpui_text_session_head_is_editor(gpui_windows_host *host);
+static int32_t gpui_text_session_pop(gpui_windows_host *host,
+                                     double *event_data, uint8_t *payload,
+                                     int32_t payload_capacity);
 
 #define GPUI_LOAD(module, field, type, name)                                 \
   do {                                                                        \
@@ -264,7 +309,14 @@ static void emit_event_for(gpui_windows_host *host, int32_t window_id,
     InterlockedExchange(&host->state, 1);
     return;
   }
+  if (window_id &&
+      (host->sequence < 0 || host->sequence >= INT64_C(9007199254740991))) {
+    InterlockedExchange(&host->error, GPUI_WINDOWS_RESOURCE);
+    InterlockedExchange(&host->state, 1);
+    return;
+  }
   int32_t at = (host->event_read + host->event_count) % GPUI_EVENT_CAPACITY;
+  gpui_text_session_set_platform_slot(host, at);
   double *event = host->events[at];
   event[0] = kind;
   event[1] = window_id;
@@ -289,12 +341,16 @@ static void discard_events_for(gpui_windows_host *host, int32_t window_id) {
   int32_t old_read = host->event_read;
   for (int32_t i = 0; i < host->event_count; ++i) {
     int32_t at = (old_read + i) % GPUI_EVENT_CAPACITY;
-    if ((int32_t)host->events[at][1] == window_id)
+    if ((int32_t)host->events[at][1] == window_id) {
+      gpui_text_session_discard_slot(host, at);
       continue;
+    }
     int32_t destination = (old_read + kept_count++) % GPUI_EVENT_CAPACITY;
-    if (destination != at)
+    if (destination != at) {
       memcpy(host->events[destination], host->events[at],
              sizeof(host->events[0]));
+      gpui_text_session_move_slot(host, at, destination);
+    }
   }
   host->event_read = old_read;
   host->event_count = kept_count;
@@ -383,6 +439,7 @@ static int32_t api_init(gpui_windows_host *host) {
   GPUI_LOAD(user32, get_window_rect, fn_get_window_rect, "GetWindowRect");
   GPUI_LOAD(user32, send_message_w, fn_send_message_w, "SendMessageW");
   GPUI_LOAD(user32, get_capture, fn_get_capture, "GetCapture");
+  GPUI_LOAD(user32, get_focus, fn_get_focus, "GetFocus");
   g_host.api.adjust_window_rect_ex_for_dpi =
       (fn_adjust_window_rect_ex_for_dpi)(uintptr_t)GetProcAddress(
           user32, "AdjustWindowRectExForDpi");
@@ -457,6 +514,8 @@ static void release_gpu(gpui_windows_host *host) {
   GPUI_RELEASE(ID3D11Query, host->frame_query);
   GPUI_RELEASE(ID3D11RasterizerState, host->rasterizer_state);
   GPUI_RELEASE(ID3D11BlendState, host->blend_state);
+  GPUI_RELEASE(ID3D11SamplerState, host->text_sampler);
+  GPUI_RELEASE(ID3D11PixelShader, host->mask_pixel_shader);
   GPUI_RELEASE(ID3D11InputLayout, host->input_layout);
   GPUI_RELEASE(ID3D11PixelShader, host->pixel_shader);
   GPUI_RELEASE(ID3D11VertexShader, host->vertex_shader);
@@ -484,20 +543,35 @@ static HRESULT compile_shader(gpui_windows_host *host, const char *source,
 
 static HRESULT create_pipeline(gpui_windows_host *host) {
   static const char vertex_source[] =
-      "struct V { float2 position : POSITION; float4 color : COLOR; };\n"
-      "struct O { float4 position : SV_POSITION; float4 color : COLOR; };\n"
+      "struct V { float2 position : POSITION; float4 color : COLOR; "
+      "float2 uv : TEXCOORD0; };\n"
+      "struct O { float4 position : SV_POSITION; float4 color : COLOR; "
+      "float2 uv : TEXCOORD0; };\n"
       "O main(V v) { O o; o.position=float4(v.position,0.0,1.0); "
-      "o.color=v.color; return o; }\n";
+      "o.color=v.color; o.uv=v.uv; return o; }\n";
   static const char pixel_source[] =
-      "float4 main(float4 position : SV_POSITION, float4 color : COLOR) "
+      "float4 main(float4 position : SV_POSITION, float4 color : COLOR, "
+      "float2 uv : TEXCOORD0) "
       ": SV_TARGET { return color; }\n";
+  static const char mask_pixel_source[] =
+      "Texture2D maskTexture : register(t0);\n"
+      "SamplerState maskSampler : register(s0);\n"
+      "float4 main(float4 position : SV_POSITION, float4 color : COLOR, "
+      "float2 uv : TEXCOORD0) : SV_TARGET { "
+      "float coverage=maskTexture.Sample(maskSampler,uv).r; "
+      "return float4(color.rgb*coverage,color.a*coverage); }\n";
   ID3DBlob *vertex_blob = NULL;
   ID3DBlob *pixel_blob = NULL;
+  ID3DBlob *mask_pixel_blob = NULL;
   HRESULT hr = compile_shader(host, vertex_source, "main", "vs_4_0",
                               &vertex_blob);
   if (FAILED(hr))
     goto done;
   hr = compile_shader(host, pixel_source, "main", "ps_4_0", &pixel_blob);
+  if (FAILED(hr))
+    goto done;
+  hr = compile_shader(host, mask_pixel_source, "main", "ps_4_0",
+                      &mask_pixel_blob);
   if (FAILED(hr))
     goto done;
   hr = ID3D11Device_CreateVertexShader(
@@ -510,14 +584,22 @@ static HRESULT create_pipeline(gpui_windows_host *host) {
       ID3D10Blob_GetBufferSize(pixel_blob), NULL, &host->pixel_shader);
   if (FAILED(hr))
     goto done;
-  D3D11_INPUT_ELEMENT_DESC elements[2] = {
+  hr = ID3D11Device_CreatePixelShader(
+      host->device, ID3D10Blob_GetBufferPointer(mask_pixel_blob),
+      ID3D10Blob_GetBufferSize(mask_pixel_blob), NULL,
+      &host->mask_pixel_shader);
+  if (FAILED(hr))
+    goto done;
+  D3D11_INPUT_ELEMENT_DESC elements[3] = {
       {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0,
        (UINT)offsetof(gpui_vertex, position), D3D11_INPUT_PER_VERTEX_DATA, 0},
       {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
        (UINT)offsetof(gpui_vertex, color), D3D11_INPUT_PER_VERTEX_DATA, 0},
+      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0,
+       (UINT)offsetof(gpui_vertex, uv), D3D11_INPUT_PER_VERTEX_DATA, 0},
   };
   hr = ID3D11Device_CreateInputLayout(
-      host->device, elements, 2, ID3D10Blob_GetBufferPointer(vertex_blob),
+      host->device, elements, 3, ID3D10Blob_GetBufferPointer(vertex_blob),
       ID3D10Blob_GetBufferSize(vertex_blob), &host->input_layout);
   if (FAILED(hr))
     goto done;
@@ -537,6 +619,19 @@ static HRESULT create_pipeline(gpui_windows_host *host) {
   if (FAILED(hr))
     goto done;
 
+  D3D11_SAMPLER_DESC sampler;
+  ZeroMemory(&sampler, sizeof(sampler));
+  sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+  sampler.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+  sampler.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+  sampler.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+  sampler.MinLOD = 0.0f;
+  sampler.MaxLOD = D3D11_FLOAT32_MAX;
+  hr = ID3D11Device_CreateSamplerState(host->device, &sampler,
+                                      &host->text_sampler);
+  if (FAILED(hr))
+    goto done;
+
   D3D11_RASTERIZER_DESC rasterizer;
   ZeroMemory(&rasterizer, sizeof(rasterizer));
   rasterizer.FillMode = D3D11_FILL_SOLID;
@@ -551,6 +646,8 @@ done:
     ID3D10Blob_Release(vertex_blob);
   if (pixel_blob)
     ID3D10Blob_Release(pixel_blob);
+  if (mask_pixel_blob)
+    ID3D10Blob_Release(mask_pixel_blob);
   return hr;
 }
 
@@ -632,6 +729,9 @@ static BOOL finite_frame_value(double value) {
   return isfinite(value) && fabs(value) <= 1.0e20;
 }
 
+static int32_t logical_to_physical_floor(double value, double scale);
+static int32_t logical_to_physical_ceil(double value, double scale);
+
 static int32_t ensure_vertex_capacity(gpui_windows_host *host, UINT vertices) {
   if (vertices <= host->vertex_capacity)
     return GPUI_WINDOWS_OK;
@@ -662,6 +762,166 @@ static int32_t ensure_vertex_capacity(gpui_windows_host *host, UINT vertices) {
   host->vertex_buffer = buffer;
   host->vertex_capacity = capacity;
   return GPUI_WINDOWS_OK;
+}
+
+static void release_staged_text(gpui_staged_text *texts, int32_t count) {
+  if (!texts)
+    return;
+  for (int32_t i = 0; i < count; ++i) {
+    GPUI_RELEASE(ID3D11ShaderResourceView, texts[i].view);
+    GPUI_RELEASE(ID3D11Texture2D, texts[i].texture);
+    gpui_windows_text_mask_release_v1(&texts[i].mask);
+  }
+}
+
+static int32_t map_text_status(int32_t status) {
+  switch (status) {
+  case GPUI_WINDOWS_TEXT_OK:
+    return GPUI_WINDOWS_OK;
+  case GPUI_WINDOWS_TEXT_UNSUPPORTED_INPUT:
+  case GPUI_WINDOWS_TEXT_UNSUPPORTED_COLOR:
+  case GPUI_WINDOWS_TEXT_UNSUPPORTED_RASTER:
+  case GPUI_WINDOWS_TEXT_UNSUPPORTED_GLYPH:
+  case GPUI_WINDOWS_TEXT_UNSUPPORTED_PLATFORM:
+    return GPUI_WINDOWS_UNSUPPORTED;
+  case GPUI_WINDOWS_TEXT_RESOURCE_LIMIT:
+  case GPUI_WINDOWS_TEXT_INPUT_TOO_LARGE:
+    return GPUI_WINDOWS_RESOURCE;
+  case GPUI_WINDOWS_TEXT_INVALID_ARGUMENT:
+  case GPUI_WINDOWS_TEXT_INVALID_FONT_SIZE:
+  case GPUI_WINDOWS_TEXT_INVALID_COORDINATES:
+  case GPUI_WINDOWS_TEXT_INVALID_FONT_FAMILY:
+  case GPUI_WINDOWS_TEXT_INVALID_SCALE:
+    return GPUI_WINDOWS_INVALID;
+  case GPUI_WINDOWS_TEXT_BUFFER_TOO_SMALL:
+  case GPUI_WINDOWS_TEXT_INVALID_NATIVE_OUTPUT:
+    return GPUI_WINDOWS_CONVERSION;
+  default:
+    return GPUI_WINDOWS_NATIVE;
+  }
+}
+
+static BOOL exact_frame_int(double value, int32_t minimum, int32_t maximum,
+                            int32_t *output) {
+  if (!finite_frame_value(value) || floor(value) != value ||
+      value < minimum || value > maximum)
+    return FALSE;
+  *output = (int32_t)value;
+  return TRUE;
+}
+
+static BOOL valid_frame_item(const double *q) {
+  if (q[2] < 0 || q[3] < 0 || q[14] < 0 || q[14] > 1 || q[17] < 0 ||
+      q[18] < 0 || !finite_frame_value(q[0] + q[2]) ||
+      !finite_frame_value(q[1] + q[3]) ||
+      !finite_frame_value(q[15] + q[17]) ||
+      !finite_frame_value(q[16] + q[18]))
+    return FALSE;
+  for (int32_t c = 4; c < 8; ++c)
+    if (q[c] < 0 || q[c] > 255)
+      return FALSE;
+  const double corners[4][2] = {
+      {q[0], q[1]}, {q[0] + q[2], q[1]},
+      {q[0] + q[2], q[1] + q[3]}, {q[0], q[1] + q[3]},
+  };
+  for (int32_t i = 0; i < 4; ++i) {
+    double x = q[8] * corners[i][0] + q[10] * corners[i][1] + q[12];
+    double y = q[9] * corners[i][0] + q[11] * corners[i][1] + q[13];
+    if (!finite_frame_value(x) || !finite_frame_value(y))
+      return FALSE;
+  }
+  return TRUE;
+}
+
+static BOOL viewport_valid(const double *data) {
+  return data[2] > 0 && data[3] > 0 && data[4] > 0 &&
+         finite_frame_value(data[0] + data[2]) &&
+         finite_frame_value(data[1] + data[3]);
+}
+
+static void write_item_vertices(gpui_vertex *vertices, const double *q,
+                                const GpuiWindowsTextMask *mask,
+                                const double *viewport) {
+  double left = mask ? mask->left : q[0];
+  double top = mask ? mask->top : q[1];
+  double right = mask ? mask->right : q[0] + q[2];
+  double bottom = mask ? mask->bottom : q[1] + q[3];
+  const double corners[6][2] = {
+      {left, top}, {right, top}, {right, bottom},
+      {left, top}, {right, bottom}, {left, bottom},
+  };
+  const double uvs[6][2] = {
+      {mask ? mask->u0 : 0.0, mask ? mask->v0 : 0.0},
+      {mask ? mask->u1 : 0.0, mask ? mask->v0 : 0.0},
+      {mask ? mask->u1 : 0.0, mask ? mask->v1 : 0.0},
+      {mask ? mask->u0 : 0.0, mask ? mask->v0 : 0.0},
+      {mask ? mask->u1 : 0.0, mask ? mask->v1 : 0.0},
+      {mask ? mask->u0 : 0.0, mask ? mask->v1 : 0.0},
+  };
+  float alpha = (float)(q[7] / 255.0 * q[14]);
+  float color[4] = {(float)(q[4] / 255.0) * alpha,
+                    (float)(q[5] / 255.0) * alpha,
+                    (float)(q[6] / 255.0) * alpha, alpha};
+  for (int32_t i = 0; i < 6; ++i) {
+    double x = corners[i][0];
+    double y = corners[i][1];
+    double tx = q[8] * x + q[10] * y + q[12];
+    double ty = q[9] * x + q[11] * y + q[13];
+    vertices[i].position[0] =
+        (float)(2.0 * (tx - viewport[0]) / viewport[2] - 1.0);
+    vertices[i].position[1] =
+        (float)(1.0 - 2.0 * (ty - viewport[1]) / viewport[3]);
+    memcpy(vertices[i].color, color, sizeof(color));
+    vertices[i].uv[0] = (float)uvs[i][0];
+    vertices[i].uv[1] = (float)uvs[i][1];
+  }
+}
+
+static BOOL valid_mask_transform(const gpui_windows_host *host,
+                                 const double *q,
+                                 const GpuiWindowsTextMask *mask,
+                                 const double *viewport) {
+  if (!host || !q || !mask || !viewport)
+    return FALSE;
+  const double corners[4][2] = {
+      {mask->left, mask->top}, {mask->right, mask->top},
+      {mask->right, mask->bottom}, {mask->left, mask->bottom},
+  };
+  for (int32_t i = 0; i < 4; ++i) {
+    double x = q[8] * corners[i][0] + q[10] * corners[i][1] + q[12];
+    double y = q[9] * corners[i][0] + q[11] * corners[i][1] + q[13];
+    double nx = 2.0 * (x - viewport[0]) / viewport[2] - 1.0;
+    double ny = 1.0 - 2.0 * (y - viewport[1]) / viewport[3];
+    if (!finite_frame_value(x) || !finite_frame_value(y) ||
+        !finite_frame_value(nx) || !finite_frame_value(ny))
+      return FALSE;
+  }
+  (void)host;
+  return TRUE;
+}
+
+static BOOL item_scissor(gpui_windows_host *host, const double *q,
+                         const double *viewport, int32_t pixel_width,
+                         int32_t pixel_height, D3D11_RECT *scissor) {
+  double left = fmax(viewport[0], q[15]);
+  double top = fmax(viewport[1], q[16]);
+  double right = fmin(viewport[0] + viewport[2], q[15] + q[17]);
+  double bottom = fmin(viewport[1] + viewport[3], q[16] + q[18]);
+  if (right <= left || bottom <= top)
+    return FALSE;
+  scissor->left = logical_to_physical_floor(left - viewport[0], host->scale);
+  scissor->top = logical_to_physical_floor(top - viewport[1], host->scale);
+  scissor->right = logical_to_physical_ceil(right - viewport[0], host->scale);
+  scissor->bottom = logical_to_physical_ceil(bottom - viewport[1], host->scale);
+  if (scissor->left < 0)
+    scissor->left = 0;
+  if (scissor->top < 0)
+    scissor->top = 0;
+  if (scissor->right > pixel_width)
+    scissor->right = pixel_width;
+  if (scissor->bottom > pixel_height)
+    scissor->bottom = pixel_height;
+  return scissor->right > scissor->left && scissor->bottom > scissor->top;
 }
 
 static int32_t map_hresult(HRESULT hr) {
@@ -752,93 +1012,236 @@ static int32_t readback_frame(gpui_windows_host *host) {
   return GPUI_WINDOWS_OK;
 }
 
-static int32_t present_frame(gpui_windows_host *host, const double *data,
-                             int32_t length) {
+static int32_t present_frame_internal(gpui_windows_host *host,
+                                      int32_t abi, BOOL mixed,
+                                      const double *data, int32_t length,
+                                      const uint8_t *text,
+                                      int32_t text_length) {
+  host->test_text_mask_width = 0;
+  host->test_text_mask_height = 0;
   if (host->state != 0)
     return GPUI_WINDOWS_STOPPING;
   if (host->error)
     return (int32_t)host->error;
   if (host->frame_pending)
     return GPUI_WINDOWS_BUSY;
-  if (length < 5 || (length - 5) % GPUI_WINDOWS_QUAD_STRIDE != 0 || !data)
+  int32_t stride = mixed ? GPUI_MIXED_FRAME_STRIDE
+                         : GPUI_WINDOWS_QUAD_STRIDE;
+  if ((mixed && abi != GPUI_MIXED_FRAME_ABI) || length < 5 ||
+      (length - 5) % stride != 0 || !data || text_length < 0 ||
+      text_length > GPUI_MAX_FRAME_TEXT_BYTES ||
+      (text_length > 0 && !text) || (!mixed && (text_length != 0 || text)))
     return GPUI_WINDOWS_INVALID;
-  int32_t item_count = (length - 5) / GPUI_WINDOWS_QUAD_STRIDE;
+  int32_t item_count = (length - 5) / stride;
   if (item_count > GPUI_MAX_QUADS)
     return GPUI_WINDOWS_RESOURCE;
   for (int32_t i = 0; i < length; ++i)
     if (!finite_frame_value(data[i]))
       return GPUI_WINDOWS_INVALID;
-  if (data[0] != 0 || data[1] != 0)
-    return GPUI_WINDOWS_UNSUPPORTED;
-  if (data[2] <= 0 || data[3] <= 0 || data[4] <= 0)
+  if (!viewport_valid(data))
     return GPUI_WINDOWS_INVALID;
   if (data[2] != host->logical_width || data[3] != host->logical_height ||
       data[4] != host->scale)
     return GPUI_WINDOWS_BUSY;
+
+  int32_t text_count = 0;
+  int32_t referenced_text_bytes = 0;
+  for (int32_t item = 0; item < item_count; ++item) {
+    const double *record = data + 5 + item * stride;
+    int32_t kind = 0;
+    const double *q = record;
+    if (mixed) {
+      if (record[0] != 0.0 && record[0] != 1.0 && record[0] != 2.0)
+        return GPUI_WINDOWS_UNSUPPORTED;
+      kind = (int32_t)record[0];
+      q = record + 1;
+    }
+    if (!valid_frame_item(q))
+      return GPUI_WINDOWS_INVALID;
+    if (!mixed)
+      continue;
+    int32_t payload_offset = 0, payload_length = 0;
+    if (kind == 0) {
+      for (int32_t field = 19; field < GPUI_MIXED_FRAME_STRIDE - 1; ++field)
+        if (q[field] != 0.0)
+          return GPUI_WINDOWS_INVALID;
+      continue;
+    }
+    if (++text_count > GPUI_MAX_TEXT_RUNS)
+      return GPUI_WINDOWS_RESOURCE;
+    if (!exact_frame_int(q[19], 0, text_length, &payload_offset) ||
+        !exact_frame_int(q[20], 0, GPUI_WINDOWS_TEXT_MAX_SCENE_BYTES,
+                         &payload_length) ||
+        payload_offset > text_length ||
+        payload_length > text_length - payload_offset ||
+        q[21] <= 0 || q[21] > GPUI_WINDOWS_TEXT_MAX_SCENE_FONT_SIZE ||
+        (kind == 1 && (q[22] != 0.0 || q[23] != 0.0)))
+      return GPUI_WINDOWS_INVALID;
+    if (payload_length > GPUI_MAX_FRAME_TEXT_BYTES - referenced_text_bytes)
+      return GPUI_WINDOWS_RESOURCE;
+    referenced_text_bytes += payload_length;
+  }
+
   RECT client;
   if (!host->api.get_client_rect(host->hwnd, &client))
     return GPUI_WINDOWS_NATIVE;
   int32_t pixel_width = client.right - client.left;
   int32_t pixel_height = client.bottom - client.top;
-  HRESULT hr = resize_gpu(host, pixel_width, pixel_height);
-  if (FAILED(hr))
-    return map_hresult(hr);
-  if (!host->render_target || pixel_width <= 0 || pixel_height <= 0)
+  if (pixel_width <= 0 || pixel_height <= 0 ||
+      pixel_width != host->pixel_width || pixel_height != host->pixel_height)
     return GPUI_WINDOWS_BUSY;
+  if (!host->render_target)
+    return GPUI_WINDOWS_BUSY;
+
+  gpui_staged_text texts[GPUI_MAX_TEXT_RUNS];
+  ZeroMemory(texts, sizeof(texts));
+  int32_t staged_count = 0;
+  int32_t total_mask_pixels = 0;
+  static const uint8_t family[] = "Segoe UI";
+  for (int32_t item = 0; item < item_count; ++item) {
+    const double *record = data + 5 + item * stride;
+    int32_t kind = mixed ? (int32_t)record[0] : 0;
+    if (kind == 0)
+      continue;
+    const double *q = record + 1;
+    gpui_staged_text *staged = &texts[staged_count++];
+    staged->item_index = item;
+    int32_t payload_offset = (int32_t)q[19];
+    int32_t payload_length = (int32_t)q[20];
+    const uint8_t *run = payload_length ? text + payload_offset
+                                        : (const uint8_t *)"";
+    double origin_x = kind == 1 ? q[0] : q[22];
+    double origin_y = kind == 1 ? q[1] : q[23];
+    // Text masks live in item-local coordinates and are transformed with the
+    // item vertices. Apply only local item bounds here; viewport and clip
+    // chains are global and are enforced later by the D3D scissor.
+    double clip_left = q[0];
+    double clip_top = q[1];
+    double clip_width = q[2];
+    double clip_height = q[3];
+    if (clip_width > GPUI_WINDOWS_TEXT_MAX_SCENE_WIDTH ||
+        clip_height > GPUI_WINDOWS_TEXT_MAX_SCENE_HEIGHT) {
+      release_staged_text(texts, staged_count);
+      return GPUI_WINDOWS_RESOURCE;
+    }
+    int32_t budget = GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS - total_mask_pixels;
+    int32_t text_status = gpui_windows_text_raster_v2(
+        GPUI_WINDOWS_TEXT_RASTER_ABI, run, payload_length, family,
+        (int32_t)sizeof(family) - 1, host->scale, q[21], origin_x, origin_y,
+        clip_left, clip_top, clip_width, clip_height, budget,
+        &staged->mask);
+    int32_t status = map_text_status(text_status);
+    if (status != GPUI_WINDOWS_OK) {
+      release_staged_text(texts, staged_count);
+      return status;
+    }
+    if ((staged->mask.pixels == NULL &&
+         (staged->mask.width != 0 || staged->mask.height != 0)) ||
+        (staged->mask.pixels != NULL &&
+         (staged->mask.width <= 0 || staged->mask.height <= 0 ||
+          staged->mask.width > GPUI_WINDOWS_TEXT_MAX_MASK_DIMENSION ||
+          staged->mask.height > GPUI_WINDOWS_TEXT_MAX_MASK_DIMENSION))) {
+      release_staged_text(texts, staged_count);
+      return GPUI_WINDOWS_CONVERSION;
+    }
+    if (staged->mask.pixels &&
+        !valid_mask_transform(host, q, &staged->mask, data)) {
+      release_staged_text(texts, staged_count);
+      return GPUI_WINDOWS_INVALID;
+    }
+    int64_t mask_pixels = (int64_t)staged->mask.width * staged->mask.height;
+    if (mask_pixels < 0 ||
+        mask_pixels > GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS - total_mask_pixels) {
+      release_staged_text(texts, staged_count);
+      return GPUI_WINDOWS_RESOURCE;
+    }
+    total_mask_pixels += (int32_t)mask_pixels;
+    if (staged->mask.pixels) {
+      host->test_text_mask_width = staged->mask.width;
+      host->test_text_mask_height = staged->mask.height;
+    }
+  }
+
   int32_t status = ensure_vertex_capacity(host, (UINT)item_count * 6);
-  if (status != GPUI_WINDOWS_OK)
+  if (status != GPUI_WINDOWS_OK) {
+    release_staged_text(texts, staged_count);
     return status;
+  }
+
+  for (int32_t i = 0; i < staged_count; ++i) {
+    gpui_staged_text *staged = &texts[i];
+    if (!staged->mask.pixels)
+      continue;
+    D3D11_TEXTURE2D_DESC desc;
+    ZeroMemory(&desc, sizeof(desc));
+    desc.Width = (UINT)staged->mask.width;
+    desc.Height = (UINT)staged->mask.height;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_IMMUTABLE;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    D3D11_SUBRESOURCE_DATA initial;
+    initial.pSysMem = staged->mask.pixels;
+    initial.SysMemPitch = (UINT)staged->mask.width;
+    initial.SysMemSlicePitch = 0;
+    HRESULT hr = ID3D11Device_CreateTexture2D(
+        host->device, &desc, &initial, &staged->texture);
+    if (FAILED(hr)) {
+      status = hr == E_OUTOFMEMORY ? GPUI_WINDOWS_RESOURCE : map_hresult(hr);
+      release_staged_text(texts, staged_count);
+      return status;
+    }
+    D3D11_SHADER_RESOURCE_VIEW_DESC view_desc;
+    ZeroMemory(&view_desc, sizeof(view_desc));
+    view_desc.Format = DXGI_FORMAT_R8_UNORM;
+    view_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    view_desc.Texture2D.MipLevels = 1;
+    hr = ID3D11Device_CreateShaderResourceView(
+        host->device, (ID3D11Resource *)staged->texture, &view_desc,
+        &staged->view);
+    if (FAILED(hr)) {
+      status = hr == E_OUTOFMEMORY ? GPUI_WINDOWS_RESOURCE : map_hresult(hr);
+      release_staged_text(texts, staged_count);
+      return status;
+    }
+  }
+
   D3D11_MAPPED_SUBRESOURCE mapped;
   ZeroMemory(&mapped, sizeof(mapped));
   if (item_count > 0) {
-    hr = ID3D11DeviceContext_Map(host->context,
-                                 (ID3D11Resource *)host->vertex_buffer, 0,
-                                 D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-    if (FAILED(hr))
+    HRESULT hr = ID3D11DeviceContext_Map(
+        host->context, (ID3D11Resource *)host->vertex_buffer, 0,
+        D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    if (FAILED(hr)) {
+      release_staged_text(texts, staged_count);
       return map_hresult(hr);
+    }
+    if (!mapped.pData) {
+      ID3D11DeviceContext_Unmap(host->context,
+                                (ID3D11Resource *)host->vertex_buffer, 0);
+      release_staged_text(texts, staged_count);
+      return GPUI_WINDOWS_CONVERSION;
+    }
   }
   gpui_vertex *vertices = (gpui_vertex *)mapped.pData;
+  int32_t text_index = 0;
   for (int32_t item = 0; item < item_count; ++item) {
-    const double *q = data + 5 + item * GPUI_WINDOWS_QUAD_STRIDE;
-    if (q[2] < 0 || q[3] < 0 || q[14] < 0 || q[14] > 1 || q[17] < 0 ||
-        q[18] < 0) {
-      if (item_count > 0)
-        ID3D11DeviceContext_Unmap(host->context,
-                                  (ID3D11Resource *)host->vertex_buffer, 0);
-      return GPUI_WINDOWS_INVALID;
-    }
-    for (int32_t c = 4; c < 8; ++c)
-      if (q[c] < 0 || q[c] > 255) {
-        if (item_count > 0)
-          ID3D11DeviceContext_Unmap(host->context,
-                                    (ID3D11Resource *)host->vertex_buffer, 0);
-        return GPUI_WINDOWS_INVALID;
+    const double *record = data + 5 + item * stride;
+    int32_t kind = mixed ? (int32_t)record[0] : 0;
+    const double *q = mixed ? record + 1 : record;
+    const GpuiWindowsTextMask *mask = NULL;
+    if (kind != 0) {
+      mask = &texts[text_index++].mask;
+      if (!mask->pixels) {
+        /* Empty text is a valid, fully preflighted paint item. */
+        GpuiWindowsTextMask empty = {0};
+        write_item_vertices(&vertices[item * 6], q, &empty, data);
+        continue;
       }
-    float alpha = (float)(q[7] / 255.0 * q[14]);
-    float color[4] = {(float)(q[4] / 255.0) * alpha,
-                      (float)(q[5] / 255.0) * alpha,
-                      (float)(q[6] / 255.0) * alpha, alpha};
-    const double corners[6][2] = {
-        {q[0], q[1]}, {q[0] + q[2], q[1]},
-        {q[0] + q[2], q[1] + q[3]}, {q[0], q[1]},
-        {q[0] + q[2], q[1] + q[3]}, {q[0], q[1] + q[3]},
-    };
-    for (int32_t v = 0; v < 6; ++v) {
-      double x = corners[v][0];
-      double y = corners[v][1];
-      double tx = q[8] * x + q[10] * y + q[12];
-      double ty = q[9] * x + q[11] * y + q[13];
-      if (!finite_frame_value(tx) || !finite_frame_value(ty)) {
-        if (item_count > 0)
-          ID3D11DeviceContext_Unmap(host->context,
-                                    (ID3D11Resource *)host->vertex_buffer, 0);
-        return GPUI_WINDOWS_INVALID;
-      }
-      gpui_vertex *vertex = &vertices[item * 6 + v];
-      vertex->position[0] = (float)(2.0 * tx / host->logical_width - 1.0);
-      vertex->position[1] = (float)(1.0 - 2.0 * ty / host->logical_height);
-      memcpy(vertex->color, color, sizeof(color));
     }
+    write_item_vertices(&vertices[item * 6], q, mask, data);
   }
   if (item_count > 0)
     ID3D11DeviceContext_Unmap(host->context,
@@ -847,6 +1250,7 @@ static int32_t present_frame(gpui_windows_host *host, const double *data,
   ID3D11DeviceContext_OMSetRenderTargets(host->context, 1,
                                          &host->render_target, NULL);
   const float clear[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  host->test_clear_count++;
   ID3D11DeviceContext_ClearRenderTargetView(host->context,
                                             host->render_target, clear);
   D3D11_VIEWPORT viewport;
@@ -861,60 +1265,82 @@ static int32_t present_frame(gpui_windows_host *host, const double *data,
   ID3D11DeviceContext_OMSetBlendState(host->context, host->blend_state, NULL,
                                       0xffffffffu);
   ID3D11DeviceContext_VSSetShader(host->context, host->vertex_shader, NULL, 0);
-  ID3D11DeviceContext_PSSetShader(host->context, host->pixel_shader, NULL, 0);
   ID3D11DeviceContext_IASetInputLayout(host->context, host->input_layout);
   ID3D11DeviceContext_IASetPrimitiveTopology(
       host->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   if (item_count > 0) {
-    UINT stride = sizeof(gpui_vertex);
-    UINT offset = 0;
-    ID3D11DeviceContext_IASetVertexBuffers(host->context, 0, 1,
-                                           &host->vertex_buffer, &stride,
-                                           &offset);
+    UINT vertex_stride = sizeof(gpui_vertex);
+    UINT vertex_offset = 0;
+    ID3D11DeviceContext_IASetVertexBuffers(
+        host->context, 0, 1, &host->vertex_buffer, &vertex_stride,
+        &vertex_offset);
   }
+  text_index = 0;
   for (int32_t item = 0; item < item_count; ++item) {
-    const double *q = data + 5 + item * GPUI_WINDOWS_QUAD_STRIDE;
-    double left = fmin(host->logical_width, fmax(0.0, q[15]));
-    double top = fmin(host->logical_height, fmax(0.0, q[16]));
-    double right = fmax(0.0, fmin(host->logical_width, q[15] + q[17]));
-    double bottom = fmax(0.0, fmin(host->logical_height, q[16] + q[18]));
+    const double *record = data + 5 + item * stride;
+    int32_t kind = mixed ? (int32_t)record[0] : 0;
+    const double *q = mixed ? record + 1 : record;
+    gpui_staged_text *staged = kind == 0 ? NULL : &texts[text_index++];
     D3D11_RECT scissor;
-    scissor.left = logical_to_physical_floor(left, host->scale);
-    scissor.top = logical_to_physical_floor(top, host->scale);
-    scissor.right = logical_to_physical_ceil(right, host->scale);
-    scissor.bottom = logical_to_physical_ceil(bottom, host->scale);
-    if (scissor.left < 0)
-      scissor.left = 0;
-    if (scissor.top < 0)
-      scissor.top = 0;
-    if (scissor.right > pixel_width)
-      scissor.right = pixel_width;
-    if (scissor.bottom > pixel_height)
-      scissor.bottom = pixel_height;
+    if (!item_scissor(host, q, data, pixel_width, pixel_height, &scissor) ||
+        (staged && !staged->view))
+      continue;
     ID3D11DeviceContext_RSSetScissorRects(host->context, 1, &scissor);
-    if (scissor.right > scissor.left && scissor.bottom > scissor.top)
-      ID3D11DeviceContext_Draw(host->context, 6, (UINT)item * 6);
+    if (staged) {
+      ID3D11DeviceContext_PSSetShader(host->context, host->mask_pixel_shader,
+                                      NULL, 0);
+      ID3D11DeviceContext_PSSetShaderResources(host->context, 0, 1,
+                                               &staged->view);
+      ID3D11DeviceContext_PSSetSamplers(host->context, 0, 1,
+                                        &host->text_sampler);
+    } else {
+      ID3D11DeviceContext_PSSetShader(host->context, host->pixel_shader, NULL,
+                                      0);
+      ID3D11ShaderResourceView *null_view = NULL;
+      ID3D11DeviceContext_PSSetShaderResources(host->context, 0, 1,
+                                               &null_view);
+    }
+    host->test_draw_count++;
+    ID3D11DeviceContext_Draw(host->context, 6, (UINT)item * 6);
   }
+  ID3D11ShaderResourceView *null_view = NULL;
+  ID3D11DeviceContext_PSSetShaderResources(host->context, 0, 1, &null_view);
   status = readback_frame(host);
-  if (status != GPUI_WINDOWS_OK)
+  if (status != GPUI_WINDOWS_OK) {
+    release_staged_text(texts, staged_count);
     return status;
+  }
   ID3D11DeviceContext_End(host->context, (ID3D11Asynchronous *)host->frame_query);
-  hr = IDXGISwapChain_Present(host->swap_chain, 1, 0);
+  host->test_present_count++;
+  HRESULT hr = IDXGISwapChain_Present(host->swap_chain, 1, 0);
   if (FAILED(hr)) {
     host->frame_pending = FALSE;
+    release_staged_text(texts, staged_count);
     return map_hresult(hr);
   }
   host->frame_pending = TRUE;
+  release_staged_text(texts, staged_count);
   return GPUI_WINDOWS_OK;
 }
 
+static int32_t present_frame(gpui_windows_host *host, const double *data,
+                             int32_t length) {
+  return present_frame_internal(host, 1, FALSE, data, length, NULL, 0);
+}
+
+static int32_t present_text_frame(gpui_windows_host *host, int32_t abi,
+                                  const double *data, int32_t length,
+                                  const uint8_t *text, int32_t text_length) {
+  return present_frame_internal(host, abi, TRUE, data, length, text,
+                                text_length);
+}
 static int32_t poll_frame_completion(gpui_windows_host *host) {
   if (!host->frame_pending || !host->context || !host->frame_query)
     return GPUI_WINDOWS_OK;
   BOOL complete = FALSE;
   HRESULT hr = ID3D11DeviceContext_GetData(
       host->context, (ID3D11Asynchronous *)host->frame_query, &complete,
-      sizeof(complete), D3D11_ASYNC_GETDATA_DONOTFLUSH);
+      sizeof(complete), 0);
   if (hr == S_OK && complete) {
     host->frame_pending = FALSE;
     emit_event(host, 5, 0, 0, 0, 0);
@@ -980,7 +1406,7 @@ static void emit_character(gpui_windows_host *host, uint32_t scalar,
     InterlockedExchange(&host->error, GPUI_WINDOWS_INVALID);
     return;
   }
-  emit_event(host, 11, (double)scalar, 0, 0, mods);
+  emit_event(host, 16, (double)scalar, 0, 0, mods);
 }
 
 static UINT mouse_button_bit(UINT message, WPARAM wparam) {
@@ -1023,6 +1449,11 @@ static UINT update_mouse_buttons(UINT buttons, UINT message, WPARAM wparam) {
   }
 }
 
+/* The experimental editor transport shares `host->events` with ordinary
+ * platform events. Keep its implementation in a Win32-only include. */
+#include "text_input.inc"
+#include "text_session_e2e.inc"
+
 static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
                                          WPARAM wparam, LPARAM lparam) {
   gpui_windows_host *host = (gpui_windows_host *)
@@ -1043,6 +1474,10 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
   }
   if (host->destroying && message != WM_NCDESTROY)
     return host->api.def_window_proc_w(hwnd, message, wparam, lparam);
+  LRESULT text_result = 0;
+  if (gpui_text_session_wndproc(host, hwnd, message, wparam, lparam,
+                                &text_result))
+    return text_result;
   switch (message) {
   case WM_ERASEBKGND:
     return 1;
@@ -1090,6 +1525,7 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
     emit_event(host, 6, 0, 0, 1, 0);
     return 0;
   case WM_KILLFOCUS:
+    gpui_text_session_focus_lost(host);
     emit_event(host, 6, 0, 0, 0, 0);
     host->pending_high_surrogate = 0;
     host->mouse_buttons = 0;
@@ -1221,6 +1657,12 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
     }
     break;
   case WM_NCDESTROY:
+    if (host->deferred_message_pending &&
+        host->deferred_message.hwnd == hwnd) {
+      ZeroMemory(&host->deferred_message, sizeof(host->deferred_message));
+      host->deferred_message_pending = FALSE;
+    }
+    gpui_text_session_forget_window(host, host->window_id);
     host->mouse_buttons = 0;
     host->mouse_tracking = FALSE;
     host->api.set_window_long_ptr_w(hwnd, GWLP_USERDATA, 0);
@@ -1238,6 +1680,7 @@ int32_t gpui_windows_start(int32_t abi_version) {
   if (InterlockedCompareExchange(&g_host_claimed, 1, 0) != 0)
     goto busy;
   ZeroMemory(&g_host, sizeof(g_host));
+  gpui_text_session_reset_host(&g_host);
   g_host.token = InterlockedIncrement(&g_next_host);
   if (g_host.token <= 0) {
     InterlockedExchange(&g_host_claimed, 0);
@@ -1449,6 +1892,8 @@ int32_t gpui_windows_destroy(int32_t token, int32_t window) {
   HWND hwnd = g_host.hwnd;
   g_host.destroying = TRUE;
   discard_events_for(&g_host, window);
+  gpui_text_session_focus_lost(&g_host);
+  gpui_text_session_forget_window(&g_host, window);
   release_gpu(&g_host);
   if (!g_host.api.destroy_window(hwnd)) {
     g_host.destroying = FALSE;
@@ -1806,36 +2251,73 @@ static int32_t dispatch_messages(gpui_windows_host *host, int32_t timeout_ms) {
   int32_t completion_status = poll_frame_completion(host);
   if (completion_status != GPUI_WINDOWS_OK)
     return completion_status;
-  /* Probe without consuming: the dispatch loop below must see the first
-   * queued message too (notably a lone posted WM_CLOSE or host wake). */
-  BOOL got = host->api.peek_message_w(&message, NULL, 0, 0, PM_NOREMOVE);
+  if (gpui_text_session_dispatch_fenced(host))
+    return host->error ? (int32_t)host->error : GPUI_WINDOWS_OK;
+  /* A deferred queued MSG takes precedence over any later queue entry. */
+  BOOL got = FALSE;
   DWORD wait_ms = (DWORD)timeout_ms;
   if (host->frame_pending && wait_ms > 8)
     wait_ms = 8;
-  if (!got && wait_ms > 0)
-    host->api.msg_wait_for_multiple_objects(0, NULL, FALSE,
-                                           wait_ms, QS_ALLINPUT);
-  while (host->api.peek_message_w(&message, NULL, 0, 0, PM_REMOVE)) {
+  if (!host->deferred_message_pending) {
+    /* Probe without consuming: the dispatch loop below must see the first
+     * queued message too (notably a lone posted WM_CLOSE or host wake). */
+    got = host->api.peek_message_w(&message, NULL, 0, 0, PM_NOREMOVE);
+    /* PeekMessage may synchronously dispatch sent callbacks while probing.
+     * Recheck this queued-message boundary before removing the probe result. */
+    if (gpui_text_session_dispatch_fenced(host))
+      goto dispatch_finish;
+    if (!got && wait_ms > 0)
+      host->api.msg_wait_for_multiple_objects(0, NULL, FALSE,
+                                             wait_ms, QS_ALLINPUT);
+  }
+  while (TRUE) {
+    if (host->deferred_message_pending) {
+      message = host->deferred_message;
+      ZeroMemory(&host->deferred_message, sizeof(host->deferred_message));
+      host->deferred_message_pending = FALSE;
+    } else {
+      int32_t queued_events_before = host->event_count;
+      if (!host->api.peek_message_w(&message, NULL, 0, 0, PM_REMOVE))
+        break;
+      /* PeekMessage may return a removed queued MSG after a sent callback has
+       * published a record. Preserve this one MSG until the app has applied
+       * the record, then process it ahead of the remaining queue. */
+      if (gpui_text_session_dispatch_fenced(host) &&
+          host->event_count > queued_events_before) {
+        host->deferred_message = message;
+        host->deferred_message_pending = TRUE;
+        break;
+      }
+    }
     if (message.message == WM_QUIT) {
       InterlockedCompareExchange(&host->state, 1, 0);
       emit_event(host, 14, 0, 0, 0, 0);
+      if (gpui_text_session_dispatch_fenced(host))
+        break;
       continue;
     }
     if (message.message == GPUI_WAKE_MESSAGE) {
       if (message.wParam != (WPARAM)host->token)
         continue;
       emit_event(host, 13, 0, 0, 0, 0);
+      if (gpui_text_session_dispatch_fenced(host))
+        break;
       continue;
     }
     if (message.message == GPUI_EXIT_MESSAGE) {
       if (message.wParam != (WPARAM)host->token)
         continue;
       emit_event(host, 14, 0, 0, 0, 0);
+      if (gpui_text_session_dispatch_fenced(host))
+        break;
       continue;
     }
     host->api.translate_message(&message);
     host->api.dispatch_message_w(&message);
+    if (gpui_text_session_dispatch_fenced(host))
+      break;
   }
+dispatch_finish:
   completion_status = poll_frame_completion(host);
   if (completion_status != GPUI_WINDOWS_OK)
     return completion_status;
@@ -1861,11 +2343,34 @@ int32_t gpui_windows_next(int32_t token, double *event_data) {
     return -(int32_t)g_host.error;
   if (g_host.event_count == 0)
     return 0;
-  memcpy(event_data, g_host.events[g_host.event_read],
+  if (gpui_text_session_head_is_editor(&g_host))
+    return -GPUI_WINDOWS_UNSUPPORTED;
+  int32_t slot = g_host.event_read;
+  memcpy(event_data, g_host.events[slot],
          sizeof(g_host.events[g_host.event_read]));
-  g_host.event_read = (g_host.event_read + 1) % GPUI_EVENT_CAPACITY;
+  gpui_text_session_discard_slot(&g_host, slot);
+  g_host.event_read = (slot + 1) % GPUI_EVENT_CAPACITY;
   g_host.event_count--;
   return 1;
+}
+
+int32_t gpui_windows_next_editor(int32_t token, double *event_data,
+                                 uint8_t *payload, int32_t payload_capacity) {
+  int32_t status = check_host(token, TRUE);
+  if (status != GPUI_WINDOWS_OK)
+    return -status;
+  if (!event_data || payload_capacity < 0 ||
+      (payload_capacity > 0 && !payload))
+    return -GPUI_WINDOWS_INVALID;
+  if (g_host.error)
+    return -(int32_t)g_host.error;
+  if (g_host.event_count == 0) {
+    status = dispatch_messages(&g_host, 0);
+    if (status != GPUI_WINDOWS_OK)
+      return -status;
+  }
+  return gpui_text_session_pop(&g_host, event_data, payload,
+                               payload_capacity);
 }
 
 int32_t gpui_windows_present(int32_t token, int32_t window,
@@ -1878,6 +2383,19 @@ int32_t gpui_windows_present(int32_t token, int32_t window,
   if (status != GPUI_WINDOWS_OK)
     return status;
   return present_frame(&g_host, frame_data, length);
+}
+
+int32_t gpui_windows_present_text(int32_t abi, int32_t token, int32_t window,
+                                 const double *frame_data, int32_t length,
+                                 const uint8_t *text, int32_t text_length) {
+  int32_t status = check_window(token, window);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  status = dispatch_messages(&g_host, 0);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  return present_text_frame(&g_host, abi, frame_data, length, text,
+                            text_length);
 }
 
 int32_t gpui_windows_recover(int32_t token, int32_t window) {
@@ -2047,6 +2565,196 @@ int32_t gpui_windows_readback(int32_t token, int32_t window, double *rgba) {
   return GPUI_WINDOWS_OK;
 }
 
+/* Test-only full-pixel scan through the same staging texture used by the
+ * native readback gate. Coordinates are logical; output is total, nonzero
+ * alpha, partial alpha, and exact expected-RGBA pixel counts. */
+int32_t gpui_windows_test_readback_region(int32_t token, int32_t window,
+                                          double x, double y, double width,
+                                          double height,
+                                          const double *expected_rgba,
+                                          double *output) {
+  int32_t status = check_host(token, TRUE);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  if (window != g_host.window_id || !g_host.hwnd)
+    return GPUI_WINDOWS_STALE;
+  if (!output || !expected_rgba || !g_host.readback_enabled ||
+      !g_host.readback_valid || !g_host.staging_texture ||
+      !finite_frame_value(x) || !finite_frame_value(y) ||
+      !finite_frame_value(width) || !finite_frame_value(height) ||
+      width <= 0 || height <= 0)
+    return !g_host.readback_enabled ? GPUI_WINDOWS_UNSUPPORTED
+                                    : GPUI_WINDOWS_INVALID;
+  int32_t expected[4];
+  for (int32_t i = 0; i < 4; ++i)
+    if (!exact_frame_int(expected_rgba[i], 0, 255, &expected[i]))
+      return GPUI_WINDOWS_INVALID;
+  double right = x + width, bottom = y + height;
+  if (!finite_frame_value(right) || !finite_frame_value(bottom))
+    return GPUI_WINDOWS_INVALID;
+  int32_t left_px = logical_to_physical_floor(x, g_host.scale);
+  int32_t top_px = logical_to_physical_floor(y, g_host.scale);
+  int32_t right_px = logical_to_physical_ceil(right, g_host.scale);
+  int32_t bottom_px = logical_to_physical_ceil(bottom, g_host.scale);
+  if (left_px < 0)
+    left_px = 0;
+  if (top_px < 0)
+    top_px = 0;
+  if (right_px > g_host.pixel_width)
+    right_px = g_host.pixel_width;
+  if (bottom_px > g_host.pixel_height)
+    bottom_px = g_host.pixel_height;
+  if (right_px <= left_px || bottom_px <= top_px)
+    return GPUI_WINDOWS_INVALID;
+  D3D11_MAPPED_SUBRESOURCE mapped;
+  HRESULT hr = ID3D11DeviceContext_Map(
+      g_host.context, (ID3D11Resource *)g_host.staging_texture, 0,
+      D3D11_MAP_READ, 0, &mapped);
+  if (FAILED(hr))
+    return map_hresult(hr);
+  int64_t total = 0, nonzero = 0, partial = 0, exact = 0;
+  for (int32_t py = top_px; py < bottom_px; ++py) {
+    const uint8_t *row = (const uint8_t *)mapped.pData +
+                         (size_t)py * mapped.RowPitch;
+    for (int32_t px = left_px; px < right_px; ++px) {
+      const uint8_t *pixel = row + (size_t)px * 4;
+      ++total;
+      if (pixel[3] != 0)
+        ++nonzero;
+      if (pixel[3] != 0 && pixel[3] != 255)
+        ++partial;
+      if (pixel[0] == expected[0] && pixel[1] == expected[1] &&
+          pixel[2] == expected[2] && pixel[3] == expected[3])
+        ++exact;
+    }
+  }
+  ID3D11DeviceContext_Unmap(g_host.context,
+                            (ID3D11Resource *)g_host.staging_texture, 0);
+  output[0] = (double)total;
+  output[1] = (double)nonzero;
+  output[2] = (double)partial;
+  output[3] = (double)exact;
+  return GPUI_WINDOWS_OK;
+}
+
+/* Test the complete production text-raster/presentation path at a fixed 2x
+ * density, independent of the monitor used by the Windows runner. The
+ * returned staged dimensions must match an adapter raster at the same scale;
+ * the readback region is still sampled from the real D3D11 staging texture. */
+int32_t gpui_windows_test_text_density2(int32_t token, int32_t window,
+                                        double *output) {
+  int32_t status = check_window(token, window);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  if (!output)
+    return GPUI_WINDOWS_INVALID;
+  if (!g_host.readback_enabled || !g_host.staging_texture)
+    return GPUI_WINDOWS_UNSUPPORTED;
+  if (g_host.frame_pending || g_host.pixel_width < 128 ||
+      g_host.pixel_height < 64)
+    return GPUI_WINDOWS_BUSY;
+
+  static const uint8_t sample[] = {'j'};
+  static const uint8_t family[] = "Segoe UI";
+  GpuiWindowsTextMask one = {0};
+  GpuiWindowsTextMask two = {0};
+  int32_t text_status = gpui_windows_text_raster_v2(
+      GPUI_WINDOWS_TEXT_RASTER_ABI, sample, 1, family,
+      (int32_t)sizeof(family) - 1, 1.0, 18.0, 0.0, 0.0, 0.0, 0.0,
+      64.0, 32.0, GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &one);
+  if (text_status == GPUI_WINDOWS_TEXT_OK)
+    text_status = gpui_windows_text_raster_v2(
+        GPUI_WINDOWS_TEXT_RASTER_ABI, sample, 1, family,
+        (int32_t)sizeof(family) - 1, 2.0, 18.0, 0.0, 0.0, 0.0, 0.0,
+        64.0, 32.0, GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &two);
+  if (text_status != GPUI_WINDOWS_TEXT_OK) {
+    gpui_windows_text_mask_release_v1(&one);
+    gpui_windows_text_mask_release_v1(&two);
+    return map_text_status(text_status);
+  }
+
+  double old_scale = g_host.scale;
+  double old_logical_width = g_host.logical_width;
+  double old_logical_height = g_host.logical_height;
+  g_host.scale = 2.0;
+  g_host.logical_width = (double)g_host.pixel_width / 2.0;
+  g_host.logical_height = (double)g_host.pixel_height / 2.0;
+
+  double frame[30] = {0.0};
+  frame[0] = 0.0;
+  frame[1] = 0.0;
+  frame[2] = g_host.logical_width;
+  frame[3] = g_host.logical_height;
+  frame[4] = 2.0;
+  frame[5] = 2.0; /* one TextRun item */
+  double *q = &frame[6];
+  q[0] = 0.0;
+  q[1] = 0.0;
+  q[2] = 64.0;
+  q[3] = 32.0;
+  q[4] = 255.0;
+  q[5] = 255.0;
+  q[6] = 255.0;
+  q[7] = 255.0;
+  q[8] = 1.0;
+  q[11] = 1.0;
+  q[14] = 1.0;
+  q[15] = 0.0;
+  q[16] = 0.0;
+  q[17] = 64.0;
+  q[18] = 32.0;
+  q[19] = 0.0;
+  q[20] = 1.0;
+  q[21] = 18.0;
+  q[22] = 0.0;
+  q[23] = 0.0;
+  status = present_text_frame(&g_host, GPUI_MIXED_FRAME_ABI, frame, 30,
+                              sample, 1);
+  if (status == GPUI_WINDOWS_OK) {
+    double transparent[4] = {0.0, 0.0, 0.0, 0.0};
+    double readback[4] = {0.0, 0.0, 0.0, 0.0};
+    status = gpui_windows_test_readback_region(
+        token, window, 0.0, 0.0, 64.0, 32.0, transparent, readback);
+    if (status == GPUI_WINDOWS_OK) {
+      output[0] = (double)one.width;
+      output[1] = (double)one.height;
+      output[2] = (double)two.width;
+      output[3] = (double)two.height;
+      output[4] = (double)g_host.test_text_mask_width;
+      output[5] = (double)g_host.test_text_mask_height;
+      for (int32_t i = 0; i < 4; ++i)
+        output[6 + i] = readback[i];
+      output[10] = one.left;
+      output[11] = one.top;
+      output[12] = one.right;
+      output[13] = one.bottom;
+      output[14] = two.left;
+      output[15] = two.top;
+      output[16] = two.right;
+      output[17] = two.bottom;
+    }
+  }
+  g_host.scale = old_scale;
+  g_host.logical_width = old_logical_width;
+  g_host.logical_height = old_logical_height;
+  gpui_windows_text_mask_release_v1(&one);
+  gpui_windows_text_mask_release_v1(&two);
+  return status;
+}
+
+int32_t gpui_windows_test_renderer_counts(int32_t token, int32_t window,
+                                          int64_t *counts) {
+  int32_t status = check_window(token, window);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  if (!counts)
+    return GPUI_WINDOWS_INVALID;
+  counts[0] = g_host.test_clear_count;
+  counts[1] = g_host.test_draw_count;
+  counts[2] = g_host.test_present_count;
+  return GPUI_WINDOWS_OK;
+}
+
 int32_t gpui_windows_stop(int32_t token) {
   AcquireSRWLockExclusive(&g_host_lifecycle_lock);
   if (!valid_token(token)) {
@@ -2062,11 +2770,15 @@ int32_t gpui_windows_stop(int32_t token) {
     return status;
   }
   InterlockedExchange(&g_host.state, 1);
+  ZeroMemory(&g_host.deferred_message, sizeof(g_host.deferred_message));
+  g_host.deferred_message_pending = FALSE;
   if (g_host.hwnd) {
     int32_t window_id = g_host.window_id;
     HWND hwnd = g_host.hwnd;
     g_host.destroying = TRUE;
     discard_events_for(&g_host, window_id);
+    gpui_text_session_focus_lost(&g_host);
+    gpui_text_session_forget_window(&g_host, window_id);
     release_gpu(&g_host);
     if (!g_host.api.destroy_window(hwnd)) {
       g_host.destroying = FALSE;
@@ -2082,6 +2794,7 @@ int32_t gpui_windows_stop(int32_t token) {
     g_host.api.unregister_class_w(GPUI_CLASS_NAME, g_host.instance);
     g_host.class_registered = FALSE;
   }
+  gpui_text_session_shutdown(&g_host);
   api_release(&g_host);
   InterlockedExchange(&g_host.state, 2);
   InterlockedExchange(&g_host_claimed, 0);
@@ -2165,12 +2878,96 @@ int32_t gpui_windows_next(int32_t host, double *event_data) {
   (void)event_data;
   return -GPUI_WINDOWS_UNSUPPORTED;
 }
+int32_t gpui_windows_next_editor(int32_t host, double *event_data,
+                                 uint8_t *payload, int32_t payload_capacity) {
+  (void)host;
+  (void)event_data;
+  (void)payload;
+  (void)payload_capacity;
+  return -GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_session_begin(int32_t host, int32_t window,
+                                   int32_t owner_generation,
+                                   const uint8_t *text, int32_t text_length,
+                                   int32_t anchor_utf16, int32_t head_utf16,
+                                   double x, double y, double width,
+                                   double height) {
+  (void)host;
+  (void)window;
+  (void)owner_generation;
+  (void)text;
+  (void)text_length;
+  (void)anchor_utf16;
+  (void)head_utf16;
+  (void)x;
+  (void)y;
+  (void)width;
+  (void)height;
+  return -GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_session_update(int32_t host, int32_t window,
+                                    int32_t epoch,
+                                    int32_t owner_generation,
+                                    const uint8_t *text, int32_t text_length,
+                                    int32_t anchor_utf16, int32_t head_utf16,
+                                    double x, double y, double width,
+                                    double height, int32_t external_edit) {
+  (void)host;
+  (void)window;
+  (void)epoch;
+  (void)owner_generation;
+  (void)text;
+  (void)text_length;
+  (void)anchor_utf16;
+  (void)head_utf16;
+  (void)x;
+  (void)y;
+  (void)width;
+  (void)height;
+  (void)external_edit;
+  return -GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_session_cancel(int32_t host, int32_t window,
+                                    int32_t epoch,
+                                    int32_t owner_generation) {
+  (void)host;
+  (void)window;
+  (void)epoch;
+  (void)owner_generation;
+  return -GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_session_end(int32_t host, int32_t window,
+                                 int32_t epoch,
+                                 int32_t owner_generation) {
+  (void)host;
+  (void)window;
+  (void)epoch;
+  (void)owner_generation;
+  return -GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_window_has_keyboard_focus(int32_t host, int32_t window) {
+  (void)host;
+  (void)window;
+  return -GPUI_WINDOWS_UNSUPPORTED;
+}
 int32_t gpui_windows_present(int32_t host, int32_t window,
                              const double *frame_data, int32_t length) {
   (void)host;
   (void)window;
   (void)frame_data;
   (void)length;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_present_text(int32_t abi, int32_t host, int32_t window,
+                                  const double *frame_data, int32_t length,
+                                  const uint8_t *text, int32_t text_length) {
+  (void)abi;
+  (void)host;
+  (void)window;
+  (void)frame_data;
+  (void)length;
+  (void)text;
+  (void)text_length;
   return GPUI_WINDOWS_UNSUPPORTED;
 }
 int32_t gpui_windows_recover(int32_t host, int32_t window) {
@@ -2201,6 +2998,35 @@ int32_t gpui_windows_readback(int32_t host, int32_t window, double *rgba) {
   (void)host;
   (void)window;
   (void)rgba;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_readback_region(int32_t host, int32_t window,
+                                          double x, double y, double width,
+                                          double height,
+                                          const double *expected_rgba,
+                                          double *output) {
+  (void)host;
+  (void)window;
+  (void)x;
+  (void)y;
+  (void)width;
+  (void)height;
+  (void)expected_rgba;
+  (void)output;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_text_density2(int32_t host, int32_t window,
+                                        double *output) {
+  (void)host;
+  (void)window;
+  (void)output;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_renderer_counts(int32_t host, int32_t window,
+                                          int64_t *counts) {
+  (void)host;
+  (void)window;
+  (void)counts;
   return GPUI_WINDOWS_UNSUPPORTED;
 }
 int32_t gpui_windows_test_wrong_thread(int32_t host, int32_t window) {
@@ -2237,6 +3063,10 @@ int32_t gpui_windows_test_mouse_arm_destroy(int32_t host, int32_t window) {
 int32_t gpui_windows_test_mouse_destroy_reset(int32_t host, int32_t window) {
   (void)host;
   (void)window;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage) {
+  (void)failed_stage;
   return GPUI_WINDOWS_UNSUPPORTED;
 }
 

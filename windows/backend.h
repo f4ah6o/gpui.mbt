@@ -5,8 +5,9 @@
 
 /* Private ABI shared only by windows/backend.mbt and backend.c. Event fields
  * are kind, window, sequence, scale, logical width/height, x/y, detail, mods.
- * A frame is viewport x/y/w/h/scale followed by 19 doubles per quad:
- * bounds(4), RGBA(4), affine(6), opacity(1), clip(4). */
+ * Legacy frames use viewport x/y/w/h/scale followed by 19 doubles per quad.
+ * Private ABI2 mixed frames use 25-double records and a borrowed UTF-8
+ * sidecar; bounded text runs render as Segoe UI grayscale masks. */
 #define GPUI_WINDOWS_ABI 1
 #define GPUI_WINDOWS_QUAD_STRIDE 19
 
@@ -41,8 +42,36 @@ int32_t gpui_windows_size(int32_t host, int32_t window, int32_t width,
 int32_t gpui_windows_metrics(int32_t host, int32_t window, double *metrics);
 int32_t gpui_windows_dispatch(int32_t host, int32_t timeout_ms);
 int32_t gpui_windows_next(int32_t host, double *event_data);
+/* Experimental private Win32 IMM32 editor-session ingress. The typed reader
+ * pops either platform or text records from the same FIFO. */
+int32_t gpui_windows_session_begin(int32_t host, int32_t window,
+                                   int32_t owner_generation,
+                                   const uint8_t *text, int32_t text_length,
+                                   int32_t anchor_utf16, int32_t head_utf16,
+                                   double x, double y, double width,
+                                   double height);
+int32_t gpui_windows_session_update(int32_t host, int32_t window,
+                                    int32_t epoch,
+                                    int32_t owner_generation,
+                                    const uint8_t *text, int32_t text_length,
+                                    int32_t anchor_utf16, int32_t head_utf16,
+                                    double x, double y, double width,
+                                    double height, int32_t external_edit);
+int32_t gpui_windows_session_cancel(int32_t host, int32_t window,
+                                    int32_t epoch,
+                                    int32_t owner_generation);
+int32_t gpui_windows_session_end(int32_t host, int32_t window,
+                                 int32_t epoch,
+                                 int32_t owner_generation);
+int32_t gpui_windows_next_editor(int32_t host, double *event_data,
+                                 uint8_t *payload, int32_t payload_capacity);
+/* Synchronous owner-thread native focus query (1=true, 0=false, negative error). */
+int32_t gpui_windows_window_has_keyboard_focus(int32_t host, int32_t window);
 int32_t gpui_windows_present(int32_t host, int32_t window,
                              const double *frame_data, int32_t length);
+int32_t gpui_windows_present_text(int32_t abi, int32_t host, int32_t window,
+                                  const double *frame_data, int32_t length,
+                                  const uint8_t *text, int32_t text_length);
 int32_t gpui_windows_recover(int32_t host, int32_t window);
 int32_t gpui_windows_cursor(int32_t host, int32_t cursor);
 int32_t gpui_windows_clipboard_read(int32_t host, uint8_t *output,
@@ -50,6 +79,20 @@ int32_t gpui_windows_clipboard_read(int32_t host, uint8_t *output,
 int32_t gpui_windows_clipboard_write(int32_t host, const uint8_t *text,
                                      int32_t length);
 int32_t gpui_windows_readback(int32_t host, int32_t window, double *rgba);
+/* CI-only scan of a logical region in the most recent staged GPU frame. */
+int32_t gpui_windows_test_readback_region(int32_t host, int32_t window,
+                                          double x, double y, double width,
+                                          double height,
+                                          const double *expected_rgba,
+                                          double *output);
+/* CI-only deterministic 2x text presentation. Output contains 1x/2x adapter
+ * mask dimensions, the production-staged 2x dimensions, and GPU readback
+ * coverage counts. */
+int32_t gpui_windows_test_text_density2(int32_t host, int32_t window,
+                                        double *output);
+/* Counts actual GPU clear/draw/present calls; used to qualify atomic reject. */
+int32_t gpui_windows_test_renderer_counts(int32_t host, int32_t window,
+                                          int64_t *counts);
 /* CI-only boundary probe; returns OK only when a worker is rejected as wrong-thread. */
 int32_t gpui_windows_test_wrong_thread(int32_t host, int32_t window);
 /* CI-only race probe; a worker posts wakes while the owner stops the host. */
@@ -67,5 +110,7 @@ int32_t gpui_windows_test_mouse_capture(int32_t host, int32_t window,
                                         int32_t *diagnostics);
 int32_t gpui_windows_test_mouse_arm_destroy(int32_t host, int32_t window);
 int32_t gpui_windows_test_mouse_destroy_reset(int32_t host, int32_t window);
+/* CI-only synthetic staging through the production IMM composition helpers. */
+int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage);
 
 #endif
