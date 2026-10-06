@@ -1,17 +1,20 @@
 # Experimental Linux single-line text field
 
 Status: experimental reusable single-line LTR field on Ubuntu/Wayland.
-[PR30](https://github.com/gpui-mbt/gpui.mbt/pull/30) and
-[PR31](https://github.com/gpui-mbt/gpui.mbt/pull/31) are merged; the source baseline
-is `73e70822841024a7131c54fb4529cd40186d529c` (tree `108cf4e9`). Their declared
+[PR30](https://github.com/gpui-mbt/gpui.mbt/pull/30),
+[PR31](https://github.com/gpui-mbt/gpui.mbt/pull/31), and bounded undo/redo
+[PR32](https://github.com/gpui-mbt/gpui.mbt/pull/32) are merged. The accepted
+PR32 baseline is `36bcb245845354b955a2f1bb2f07b527f4f39c4f` (tree
+`5441e254b2c7760e9b7184e87725f7ed2a43085c`), tree-equivalent to local
+`bf8a332595aad7fb69928719cc4b25464269a4d5`. The declared
 Ubuntu/Weston/llvmpipe profile passed real `Host.present` and injected field
-text/caret/selection/scroll/overhang checks at 1x/2x. Native direct-keyboard
-callback/queue/decoder tests are a separate tier; actual compositor-delivered
-typing, held-key repeat timing, and Japanese IME remain unrun. Bounded direct
-keyboard repeat has deterministic callback/queue and model/controller coverage
-only. The undo/redo addition described below
-has local model/provider coverage; its new hosted rendering cases remain
-pending for the current change.
+text/caret/selection/scroll/overhang and undo/redo checks at 1x/2x. The local
+integrated input candidate `eb6c164f0277a656125804154a3d8ad9a8abb78d` (tree
+`d1b53388fdb3d0113c1d208763b61b704d50eced`) additionally passed isolated real
+OS-input basic/Shift and Ctrl+A replacement cases, plus held-repeat release
+and focus-loss/refocus gates under Debian 13/Xvfb/Weston 14. These are separate
+evidence tiers and profiles; Japanese GPUI IME remains unimplemented. See the
+[exact-source qualification manifest](native-input-qualification.json).
 
 This is a deliberately narrow, opt-in demonstration of a bounded single-line,
 left-to-right (LTR) entry field joining copied text geometry, portable editing
@@ -282,14 +285,13 @@ Evidence is tiered and must not be conflated:
   and atomic key/text delivery. Strict MoonBit decoding tests validate repeat
   flags separately and preserve pointer-y decoding.
   These checks include history limits, restore/rollback and immutable branching.
-  New undo/redo encoder and GPU cases compile; their hosted execution is
-  pending. These headless tiers do not simulate compositor keyboard input or
+  These headless tiers do not simulate compositor keyboard input or
   prove a GPU presentation.
 - The control-to-renderer fixtures and `Host.present` checks are explicitly
   separated. `GPUI_FIELD_E2E` in
   [`examples/linux_text_field/host_present_wbtest.mbt`](../examples/linux_text_field/host_present_wbtest.mbt)
   is opt-in under a compositor. The test-only GPU harness retains start/scrolled
-  j/J and accent readbacks when executed; no such readback exists locally.
+  j/J and accent readbacks when executed; the hosted PR31/32 readbacks are retained.
   Replayed fixture frames are injected into the
   renderer and prove neither `wl_keyboard` delivery nor real typing. Its typed
   `Busy` assertion uses deterministic stale-viewport window state; it does not
@@ -299,16 +301,53 @@ Evidence is tiered and must not be conflated:
   at both scales with source tree `108cf4e9`; exact-head scene originals, encoded
   frames, font/config hashes and readbacks were retained and reviewed. The new
   undo/redo cases submit actual control scenes and extend real `Host.present`
-  serialization, but remain unrun under hosted GPU until qualified for this
-  change. Rejected newline/bidi scene identity is headless control evidence,
+  serialization. [PR32 run37402479619](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37402479619)
+  and [merged-main run37403927714](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37403927714)
+  passed on first attempts at both scales: `Host.present` field tests passed
+  16/16 per scale, with 11 accepted GPU scenes from 13 fixtures. The other two
+  fixtures are rejected-edit identity checks. All four undo/redo readbacks
+  were reviewed; merged-main decoded pixels match the PR readbacks.
+  Rejected newline/bidi scene identity is headless control evidence,
   not a distinct live GPU rejected-edit oracle.
-- Actual compositor-delivered typing and held-key repeat timing into this
-  control are **UNRUN**. The stock
-  Weston 13 headless job has no admitted keyboard-injection driver for this
-  qualification, and local AF_UNIX socket creation returns `EPERM`. Do not
-  describe the existing PR28 Weston/llvmpipe text-drawing run as field-input
-  evidence. Japanese IME, composition UI/candidate positioning, real desktop
-  typing, accessibility, reconnect, and release/support gates remain open.
+- The exact local integrated candidate passed real OS delivery through
+  XTest → authenticated owned Xvfb → Weston X11/Pixman/kiosk → `wl_keyboard`
+  → GPUI. Basic/Shift retained 14 physical protocol key records and matched
+  the unchanged reviewed RGBA golden; Ctrl+A replacement retained 10 and
+  reached presented text `abc`, UTF-16 selection 3→3. Each checked liveness,
+  native failures and retained pixels. The basic case used reviewed pixels,
+  rather than the optional state observer, as its semantic oracle.
+- Separate native held-key gates read actual `repeat_info` 40 Hz/400 ms,
+  disabled and verified upstream X11 autorepeat, and held one physical `a`.
+  Release and focus-loss runs observed 15 and 13 added characters at their
+  held checkpoints; their real Wayland `a` records were exactly press/release
+  and press-only respectively. After release or leave, text/revision/
+  presentation remained stable for 675 ms. Refocus preserved text/caret and
+  advanced revision exactly once, with no stale repeat. Each retained
+  independently completed Default Queue frames, unchanged-state pixel
+  captures, and clean owned-process cleanup with autorepeat restored.
+  This proves client-native repeat and cancellation for that frozen binary
+  and profile, not physical-device coverage or desktop timing accuracy.
+- The first held-gate attempt stopped before keyboard input because its
+  startup click never delivered a real pointer button. It remains retained
+  separately. R2 corrected readiness/press/release ordering without relaxing
+  repeat/state/timing oracles; both R2 scenarios passed. The restricted-shell
+  socket denial and earlier hosted compositor exit139 remain historical
+  evidence; the permitted native route does not erase or explain them.
+  The packaged recovery profile and generic catalog require their own exact
+  replay; these source-level gates do not activate pending catalog cases.
+  GPUI IME, composition UI/candidate positioning, accessibility, reconnect,
+  broader desktop qualification, and release/support gates remain open.
+
+The later [qualification manifest](native-input-qualification.json) records
+source/binary identities, retained artifact hashes and coverage boundaries.
+Its test counts apply to the frozen integrated source, not to older individual
+feature checkouts. The earlier pre-native verification manifest and failed
+attempts are preserved rather than rewritten as passes. A docs-only publication
+commit has a new Git tree; it is not the exact native-executed commit. Rebuild
+and prepare fresh provenance when executing another source/runtime iteration.
+Any successful GTK/IBus/Mozc Japanese conversion is environment-baseline
+evidence only and does not establish GPUI composition, candidates, commit or
+cancel support.
 
 The field implementation is based on focused-input PR #29, merged at
 [`18e8fad`](https://github.com/gpui-mbt/gpui.mbt/commit/18e8fadf470823b389feff3b9d496213b4d3f67a)
@@ -322,6 +361,7 @@ Ubuntu backend packet D or qualify gpui.mbt as a supported Linux desktop
 framework. The bounded field remains single-line LTR and rejects unsupported
 unknown-glyph, color-glyph, and reflow/resource-limit cases. Text masks remain
 logical-resolution and may soften under output scaling. IME, qualified desktop
-repeat timing, general bidi, drag selection and actual compositor-delivered typing remain
-open. Undo/redo is bounded as above; it does not establish a full editor history
+repeat timing, general bidi and drag selection remain open. The isolated native
+input passes do not establish general desktop readiness. Undo/redo is bounded
+as above; it does not establish a full editor history
 system. See the [known hosted-compositor stability note](ubuntu.md#known-hosted-compositor-observation).

@@ -189,28 +189,47 @@ late invalid/color/resource frame preservation, empty text, recovery and
 cleanup at 1x/2x; MoonBit E2E passed 5/5 per scale. Its reviewed tree is
 `14b8ce67796bcb08e08b60d8fcdb495afb7257b4`. Test-only Latin/Japanese clipping/
 overlap PPM artifacts retain exact executed commit/scale/renderer context.
-Local GPU execution remains unrun because AF_UNIX stream socket creation
-returns `EPERM`. This software-rendered proof does not establish broader
+At that historical local validation stage, GPU execution was unrun because
+AF_UNIX stream socket creation returned `EPERM` in the restricted executor.
+The later permitted native input profile is recorded separately below.
+This software-rendered proof does not establish broader
 platform support or text performance qualification.
 
 The bounded field and origin-aware drawing are merged in
 [PR30](https://github.com/gpui-mbt/gpui.mbt/pull/30) and
-[PR31](https://github.com/gpui-mbt/gpui.mbt/pull/31). The current baseline is main
-`73e70822841024a7131c54fb4529cd40186d529c`, tree `108cf4e9`. The
+[PR31](https://github.com/gpui-mbt/gpui.mbt/pull/31). Bounded undo/redo merged in
+[PR32](https://github.com/gpui-mbt/gpui.mbt/pull/32) as
+`36bcb245845354b955a2f1bb2f07b527f4f39c4f`, tree
+`5441e254b2c7760e9b7184e87725f7ed2a43085c`; local `bf8a332595` has that same
+tree. The
 [PR31 Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37392223946)
 passed real `Host.present` and injected control-to-renderer text/caret/selection/
 scroll/overhang checks under Weston/llvmpipe at 1x/2x. Actual-font headless field
 and negative-mask tests also pass, including composed/decomposed accents and
 scrolling. The shared geometry uses one outward-rounded logical/ink union with
 carets contained in the logical line for admission, paint, hit test, and scroll.
-The current undo/redo addition has local model/provider and transaction coverage;
-its new hosted rendering cases remain pending for this change. The field remains
+[PR32 run37402479619](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37402479619)
+and [exact merged-main run37403927714](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37403927714)
+passed undo/redo rendering on first attempts at both scales: 16/16 field
+`Host.present` tests per scale and 11 accepted GPU scenes from 13 fixtures.
+The two other fixtures are headless rejected-edit identity evidence. The field remains
 single-line LTR, rejects unknown/color glyphs and reflow/resource-limit cases,
 and uses logical-resolution masks that may soften under scaling. Direct native
-committed-text ingress exists, but actual compositor-delivered typing, Japanese
-IME, held-key repeat timing, general bidi and drag selection remain unqualified.
-The bounded direct-repeat implementation has deterministic mocked callback/queue
-and model/controller coverage only; actual compositor repeat is **UNRUN**. The
+committed-text ingress exists. The local integrated input source
+`eb6c164f0277a656125804154a3d8ad9a8abb78d`, tree
+`d1b53388fdb3d0113c1d208763b61b704d50eced`, passed isolated basic/Shift,
+Ctrl+A replacement, held-repeat release and focus-loss/refocus native gates
+using authenticated private Xvfb and Weston 14 X11/Pixman/kiosk. Upstream X11
+autorepeat was verified off for the held gates; observed `repeat_info` was
+40 Hz/400 ms. Real protocol delivery, presented state or reviewed golden
+pixels, liveness and owned cleanup were checked separately; held gates also
+required independently completed frames.
+These source-level passes do not qualify a rebuilt recovery profile, every
+catalog case, physical devices or general desktop repeat accuracy. Japanese
+GPUI IME, general bidi and drag selection remain unimplemented/unqualified.
+Any GTK/IBus/Mozc conversion baseline qualifies only that environment, not
+GPUI IME. See the [exact-source qualification](native-input-qualification.json).
+The
 [known hosted-compositor observation](#known-hosted-compositor-observation)
 retains the unchanged-main first failure and successful retry without assigning
 a cause. See the [field guide](linux-text-field.md) for full limits and evidence
@@ -291,8 +310,10 @@ a desktop frame-rate claim.
 | --- | --- | --- | --- |
 | Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Hosted run 2026-10-04 passed MoonBit E2E (4/4), C lifecycle/render/recovery checks at both scales, and 30 timing samples per scale. Measurement report completed with `no_baseline`; see [run and diagnostic results](performance.md#hosted-ubuntu-observation-2026-10-04). |
 | PR28 grayscale text CI | Ubuntu 24.04 x86-64; Weston 13; PangoFT2 1.52.1; Fontconfig 2.15.0 | Weston headless GL kiosk shell; llvmpipe (LLVM 20.1.2); integer scales 1/2 | [Run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37346110201) passed headless raster, 5/5 MoonBit E2E per scale and C mixed-scene/preservation assertions; readback PPMs retained. Recovery timing report is `captured_live` + `no_baseline`, not text performance qualification. |
-| PR30/31 field and origin CI | Ubuntu 24.04; Weston 13; declared sans/Pango fixture profile | Headless GL kiosk shell; llvmpipe; scales 1/2 | [PR31 exact-head run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37392223946) passed actual Host.present and nine injected accepted field frames plus origin/preflight preservation checks. Real keyboard delivery remains unrun; see compositor observation below. |
-| Local implementation validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Strict C compile and clipboard transfer helper passed; Weston headless launch blocked | Full native E2E unrun: the runner observed Weston fail to add its socket with `No such file or directory`; a separate AF_UNIX socket-creation diagnostic returned `EPERM` in this environment |
+| PR30/31 field and origin CI | Ubuntu 24.04; Weston 13; declared sans/Pango fixture profile | Headless GL kiosk shell; llvmpipe; scales 1/2 | [PR31 exact-head run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37392223946) passed actual Host.present and nine injected accepted field frames plus origin/preflight preservation checks. This rendering tier does not inject real keys; see compositor observation below. |
+| PR32 bounded history CI | Ubuntu 24.04; Weston 13; declared sans/Pango fixture profile | Headless GL kiosk shell; llvmpipe; scales 1/2 | [PR run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37402479619) and [merged-main run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37403927714) passed 16/16 Host.present field tests per scale and 11 accepted scenes from 13 fixtures; reviewed undo/redo decoded pixels agree. This is injected rendering, not keyboard/IME. |
+| Historical restricted-executor validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Strict C compile and clipboard transfer helper passed; Weston headless launch blocked | Native E2E was unrun there: the runner observed Weston fail to add its socket with `No such file or directory`; a separate AF_UNIX diagnostic returned `EPERM`. Retained as the earlier executor-specific limit, not the status of the later permitted route. |
+| Frozen integrated native input | Debian 13 amd64; Weston 14.0.2; authenticated private Xvfb | Weston X11/Pixman/kiosk; application software EGL/GLES; owned permitted native launch | Exact source eb6c164f/tree d1b53388 passed basic/Shift golden, Ctrl+A presented state, held-key release and focus-loss/refocus; upstream autorepeat disabled for repeat proof. Source/binary/artifact identities are in the [qualification manifest](native-input-qualification.json). Recovery-profile replay and generic pending cases are separate. |
 | Real Ubuntu desktop | Ubuntu 24.04 GNOME Wayland/Mutter | Desktop GPU, IME and assistive technology | Pending |
 
 ### Known hosted-compositor observation
