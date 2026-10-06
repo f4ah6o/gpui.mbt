@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -74,6 +76,23 @@ def runtime_lock():
 
 
 common.runtime_lock = runtime_lock
+
+
+MAC_FRAMEWORK_LINK_FLAGS = ["-framework", "Foundation", "-framework", "CoreGraphics",
+                            "-framework", "CoreText"]
+
+
+def workload_link_flags(workload):
+    package = Path(workload) / "moon.pkg"
+    text = package.read_text(encoding="utf-8")
+    matches = re.findall(r'"cc-link-flags"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', text)
+    if len(matches) != 1:
+        raise HotpathError("Mac workload must declare exactly one native final-link flag set")
+    flags = shlex.split(matches[0])
+    expected = ["-lm", *MAC_FRAMEWORK_LINK_FLAGS]
+    if flags != expected:
+        raise HotpathError("Mac workload final link must bind exactly Foundation/CoreGraphics/CoreText")
+    return flags
 
 
 def verify_profile(root):
@@ -147,7 +166,7 @@ def tool_identity(executable, env, version_flag="--version"):
     return {"resolved": str(path), "sha256": digest(path), "version": version}
 
 
-def native_build_identity(env, host, staged_source):
+def native_build_identity(env, host, staged_source, workload):
     selected = env.get("GPUI_MACOS_TEXT_CC") or env.get("CC") or "cc"
     words = [selected] if os.path.isfile(selected) else __import__("shlex").split(selected)
     if len(words) != 1:
@@ -170,6 +189,7 @@ def native_build_identity(env, host, staged_source):
         if not stub.is_file():
             raise HotpathError("selected Xcode SDK lacks framework link stub: " + name)
         frameworks[name] = {"stub_path": str(stub.resolve()), "stub_sha256": digest(stub)}
+    final_link_flags = workload_link_flags(workload)
     return {
         "compiler": tool_identity(compiler, env),
         "compiler_wrapper_path": str(staged_source / "script/macos_text_cc.py"),
@@ -177,6 +197,7 @@ def native_build_identity(env, host, staged_source):
         "frameworks": frameworks,
         "framework_link_flags": [flag for name in ("Foundation", "CoreGraphics", "CoreText")
                                  for flag in ("-framework", name)],
+        "workload_final_link_flags": final_link_flags,
         "flags": {name: env.get(name, "") for name in ("CPPFLAGS", "CFLAGS", "LDFLAGS", "GPUI_MACOS_TEXT_CC",
                                                           "CC", "SDKROOT", "DEVELOPER_DIR", "MACOSX_DEPLOYMENT_TARGET",
                                                           "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH",
@@ -272,7 +293,7 @@ def execute(hotpath, output, repeats=7):
         if not moon or Path(moon).resolve() != (profile_root / "moon/bin/moon").resolve():
             raise HotpathError("active Moon executable is outside the current Mac profile")
         host = host_identity(profile_root)
-        native = native_build_identity(env, host, output / "source")
+        native = native_build_identity(env, host, output / "source", workload)
         env_info = {"host": host, "profile_root": str(profile_root),
                     "profile_lock_sha256": digest(HERE / "profile.lock.json"),
                     "installed_profile_sha256": installed_hash,
@@ -369,7 +390,7 @@ def validate_current_runtime(environment, directory):
     env["XDG_CACHE_HOME"] = str(Path(directory) / "cache")
     host = host_identity(profile_root)
     staged_source = Path(directory) / "source"
-    native = native_build_identity(env, host, staged_source)
+    native = native_build_identity(env, host, staged_source, Path(directory) / "workload")
     moon = profile_root / "moon/bin/moon"
     moonc = profile_root / "moon/bin/moonc"
     moonrun = profile_root / "moon/bin/moonrun"

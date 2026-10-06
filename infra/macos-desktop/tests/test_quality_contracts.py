@@ -440,6 +440,18 @@ class ImeEvidenceTests(unittest.TestCase):
 
 
 class FontResolutionTests(unittest.TestCase):
+    def test_macos_hotpath_binds_actual_final_framework_link_flags(self):
+        expected = ["-lm", "-framework", "Foundation", "-framework", "CoreGraphics",
+                    "-framework", "CoreText"]
+        self.assertEqual(hotpath.workload_link_flags(REPO / "testing/input_hotpath_macos"), expected)
+        with tempfile.TemporaryDirectory(prefix="gpui-hotpath-link-flags-") as temp:
+            root = Path(temp)
+            package = root / "moon.pkg"
+            package.write_text((REPO / "testing/input_hotpath_macos/moon.pkg").read_text().replace(
+                "-framework CoreText", "-framework AppKit"))
+            with self.assertRaises(hotpath.HotpathError):
+                hotpath.workload_link_flags(root)
+
     def test_font_identity_hashes_real_latin_and_japanese_files(self):
         with tempfile.TemporaryDirectory(prefix="gpui-font-fixture-") as temp:
             font = Path(temp) / "font.dat"

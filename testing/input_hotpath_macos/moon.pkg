@@ -18,7 +18,7 @@ options(
   link: {
     "native": {
       "cc-flags": "-O2 -std=c11 -Wall -Wextra",
-      "cc-link-flags": "-lm",
+      "cc-link-flags": "-lm -framework Foundation -framework CoreGraphics -framework CoreText",
     },
   },
 )
