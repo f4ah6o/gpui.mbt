@@ -1947,7 +1947,7 @@ int32_t gpui_destroy(int32_t token, int32_t window) {
   ime_invalidate(h, 1, 1);
   event(h, 4, 0, 0, 0);
   release_window(h);
-  return GPUI_OK;
+  return h->error;
 }
 int32_t gpui_title(int32_t token, int32_t window, const uint8_t *title,
                    int32_t length) {

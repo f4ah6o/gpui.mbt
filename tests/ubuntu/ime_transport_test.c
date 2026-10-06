@@ -271,6 +271,17 @@ static void destroy_and_manager_removal_revoke_owned_payloads(void) {
   ime_preedit_string(h, old, 1, "removed", ""); assert(!h->count);
   finish(h);
 }
+static void destroy_reports_terminal_sequence_exhaustion(void) {
+  struct host *h = fixture(); begin(h); drain_enter(h);
+  double data[GPUI_EDITOR_EVENT_FIELDS]; uint8_t bytes[GPUI_EDITOR_MAX_PAYLOAD];
+  h->seq = INT_MAX - 1;
+  assert(gpui_destroy(h->token, h->window) == GPUI_RESOURCE);
+  assert(h->window == 0 && h->surface == NULL && h->error == GPUI_RESOURCE);
+  assert(!h->ime.requested && h->count == 1);
+  assert(read_editor(h, data, bytes) == 1 && data[0] == 23 && data[2] == INT_MAX);
+  assert(!h->count && !h->ime_queue_bytes);
+  finish(h);
+}
 static void keys_modifiers_and_text_suppression(void) {
   struct host *h = fixture(); begin(h); drain_enter(h);
   double data[GPUI_EDITOR_EVENT_FIELDS]; uint8_t bytes[GPUI_EDITOR_MAX_PAYLOAD];
@@ -403,6 +414,7 @@ int main(void) {
   buffers_and_legacy_are_atomic();
   serial_epoch_and_reactivation_fences(); lifecycle_and_removed_proxies();
   destroy_and_manager_removal_revoke_owned_payloads();
+  destroy_reports_terminal_sequence_exhaustion();
   keys_modifiers_and_text_suppression(); owner_panel_requests_are_epoch_fenced();
   bounds_exhaustion_and_validation(); quiescing_and_latched_errors_fail_closed();
   exhaustion_closes_all_editor_ingress();
