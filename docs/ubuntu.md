@@ -183,24 +183,29 @@ Local GPU execution remains unrun because AF_UNIX stream socket creation
 returns `EPERM`. This software-rendered proof does not establish broader
 platform support or text performance qualification.
 
-The origin-aware field path is separate local, unpublished progress based on
-reviewed PR #30 tree `5ac17e9`. [PR #30](https://github.com/gpui-mbt/gpui.mbt/pull/30)
-remains draft after pre-start runner cancellation. Windows, macOS, documentation,
-and headless Pango jobs passed; GPU, core, browser, and mutation jobs remain
-unqualified. A bounded Ubuntu failed-job retry was again cancelled before
-runner start, with no source or billing cause established. Actual-font headless
-field and negative-mask tests pass, including composed/decomposed accents and
-scrolling; new encoder/GPU acceptance cases compile; hosted execution is
-pending, and no GPU execution or publication is claimed. The local geometry
-uses one outward-rounded logical/ink union with carets contained in the logical line for admission, paint, hit test,
-and scroll. The field remains single-line LTR, rejects unknown/color glyphs
-and reflow/resource-limit cases, and uses logical-resolution masks that may
-soften under scaling. IME, autorepeat, general bidi, drag, undo, and actual
-compositor-delivered typing remain unqualified. See the
-[field guide](linux-text-field.md) for full limits and evidence tiers.
+The bounded field and origin-aware drawing are merged in
+[PR30](https://github.com/gpui-mbt/gpui.mbt/pull/30) and
+[PR31](https://github.com/gpui-mbt/gpui.mbt/pull/31). The current baseline is main
+`73e70822841024a7131c54fb4529cd40186d529c`, tree `108cf4e9`. The
+[PR31 Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37392223946)
+passed real `Host.present` and injected control-to-renderer text/caret/selection/
+scroll/overhang checks under Weston/llvmpipe at 1x/2x. Actual-font headless field
+and negative-mask tests also pass, including composed/decomposed accents and
+scrolling. The shared geometry uses one outward-rounded logical/ink union with
+carets contained in the logical line for admission, paint, hit test, and scroll.
+The current undo/redo addition has local model/provider and transaction coverage;
+its new hosted rendering cases remain pending for this change. The field remains
+single-line LTR, rejects unknown/color glyphs and reflow/resource-limit cases,
+and uses logical-resolution masks that may soften under scaling. Direct native
+committed-text ingress exists, but actual compositor-delivered typing, Japanese
+IME, autorepeat, general bidi and drag selection remain unqualified. The
+[known hosted-compositor observation](#known-hosted-compositor-observation)
+retains the unchanged-main first failure and successful retry without assigning
+a cause. See the [field guide](linux-text-field.md) for full limits and evidence
+tiers.
 
 The bounded experimental field now paints visible caret/selection and scrolls,
-but it is not a general control. Text-input/IME, semantic accessibility, menus,
+but it is not a general control. Public TextInput/IME, semantic accessibility, menus,
 background enqueue, timers, fractional scaling, and broader service capability
 negotiation remain roadmap work. Native clipboard
 and cursor protocols are implemented, while a
