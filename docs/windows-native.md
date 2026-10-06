@@ -41,6 +41,27 @@ work below. It is runtime evidence only for the earlier experimental one-HWND
 slice on that hosted configuration; it does not promote a Windows support tier
 or production claim.
 
+For repeatable local acceptance, run
+`./scripts/run_windows_actrun.ps1 -PythonPath <python.exe>` from PowerShell.
+It runs the checked-in Windows workflow through the pinned `@mizchi/actrun`
+version in local-workspace mode, then runs a separate portable profile for
+all-target checks, WasmGC/JavaScript/Wasm tests, the contract-checker tests,
+and repository contract validation. The wrapper verifies the npm integrity
+and CLI SHA-256 from the shared actrun lock, loads the pinned local MoonBit
+toolchain and MSVC environment, and saves task records and logs under
+`_build/windows-actrun/`. It requires Node/npm, Python 3, Git for Windows GNU
+utilities (`usr/bin/env.exe`), the pinned MoonBit toolchain under
+`_build/tools/moonbit`, and Visual Studio's x64 MSVC/Windows SDK. The workflow's
+checkout, toolchain setup, and
+artifact-upload actions are skipped because the local workspace and tools are
+already prepared. The pinned actrun release assumes POSIX paths and `.script`
+PowerShell files on this host, so a small local Node preload normalizes its
+workspace path and copies only generated step scripts to `.ps1` before
+execution; the third-party CLI remains unmodified. The wrapper checks the
+expected workflow task IDs, zero exit codes, run-record source head, and
+unchanged checkout state. This host adaptation does not replace the actual
+workflow steps.
+
 The basic `examples/windows` app opens one visible 640 by 400 logical-pixel
 window and paints a dark background with a blue quad. Press Escape or use the
 system close button to exit. The CI smoke sets `GPUI_WINDOWS_SMOKE=1` and exits
@@ -196,9 +217,9 @@ historical hosted run above verified deterministic D3D11 quad readback, but did
 not exercise the text renderer added later and does not establish physical GPU
 coverage or desktop performance. Clipboard verification is an in-process
 Unicode round trip, not an external application interoperability test. Only
-the Windows GitHub Actions runner is configured; supported Windows versions,
-GPUs, and driver combinations have not been established. Do not infer Tier 1
-support from a successful build or smoke.
+the Windows GitHub Actions and pinned local actrun runners are configured;
+supported Windows versions, GPUs, and driver combinations have not been
+established. Do not infer Tier 1 support from a successful build or smoke.
 
 | Evidence | State |
 | --- | --- |
@@ -208,4 +229,5 @@ support from a successful build or smoke.
 | Text-field owner/controller tests | 12/12 passed locally; synthetic geometry/session tests only |
 | DirectWrite/D3D11 mixed-frame text readback and rejection atomicity | Passed in local MSVC/D3D11 backend tests; validates renderer pixels, not exact field caret/selection pixels |
 | Field startup smoke (default and opt-in session) | Both passed locally through `FrameCompleted`; default epoch 0, experimental session epoch 1; no typing or IME behavior exercised |
+| Pinned local actrun execution of the Windows workflow and portable profile | Passed locally on 2026-10-06; both profiles completed. The checked source head and per-task records are in `_build/windows-actrun/manifest.json`, with detailed logs alongside it |
 | Physical multi-monitor DPI, real IME, accessibility, multi-window and fault recovery | Pending |
