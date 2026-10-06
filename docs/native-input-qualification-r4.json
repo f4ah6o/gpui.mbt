@@ -233,7 +233,7 @@
   "limitations": [
     "Seven runnable catalog cases passed; all_cases_executed remains false because held-repeat is pending and GPUI IME unsupported.",
     "Independent frozen-source held-repeat release/focus-loss R2 proof is retained separately and not counted as a reusable catalog pass.",
-    "No-op state stability is qualified only for focus-loss-reentry and standalone-modifiers, where it was actually exercised.",
+    "No-op state stability is qualified only for undo-branch-edit at its redo-no-op checkpoint, where it was actually exercised; cases with no such checkpoints record null rather than a pass.",
     "Unchanged reviewed golden passed after adding the official missing DejaVu font archive; the earlier 1,231-pixel mismatch proof is preserved.",
     "Isolated Debian 13 private Xvfb/Weston software route only; no physical-device, Ubuntu/Mutter, production, broad timing or support-tier claim.",
     "Unreviewed Mozc artifacts are excluded. GTK/IBus/Mozc conversion would establish an environment baseline only, not GPUI IME."
