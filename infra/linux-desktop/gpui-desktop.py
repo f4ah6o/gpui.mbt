@@ -354,9 +354,16 @@ def build(args, root):
     repo = Path(args.repo).expanduser().resolve()
     if root == repo or repo in root.parents:
         raise RuntimeError("keep build/profile output outside the candidate source checkout")
-    build_record = root / "field-build.json"
-    build_record.unlink(missing_ok=True)
-    (root / "field-binary.txt").unlink(missing_ok=True)
+    explicit_record = getattr(args, "manifest_output", None)
+    build_record = Path(explicit_record).expanduser().resolve() if explicit_record else root / "field-build.json"
+    if build_record == repo or repo in build_record.parents:
+        raise RuntimeError("keep the build manifest outside the candidate source checkout")
+    if explicit_record and build_record.exists():
+        raise RuntimeError("explicit build manifest output must be a new file")
+    build_record.parent.mkdir(parents=True, exist_ok=True)
+    if not explicit_record:
+        build_record.unlink(missing_ok=True)
+        (root / "field-binary.txt").unlink(missing_ok=True)
     source_before = build_manifest.capture_source(repo)
     run(["sh", repo / "scripts/prepare_ubuntu.sh"], cwd=repo, env=env)
     target = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "build"
@@ -378,7 +385,8 @@ def build(args, root):
     build_manifest.require_matching_runtime(runtime_before, runtime)
     build_manifest.write_build_manifest(build_record, source_before, source_after,
                                         binaries[0], runtime, command)
-    (root / "field-binary.txt").write_text(str(binaries[0].resolve()) + "\n")
+    if not explicit_record:
+        (root / "field-binary.txt").write_text(str(binaries[0].resolve()) + "\n")
     print("Built: " + str(binaries[0]))
     print("Build manifest: " + str(build_record))
 
@@ -488,6 +496,8 @@ def main(argv=None):
                               help="current candidate checkout; defaults to this project")
     build_parser.add_argument("--output-dir", type=Path,
                               help="separate external build directory; defaults to profile/build")
+    build_parser.add_argument("--manifest-output", type=Path,
+                              help="new external manifest file; preserve the profile's previous build record")
     for name in ["launch", "ime-baseline"]:
         commands.add_parser(name).add_argument("--session", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)

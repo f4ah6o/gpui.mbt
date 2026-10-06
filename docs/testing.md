@@ -11,8 +11,8 @@ value and lifecycle cases, two seeded rectangle properties, a seeded entity
 lifecycle reference-model property, seeded flex-line and flex-tree geometry/order
 properties, and exact element lifecycle, hit-test/dispatch/focus/scene-order tests.
 Mutation coverage now includes independently scoped `capability/` and `mcp/`
-observations with reviewed baselines and a final-head stability/CI merge gate
-as recorded below. Full-schema scene golden fixtures,
+observations with reviewed baselines; their original final-head stability/CI
+merge requirements are historical provenance recorded below. Full-schema scene golden fixtures,
 text/path/image rendering, mutation coverage of other critical packages, and
 broader native integration assertions remain unimplemented. Bounded recursive auto container sizing is now included in the
 active layout test surface.
@@ -247,9 +247,11 @@ retains observation JSON, ratchet JSON when enforcement succeeds, raw reports,
 console logs, and survivor diffs for 14 days on PRs and 30 days otherwise.
 
 The source observation deliberately failed only because the reviewed baseline
-files were not yet present. A successful hosted baseline stability rerun and
-all required checks on the final candidate are explicit merge gates; exact
-successful run links must be recorded in PR #17's merge evidence. The source
+files were not yet present. For the original PR #17 acceptance,
+a successful hosted baseline stability rerun and all required final-candidate
+checks were explicit merge gates; exact successful run links belonged in that
+PR's merge evidence. This historical provenance does not impose a hosted wait
+on current Linux development. The source
 observation alone is not a green stability result. See
 [semantic mutation evidence and review caveats](semantic-mutation.md) for exact
 operator floors and provenance. Closure of
@@ -258,6 +260,26 @@ only with that verified merge,
 while [0016](../issues/open/0016-mcp-endpoint-lifecycle-conformance.md) retains
 asynchronous cancellation/disconnect and native/browser endpoint topology.
 The broader mutation and production release gates stay pending.
+
+## Local Linux acceptance
+
+Current affected Linux development uses the pinned local
+[actrun gate](../infra/linux-desktop/ACTRUN.md), without waiting for GitHub
+Actions. Default fast mode runs contract/Python, infrastructure/recipe,
+formatting, Linux text C/native and affected native package checks. Explicit
+acceptance mode adds all Linux-runnable targets and a freshly built,
+manifest-bound private-display native keyboard replay. Legacy headless mode
+remains a labeled text-only subset.
+
+Green applies only to the selected local scope. Every run records required
+passed/failed/not-run steps and skipped coverage. macOS/Windows native, real
+browser proof, mutation, MCP stdio interoperability and the separate Ubuntu
+scale/readback/lifecycle GPU suite remain separate scopes;
+Linux success makes no claim for them. Current catalog skips for adaptive held
+repeat and unsupported GPUI IME remain visible. A native IPC denial fails wider
+acceptance rather than turning unexecuted native cases Green. Broader
+production release gates remain pending and are unchanged by this development
+policy.
 
 ## CI split
 
