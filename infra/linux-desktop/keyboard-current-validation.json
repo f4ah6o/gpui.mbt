@@ -262,7 +262,8 @@
         "checkpoint_count": 1,
         "exact_state_checkpoints_passed": true,
         "matching_completed_compositor_frames": true,
-        "no_op_record_unchanged": true
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
       },
       {
         "case_id": "cursor-backspace-delete",
@@ -278,7 +279,8 @@
         "checkpoint_count": 4,
         "exact_state_checkpoints_passed": true,
         "matching_completed_compositor_frames": true,
-        "no_op_record_unchanged": true
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
       },
       {
         "case_id": "focus-loss-reentry",
@@ -294,7 +296,8 @@
         "checkpoint_count": 2,
         "exact_state_checkpoints_passed": true,
         "matching_completed_compositor_frames": true,
-        "no_op_record_unchanged": true
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
       },
       {
         "case_id": "held-repeat",
@@ -320,7 +323,8 @@
         "checkpoint_count": 1,
         "exact_state_checkpoints_passed": true,
         "matching_completed_compositor_frames": true,
-        "no_op_record_unchanged": true
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
       },
       {
         "case_id": "undo-branch-edit",
@@ -336,7 +340,8 @@
         "checkpoint_count": 4,
         "exact_state_checkpoints_passed": true,
         "matching_completed_compositor_frames": true,
-        "no_op_record_unchanged": true
+        "no_op_record_unchanged": true,
+        "no_op_checkpoint_count": 1
       },
       {
         "case_id": "undo-redo",
@@ -352,7 +357,8 @@
         "checkpoint_count": 5,
         "exact_state_checkpoints_passed": true,
         "matching_completed_compositor_frames": true,
-        "no_op_record_unchanged": true
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
       }
     ],
     "owned_xvfb_cleanup_verified": true

@@ -131,9 +131,11 @@ Optional manual smoke against the final integrated source, using real keys:
 4. Close the window. Confirm the launcher exits and its private Weston stops.
 
 Do not substitute clipboard paste, scripted document replacement, or a
-render-only frame smoke for the keyboard test. This exact source does not
-contain the separate held-key-repeat change. A long key hold is therefore an
-observation, not an acceptance claim for a newer repeat branch.
+render-only frame smoke for the keyboard test. The archived PR32 application
+baseline in this infrastructure checkout lacks the separate held-key-repeat
+change. The final integrated source includes repeat and has its independent
+release/focus-loss proof, while the reusable held-repeat catalog case remains
+pending its adaptive policy oracle.
 
 ## Programmatic OS-input profile
 
@@ -231,8 +233,11 @@ is separate. GPUI IME composition remains unsupported. `--all` records explicit 
 pending/unsupported cases, rather than counting them as passes. The schema and
 activation requirements are in `fixtures/cases/FORMAT.md`.
 
+The following command is an exact historical version 1 replay:
+
 ```sh
 python3 infra/linux-desktop/case_runner.py --case basic-text-shift \
+  --cases-dir "$PWD/infra/linux-desktop/fixtures/cases-v1" \
   --prefix "$GPUI_DESKTOP_ROOT/prefix" --repo "$REVIEWED_SOURCE_REPO" \
   --app "$REVIEWED_EXE" --app-sha256 "$REVIEWED_EXE_SHA256" \
   --fontconfig "$REVIEWED_FONTCONFIG" --source-patch "$REVIEWED_SOURCE_PATCH" \
