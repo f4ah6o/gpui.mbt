@@ -27,7 +27,11 @@ not simulate a Windows window or GPU.
 
 The Windows workflow initializes the MSVC environment and pins MoonBit and its
 core library. MoonBit selects the Windows native compiler from that environment.
-The script also compiles the C shim against the installed Windows SDK. The
+The script also compiles the C shim and standalone clipboard fixture against
+the installed Windows SDK. It saves the fixture as
+`_build/windows-native/clipboard-fixture.exe`, passes its absolute path only to
+the opt-in native E2E, and retains its build and test logs in the evidence
+directory. The
 workflow retains both evidence directories as an artifact. It runs default and
 opt-in IMM field smoke in separate processes, as well as the native E2E and
 shared backend conformance checks, because each exercises the process-wide
@@ -36,10 +40,10 @@ teardown cannot affect a later host generation. The
 hosted [Windows Server 2025 run](https://github.com/f4ah6o/gpui.mbt/actions/runs/37189457500)
 for PR head `a1f6e523dc41317064c5657179baa20456dcf6b1` passed the MSVC shim build,
 the portable tests (6/6), native GPU E2E (1/1), shared backend conformance
-(1/1), and the example app smoke. That run predates the text adapter and field
-work below. It is runtime evidence only for the earlier experimental one-HWND
-slice on that hosted configuration; it does not promote a Windows support tier
-or production claim.
+(1/1), and the example app smoke. That run predates the text adapter, field
+work, and bounded independent-process clipboard fixture below. It is runtime
+evidence only for the earlier experimental one-HWND slice on that hosted
+configuration; it does not promote a Windows support tier or production claim.
 
 For repeatable local acceptance, run
 `./scripts/run_windows_actrun.ps1 -PythonPath <python.exe>` from PowerShell.
@@ -101,7 +105,20 @@ back to Microsoft's WARP software driver when hardware device creation fails.
   of being silently truncated. Titles and clipboard writes are capped at 1 MiB
   of UTF-8 input. Clipboard reads bound their UTF-16 scan to the HGLOBAL and
   16 Mi code units; the MoonBit wrapper caps the converted UTF-8 result at 16
-  MiB.
+  MiB. The opt-in E2E also uses a separately compiled Win32 process to compare
+  the exact Japanese, emoji, combining-mark, and multiline `CF_UNICODETEXT`
+  payload written by gpui, then to publish its own exact payload for the
+  production `Host::read_clipboard` path. While that fixture owns an actual
+  `OpenClipboard` lock, production reads and writes return `Busy`; after release
+  the fixture sentinel remains intact and normal read/write operations recover.
+  A second bounded fixture hold expires, closes the clipboard, and is reaped.
+  Child launch uses the configured absolute executable path, a verified process
+  image, and a PID/nonce pipe handshake. The helper never launches through a
+  shell; clipboard acquisition retries for at most two seconds, parent startup
+  and exit waits are five seconds, and the independent lock expires after six
+  seconds. This is evidence for the exact fixture payload and Win32 lock
+  behavior on the tested host; broad third-party application compatibility
+  remains open.
 - Opt-in native E2E readback copies the swap-chain target to a staging texture
   and checks known background/accent/background pixels before presentation.
   The test also checks GPU completion, resize rejection for an old viewport,
@@ -225,9 +242,12 @@ automated physical-GPU coverage, fault-injected renderer recovery, sustained
 resource-lifetime testing, and performance evidence remain open. The
 historical hosted run above verified deterministic D3D11 quad readback, but did
 not exercise the text renderer added later and does not establish physical GPU
-coverage or desktop performance. Clipboard verification is an in-process
-Unicode round trip, not an external application interoperability test. Only
-the Windows GitHub Actions and pinned local actrun runners are configured;
+coverage or desktop performance. Clipboard evidence now includes a separate
+Win32 fixture process reading and publishing the tested Unicode payload and
+holding a real clipboard lock through Busy/no-clobber/recovery checks. That
+evidence is bounded to the fixture's exact `CF_UNICODETEXT` cases on the tested
+host; broad third-party application interoperability remains open. Only the
+Windows GitHub Actions and pinned local actrun runners are configured;
 supported Windows versions, GPUs, and driver combinations have not been
 established. Do not infer Tier 1 support from a successful build or smoke.
 
@@ -236,8 +256,10 @@ established. Do not infer Tier 1 support from a successful build or smoke.
 | Portable MoonBit formatting, type checks, and headless tests | Passed locally and in hosted run (6/6) |
 | MinGW Windows-header syntax and link check | Locally verified; compile-only, not the MoonBit Windows toolchain |
 | MSVC/Windows SDK build, native readback, clipboard and lifecycle E2E, app smoke | Passed in hosted run 37189457500 for PR head `a1f6e523dc41317064c5657179baa20456dcf6b1` |
+| Independent Win32 clipboard process: exact Unicode read/write, real-lock Busy/no-clobber/recovery, queued-wake preservation, lock expiry | Passed in focused local Windows native E2E on 2026-10-07; separate runner/actrun evidence run pending |
 | Text-field owner/controller tests | 12/12 passed locally; synthetic geometry/session tests only |
 | DirectWrite/D3D11 mixed-frame text readback and rejection atomicity | Passed in local MSVC/D3D11 backend tests; validates renderer pixels, not exact field caret/selection pixels |
 | Field startup smoke (default and opt-in session) | Both passed locally through `FrameCompleted`; default epoch 0, experimental session epoch 1; no typing or IME behavior exercised |
 | Pinned local actrun execution of the Windows workflow and portable profile | Passed locally on 2026-10-06; both profiles completed. The checked source head and per-task records are in `_build/windows-actrun/manifest.json`, with detailed logs alongside it |
 | Physical multi-monitor DPI, real IME, accessibility, multi-window and fault recovery | Pending |
+| Broad third-party clipboard application compatibility | Pending |

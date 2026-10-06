@@ -99,6 +99,12 @@ int32_t gpui_windows_test_wrong_thread(int32_t host, int32_t window);
 int32_t gpui_windows_test_wake_stop_race(int32_t host);
 /* CI-only pure-data probe for malformed, unterminated UTF-16 clipboard data. */
 int32_t gpui_windows_test_clipboard_validation(void);
+/* Opt-in native E2E against the separately compiled Win32 clipboard fixture. */
+int32_t gpui_windows_test_clipboard_fixture_read(int32_t host);
+int32_t gpui_windows_test_clipboard_fixture_write(int32_t host);
+int32_t gpui_windows_test_clipboard_fixture_lock_start(int32_t host);
+int32_t gpui_windows_test_clipboard_fixture_lock_stop(int32_t host);
+int32_t gpui_windows_test_clipboard_fixture_expiry(int32_t host);
 /* CI-only direct-message probes: size phases are minimize, zero-size, restore. */
 int32_t gpui_windows_test_size_message(int32_t host, int32_t window,
                                        int32_t phase);

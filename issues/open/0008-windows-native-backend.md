@@ -2,7 +2,7 @@
 
 Status: open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-04
+Updated: 2026-10-07
 
 ## Current-head acceptance triage — 2026-10-04
 
@@ -16,10 +16,69 @@ head `d70b1255aa5dc1eaaea04a67a9ea748d29317cbd`.
 - [x] Regressions cover minimize/restore sizing, independent mouse-button
   tracking, actual capture ownership, focus/capture loss, and teardown.
 - [ ] Multiple windows, physical multi-monitor DPI, Japanese IME/text shaping,
-  accessibility, menus, device-loss recovery, external clipboard
-  interoperability, sustained resource lifetime, and performance remain open.
+  accessibility, menus, device-loss recovery, clipboard interoperability
+  beyond the bounded independent Win32 fixture, sustained resource lifetime,
+  and performance remain open.
 
 The successful one-window run does not promote a Windows support tier.
+
+## Bounded clipboard process-interoperability slice — 2026-10-07
+
+### Purpose
+
+Close the evidence gap between an in-process clipboard round trip and a
+separate Win32 process exchanging exact `CF_UNICODETEXT` with the experimental
+one-HWND backend. This slice qualifies the existing production clipboard
+adapter and its current UTF-8/UTF-16/error contracts. General third-party
+application compatibility remains open.
+
+### Scope
+
+- Compile `tests/windows/clipboard_fixture.c` as a standalone Win32 executable.
+  It owns a hidden HWND and uses `OpenClipboard`, `GetClipboardData`,
+  `EmptyClipboard`, and `SetClipboardData` directly.
+- From the opt-in native E2E, verify that the fixture reads gpui's exact
+  Japanese, emoji, combining-mark, LF, and CRLF payload, then have it publish
+  its own exact Unicode payload for `Host::read_clipboard` to consume.
+- Have the fixture publish a sentinel and hold the clipboard open while
+  `Host::read_clipboard` and `Host::write_clipboard` return `Busy`. After
+  release, read the intact sentinel and complete a successful write/read.
+- Exercise the fixture's bounded lock expiry and verify that the clipboard
+  becomes readable afterward. The parent launches only the configured
+  absolute executable path, verifies its image path plus PID/nonce handshake,
+  and reaps only the created process through its process/job handles.
+
+### Acceptance
+
+- [x] Independent-process exact Unicode read and write pass in the local
+  Windows native E2E.
+- [x] A real independent `OpenClipboard` lock returns `Busy` for production
+  reads and writes, preserves its sentinel, and permits later operations.
+- [x] Bounded fixture expiry releases the clipboard and the child process is
+  reaped; the sent-message wait pump preserves an ordinary queued wake event.
+- [ ] Run the Windows native runner with the fixture in its evidence directory
+  and the fixture path set for the opt-in native E2E gate.
+
+### Dependencies
+
+The native gate needs the pinned MoonBit toolchain, x64 MSVC/Windows SDK, and a
+Windows desktop session for the existing D3D11 HWND test. The fixture is built
+by the runner from the repository source and requires no installed clipboard
+utility or external application.
+
+### Validation and progress
+
+On 2026-10-07, the fixture and backend passed MSVC C compilation, MoonBit
+formatting, the native Windows package type check, and the focused native E2E
+on Windows 11 x64. That E2E exercised exact read/write, real lock contention,
+sentinel preservation, queued-wake preservation, expiry, and recovery. The
+first run exposed a test-harness deadlock: `EmptyClipboard` synchronously
+notified the gpui owner HWND while the test thread waited for the child. The
+bounded wait now services sent messages with `PM_NOREMOVE`; the focused E2E
+passes with the normal clipboard notification and leaves the queued wake for
+the backend dispatcher. The standard and pinned local-actrun runner paths are
+wired to retain fixture/build/E2E logs under `_build/windows-native/` and
+`_build/windows-actrun/`; the full local-actrun evidence run remains pending.
 
 ## Goal
 

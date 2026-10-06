@@ -42,6 +42,21 @@ extern "C" fn native_wrong_thread(host : Int, window : Int) -> Int = "gpui_windo
 extern "C" fn native_clipboard_validation() -> Int = "gpui_windows_test_clipboard_validation"
 
 ///|
+extern "C" fn native_clipboard_fixture_read(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_read"
+
+///|
+extern "C" fn native_clipboard_fixture_write(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_write"
+
+///|
+extern "C" fn native_clipboard_fixture_lock_start(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_lock_start"
+
+///|
+extern "C" fn native_clipboard_fixture_lock_stop(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_lock_stop"
+
+///|
+extern "C" fn native_clipboard_fixture_expiry(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_expiry"
+
+///|
 extern "C" fn native_wake_stop_race(host : Int) -> Int = "gpui_windows_test_wake_stop_race"
 
 ///|
@@ -926,13 +941,81 @@ test "Windows D3D11 HWND renders and reads back first frame" {
     }
     assert_eq(button_event_index, expected_buttons.length())
 
-    let sample_text = "clipboard 日本語 😀"
     match host.write_clipboard("prefix\u{0}suffix") {
       Err(error) => assert_eq(error.code().label(), "conversion_failed")
       Ok(_) => fail("clipboard text containing NUL must be rejected")
     }
-    required(host.write_clipboard(sample_text))
-    assert_eq(required(host.read_clipboard()), sample_text)
+    // A separate Win32 process reads our published CF_UNICODETEXT, then
+    // publishes its own exact multiline Unicode payload for the production
+    // adapter to consume.
+    let gpui_text = "gpui clipboard 日本語 😀 👩🏽‍💻 é\nsecond line\r\n終わり"
+    required(host.write_clipboard(gpui_text))
+    required(
+      outcome(
+        native_clipboard_fixture_read(host.token),
+        "clipboard_fixture_read",
+      ),
+    )
+    // The helper must leave this ordinary queued message for dispatch while it
+    // pumps synchronous clipboard ownership notifications with PM_NOREMOVE.
+    required(host.wake())
+    required(
+      outcome(
+        native_clipboard_fixture_write(host.token),
+        "clipboard_fixture_write",
+      ),
+    )
+    let queued_events = required(host.dispatch(0))
+    assert_true(queued_events.any(event => event.kind() is @platform.Wake))
+    for event in queued_events {
+      assert_true(event.sequence() > last_sequence)
+      last_sequence = event.sequence()
+    }
+    let fixture_text = "fixture clipboard 日本語 😀 👩🏽‍💻\nsecond line\r\n終わり"
+    assert_eq(required(host.read_clipboard()), fixture_text)
+
+    required(
+      outcome(
+        native_clipboard_fixture_lock_start(host.token),
+        "clipboard_fixture_lock_start",
+      ),
+    )
+    let read_was_busy = match host.read_clipboard() {
+      Err(error) => error.code().label() == "busy"
+      Ok(_) => false
+    }
+    let write_was_busy = match
+      host.write_clipboard("must not replace lock marker") {
+      Err(error) => error.code().label() == "busy"
+      Ok(_) => false
+    }
+    required(
+      outcome(
+        native_clipboard_fixture_lock_stop(host.token),
+        "clipboard_fixture_lock_stop",
+      ),
+    )
+    assert_true(read_was_busy)
+    assert_true(write_was_busy)
+    assert_eq(
+      required(host.read_clipboard()),
+      "clipboard lock marker 日本語 🔒\nleave intact",
+    )
+    let recovery_text = "clipboard recovered 日本語 😀\nsecond line"
+    required(host.write_clipboard(recovery_text))
+    assert_eq(required(host.read_clipboard()), recovery_text)
+    // Exercise the fixture's own bounded lock expiry path and confirm Windows
+    // releases the lock so the production adapter can read the sentinel.
+    required(
+      outcome(
+        native_clipboard_fixture_expiry(host.token),
+        "clipboard_fixture_expiry",
+      ),
+    )
+    assert_eq(
+      required(host.read_clipboard()),
+      "clipboard lock marker 日本語 🔒\nleave intact",
+    )
 
     required(host.set_size(window, 160, 120))
     let resize_events = required(host.dispatch(0))

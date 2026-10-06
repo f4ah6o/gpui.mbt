@@ -2802,6 +2802,10 @@ int32_t gpui_windows_stop(int32_t token) {
   return GPUI_WINDOWS_OK;
 }
 
+/* Test-only independent-process probes pump sent ownership messages while
+ * awaiting a bounded challenge handshake. */
+#include "clipboard_interop_test.inc"
+
 #else
 
 /* Keep the public package and its deterministic event/scene tests buildable on
@@ -3039,6 +3043,26 @@ int32_t gpui_windows_test_wake_stop_race(int32_t host) {
   return GPUI_WINDOWS_UNSUPPORTED;
 }
 int32_t gpui_windows_test_clipboard_validation(void) {
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_clipboard_fixture_read(int32_t token) {
+  (void)token;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_clipboard_fixture_write(int32_t token) {
+  (void)token;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_clipboard_fixture_lock_start(int32_t token) {
+  (void)token;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_clipboard_fixture_lock_stop(int32_t token) {
+  (void)token;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_clipboard_fixture_expiry(int32_t token) {
+  (void)token;
   return GPUI_WINDOWS_UNSUPPORTED;
 }
 int32_t gpui_windows_test_size_message(int32_t host, int32_t window,

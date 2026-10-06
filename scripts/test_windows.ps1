@@ -40,6 +40,13 @@ if ($IsWindows) {
     "/nologo", "/Bv", "/std:c11", "/utf-8", "/W4", "/c",
     "windows/backend.c", "/Fo$backendObject"
   ) -LogName "msvc-c-compile.log"
+  $clipboardFixture = Join-Path $evidence "clipboard-fixture.exe"
+  $clipboardFixtureObject = Join-Path $evidence "clipboard_fixture.obj"
+  Invoke-CheckedCommand -Program "cl" -Arguments @(
+    "/nologo", "/std:c11", "/utf-8", "/W4",
+    "tests/windows/clipboard_fixture.c", "/Fo$clipboardFixtureObject",
+    "/Fe$clipboardFixture", "user32.lib"
+  ) -LogName "clipboard-fixture-build.log"
 }
 
 Invoke-CheckedCommand -Program "moon" -Arguments @("fmt", "--check", "windows", "platform/windows_text", "examples/windows", "examples/windows_text_field") -LogName "format.log"
@@ -63,6 +70,7 @@ if (-not $IsWindows) {
 
 $env:GPUI_WINDOWS_E2E = "1"
 $env:GPUI_WINDOWS_READBACK = "1"
+$env:GPUI_WINDOWS_CLIPBOARD_FIXTURE = (Resolve-Path $clipboardFixture).Path
 Invoke-CheckedCommand -Program "moon" -Arguments @(
   "test", "--package", "f4ah6o/gpui/windows", "--target", "native",
   "--deny-warn", "--no-parallelize", "--filter",
@@ -76,6 +84,7 @@ Invoke-CheckedCommand -Program "moon" -Arguments @(
 
 Remove-Item Env:GPUI_WINDOWS_E2E -ErrorAction SilentlyContinue
 Remove-Item Env:GPUI_WINDOWS_READBACK -ErrorAction SilentlyContinue
+Remove-Item Env:GPUI_WINDOWS_CLIPBOARD_FIXTURE -ErrorAction SilentlyContinue
 $env:GPUI_WINDOWS_SMOKE = "1"
 Invoke-CheckedCommand -Program "moon" -Arguments @("run", "examples/windows", "--target", "native") -LogName "app-smoke.log"
 
