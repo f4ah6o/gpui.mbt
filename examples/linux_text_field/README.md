@@ -49,3 +49,19 @@ moon test examples/linux_text_field/state_observer_wbtest.mbt --target native
 Build with the repository-pinned MoonBit 0.10.14 compiler and the Linux
 development libraries described in `docs/linux-text.md`. Before executing
 cases, record the source commit/tree, executable and fixture-font hashes.
+
+
+## Experimental Japanese owner
+
+`GPUI_FIELD_WAYLAND_IME=1` selects the Ubuntu-only, text-input-v1 experimental
+owner. It defaults off and requires the bounded Weston14 desktop-shell / stock
+IBus synchronous Wayland / Mozc private profile. See [owner semantics and
+limitations](../../docs/ubuntu-ime.md). The normal version-1 direct-input observer
+above remains unchanged. In the IME path, the same exact observer flag emits
+`GPUI_FIELD_IME_STATE` only after accepted presentation, with committed/preview,
+marked/focus/epoch/caret and undo/redo fields. The observer is read-only.
+
+This is not a portable platform TextInput capability declaration. Surrounding
+deletion, signed postinsert position and non-whole-span underline styles are
+explicitly rejected. Native evidence must come from the exact GPUI candidate;
+stock-editor conversion qualifies only the private environment baseline.

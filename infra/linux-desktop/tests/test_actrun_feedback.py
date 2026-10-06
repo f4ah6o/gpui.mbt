@@ -281,5 +281,28 @@ class ActrunFeedbackTests(unittest.TestCase):
             self.assertEqual(coverage["ime-composition"]["status"], "skipped")
 
 
+class ImeIngressGateTests(unittest.TestCase):
+    def test_fast_and_acceptance_include_production_ime_ingress(self):
+        for mode in ("fast", "acceptance"):
+            steps = feedback.steps_for(mode)
+            identities = [row[0] for row in steps]
+            self.assertEqual(identities.count("ubuntu-ingress"), 1)
+            self.assertLess(identities.index("protocols"), identities.index("ubuntu-ingress"))
+            self.assertEqual(dict((i,c) for i,_,c in steps)["ubuntu-ingress"],
+                             "sh scripts/test_ubuntu_ingress.sh")
+
+    def test_fast_checks_portable_read_only_ime_owner_harness(self):
+        steps = {i:c for i,_,c in feedback.steps_for("fast")}
+        self.assertEqual(steps["ime-owner-safety"],
+                         "python3 infra/linux-desktop/wayland-ime/test_gpui_probe.py")
+
+    def test_missing_ime_ingress_can_never_be_green(self):
+        tasks = [{"id": "linux-local/" + identity, "status": "success", "code": 0}
+                 for identity, _, _ in feedback.steps_for("fast")
+                 if identity != "ubuntu-ingress"]
+        coverage = {row["id"]: row for row in feedback.coverage_for("fast", tasks)}
+        self.assertEqual(coverage["ubuntu-ingress"]["status"], "not-run")
+
+
 if __name__ == "__main__":
     unittest.main()

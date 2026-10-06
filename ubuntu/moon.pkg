@@ -16,7 +16,11 @@ import {
 } for "wbtest"
 
 options(
-  "native-stub": [ "backend.c", "xdg-shell-protocol.c" ],
+  "native-stub": [
+    "backend.c",
+    "xdg-shell-protocol.c",
+    "text-input-v1-protocol.c",
+  ],
   link: {
     "native": {
       "cc": "script/linux_text_cc.py",

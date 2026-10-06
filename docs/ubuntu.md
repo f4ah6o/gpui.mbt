@@ -35,7 +35,7 @@ returns `UnsupportedCapability`. Connection failure returns `NativeFailure`.
 The demo shows a dark background and blue quad; Escape or a compositor close
 request exits. `GPUI_UBUNTU_SMOKE=1` exits after a completed native frame.
 
-System xdg-shell bindings are generated locally, never copied from GPUI or
+System xdg-shell and experimental text-input-v1 bindings are generated locally, never copied from GPUI or
 vendored. Run preparation before any native build/test. `moon check --target all`
 checks the backend only for native; portable targets keep using the shared
 packages. Native builds currently require the Ubuntu system libraries; the
@@ -85,7 +85,9 @@ measurement contract, raster scope, and separate headless test command.
   Compose commits and bounded key repeat from a version-4 `repeat_info` policy;
   seats below v4, missing policy and rate 0 do not repeat. Ordinary keyboard
   events are not IME commits. Public `TextInput`/IME and input-method composition
-  remain pending.
+  remain pending. A separate opt-in [experimental v1 transport](ubuntu-ime.md)
+  now exposes Ubuntu-local text sessions; owner integration and GPUI native IME
+  acceptance are still pending.
 - Output enter/leave and maximum entered-output integer buffer scale. Scale is
   queued before later input/frame events and EGL buffers resize to physical
   pixels. Fractional scale, public display metadata and multi-display E2E are

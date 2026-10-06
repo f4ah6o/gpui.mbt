@@ -23,8 +23,10 @@ COMMON_STEPS = [
     ("contracts", "Contract tests and document ledger", "python3 -m unittest discover -s tests -p 'test_*.py' && python3 scripts/check_contracts.py"),
     ("infra", "Linux desktop infrastructure tests", "python3 -m unittest discover -s infra/linux-desktop/tests"),
     ("recipe", "Mozc recipe safety guards", "python3 infra/linux-desktop/mozc-prefix/test_rebuild.py"),
+    ("ime-owner-safety", "Read-only GPUI IME harness guards", "python3 infra/linux-desktop/wayland-ime/test_gpui_probe.py"),
     ("format", "MoonBit formatting", "moon fmt --check"),
     ("protocols", "Prepare existing Wayland bindings", "sh scripts/prepare_ubuntu.sh"),
+    ("ubuntu-ingress", "Native direct, repeat and experimental IME ingress", "sh scripts/test_ubuntu_ingress.sh"),
     ("linux-text", "Linux text C harnesses and native tests", "sh scripts/test_linux_text.sh"),
 ]
 PACKAGES = "text controls/text_field platform ubuntu examples/linux_text_field"

@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "qualification_date": "2026-10-06",
+  "scope": "Private own-cloud native-Wayland v1 IME environment baseline; not GPUI IME implementation",
+  "status": "passed",
+  "source_checkout": "53472c447c8660bf687799ebd14fa57f051cfe13",
+  "runtime_bind_verified": true,
+  "editor_conversion_verified": true,
+  "editor_cancel_verified": true,
+  "gpui_ime_verified": false,
+  "candidate_table_verified": false,
+  "candidate_popup_contents_verified": false,
+  "candidate_popup_lifetime_verified": false,
+  "api_sender_pid_verified": false,
+  "deactivate_reactivate_verified": false,
+  "runtime_result": "/workspace/scratch/72d79608add1/gpui-wayland-ime-runtime-evidence/runs/native-4/result.json",
+  "runtime_result_sha256": "a746b235b2f6ae2dc332abef7d45220c6d44fc20e0033c7a040d28f39526a2e4",
+  "transport_result": "/workspace/scratch/72d79608add1/gpui-wayland-ime-runtime-evidence/runs/native-4/transport-evidence.json",
+  "transport_result_sha256": "498f32b1d5510ef0cb6cdfffe0936b6cca18b1859f71d4338eb4a64bf3daf306",
+  "independent_replay": "/workspace/scratch/72d79608add1/gpui-wayland-ime-runtime-evidence/replay.native-4.json",
+  "independent_replay_sha256": "498f32b1d5510ef0cb6cdfffe0936b6cca18b1859f71d4338eb4a64bf3daf306",
+  "counts": {
+    "matched_injected_events": 38,
+    "matched_grabbed_events": 38,
+    "matched_ibus_key_calls": 38,
+    "matched_v1_text_events": 21,
+    "complete_dbus_frames": 317,
+    "demultiplexed_wayland_lines": 617
+  },
+  "elapsed_seconds": 3.57,
+  "cleanup_verified": true,
+  "static_tests_passed": 25,
+  "source_hashes": {
+    "evidence.py": "493cdea6d1673f1ff2d9e7d9d248fca4fbc9c7a87b40fdd7a95252183090ec0d",
+    "deployment.lock.json": "8146aebd274595090ac42054739c41db17e840f200e8c8be163bad8f27b57c9b",
+    "README.md": "959cc8160988a27f357a1887b4d647e69f6755dd67578a2deb8e0f59c471865f",
+    "probe.py": "1262ce1ac5399445c298f5a7457cabf271bdded9517865d4a41defa8631a8244",
+    "test_probe.py": "37869c4060af91628e58679ae2b44e5a9be1051e614bacd381fd35065371ec9f",
+    "prepare-launcher.py": "c6dcd4738dccc5675d4bb0a734b66221524306e78624139481d5fbccb9d78f67",
+    ".gitignore": "32dae3052f331ee34d628ef535709b301259a45df7c7522c4d35dcf49873f00b"
+  },
+  "retained_attempts": [
+    {
+      "run": "native-1",
+      "result_sha256": "af1381dabb5354902a1f67e591f61c9ad0798019ace8665bba8c04d916916d8f",
+      "status": "error",
+      "error": "stock editor white body not located in captured private pixels",
+      "cleanup_verified": true
+    },
+    {
+      "run": "native-2",
+      "result_sha256": "1beb3b1bfdb46fa683c34ceab655255a3b547feb40ccc2768ec49ef1d5e629db",
+      "status": "error",
+      "error": "timed out: editor activation, real IBus context FocusIn and native keyboard grab",
+      "cleanup_verified": true
+    },
+    {
+      "run": "native-3",
+      "result_sha256": "9c5df5e03e85d82c3a7586c081c2e6012c4c700ce9443219c1ccfd53d78eb3c8",
+      "status": "passed",
+      "error": null,
+      "cleanup_verified": true
+    },
+    {
+      "run": "native-4",
+      "result_sha256": "a746b235b2f6ae2dc332abef7d45220c6d44fc20e0033c7a040d28f39526a2e4",
+      "status": "passed",
+      "error": null,
+      "cleanup_verified": true
+    }
+  ]
+}

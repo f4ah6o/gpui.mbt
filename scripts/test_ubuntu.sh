@@ -15,23 +15,12 @@ export FONTCONFIG_PATH
 export XDG_CACHE_HOME="$PWD/_build/ubuntu-e2e/font-cache"
 mkdir -p "$XDG_CACHE_HOME"
 script/linux_text_cc.py -std=c11 -Wall -Wextra -Werror ${GPUI_TEST_CFLAGS:-} \
-  tests/ubuntu/backend_test.c ubuntu/xdg-shell-protocol.c platform/linux_text/linux_text.c \
+  tests/ubuntu/backend_test.c ubuntu/xdg-shell-protocol.c ubuntu/text-input-v1-protocol.c platform/linux_text/linux_text.c \
   -o _build/ubuntu-e2e/backend-test \
   $(pkg-config --cflags --libs wayland-client wayland-cursor wayland-egl egl glesv2 xkbcommon) \
   -lpthread -lm
 _build/ubuntu-e2e/backend-test --clipboard-unit
-script/linux_text_cc.py -std=c11 -Wall -Wextra -Werror ${GPUI_TEST_CFLAGS:-} \
-  tests/ubuntu/direct_text_test.c ubuntu/xdg-shell-protocol.c platform/linux_text/linux_text.c \
-  -o _build/ubuntu-e2e/direct-text-test \
-  $(pkg-config --cflags --libs wayland-client wayland-cursor wayland-egl egl glesv2 xkbcommon) \
-  -lpthread -lm
-env -u DISPLAY -u WAYLAND_DISPLAY _build/ubuntu-e2e/direct-text-test
-script/linux_text_cc.py -std=c11 -Wall -Wextra -Werror ${GPUI_TEST_CFLAGS:-} \
-  tests/ubuntu/key_repeat_test.c ubuntu/xdg-shell-protocol.c platform/linux_text/linux_text.c \
-  -o _build/ubuntu-e2e/key-repeat-test \
-  $(pkg-config --cflags --libs wayland-client wayland-cursor wayland-egl egl glesv2 xkbcommon) \
-  -lpthread -lm
-env -u DISPLAY -u WAYLAND_DISPLAY _build/ubuntu-e2e/key-repeat-test
+sh scripts/test_ubuntu_ingress.sh
 env -u DISPLAY -u WAYLAND_DISPLAY \
   moon test examples/linux_text_field --target native --deny-warn --no-parallelize
 # Preserve the original scenes emitted by actual control code with the same
@@ -61,7 +50,7 @@ env -u DISPLAY -u WAYLAND_DISPLAY GPUI_FIELD_FIXTURES=1 \
 python3 scripts/encode_field_fixtures.py "$field_run/fixtures.jsonl" \
   --output-dir "$field_run/encoded" --source-head "$(git rev-parse HEAD)"
 script/linux_text_cc.py -std=c11 -Wall -Wextra -Werror ${GPUI_TEST_CFLAGS:-} \
-  tests/ubuntu/field_gpu_test.c ubuntu/xdg-shell-protocol.c platform/linux_text/linux_text.c \
+  tests/ubuntu/field_gpu_test.c ubuntu/xdg-shell-protocol.c ubuntu/text-input-v1-protocol.c platform/linux_text/linux_text.c \
   -o _build/ubuntu-e2e/field-gpu-test \
   $(pkg-config --cflags --libs wayland-client wayland-cursor wayland-egl egl glesv2 xkbcommon) \
   -lpthread -lm

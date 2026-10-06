@@ -231,3 +231,30 @@ pub fn TextField::paint_items(
   }
   Ok((clip, items))
 }
+
+///|
+/// The caret in surface-logical coordinates, identical to the painted caret.
+/// Includes content inset, checked run origin and horizontal scroll; owners
+/// performing integer native handoff must round outward and check Int32 bounds.
+pub fn TextField::caret_rect(
+  self : TextField,
+) -> Result[@primitives.Rect, TextFieldPaintError] {
+  let head = self
+    .measurement()
+    .caret_at(self.selection().head())
+    .unwrap()
+    .strong()
+  let (origin, _) = match scene_text_run_geometry(self.measurement()) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  paint_rect(
+    self.content_bounds().left() -
+    self.scroll_offset() +
+    origin.x() +
+    head.left(),
+    self.content_bounds().top() + origin.y() + head.top(),
+    1.0,
+    head.size().height(),
+  )
+}
