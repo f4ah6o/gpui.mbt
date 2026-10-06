@@ -310,7 +310,34 @@ static void quiescing_and_latched_errors_fail_closed(void) {
   assert(gpui_text_session_update(h->token, h->window, 1, NULL, 0, 0, 0, 0, 0, 1, 1, 0) == -GPUI_INVALID);
   assert(gpui_text_session_cancel(h->token, h->window, 1) == -GPUI_INVALID);
   assert(gpui_text_session_panel(h->token, h->window, 1, 0) == GPUI_INVALID);
-  assert(call_count == before && h->count == 0); finish(h);
+  assert(call_count == before && h->count == 0);
+  ime_leave(h, h->ime.proxy);
+  int after_leave = h->count;
+  direct_keyboard_key(h, 30, WL_KEYBOARD_KEY_STATE_PRESSED, XKB_KEY_a);
+  assert(h->count == after_leave); finish(h);
+}
+static void opt_in_rejects_closed_direct_host_and_revokes_prior_keys(void) {
+  struct host *h = fixture();
+  h->direct_exhausted = h->direct_ever_enabled = 1;
+  assert(gpui_text_session_begin(h->token, h->window, NULL, 0, 0, 0, 0, 0, 1, 1) == -GPUI_RESOURCE);
+  assert(!h->ime.proxy && !h->ime.epoch && !call_count); finish(h);
+  h = fixture();
+  direct_key_record(h, 11, XKB_KEY_a, 'a', 0, 0, 0);
+  assert(h->count == 1 && !h->direct_queue[h->read].revoked);
+  int epoch = gpui_text_session_begin(h->token, h->window, NULL, 0, 0, 0, 0, 0, 1, 1); assert(epoch == 1);
+  ime_enter(h, h->ime.proxy, h->surface);
+  assert(h->count == 2 && h->direct_queue[h->read].revoked);
+  double data[GPUI_EDITOR_EVENT_FIELDS]; uint8_t bytes[GPUI_EDITOR_MAX_PAYLOAD];
+  assert(gpui_next(h->token, data) == -GPUI_UNSUPPORTED && h->count == 2);
+  assert(read_editor(h, data, bytes) == 1 && data[0] == 22 && h->count == 0);
+  finish(h);
+  h = fixture(); direct_key_record(h, 11, XKB_KEY_a, 'a', 0, 0, 0);
+  epoch = gpui_text_session_begin(h->token, h->window, NULL, 0, 0, 0, 0, 0, 1, 1); assert(epoch == 1);
+  ime_enter(h, h->ime.proxy, h->surface);
+  assert(gpui_text_session_end(h->token, h->window, epoch) == 0);
+  ime_leave(h, h->ime.proxy);
+  assert(read_editor(h, data, bytes) == 1 && data[0] == 23 && h->count == 0);
+  finish(h);
 }
 static void exhaustion_closes_all_editor_ingress(void) {
   struct host *h = fixture(); begin(h); drain_enter(h);
@@ -379,5 +406,6 @@ int main(void) {
   keys_modifiers_and_text_suppression(); owner_panel_requests_are_epoch_fenced();
   bounds_exhaustion_and_validation(); quiescing_and_latched_errors_fail_closed();
   exhaustion_closes_all_editor_ingress();
+  opt_in_rejects_closed_direct_host_and_revokes_prior_keys();
   puts("experimental IME native transport unit tests passed"); return 0;
 }

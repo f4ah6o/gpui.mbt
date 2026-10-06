@@ -503,6 +503,8 @@ int32_t gpui_text_session_begin(int32_t token, int32_t window,
     return -GPUI_STOPPING;
   if (h->error)
     return -h->error;
+  if (h->direct_exhausted && h->direct_ever_enabled)
+    return -GPUI_RESOURCE;
   if (!ime_document_valid(text, length, cursor, anchor, width, height))
     return -GPUI_INVALID;
   if (h->ime.requested || h->direct_enabled)
@@ -517,6 +519,16 @@ int32_t gpui_text_session_begin(int32_t token, int32_t window,
   h->ime.requested = h->ime.ever_enabled = 1;
   h->ime.panel_requested = 1;
   status = ime_activate(h);
+  if (!status) {
+    /* Pre-opt-in keyboard records cannot later be reinterpreted as character
+     * commands for this target, even if the owner ends before draining. */
+    for (int i = 0; i < h->count; ++i) {
+      int slot = (h->read + i) % QUEUE_CAPACITY;
+      double kind = h->queue[slot][0];
+      if (kind == 11 || kind == 12 || kind == 13)
+        h->direct_queue[slot].revoked = 1;
+    }
+  }
   return status ? -status : h->ime.epoch;
 }
 static int ime_session_check(int token, int window, int epoch, struct host **out) {

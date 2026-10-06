@@ -53,7 +53,7 @@ struct output {
   int scale, entered;
 };
 struct direct_event_meta {
-  int epoch, direct_origin, text_length;
+  int epoch, direct_origin, text_length, revoked;
   uint8_t text[GPUI_DIRECT_TEXT_MAX_BYTES + 1];
 };
 struct key_repeat {
@@ -523,7 +523,8 @@ static void direct_keyboard_key(struct host *h, uint32_t key, uint32_t state,
       (state == WL_KEYBOARD_KEY_STATE_RELEASED && h->repeat.armed &&
        h->repeat.key == key))
     cancel_key_repeat(h);
-  if (h->state != 0 && (h->direct_ever_enabled || h->ime.ever_enabled)) {
+  if ((h->state != 0 && (h->direct_ever_enabled || h->ime.ever_enabled)) ||
+      (h->error && h->ime.ever_enabled)) {
     if (pressed && state == WL_KEYBOARD_KEY_STATE_RELEASED)
       memset(pressed, 0, sizeof(*pressed));
     return;
@@ -2019,7 +2020,8 @@ int32_t gpui_next(int32_t token, double *out) {
   for (int i = 0; i < h->count; ++i) {
     int slot = (h->read + i) % QUEUE_CAPACITY;
     if (h->ime_queue[slot] || h->queue[slot][0] >= 20 ||
-        h->queue[slot][0] == 13 || h->direct_queue[slot].direct_origin)
+        h->queue[slot][0] == 13 || h->direct_queue[slot].direct_origin ||
+        h->direct_queue[slot].revoked)
       return -GPUI_UNSUPPORTED;
   }
   if (!h->count)
@@ -2034,6 +2036,8 @@ static int stale_direct_record(const struct host *h, int slot) {
   if (kind != 11 && kind != 12 && kind != 13)
     return 0;
   const struct direct_event_meta *meta = &h->direct_queue[slot];
+  if (meta->revoked)
+    return 1;
   if (h->state != 0 && (meta->direct_origin || h->ime.ever_enabled))
     return 1;
   if (meta->direct_origin && h->direct_exhausted)
