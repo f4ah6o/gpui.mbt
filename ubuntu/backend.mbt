@@ -434,7 +434,11 @@ fn decode_event(data : FixedArray[Double]) -> @platform.EventKind? {
           Some(
             @platform.Input(
               if data[0] == 11.0 {
-                @primitives.KeyPressed(key~, modifiers=mods, repeat=false)
+                @primitives.KeyPressed(
+                  key~,
+                  modifiers=mods,
+                  repeat=data[7] == 1.0,
+                )
               } else {
                 @primitives.KeyReleased(key~, modifiers=mods)
               },
@@ -552,7 +556,7 @@ fn decode_direct_text_event(
 }
 
 ///|
-/// V2 preserves the old decoder for non-text records. Malformed text records
+/// V2 preserves legacy records and validates the key repeat flag. Malformed text records
 /// are errors rather than silently disappearing from incremental or batch IO.
 fn decode_v2_event(
   data : FixedArray[Double],
@@ -565,6 +569,16 @@ fn decode_v2_event(
         @diagnostics.InvalidInput,
         operation,
         "event tag is not a finite integer",
+      ),
+    )
+  }
+  if (data[0] == 11.0 && data[7] != 0.0 && data[7] != 1.0) ||
+    (data[0] == 12.0 && data[7] != 0.0) {
+    return Err(
+      native_text_decode_error(
+        @diagnostics.InvalidInput,
+        operation,
+        "invalid key repeat flag",
       ),
     )
   }

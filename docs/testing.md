@@ -328,3 +328,40 @@ failed-job retry in attempt2. First-failure and successful artifacts remain
 separate. Cause is unknown; a successful retry is not proof of production
 stability or live keyboard/IME qualification. See the
 [Ubuntu stability/recovery limits](ubuntu.md#known-hosted-compositor-observation).
+
+## Bounded direct keyboard repeat evidence
+
+Private Ubuntu direct-repeat checks are deterministic headless evidence.
+Mocked Wayland callbacks and controlled clock/queue observations cover the
+v4 `repeat_info` policy, lower-version/rate-zero/missing-policy suppression,
+repeatable key/text caching, empty-queue dispatch admission, one atomic group
+per dispatch, no overdue catch-up, 1 ms rate saturation, Compose isolation and
+focus/epoch/mode/modifier/layout/device/close/fatal cancellation. They are not
+compositor-delivered typing or a measurement of a desktop repeat timer.
+
+MoonBit ABI2 tests separately check physical/synthetic press flags and typed
+`InvalidInput` for NaN, infinity, fractional, negative or out-of-range flags,
+including repeat flags on release/text. Pointer slot 7 remains a y coordinate.
+Portable field tests and native real-font controller tests inject repeated
+`KeyPressed` and committed `TextInput` records. They check insertion exactly
+once, separate content history groups, navigation without history, current
+repeated undo/redo and clipboard/submit semantics, stale paste rejection after
+repeated editing, and pending/rollback history consistency.
+
+Actual compositor-delivered typing and held-key repeat timing are **UNRUN**.
+The existing Weston/llvmpipe rendering tier and replayed `Host.present` scenes
+do not exercise `wl_keyboard` delivery or qualify repeat timing. This bounded
+opt-in route adds no public `TextInput`/IME capability, typing coalescing, or
+one-shot shortcut filtering. See the
+[field contract and remaining gates](linux-text-field.md#evidence-and-remaining-gates).
+
+Local pre-publication Linux verification on 2026-10-06 passed native
+380/380, JavaScript/Wasm/Wasm-GC 318/318 each, Python 101/101, full MoonBit
+formatting and the contract-document checker. The C direct-input/repeat and
+clipboard fixtures pass with `-Wall -Wextra -Werror`; repeat also passes
+ASan+UBSan with leak detection disabled. Headless Pango raster, field-admission
+and origin-raster consumers pass. These results use MoonBit
+`0.10.14+7d59c7ec9`, Wayland 1.23.1, XKBCommon 1.7.0, PangoFT2 1.56.3 and
+Fontconfig 2.15.0. Generated native MoonBit C retains existing compiler warnings;
+MoonBit `--deny-warn` and the handwritten C strict-warning checks pass.
+The native `GPUI_FIELD_E2E` compositor gate was skipped, not passed.

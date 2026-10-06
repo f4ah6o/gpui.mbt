@@ -4,7 +4,10 @@
 /* Private, versioned ABI. All buffers are borrowed only for the call. Tokens
  * are monotonic integers resolved internally, never pointers. Owner-thread
  * only. Event buffer: kind, window, sequence, scale, width, height, x, y,
- * detail, mods. Frame: viewport x/y/w/h/scale, followed by 19 doubles per quad:
+ * detail, mods. Key tags 11/12 use slot 6 for the Unicode scalar and
+ * slot 7 for repeat (press: exact 0/1, release: 0). Text tag 13 uses zero
+ * slots 6/7. Physical presses are 0; client repeats are 1, with no fake
+ * release. Frame: viewport x/y/w/h/scale, followed by 19 doubles per quad:
  * bounds(4), RGBA(4), affine(6), opacity, intersected clip(4).
  */
 #define GPUI_UBUNTU_ABI 1

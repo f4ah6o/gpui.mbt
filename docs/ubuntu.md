@@ -74,8 +74,11 @@ measurement contract, raster scope, and separate headless test command.
   outstanding frame returns `Busy`. Frame callbacks produce the shared `FrameCompleted`
   (compositor readiness, not a hardware presentation timestamp).
 - Basic logical pointer movement/buttons/scroll, xkb logical keys/modifiers, and
-  keyboard focus. Key repeat, committed text, IME and input-method composition
-  are pending; keyboard events must not be interpreted as IME commits.
+  keyboard focus. The separate opt-in `DirectKeyboardText` route supplies locale
+  Compose commits and bounded key repeat from a version-4 `repeat_info` policy;
+  seats below v4, missing policy and rate 0 do not repeat. Ordinary keyboard
+  events are not IME commits. Public `TextInput`/IME and input-method composition
+  remain pending.
 - Output enter/leave and maximum entered-output integer buffer scale. Scale is
   queued before later input/frame events and EGL buffers resize to physical
   pixels. Fractional scale, public display metadata and multi-display E2E are
@@ -198,11 +201,34 @@ its new hosted rendering cases remain pending for this change. The field remains
 single-line LTR, rejects unknown/color glyphs and reflow/resource-limit cases,
 and uses logical-resolution masks that may soften under scaling. Direct native
 committed-text ingress exists, but actual compositor-delivered typing, Japanese
-IME, autorepeat, general bidi and drag selection remain unqualified. The
+IME, held-key repeat timing, general bidi and drag selection remain unqualified.
+The bounded direct-repeat implementation has deterministic mocked callback/queue
+and model/controller coverage only; actual compositor repeat is **UNRUN**. The
 [known hosted-compositor observation](#known-hosted-compositor-observation)
 retains the unchanged-main first failure and successful retry without assigning
 a cause. See the [field guide](linux-text-field.md) for full limits and evidence
 tiers.
+
+### Private direct-repeat limits
+
+The seat bind is capped at v4. In active direct mode, a fresh repeatable physical
+press caches its logical key and optional UTF-8 commit only when Compose did
+not consume it. Synthetic `KeyPressed` records set `repeat=true`, while physical
+presses set it false; release records are never synthesized. Available native
+callbacks are dispatched first. Only an empty event queue admits a repeat, with
+at most one atomic key/text group per native dispatch and no overdue catch-up.
+The interval rounds up to milliseconds with a 1 ms minimum, including rates
+above 1,000 Hz.
+
+An unchanged compositor policy preserves the candidate; changed policy,
+modifiers or layout cancel it until a fresh physical press. Focus, mode/epoch,
+device/seat loss, matching release, close/release and fatal host failure also
+cancel repeat. Compose is never fed by the timer. ABI2 slot 7 accepts exactly
+0/1 for press tag 11 and requires 0 for release tag 12 and text tag 13; malformed
+flags return typed `InvalidInput`. Pointer slot 7 remains y. Legacy input is
+unchanged. This feature does not provide a general timer API, IME, coalesced
+typing history or qualification of desktop repeat accuracy. See the
+[field repeat contract](linux-text-field.md#bounded-direct-keyboard-repeat).
 
 The bounded experimental field now paints visible caret/selection and scrolls,
 but it is not a general control. Public TextInput/IME, semantic accessibility, menus,

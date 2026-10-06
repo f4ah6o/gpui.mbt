@@ -54,6 +54,13 @@ struct direct_event_meta {
   int epoch, direct_origin, text_length;
   uint8_t text[GPUI_DIRECT_TEXT_MAX_BYTES + 1];
 };
+struct key_repeat {
+  int armed, epoch, modifiers, text_length;
+  uint32_t key, scalar;
+  xkb_keysym_t symbol;
+  int64_t deadline, last_time;
+  uint8_t text[GPUI_DIRECT_TEXT_MAX_BYTES];
+};
 struct direct_key_state {
   int epoch, direct_origin, swallowed, pressed;
 };
@@ -74,7 +81,7 @@ struct host {
   struct wl_data_device *data_device;
   struct wl_data_offer *selection_offer, *pending_offer;
   uint32_t compositor_name, shell_name, shm_name, data_manager_name;
-  uint32_t seat_name;
+  uint32_t seat_name, seat_version;
   struct wl_seat *seat;
   struct wl_pointer *pointer;
   struct wl_keyboard *keyboard;
@@ -99,6 +106,8 @@ struct host {
   struct xkb_compose_state *compose;
   int compose_attempted, direct_keymap_valid;
   int direct_enabled, direct_epoch, direct_exhausted, direct_ever_enabled;
+  int repeat_rate, repeat_delay;
+  struct key_repeat repeat;
   struct output outputs[OUTPUT_CAPACITY];
   struct wl_surface *surface;
   struct xdg_surface *xdg;
@@ -179,11 +188,28 @@ static int window_check(int token, int window, struct host **out) {
     return s;
   return (*out)->window && (*out)->window == window ? GPUI_OK : GPUI_STALE;
 }
+static void cancel_key_repeat(struct host *h) {
+  memset(&h->repeat, 0, sizeof(h->repeat));
+}
+static int input_failure(struct host *h, int status) {
+  cancel_key_repeat(h);
+  h->error = status;
+  return status;
+}
+static int64_t monotonic_milliseconds(void) {
+  struct timespec now;
+  if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < 0 ||
+      now.tv_nsec < 0 || now.tv_nsec >= 1000000000 ||
+      (uint64_t)now.tv_sec >
+          (uint64_t)(INT64_MAX - now.tv_nsec / 1000000) / 1000)
+    return -1;
+  return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+}
 static void event(struct host *h, int kind, double detail, double x, double y) {
   if (!h->window)
     return;
   if (h->count == QUEUE_CAPACITY || h->seq == INT_MAX) {
-    h->error = GPUI_RESOURCE;
+    (void)input_failure(h, GPUI_RESOURCE);
     return;
   }
   int slot = (h->read + h->count++) % QUEUE_CAPACITY;
@@ -206,6 +232,7 @@ static void reset_compose(struct host *h) {
 }
 /* A target generation is never reused, including on resource exhaustion. */
 static int advance_direct_epoch(struct host *h) {
+  cancel_key_repeat(h);
   reset_compose(h);
   if (h->direct_exhausted || h->direct_epoch == INT_MAX) {
     h->direct_exhausted = 1;
@@ -225,6 +252,7 @@ static void reset_direct_text(struct host *h, int disable, int clear_device) {
   (void)advance_direct_epoch(h);
 }
 static void quiesce_host(struct host *h) {
+  cancel_key_repeat(h);
   /* All transitions out of Running revoke the editor target exactly once.
    * Repeated exit/error handling must not consume more generations. */
   if (h->state == 0 || h->direct_enabled)
@@ -323,10 +351,10 @@ static int direct_has_control(const uint8_t *text, int length) {
   return 0;
 }
 static void direct_key_record(struct host *h, int kind, xkb_keysym_t sym,
-                               uint32_t scalar, int epoch, int origin) {
+                               uint32_t scalar, int epoch, int origin, int repeat) {
   int slot = (h->read + h->count) % QUEUE_CAPACITY;
   int prior = h->count;
-  event(h, kind, sym, scalar, 0);
+  event(h, kind, sym, scalar, repeat);
   if (h->count != prior) {
     h->direct_queue[slot].epoch = epoch;
     h->direct_queue[slot].direct_origin = origin;
@@ -345,12 +373,131 @@ static void direct_text_record(struct host *h, const uint8_t *text, int length) 
     meta->text[length] = 0;
   }
 }
+/* Match the bounded portable key decoder, so a repeat never introduces an
+ * undecodable key. This is representation admission, not shortcut policy. */
+static int repeat_symbol_supported(xkb_keysym_t symbol, uint32_t scalar) {
+  switch (symbol) {
+  case XKB_KEY_Return: case XKB_KEY_Escape: case XKB_KEY_BackSpace:
+  case XKB_KEY_Delete: case XKB_KEY_Tab: case XKB_KEY_ISO_Left_Tab:
+  case XKB_KEY_space: case XKB_KEY_Left: case XKB_KEY_Up:
+  case XKB_KEY_Right: case XKB_KEY_Down: case XKB_KEY_Home:
+  case XKB_KEY_End: case XKB_KEY_Page_Up: case XKB_KEY_Page_Down:
+    return 1;
+  default:
+    return scalar >= 32 && scalar <= 0x10ffff &&
+           !(scalar >= 0xd800 && scalar <= 0xdfff);
+  }
+}
+static void arm_key_repeat(struct host *h, uint32_t key, xkb_keysym_t symbol,
+                           uint32_t scalar, const uint8_t *text, int length) {
+  if (h->error || h->seat_version < 4 || h->repeat_rate <= 0 ||
+      !xkb_keymap_key_repeats(h->keymap, key + 8) ||
+      !repeat_symbol_supported(symbol, scalar))
+    return;
+  int64_t now = monotonic_milliseconds();
+  if (now < 0) {
+    (void)input_failure(h, GPUI_NATIVE);
+    return;
+  }
+  if (now > INT64_MAX - h->repeat_delay) {
+    (void)input_failure(h, GPUI_RESOURCE);
+    return;
+  }
+  h->repeat.armed = 1;
+  h->repeat.key = key;
+  h->repeat.epoch = h->direct_epoch;
+  h->repeat.modifiers = h->modifiers;
+  h->repeat.symbol = symbol;
+  h->repeat.scalar = scalar;
+  h->repeat.text_length = length;
+  h->repeat.last_time = now;
+  h->repeat.deadline = now + h->repeat_delay;
+  if (length)
+    memcpy(h->repeat.text, text, (size_t)length);
+}
+static int key_repeat_current(struct host *h) {
+  struct key_repeat *repeat = &h->repeat;
+  if (!repeat->armed)
+    return 0;
+  if (h->error || h->state || !h->window || !h->seat_name ||
+      h->seat_version < 4 || !h->keyboard || !h->direct_keymap_valid ||
+      !h->keymap || !h->keys ||
+      !h->keyboard_focus_current || !h->direct_enabled ||
+      h->direct_exhausted || h->repeat_rate <= 0 ||
+      repeat->epoch != h->direct_epoch ||
+      repeat->modifiers != h->modifiers ||
+      repeat->key >= GPUI_DIRECT_KEY_CAPACITY ||
+      !h->direct_keys[repeat->key].pressed ||
+      h->direct_keys[repeat->key].epoch != repeat->epoch ||
+      !h->direct_keys[repeat->key].direct_origin ||
+      h->direct_keys[repeat->key].swallowed || !h->compose ||
+      xkb_compose_state_get_status(h->compose) != XKB_COMPOSE_NOTHING) {
+    cancel_key_repeat(h);
+    return 0;
+  }
+  return 1;
+}
+static int key_repeat_time(struct host *h, int64_t *out) {
+  int64_t now = monotonic_milliseconds();
+  if (now < 0 || now < h->repeat.last_time)
+    return input_failure(h, GPUI_NATIVE);
+  h->repeat.last_time = now;
+  *out = now;
+  return GPUI_OK;
+}
+static int key_repeat_wait(struct host *h, int timeout) {
+  if (h->count || h->state)
+    return 0;
+  if (!key_repeat_current(h))
+    return timeout;
+  int64_t now;
+  int status = key_repeat_time(h, &now);
+  if (status)
+    return -status;
+  int64_t remaining = h->repeat.deadline > now
+                          ? h->repeat.deadline - now : 0;
+  return remaining < timeout ? (int)remaining : timeout;
+}
+static int service_key_repeat(struct host *h) {
+  if (!key_repeat_current(h))
+    return GPUI_OK;
+  int64_t now;
+  int status = key_repeat_time(h, &now);
+  if (status)
+    return status;
+  if (now < h->repeat.deadline)
+    return GPUI_OK;
+  /* Millisecond resolution saturates high rates at one millisecond. Missed
+   * deadlines are discarded, including ticks skipped for queued input. */
+  int interval = 1 + 999 / h->repeat_rate;
+  if (now > INT64_MAX - interval)
+    return input_failure(h, GPUI_RESOURCE);
+  h->repeat.deadline = now + interval;
+  if (h->count)
+    return GPUI_OK;
+  struct key_repeat *repeat = &h->repeat;
+  int length = repeat->text_length;
+  if (length < 0 || length > GPUI_DIRECT_TEXT_MAX_BYTES ||
+      !direct_utf8_valid(repeat->text, length))
+    return input_failure(h, GPUI_INVALID);
+  int records = 1 + (length > 0);
+  if (records > QUEUE_CAPACITY - h->count || records > INT_MAX - h->seq)
+    return input_failure(h, GPUI_RESOURCE);
+  direct_key_record(h, 11, repeat->symbol, repeat->scalar, repeat->epoch, 1, 1);
+  if (length)
+    direct_text_record(h, repeat->text, length);
+  return h->error;
+}
 static void direct_keyboard_key(struct host *h, uint32_t key, uint32_t state,
                                  xkb_keysym_t sym) {
   struct direct_key_state *pressed = key < GPUI_DIRECT_KEY_CAPACITY
                                          ? &h->direct_keys[key]
                                          : NULL;
   uint32_t scalar = xkb_keysym_to_utf32(sym);
+  if (state == WL_KEYBOARD_KEY_STATE_PRESSED ||
+      (state == WL_KEYBOARD_KEY_STATE_RELEASED && h->repeat.armed &&
+       h->repeat.key == key))
+    cancel_key_repeat(h);
   if (h->state != 0 && h->direct_ever_enabled) {
     if (pressed && state == WL_KEYBOARD_KEY_STATE_RELEASED)
       memset(pressed, 0, sizeof(*pressed));
@@ -359,7 +506,7 @@ static void direct_keyboard_key(struct host *h, uint32_t key, uint32_t state,
   if (h->direct_exhausted && h->direct_ever_enabled) {
     if (pressed && state == WL_KEYBOARD_KEY_STATE_RELEASED)
       memset(pressed, 0, sizeof(*pressed));
-    h->error = GPUI_RESOURCE;
+    (void)input_failure(h, GPUI_RESOURCE);
     return;
   }
   if (state == WL_KEYBOARD_KEY_STATE_RELEASED) {
@@ -369,7 +516,7 @@ static void direct_keyboard_key(struct host *h, uint32_t key, uint32_t state,
     if (pressed)
       memset(pressed, 0, sizeof(*pressed));
     if (!swallowed)
-      direct_key_record(h, 12, sym, scalar, epoch, origin);
+      direct_key_record(h, 12, sym, scalar, epoch, origin, 0);
     return;
   }
   if (pressed) {
@@ -379,18 +526,18 @@ static void direct_keyboard_key(struct host *h, uint32_t key, uint32_t state,
     pressed->swallowed = 0;
   }
   if (!h->direct_enabled) {
-    direct_key_record(h, 11, sym, scalar, h->direct_epoch, 0);
+    direct_key_record(h, 11, sym, scalar, h->direct_epoch, 0, 0);
     return;
   }
   if (!h->keyboard_focus_current)
     return;
   if (!pressed || state != WL_KEYBOARD_KEY_STATE_PRESSED) {
-    h->error = GPUI_INVALID;
+    (void)input_failure(h, GPUI_INVALID);
     return;
   }
   int admission = require_direct_keyboard(h);
   if (admission != GPUI_OK) {
-    h->error = admission;
+    (void)input_failure(h, admission);
     return;
   }
   uint8_t text[GPUI_DIRECT_TEXT_MAX_BYTES + 1];
@@ -418,24 +565,26 @@ static void direct_keyboard_key(struct host *h, uint32_t key, uint32_t state,
     }
   }
   if (length < 0 || length > GPUI_DIRECT_TEXT_MAX_BYTES) {
-    h->error = GPUI_RESOURCE;
+    (void)input_failure(h, GPUI_RESOURCE);
     return;
   }
   if (!direct_utf8_valid(text, length)) {
-    h->error = GPUI_INVALID;
+    (void)input_failure(h, GPUI_INVALID);
     return;
   }
   if (direct_has_control(text, length))
     length = 0;
   int records = emit_key + (length > 0);
   if (records > QUEUE_CAPACITY - h->count || records > INT_MAX - h->seq) {
-    h->error = GPUI_RESOURCE;
+    (void)input_failure(h, GPUI_RESOURCE);
     return;
   }
   if (emit_key)
-    direct_key_record(h, 11, sym, scalar, h->direct_epoch, 1);
+    direct_key_record(h, 11, sym, scalar, h->direct_epoch, 1, 0);
   if (length > 0)
     direct_text_record(h, text, length);
+  if (emit_key && !pressed->swallowed)
+    arm_key_repeat(h, key, sym, scalar, text, length);
 }
 static ssize_t write_without_sigpipe(int fd, const void *bytes, size_t length) {
   sigset_t blocked, old_mask, pending;
@@ -852,6 +1001,7 @@ static void toplevel_configure(void *d, struct xdg_toplevel *t, int32_t w,
 }
 static void toplevel_close(void *d, struct xdg_toplevel *t) {
   UNUSED(t);
+  cancel_key_repeat(d);
   event(d, 3, 0, 0, 0);
 }
 static const struct xdg_toplevel_listener toplevel_listener = {
@@ -1006,7 +1156,7 @@ static void keyboard_key(void *d, struct wl_keyboard *k, uint32_t serial,
   if (!h->keys)
     return;
   if (h->direct_enabled && key >= GPUI_DIRECT_KEY_CAPACITY) {
-    h->error = GPUI_INVALID;
+    (void)input_failure(h, GPUI_INVALID);
     return;
   }
   xkb_keysym_t sym = xkb_state_key_get_one_sym(h->keys, key + 8);
@@ -1021,7 +1171,8 @@ static void keyboard_modifiers(void *d, struct wl_keyboard *k, uint32_t serial,
     return;
   if (!h->keys)
     return;
-  xkb_state_update_mask(h->keys, dep, lat, lock, 0, 0, group);
+  if (xkb_state_update_mask(h->keys, dep, lat, lock, 0, 0, group))
+    cancel_key_repeat(h);
   h->modifiers = (xkb_state_mod_name_is_active(h->keys, XKB_MOD_NAME_SHIFT,
                                                XKB_STATE_MODS_EFFECTIVE)
                       ? 1
@@ -1039,12 +1190,42 @@ static void keyboard_modifiers(void *d, struct wl_keyboard *k, uint32_t serial,
                       ? 8
                       : 0);
 }
+static void keyboard_repeat_info(void *d, struct wl_keyboard *keyboard,
+                                  int32_t rate, int32_t delay) {
+  struct host *h = d;
+  if (keyboard != h->keyboard || h->seat_version < 4)
+    return;
+  if (rate < 0 || delay < 0) {
+    h->repeat_rate = h->repeat_delay = 0;
+    (void)input_failure(h, GPUI_INVALID);
+    return;
+  }
+  if (rate != h->repeat_rate || delay != h->repeat_delay)
+    cancel_key_repeat(h);
+  h->repeat_rate = rate;
+  h->repeat_delay = delay;
+}
+static void destroy_keyboard(struct host *h) {
+  if (h->seat_version >= 3)
+    wl_keyboard_release(h->keyboard);
+  else
+    wl_keyboard_destroy(h->keyboard);
+  h->keyboard = NULL;
+}
+static void destroy_pointer(struct host *h) {
+  if (h->seat_version >= 3)
+    wl_pointer_release(h->pointer);
+  else
+    wl_pointer_destroy(h->pointer);
+  h->pointer = NULL;
+}
 static const struct wl_keyboard_listener keyboard_listener = {
     .keymap = keyboard_keymap,
     .enter = keyboard_enter,
     .leave = keyboard_leave,
     .key = keyboard_key,
-    .modifiers = keyboard_modifiers};
+    .modifiers = keyboard_modifiers,
+    .repeat_info = keyboard_repeat_info};
 static void seat_caps(void *d, struct wl_seat *s, uint32_t caps) {
   struct host *h = d;
   if (s != h->seat)
@@ -1060,8 +1241,7 @@ static void seat_caps(void *d, struct wl_seat *s, uint32_t caps) {
     if (h->pointer) {
       h->pointer_inside = 0;
       h->pointer_serial = 0;
-      wl_pointer_destroy(h->pointer);
-      h->pointer = NULL;
+      destroy_pointer(h);
     }
   }
   if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !h->keyboard) {
@@ -1072,15 +1252,20 @@ static void seat_caps(void *d, struct wl_seat *s, uint32_t caps) {
     h->keyboard_focus_current = 0;
     if (h->keyboard) {
       event(h, 6, 0, 0, 0);
-      wl_keyboard_destroy(h->keyboard);
-      h->keyboard = NULL;
+      destroy_keyboard(h);
     }
     reset_direct_text(h, 1, 1);
+    h->repeat_rate = h->repeat_delay = 0;
     h->direct_keymap_valid = 0;
   }
 }
-static const struct wl_seat_listener seat_listener = {.capabilities =
-                                                          seat_caps};
+static void seat_name(void *d, struct wl_seat *seat, const char *name) {
+  UNUSED(d);
+  UNUSED(seat);
+  UNUSED(name);
+}
+static const struct wl_seat_listener seat_listener = {
+    .capabilities = seat_caps, .name = seat_name};
 static void global(void *d, struct wl_registry *r, uint32_t name,
                    const char *interface, uint32_t version) {
   struct host *h = d;
@@ -1091,8 +1276,10 @@ static void global(void *d, struct wl_registry *r, uint32_t name,
     h->shell = wl_registry_bind(r, name, &xdg_wm_base_interface, 1);
     h->shell_name = name;
     xdg_wm_base_add_listener(h->shell, &shell_listener, h);
-  } else if (!strcmp(interface, "wl_seat") && !h->seat) {
-    h->seat = wl_registry_bind(r, name, &wl_seat_interface, 1);
+  } else if (!strcmp(interface, "wl_seat") && version >= 1 && !h->seat) {
+    /* Pointer v5+ events are deliberately outside the implemented listener. */
+    h->seat_version = version < 4 ? version : 4;
+    h->seat = wl_registry_bind(r, name, &wl_seat_interface, h->seat_version);
     h->seat_name = name;
     wl_seat_add_listener(h->seat, &seat_listener, h);
     maybe_create_data_device(h);
@@ -1121,7 +1308,7 @@ static void global_remove(void *d, struct wl_registry *r, uint32_t name) {
   UNUSED(r);
   struct host *h = d;
   if (name == h->compositor_name || name == h->shell_name)
-    h->error = GPUI_NATIVE;
+    (void)input_failure(h, GPUI_NATIVE);
   if (name == h->shm_name) {
     h->shm_name = 0;
   }
@@ -1136,7 +1323,7 @@ static void global_remove(void *d, struct wl_registry *r, uint32_t name) {
     if (h->seat)
       wl_seat_destroy(h->seat);
     h->seat = NULL;
-    h->seat_name = 0;
+    h->seat_name = h->seat_version = 0;
     invalidate_input_serial(h, INPUT_SERIAL_NONE);
     h->pointer_inside = 0;
     h->pointer_focus_current = 0;
@@ -1178,6 +1365,7 @@ static void release_renderer(struct host *h, int terminate_display) {
  * to the externally owned wl_display alive for the host lifetime. */
 static void release_gpu(struct host *h) { release_renderer(h, 0); }
 static void release_window(struct host *h) {
+  cancel_key_repeat(h);
   if (h->state == 0)
     reset_direct_text(h, 1, 0);
   else {
@@ -1234,9 +1422,9 @@ static void release_host(struct host *h) {
   if (h->shm)
     wl_shm_destroy(h->shm);
   if (h->pointer)
-    wl_pointer_destroy(h->pointer);
+    destroy_pointer(h);
   if (h->keyboard)
-    wl_keyboard_destroy(h->keyboard);
+    destroy_keyboard(h);
   if (h->seat)
     wl_seat_destroy(h->seat);
   release_compose(h);
@@ -1280,7 +1468,7 @@ static int display_failure(struct host *h, const char *where) {
   quiesce_host(h);
   return h->error;
 }
-static int pump_impl(struct host *h, int timeout) {
+static int pump_impl(struct host *h, int timeout, int repeat_wait) {
   if (h->error)
     return h->error;
   for (int i = 0; i < SOURCE_TRANSFER_CAPACITY; ++i)
@@ -1298,6 +1486,13 @@ static int pump_impl(struct host *h, int timeout) {
   for (int i = 0; i < SOURCE_TRANSFER_CAPACITY; ++i)
     if (h->transfers[i].fd >= 0 && timeout > 16)
       timeout = 16;
+  if (repeat_wait) {
+    timeout = key_repeat_wait(h, timeout);
+    if (timeout < 0) {
+      wl_display_cancel_read(h->display);
+      return -timeout;
+    }
+  }
   int flush = wl_display_flush(h->display);
   if (flush < 0 && errno != EAGAIN) {
     wl_display_cancel_read(h->display);
@@ -1345,8 +1540,8 @@ static int pump_impl(struct host *h, int timeout) {
   flush_transfers(h);
   return h->error;
 }
-static int pump(struct host *h, int timeout) {
-  int status = pump_impl(h, timeout);
+static int pump_with_repeat_wait(struct host *h, int timeout, int repeat_wait) {
+  int status = pump_impl(h, timeout, repeat_wait);
   if (status) {
     /* Native event-loop failures revoke the target for every consumer,
      * including present, clipboard and teardown/sync paths. Normal no-event
@@ -1357,6 +1552,9 @@ static int pump(struct host *h, int timeout) {
     return h->error;
   }
   return GPUI_OK;
+}
+static int pump(struct host *h, int timeout) {
+  return pump_with_repeat_wait(h, timeout, 0);
 }
 static int settle_frame(struct host *h) {
   int status = GPUI_OK;
@@ -1658,6 +1856,7 @@ int32_t gpui_close(int32_t token, int32_t window) {
   int s = window_check(token, window, &h);
   if (s)
     return s;
+  cancel_key_repeat(h);
   event(h, 3, 0, 0, 0);
   return h->error;
 }
@@ -1738,7 +1937,12 @@ int32_t gpui_dispatch(int32_t token, int32_t timeout) {
     return s;
   if (timeout < 0 || timeout > 60000)
     return GPUI_INVALID;
-  s = pump(h, h->count || h->state ? 0 : timeout);
+  s = pump_with_repeat_wait(h, h->count || h->state ? 0 : timeout, 1);
+  if (!s) {
+    s = service_key_repeat(h);
+    if (s)
+      quiesce_host(h);
+  }
   return s;
 }
 int32_t gpui_next(int32_t token, double *out) {
@@ -2259,12 +2463,6 @@ int32_t gpui_capability(int32_t token, int32_t capability) {
   if (capability == 3)
     return require_direct_keyboard(h);
   return GPUI_UNSUPPORTED;
-}
-static int64_t monotonic_milliseconds(void) {
-  struct timespec now;
-  if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
-    return -1;
-  return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 int32_t gpui_read_clipboard(int32_t token) {
   struct host *h;

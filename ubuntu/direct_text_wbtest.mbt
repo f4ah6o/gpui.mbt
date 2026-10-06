@@ -136,6 +136,87 @@ test "v2 keeps the existing non-text decoder behavior" {
 }
 
 ///|
+fn direct_repeat_key_record(tag : Double, flag : Double) -> FixedArray[Double] {
+  let data = FixedArray::make(10, 0.0)
+  data[0] = tag
+  data[1] = 7.0
+  data[2] = 19.0
+  data[3] = 1.0
+  data[6] = 97.0
+  data[7] = flag
+  data[8] = 97.0
+  data
+}
+
+///|
+test "v2 key repeat flags preserve physical and synthetic press identity" {
+  let no_text = Bytes::make(0, (0).to_byte())
+  for flag in [0.0, 1.0] {
+    match
+      decode_v2_event(
+        direct_repeat_key_record(11.0, flag),
+        no_text,
+        "repeat_test",
+      ) {
+      Ok(
+        Some(
+          @platform.Input(
+            @primitives.KeyPressed(key=@primitives.Character("a"), repeat~, ..)
+          )
+        )
+      ) => assert_eq(repeat, flag == 1.0)
+      _ => fail("exact key repeat flag was not preserved")
+    }
+  }
+  assert_true(
+    decode_v2_event(direct_repeat_key_record(12.0, 0.0), no_text, "repeat_test")
+    is Ok(Some(@platform.Input(@primitives.KeyReleased(..)))),
+  )
+}
+
+///|
+test "v2 rejects malformed repeat flags with typed invalid input" {
+  let no_text = Bytes::make(0, (0).to_byte())
+  for flag in [0.0 / 0.0, 1.0 / 0.0, -1.0 / 0.0, 0.5, -1.0, 2.0] {
+    for tag in [11.0, 12.0] {
+      match
+        decode_v2_event(
+          direct_repeat_key_record(tag, flag),
+          no_text,
+          "repeat_flag_test",
+        ) {
+        Err(error) => {
+          assert_eq(error.code().label(), "invalid_input")
+          assert_eq(error.operation(), "repeat_flag_test")
+        }
+        Ok(_) => fail("malformed key repeat flag was accepted")
+      }
+    }
+    let text = direct_text_record(1.0)
+    text[7] = flag
+    match decode_v2_event(text, @utf8.encode("a"), "repeat_flag_test") {
+      Err(error) => assert_eq(error.code().label(), "invalid_input")
+      Ok(_) => fail("malformed text repeat flag was accepted")
+    }
+  }
+  match
+    decode_v2_event(
+      direct_repeat_key_record(12.0, 1.0),
+      no_text,
+      "repeat_flag_test",
+    ) {
+    Err(error) => assert_eq(error.code().label(), "invalid_input")
+    Ok(_) => fail("synthetic repeat release was accepted")
+  }
+  let text = direct_text_record(1.0)
+  text[7] = 1.0
+  match decode_v2_event(text, @utf8.encode("a"), "repeat_flag_test") {
+    Err(error) => assert_eq(error.code().label(), "invalid_input")
+    Ok(_) => fail("text record gained a key repeat flag")
+  }
+}
+
+///|
 test "direct mode blocks batch dispatch and capability admission is typed" {
   match active_direct_text_dispatch_gate(0) {
     Ok(_) => ()

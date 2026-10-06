@@ -26,6 +26,12 @@ script/linux_text_cc.py -std=c11 -Wall -Wextra -Werror ${GPUI_TEST_CFLAGS:-} \
   $(pkg-config --cflags --libs wayland-client wayland-cursor wayland-egl egl glesv2 xkbcommon) \
   -lpthread -lm
 env -u DISPLAY -u WAYLAND_DISPLAY _build/ubuntu-e2e/direct-text-test
+script/linux_text_cc.py -std=c11 -Wall -Wextra -Werror ${GPUI_TEST_CFLAGS:-} \
+  tests/ubuntu/key_repeat_test.c ubuntu/xdg-shell-protocol.c platform/linux_text/linux_text.c \
+  -o _build/ubuntu-e2e/key-repeat-test \
+  $(pkg-config --cflags --libs wayland-client wayland-cursor wayland-egl egl glesv2 xkbcommon) \
+  -lpthread -lm
+env -u DISPLAY -u WAYLAND_DISPLAY _build/ubuntu-e2e/key-repeat-test
 env -u DISPLAY -u WAYLAND_DISPLAY \
   moon test examples/linux_text_field --target native --deny-warn --no-parallelize
 # Preserve the original scenes emitted by actual control code with the same
