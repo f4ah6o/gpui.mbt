@@ -385,6 +385,246 @@ static void owner_panel_requests_are_epoch_fenced(void) {
   assert(calls[before] == 1 && calls[before + 1] == 4);
   finish(h);
 }
+static int request_count(int operation) {
+  int count = 0;
+  for (int i = 0; i < call_count; ++i)
+    count += calls[i] == operation;
+  return count;
+}
+static void control_modifier_map(struct host *h) {
+  char map[] = "Control\0Shift\0Mod1\0Mod4\0";
+  struct wl_array names = {.size = sizeof(map) - 1, .data = map};
+  ime_modifiers_map(h, h->ime.proxy, &names);
+}
+static void modifier_drain_keeps_old_grab_and_fences_text(void) {
+  struct host *h = fixture(); int epoch = begin(h); drain_enter(h);
+  double data[GPUI_EDITOR_EVENT_FIELDS]; uint8_t bytes[GPUI_EDITOR_MAX_PAYLOAD];
+  control_modifier_map(h);
+  /* This mask arrives from the real current keyboard callback. XKB's bit
+   * indices need not equal the separate v1 modifiers-map indices. */
+  keyboard_modifiers(h, h->keyboard, 10, 4, 0, 0, 0);
+  ime_preedit_cursor(h, h->ime.proxy, 0);
+  int deactivates = request_count(2), activates = request_count(1);
+  int replacement = gpui_text_session_update(h->token, h->window, epoch,
+      (const uint8_t *)"new", 3, 3, 0, 1, 2, 1, 20, 1);
+  assert(replacement == 2 && h->ime.phase == IME_DRAINING_MODIFIERS);
+  assert(h->ime.serial_floor == 0 && !h->ime.stage.cursor_present);
+  assert(request_count(2) == deactivates && request_count(1) == activates);
+  assert(read_editor(h, data, bytes) == 1 && data[0] == 23 && data[10] == epoch);
+  ime_preedit_string(h, h->ime.proxy, 1, "old", "old");
+  ime_commit_string(h, h->ime.proxy, 1, "old");
+  ime_keysym(h, h->ime.proxy, 1, 0, XKB_KEY_a, WL_KEYBOARD_KEY_STATE_RELEASED, 1);
+  direct_keyboard_key(h, 30, WL_KEYBOARD_KEY_STATE_PRESSED, XKB_KEY_a);
+  assert(!h->count && !h->ime.drain_release_seen);
+  /* A stalled modifier never triggers a timed or old-target activation. */
+  for (int i = 0; i < 4; ++i) {
+    keyboard_modifiers(h, h->keyboard, 11 + i, 4, 0, 0, 0);
+    assert(h->ime.phase == IME_DRAINING_MODIFIERS && request_count(2) == deactivates);
+  }
+  /* Removed keyboard/proxy callbacks and an unissued serial cannot clear it. */
+  keyboard_modifiers(h, (struct wl_keyboard *)(uintptr_t)999, 99, 0, 0, 0, 0);
+  ime_keysym(h, (struct zwp_text_input_v1 *)(uintptr_t)998, 1, 0,
+      XKB_KEY_Control_L, WL_KEYBOARD_KEY_STATE_RELEASED, 0);
+  ime_keysym(h, h->ime.proxy, 0, 0, XKB_KEY_Control_L, WL_KEYBOARD_KEY_STATE_RELEASED, 0);
+  ime_keysym(h, h->ime.proxy, 2, 0, XKB_KEY_Control_L, WL_KEYBOARD_KEY_STATE_RELEASED, 0);
+  assert(h->ime.phase == IME_DRAINING_MODIFIERS && !h->ime.drain_release_seen);
+  direct_keyboard_key(h, 29, WL_KEYBOARD_KEY_STATE_RELEASED, XKB_KEY_Control_L);
+  assert(h->ime.drain_release_seen && !h->count && request_count(2) == deactivates);
+  keyboard_modifiers(h, h->keyboard, 20, 4, 0, 0, 0);
+  assert(h->ime.phase == IME_DRAINING_MODIFIERS);
+  /* A locked modifier/group may remain. Only depressed/latched state drains. */
+  keyboard_modifiers(h, h->keyboard, 21, 0, 0, 2, 1);
+  assert(h->ime.phase == IME_DEACTIVATING && request_count(2) == deactivates + 1);
+  assert(request_count(1) == activates && !h->count);
+  keyboard_modifiers(h, h->keyboard, 22, 0, 0, 2, 1);
+  assert(request_count(2) == deactivates + 1);
+  ime_leave(h, h->ime.proxy);
+  assert(h->ime.phase == IME_ACTIVATING && request_count(1) == activates + 1);
+  assert(sent_serial == 2 && h->ime.serial_floor == 2 && !strcmp(sent_document, "new"));
+  ime_enter(h, h->ime.proxy, h->surface);
+  assert(read_editor(h, data, bytes) == 1 && data[0] == 22 && data[10] == replacement);
+  finish(h);
+}
+static void forwarded_mask_drain_needs_fresh_release_and_clear(void) {
+  struct host *h = fixture(); int epoch = begin(h); drain_enter(h);
+  double data[GPUI_EDITOR_EVENT_FIELDS]; uint8_t bytes[GPUI_EDITOR_MAX_PAYLOAD];
+  control_modifier_map(h);
+  keyboard_modifiers(h, h->keyboard, 10, 0, 0, 0, 0);
+  ime_keysym(h, h->ime.proxy, 1, 0, XKB_KEY_a, WL_KEYBOARD_KEY_STATE_PRESSED, 1);
+  assert(h->ime.forwarded_modifiers == 2);
+  assert(read_editor(h, data, bytes) == 1 && data[0] == 24);
+  int deactivates = request_count(2);
+  int replacement = gpui_text_session_cancel(h->token, h->window, epoch);
+  assert(replacement == 2 && h->ime.phase == IME_DRAINING_MODIFIERS);
+  /* The cached zero from before the shortcut, or clear without a genuine
+   * post-fence release, cannot complete the drain. */
+  keyboard_modifiers(h, h->keyboard, 11, 0, 0, 0, 0);
+  assert(h->ime.phase == IME_DRAINING_MODIFIERS && request_count(2) == deactivates);
+  ime_keysym(h, h->ime.proxy, 1, 0, XKB_KEY_Control_L,
+      WL_KEYBOARD_KEY_STATE_RELEASED, 1);
+  assert(h->ime.drain_release_seen && request_count(2) == deactivates);
+  keyboard_modifiers(h, h->keyboard, 12, 0, 1, 0, 0);
+  assert(h->ime.phase == IME_DRAINING_MODIFIERS);
+  keyboard_modifiers(h, h->keyboard, 13, 0, 0, 0, 0);
+  assert(h->ime.phase == IME_DEACTIVATING && request_count(2) == deactivates + 1);
+  assert(h->count == 1); /* only the old Left, never a drained key */
+  assert(read_editor(h, data, bytes) == 1 && data[0] == 23);
+  finish(h);
+}
+static void replacement_updates_coalesce_and_teardown_supersedes_drain(void) {
+  struct host *h = fixture(); int epoch = begin(h); drain_enter(h);
+  keyboard_modifiers(h, h->keyboard, 10, 4, 0, 0, 0);
+  epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+  assert(h->ime.phase == IME_DRAINING_MODIFIERS);
+  int barrier = h->ime.drain_modifiers_sequence, activates = request_count(1);
+  epoch = gpui_text_session_update(h->token, h->window, epoch,
+      (const uint8_t *)"latest", 6, 6, 1, 3, 4, 1, 20, 1);
+  epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+  assert(epoch == 4 && h->ime.drain_modifiers_sequence == barrier && h->count == 1);
+  direct_keyboard_key(h, 29, WL_KEYBOARD_KEY_STATE_RELEASED, XKB_KEY_Control_L);
+  keyboard_modifiers(h, h->keyboard, 11, 0, 0, 0, 0);
+  ime_leave(h, h->ime.proxy);
+  assert(h->ime.phase == IME_ACTIVATING && h->ime.wire_epoch == 4 && !strcmp(sent_document, "latest"));
+  assert(request_count(1) == activates + 1);
+  finish(h);
+  h = fixture(); epoch = begin(h); drain_enter(h);
+  keyboard_modifiers(h, h->keyboard, 10, 4, 0, 0, 0);
+  epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+  activates = request_count(1);
+  keyboard_leave(h, h->keyboard, 11, h->surface);
+  assert(!h->ime.requested && h->ime.phase == IME_DEACTIVATING && !h->ime.drain_release_seen);
+  ime_leave(h, h->ime.proxy);
+  keyboard_modifiers(h, h->keyboard, 12, 0, 0, 0, 0);
+  assert(h->ime.phase == IME_INACTIVE && request_count(1) == activates);
+  finish(h);
+  h = fixture(); epoch = begin(h); drain_enter(h);
+  keyboard_modifiers(h, h->keyboard, 10, 4, 0, 0, 0);
+  epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+  activates = request_count(1);
+  assert(gpui_close(h->token, h->window) == GPUI_OK);
+  assert(!h->ime.requested && h->ime.phase == IME_DEACTIVATING);
+  ime_leave(h, h->ime.proxy);
+  assert(request_count(1) == activates);
+  finish(h);
+  h = fixture(); epoch = begin(h); drain_enter(h);
+  keyboard_modifiers(h, h->keyboard, 10, 4, 0, 0, 0);
+  epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+  activates = request_count(1);
+  assert(gpui_destroy(h->token, h->window) == GPUI_OK);
+  assert(!h->ime.requested && h->ime.phase == IME_DEACTIVATING && !h->window);
+  ime_leave(h, h->ime.proxy);
+  assert(request_count(1) == activates);
+  finish(h);
+  h = fixture(); epoch = begin(h); drain_enter(h); h->scale = 1;
+  keyboard_modifiers(h, h->keyboard, 10, 4, 0, 0, 0);
+  epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+  struct zwp_text_input_v1 *old = h->ime.proxy;
+  activates = request_count(1);
+  global_remove(h, NULL, h->seat_name);
+  assert(!h->ime.requested && !h->ime.proxy && !h->ime.keyboard_modifiers_known);
+  ime_leave(h, old);
+  keyboard_modifiers(h, (struct wl_keyboard *)(uintptr_t)102, 12, 0, 0, 0, 0);
+  assert(h->ime.phase == IME_INACTIVE && request_count(1) == activates);
+  finish(h);
+}
+static void draining_failure_end_and_locks_fail_closed(void) {
+  struct host *h = fixture(); int epoch = begin(h); drain_enter(h);
+  keyboard_modifiers(h, h->keyboard, 10, 4, 0, 0, 0);
+  epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+  assert(h->ime.phase == IME_DRAINING_MODIFIERS);
+  int activates = request_count(1);
+  assert(gpui_text_session_end(h->token, h->window, epoch) == GPUI_OK);
+  assert(!h->ime.requested && h->ime.phase == IME_DEACTIVATING);
+  direct_keyboard_key(h, 29, WL_KEYBOARD_KEY_STATE_RELEASED, XKB_KEY_Control_L);
+  keyboard_modifiers(h, h->keyboard, 11, 0, 0, 0, 0);
+  ime_leave(h, h->ime.proxy);
+  assert(h->ime.phase == IME_INACTIVE && request_count(1) == activates);
+  finish(h);
+  h = fixture(); epoch = begin(h); drain_enter(h);
+  keyboard_modifiers(h, h->keyboard, 10, 4, 0, 0, 0);
+  epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+  activates = request_count(1);
+  h->ime.keyboard_modifiers_sequence = INT_MAX;
+  direct_keyboard_key(h, 29, WL_KEYBOARD_KEY_STATE_RELEASED, XKB_KEY_Control_L);
+  keyboard_modifiers(h, h->keyboard, 11, 0, 0, 0, 0);
+  assert(h->error == GPUI_RESOURCE && h->ime.phase == IME_DRAINING_MODIFIERS);
+  assert(request_count(1) == activates);
+  quiesce_host(h);
+  assert(!h->ime.requested && h->ime.phase == IME_DEACTIVATING);
+  ime_leave(h, h->ime.proxy);
+  assert(request_count(1) == activates);
+  finish(h);
+  h = fixture(); epoch = begin(h); drain_enter(h);
+  keyboard_modifiers(h, h->keyboard, 10, 4, 0, 0, 0);
+  epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+  h->ime.latest_serial = INT_MAX;
+  assert(gpui_text_session_cancel(h->token, h->window, epoch) == -GPUI_RESOURCE);
+  assert(h->ime.exhausted && !h->ime.requested && h->ime.phase == IME_DEACTIVATING);
+  finish(h);
+  h = fixture(); epoch = begin(h); drain_enter(h);
+  /* Locked state persists after the actual lock-key release and must not
+   * hold the grab indefinitely; its depressed bit still needs a release. */
+  keyboard_modifiers(h, h->keyboard, 10, 2, 0, 2, 0);
+  epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+  assert(h->ime.phase == IME_DRAINING_MODIFIERS);
+  direct_keyboard_key(h, 58, WL_KEYBOARD_KEY_STATE_RELEASED, XKB_KEY_Caps_Lock);
+  keyboard_modifiers(h, h->keyboard, 11, 0, 0, 2, 0);
+  assert(h->ime.phase == IME_DEACTIVATING);
+  finish(h);
+  h = fixture(); /* Never opted in: new bookkeeping cannot fail old input. */
+  h->ime.keyboard_modifiers_sequence = INT_MAX;
+  keyboard_modifiers(h, h->keyboard, 10, 0, 0, 0, 0);
+  assert(!h->error && h->ime.keyboard_modifiers_known);
+  finish(h);
+}
+static void native_revocation_notifies_the_pending_epoch(void) {
+  for (int reason = 0; reason < 3; ++reason) {
+    struct host *h = fixture(); int epoch = begin(h); drain_enter(h); h->scale = 1;
+    keyboard_modifiers(h, h->keyboard, 10, 4, 0, 0, 0);
+    epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+    assert(epoch == 2 && h->ime.phase == IME_DRAINING_MODIFIERS);
+    int activates = request_count(1);
+    if (reason == 0)
+      ime_leave(h, h->ime.proxy);
+    else if (reason == 1) {
+      int fd = open("/dev/null", O_RDONLY); assert(fd >= 0);
+      keyboard_keymap(h, h->keyboard, 0, fd, 0);
+    } else
+      global_remove(h, NULL, h->ime.manager_name);
+    assert(!h->ime.requested && request_count(1) == activates);
+    double data[GPUI_EDITOR_EVENT_FIELDS]; uint8_t bytes[GPUI_EDITOR_MAX_PAYLOAD];
+    assert(read_editor(h, data, bytes) == 1 && data[0] == 23 && data[10] == 1);
+    /* The field owner already adopted epoch2. It must learn that pending
+     * target was revoked, instead of waiting indefinitely for its Entered. */
+    assert(read_editor(h, data, bytes) == 1 && data[0] == 23 && data[10] == epoch);
+    assert(!h->count);
+    finish(h);
+  }
+}
+static void manager_revocation_during_physical_leave_notifies_pending_epoch(void) {
+  for (int held = 0; held < 2; ++held) {
+    struct host *h = fixture(); int epoch = begin(h); drain_enter(h); h->scale = 1;
+    if (held)
+      keyboard_modifiers(h, h->keyboard, 10, 4, 0, 0, 0);
+    epoch = gpui_text_session_cancel(h->token, h->window, epoch);
+    if (held) {
+      assert(h->ime.phase == IME_DRAINING_MODIFIERS);
+      direct_keyboard_key(h, 29, WL_KEYBOARD_KEY_STATE_RELEASED, XKB_KEY_Control_L);
+      keyboard_modifiers(h, h->keyboard, 11, 0, 0, 0, 0);
+    }
+    assert(epoch == 2 && h->ime.phase == IME_DEACTIVATING && h->ime.requested);
+    int activates = request_count(1);
+    struct zwp_text_input_v1 *old = h->ime.proxy;
+    global_remove(h, NULL, h->ime.manager_name);
+    assert(!h->ime.requested && !h->ime.proxy && request_count(1) == activates);
+    ime_leave(h, old);
+    double data[GPUI_EDITOR_EVENT_FIELDS]; uint8_t bytes[GPUI_EDITOR_MAX_PAYLOAD];
+    assert(read_editor(h, data, bytes) == 1 && data[0] == 23 && data[10] == 1);
+    assert(read_editor(h, data, bytes) == 1 && data[0] == 23 && data[10] == epoch);
+    assert(!h->count && request_count(1) == activates);
+    finish(h);
+  }
+}
 static void bounds_exhaustion_and_validation(void) {
   struct host *h = fixture();
   const uint8_t doc[] = "日";
@@ -419,5 +659,11 @@ int main(void) {
   bounds_exhaustion_and_validation(); quiescing_and_latched_errors_fail_closed();
   exhaustion_closes_all_editor_ingress();
   opt_in_rejects_closed_direct_host_and_revokes_prior_keys();
+  modifier_drain_keeps_old_grab_and_fences_text();
+  forwarded_mask_drain_needs_fresh_release_and_clear();
+  replacement_updates_coalesce_and_teardown_supersedes_drain();
+  draining_failure_end_and_locks_fail_closed();
+  native_revocation_notifies_the_pending_epoch();
+  manager_revocation_during_physical_leave_notifies_pending_epoch();
   puts("experimental IME native transport unit tests passed"); return 0;
 }

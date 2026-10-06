@@ -1116,6 +1116,8 @@ static void keyboard_keymap(void *d, struct wl_keyboard *k, uint32_t format,
     close(fd);
     return;
   }
+  if (h->ime.phase == IME_DRAINING_MODIFIERS)
+    ime_invalidate(h, 1, 1);
   int was_enabled = h->direct_enabled;
   reset_direct_text(h, 1, 0);
   h->direct_keymap_valid = 0;
@@ -1200,6 +1202,7 @@ static void keyboard_modifiers(void *d, struct wl_keyboard *k, uint32_t serial,
   struct host *h = d;
   if (k != h->keyboard)
     return;
+  ime_observe_keyboard_modifiers(h, dep, lat);
   if (!h->keys)
     return;
   if (xkb_state_update_mask(h->keys, dep, lat, lock, 0, 0, group))

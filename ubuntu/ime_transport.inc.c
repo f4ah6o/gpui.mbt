@@ -73,6 +73,13 @@ static int ime_lifecycle_record(struct host *h, int kind) {
   data.kind = kind;
   return ime_record(h, &data);
 }
+static int ime_pending_left_record(struct host *h) {
+  int slot = (h->read + h->count) % QUEUE_CAPACITY;
+  int status = ime_lifecycle_record(h, 23);
+  if (!status && h->ime_queue[slot])
+    h->ime_queue[slot]->epoch = h->ime.epoch;
+  return status;
+}
 static int ime_current(struct host *h, struct zwp_text_input_v1 *proxy) {
   return proxy == h->ime.proxy && h->ime.proxy && h->state == 0 && !h->error &&
          !h->ime.exhausted && h->ime.requested &&
@@ -121,7 +128,7 @@ static int ime_activate(struct host *h) {
   h->ime.wire_seat = h->seat_name;
   h->ime.phase = IME_ACTIVATING;
   ime_clear_stage(h);
-  h->ime.modifiers_valid = 0;
+  h->ime.modifiers_valid = h->ime.forwarded_modifiers = 0;
   h->ime.known_modifier_mask = 0;
   memset(h->ime.modifier_masks, 0, sizeof(h->ime.modifier_masks));
   zwp_text_input_v1_activate(h->ime.proxy, h->seat, h->surface);
@@ -131,15 +138,104 @@ static int ime_activate(struct host *h) {
     zwp_text_input_v1_hide_input_panel(h->ime.proxy);
   return ime_send_state(h);
 }
+static void ime_clear_modifier_drain(struct host *h) {
+  h->ime.drain_modifiers_sequence = h->ime.drain_release_sequence = 0;
+  h->ime.drain_release_seen = 0;
+  h->ime.drain_serial_floor = h->ime.drain_latest_serial = 0;
+}
+static int ime_modifier_symbol(xkb_keysym_t symbol) {
+  switch (symbol) {
+  case XKB_KEY_Shift_L: case XKB_KEY_Shift_R:
+  case XKB_KEY_Control_L: case XKB_KEY_Control_R:
+  case XKB_KEY_Alt_L: case XKB_KEY_Alt_R:
+  case XKB_KEY_Meta_L: case XKB_KEY_Meta_R:
+  case XKB_KEY_Super_L: case XKB_KEY_Super_R:
+  case XKB_KEY_Hyper_L: case XKB_KEY_Hyper_R:
+  case XKB_KEY_Mode_switch: case XKB_KEY_ISO_Level3_Shift:
+  case XKB_KEY_ISO_Level5_Shift:
+  case XKB_KEY_Caps_Lock: case XKB_KEY_Shift_Lock:
+  case XKB_KEY_Num_Lock: case XKB_KEY_Scroll_Lock:
+  case XKB_KEY_ISO_Level3_Latch: case XKB_KEY_ISO_Level3_Lock:
+  case XKB_KEY_ISO_Level5_Latch: case XKB_KEY_ISO_Level5_Lock:
+    return 1;
+  default:
+    return 0;
+  }
+}
 static void ime_deactivate(struct host *h) {
   if (h->ime.proxy && h->seat && h->ime.phase != IME_INACTIVE &&
       h->ime.phase != IME_DEACTIVATING) {
     /* Stock IBus1.5.32 reset does nothing. Re-enter is the verified fence.
      * Never send another activate until this exact proxy's leave arrives. */
+    ime_clear_modifier_drain(h);
     h->ime.phase = IME_DEACTIVATING;
     zwp_text_input_v1_deactivate(h->ime.proxy, h->seat);
     zwp_text_input_v1_hide_input_panel(h->ime.proxy);
   }
+}
+static void ime_finish_modifier_drain(struct host *h) {
+  if (h->ime.phase != IME_DRAINING_MODIFIERS || !h->ime.requested ||
+      !h->ime.proxy || !h->keyboard || !h->seat || !h->surface ||
+      !h->keyboard_focus_current || h->state || h->error ||
+      h->ime.wire_window != h->window || h->ime.wire_seat != h->seat_name ||
+      !h->ime.drain_release_seen || !h->ime.keyboard_modifiers_known ||
+      h->ime.keyboard_modifiers_sequence <= h->ime.drain_modifiers_sequence ||
+      h->ime.keyboard_modifiers_sequence <= h->ime.drain_release_sequence ||
+      h->ime.keyboard_depressed || h->ime.keyboard_latched)
+    return;
+  /* This fresh current-keyboard clear traversed the still-live old grab after
+   * the genuine modifier release. Never synthesize a key or modifiers event. */
+  h->ime.forwarded_modifiers = 0;
+  ime_deactivate(h);
+}
+static void ime_observe_modifier_release(struct host *h, uint32_t state,
+                                         xkb_keysym_t symbol) {
+  if (h->ime.phase == IME_DRAINING_MODIFIERS && h->ime.requested &&
+      h->ime.proxy && h->keyboard_focus_current && !h->state && !h->error &&
+      h->ime.wire_window == h->window && h->ime.wire_seat == h->seat_name &&
+      state == WL_KEYBOARD_KEY_STATE_RELEASED && ime_modifier_symbol(symbol)) {
+    h->ime.drain_release_seen = 1;
+    h->ime.drain_release_sequence = h->ime.keyboard_modifiers_sequence;
+  }
+}
+static void ime_observe_keyboard_modifiers(struct host *h, uint32_t depressed,
+                                           uint32_t latched) {
+  if (!h->ime.ever_enabled) {
+    h->ime.keyboard_modifiers_known = 1;
+    h->ime.keyboard_depressed = depressed;
+    h->ime.keyboard_latched = latched;
+    return; /* Never change non-opt-in keyboard failure behavior. */
+  }
+  if (h->ime.keyboard_modifiers_sequence == INT_MAX) {
+    (void)input_failure(h, GPUI_RESOURCE);
+    return;
+  }
+  ++h->ime.keyboard_modifiers_sequence;
+  h->ime.keyboard_modifiers_known = 1;
+  h->ime.keyboard_depressed = depressed;
+  h->ime.keyboard_latched = latched;
+  if (!depressed && !latched)
+    h->ime.forwarded_modifiers = 0;
+  ime_finish_modifier_drain(h);
+}
+static void ime_request_external_deactivate(struct host *h, int prior_floor) {
+  if (h->ime.phase == IME_DRAINING_MODIFIERS)
+    return; /* Coalesce replacement documents without resetting the barrier. */
+  if ((h->ime.phase == IME_ACTIVE || h->ime.phase == IME_ACTIVATING) &&
+      (h->ime.keyboard_depressed || h->ime.keyboard_latched ||
+       h->modifiers || h->ime.forwarded_modifiers)) {
+    h->ime.phase = IME_DRAINING_MODIFIERS;
+    h->ime.drain_modifiers_sequence = h->ime.keyboard_modifiers_sequence;
+    h->ime.drain_release_sequence = h->ime.keyboard_modifiers_sequence;
+    h->ime.drain_release_seen = 0;
+    h->ime.drain_serial_floor = prior_floor;
+    h->ime.drain_latest_serial = h->ime.latest_serial;
+    /* Hide canceled candidates but retain the old keyboard grab until its
+     * real release/clear has been processed by the input method. */
+    zwp_text_input_v1_hide_input_panel(h->ime.proxy);
+    return;
+  }
+  ime_deactivate(h);
 }
 static void ime_invalidate(struct host *h, int emit_leave, int deactivate) {
   if (!h->ime.requested && h->ime.phase != IME_ACTIVE &&
@@ -149,13 +245,18 @@ static void ime_invalidate(struct host *h, int emit_leave, int deactivate) {
                      h->ime.phase == IME_ACTIVATING) &&
       h->ime.wire_epoch == h->ime.epoch)
     (void)ime_lifecycle_record(h, 23);
+  else if (emit_leave && h->ime.requested &&
+           h->ime.wire_epoch != h->ime.epoch)
+    (void)ime_pending_left_record(h);
   h->ime.requested = 0;
   (void)ime_advance_epoch(h);
   h->ime.serial_floor = 0;
   if (deactivate)
     ime_deactivate(h);
-  else
+  else {
+    ime_clear_modifier_drain(h);
     h->ime.phase = IME_INACTIVE;
+  }
 }
 static void ime_drop_proxy(struct host *h) {
   ime_invalidate(h, 1, 0);
@@ -163,7 +264,10 @@ static void ime_drop_proxy(struct host *h) {
   h->ime.requested = 0;
   h->ime.phase = IME_INACTIVE;
   h->ime.serial_floor = 0;
-  h->ime.modifiers_valid = 0;
+  h->ime.modifiers_valid = h->ime.forwarded_modifiers = 0;
+  h->ime.keyboard_depressed = h->ime.keyboard_latched = 0;
+  h->ime.keyboard_modifiers_known = 0;
+  ime_clear_modifier_drain(h);
   if (h->ime.proxy)
     zwp_text_input_v1_destroy(h->ime.proxy);
   h->ime.proxy = NULL;
@@ -190,7 +294,9 @@ static void ime_leave(void *data, struct zwp_text_input_v1 *proxy) {
     ime_clear_stage(h);
     if (h->ime.requested)
       (void)ime_activate(h);
-  } else if (h->ime.phase == IME_ACTIVE || h->ime.phase == IME_ACTIVATING) {
+  } else if (h->ime.phase == IME_ACTIVE || h->ime.phase == IME_ACTIVATING ||
+             h->ime.phase == IME_DRAINING_MODIFIERS) {
+    /* Unexpected focus loss supersedes the pending drain/reactivation. */
     ime_invalidate(h, 1, 0);
   }
 }
@@ -386,6 +492,7 @@ static void ime_commit_string(void *data, struct zwp_text_input_v1 *proxy,
 }
 static void ime_raw_keyboard_key(struct host *h, uint32_t state,
                                   xkb_keysym_t symbol) {
+  ime_observe_modifier_release(h, state, symbol);
   if (!h->ime.requested || h->ime.exhausted || h->state || h->error ||
       !h->keyboard_focus_current || !h->ime.proxy || !h->window ||
       !h->seat_name || (h->ime.phase != IME_ACTIVE &&
@@ -412,6 +519,17 @@ static void ime_keysym(void *data, struct zwp_text_input_v1 *proxy,
                        uint32_t state, uint32_t modifiers) {
   UNUSED(time);
   struct host *h = data;
+  if (proxy == h->ime.proxy && h->ime.proxy &&
+      h->ime.phase == IME_DRAINING_MODIFIERS) {
+    /* Only an issued serial of the captured old wire target can mark a
+     * genuine release. It is never enqueued or admitted as replacement input. */
+    if (serial && serial <= INT_MAX && h->ime.drain_serial_floor > 0 &&
+        serial >= (uint32_t)h->ime.drain_serial_floor &&
+        serial <= (uint32_t)h->ime.drain_latest_serial &&
+        h->ime.modifiers_valid && !(modifiers & ~h->ime.known_modifier_mask))
+      ime_observe_modifier_release(h, state, symbol);
+    return;
+  }
   if (!ime_current(h, proxy) || !ime_serial_current(h, serial))
     return;
   if (!h->ime.modifiers_valid || (modifiers & ~h->ime.known_modifier_mask) ||
@@ -431,6 +549,7 @@ static void ime_keysym(void *data, struct zwp_text_input_v1 *proxy,
   for (int i = 0; i < 4; ++i)
     if (modifiers & h->ime.modifier_masks[i])
       bits |= 1 << i;
+  h->ime.forwarded_modifiers = bits;
   h->queue[slot][9] = bits;
 }
 static void ime_language(void *data, struct zwp_text_input_v1 *proxy,
@@ -570,9 +689,10 @@ int32_t gpui_text_session_update(int32_t token, int32_t window, int32_t epoch,
       if (status)
         return -status;
     }
+    int prior_floor = h->ime.serial_floor;
     status = ime_advance_epoch(h);
     h->ime.serial_floor = 0;
-    ime_deactivate(h);
+    ime_request_external_deactivate(h, prior_floor);
   }
   if (status)
     return -status;
