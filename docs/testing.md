@@ -364,6 +364,16 @@ completed frames and retained pixels. The earlier startup click-delivery
 failure remains retained; R2 changed readiness ordering without relaxing
 acceptance predicates. See the [qualification manifest](native-input-qualification.json)
 and [field evidence tiers](linux-text-field.md#evidence-and-remaining-gates).
+The later [packaged R4 qualification](native-input-qualification-r4.json)
+records a fresh locked-prefix build of frozen `eb6c164f` and seven runnable
+native keyboard cases with exact case/driver/binary identities. Held-repeat
+and GPUI IME are two explicit skips; `all_cases_executed` remains false. The
+unchanged basic golden passed after the official missing font was restored;
+the earlier mismatch artifacts and pre-native snapshot stay preserved. A later
+publication assembly is built and checked separately, and inherits this native
+evidence only as byte-equivalent application source, not as the exact executed
+commit/binary.
+
 Those passes are exact-source/profile evidence, not general desktop timing
 accuracy or a pass for every catalog case. GPUI IME remains unimplemented;
 GTK Japanese conversion is environment-baseline evidence only. This bounded

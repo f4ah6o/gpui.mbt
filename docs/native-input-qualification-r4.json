@@ -1,0 +1,241 @@
+{
+  "version": 1,
+  "kind": "gpui-native-input-qualification-successor",
+  "recorded_utc": "2026-10-06T05:13:00Z",
+  "scope": "Later reusable keyboard infrastructure replay for the frozen app source. Preserves prior exact-source and failed-proof snapshots; does not claim native execution of a later integrated commit.",
+  "prior_snapshot": {
+    "file": "docs/native-input-qualification.json",
+    "sha256": "84fc26313326c45d27b817ea5f29efaf136b80ee887fbdc1f94276316f927225",
+    "preserved_unchanged": true,
+    "boundary": "Earlier pending recovery/catalog wording is historical. Frozen-source basic/select-all and independent repeat R2 evidence retain their original identities."
+  },
+  "accepted_baseline": {
+    "local_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "merged_main": "36bcb245845354b955a2f1bb2f07b527f4f39c4f",
+    "tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "pr": "https://github.com/gpui-mbt/gpui.mbt/pull/32",
+    "remote_rechecked_utc": "2026-10-06T05:01:40Z",
+    "remote_source": "https://api.github.com/repos/gpui-mbt/gpui.mbt/branches/main",
+    "evidence": [
+      {
+        "retained_artifact": "gpui-undo-publication-20261006/merge-verified.json",
+        "sha256": "f4b29719065e7863e08ff12001632bc0ecb336e2ef2d408c0171b7eeb9155a39"
+      },
+      {
+        "retained_artifact": "gpui-undo-publication-20261006/main-ci-final.json",
+        "sha256": "9afba74bba882bf79dd0f2a00bce3fb9faa2255031ed180c5e54417dea857af9"
+      },
+      {
+        "retained_artifact": "gpui-undo-publication-20261006/main-ubuntu-attempt1/provenance-verification.json",
+        "sha256": "40b143e42ef62b9d38bb15db363401339e978f0bd61bea8df5ddf469553e56b9"
+      }
+    ],
+    "boundary": "Remote HEAD/tree checked by the parent with f4ah6o. Recheck immediately before publication; the frozen candidate checkout does not contain the merged-main Git object."
+  },
+  "application_source": {
+    "mode": "built",
+    "source_claim": "compiled between matching source snapshots",
+    "source_commit": "eb6c164f0277a656125804154a3d8ad9a8abb78d",
+    "source_tree": "d1b53388fdb3d0113c1d208763b61b704d50eced",
+    "app_sha256": "b64df596ed76f6d9aedf1cfe2e584c724cc14de1404b6e06a4ac2c67e79e9e7c",
+    "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_files": [],
+    "matching_pre_post_source_and_runtime_snapshots": true
+  },
+  "reviewed_infrastructure": {
+    "logical_commits": [
+      "b9e45f78e17fc85de64f4eaa14b8cf2f3f93414d",
+      "1e6f6c90dbbdd221a7fae436901e29bf16234ba1",
+      "df524999a2367fd0cebd72f2c9835f33140356b4"
+    ],
+    "qualification_file": "infra/linux-desktop/keyboard-current-validation.json",
+    "qualification_sha256": "2063514155111e5fdecca8f88df79c308fbf914de4756df3f1343054140bb818",
+    "profile_lock_sha256": "81b05b4f473617d03c8b11980b7e884863fdd181f040f96482a1a6f915abf503"
+  },
+  "bootstrap": {
+    "debian_archives": 106,
+    "toolchain_archives": 2,
+    "fresh_offline_bootstrap_passed": true,
+    "offline_idempotent_reapply_passed": true,
+    "all_archive_hashes_verified": true,
+    "applicable_build_only_doctor_checks_passed": 38
+  },
+  "static_validation": {
+    "unit_tests_passed": 80,
+    "python_compile_passed": true,
+    "shell_syntax_passed": true,
+    "whitespace_check_passed": true
+  },
+  "native_replay": {
+    "artifact": "final-catalog-r4/summary.json (preserved outside repository)",
+    "summary_sha256": "13bd3325fd55573788f16a5466e074652c49a85075ad1a02a4d44eb082447b84",
+    "driver_sha256": "4209c4cf8bc00266608a8cd21f6e74b42958e120a2480511f3df3e8d1d9707c9",
+    "validator_sha256": "afa070bb4622e8c2df7776e6289fad7c7a6e8fafb6770daef5e0faadd540ce11",
+    "input_route": "XTest -> authenticated owned high-number Xvfb -> Weston X11/Pixman/kiosk -> wl_keyboard -> GPUI",
+    "launch_route": "owned generated .desktop via supported native File Manager on own cloud desktop",
+    "executed": 7,
+    "skipped": 2,
+    "all_cases_executed": false,
+    "results": [
+      {
+        "case_id": "basic-text-shift",
+        "status": "passed",
+        "case_sha256": "772607a88867e86f7b631baad1b1113e292351d867367a1ab59aa9b2b7f5a26c",
+        "wayland_key_events": 14,
+        "planned_os_key_events": 14,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 916.5484449913492,
+        "final_rgba_sha256": "44f395449323e0e7581d04b6d012b4463819d65e0914aa53f0e662d534eb74d9",
+        "checkpoint_count": 1,
+        "golden_pixel_match": true,
+        "ocr_match": true
+      },
+      {
+        "case_id": "ctrl-a-replacement",
+        "status": "passed",
+        "case_sha256": "3c76f6c2e453bef131032399fa33e010485900b2a2579ded7ebab54e432913af",
+        "wayland_key_events": 10,
+        "planned_os_key_events": 10,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 742.7158020000206,
+        "final_rgba_sha256": "c436f7911632af285ed9cf0ca58a61510266beaed1f8d10be77ee5cb40271ee2",
+        "checkpoint_count": 1,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
+      },
+      {
+        "case_id": "cursor-backspace-delete",
+        "status": "passed",
+        "case_sha256": "a5eda053c03b2462161270f0cc9a0b49cd9358ccb3108d61bbe0b1562f6c7997",
+        "wayland_key_events": 32,
+        "planned_os_key_events": 32,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 1541.0415320075117,
+        "final_rgba_sha256": "2fbb07c45a54a373e330282c68977d13621b236dfc7d784ba6025305a3e8e6ba",
+        "checkpoint_count": 4,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
+      },
+      {
+        "case_id": "focus-loss-reentry",
+        "status": "passed",
+        "case_sha256": "1c36a25fbc700843d1abf85c8c79e1f8af2a3862ac845a6753206a4cc21bac93",
+        "wayland_key_events": 2,
+        "planned_os_key_events": 4,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 1031.5595389984082,
+        "final_rgba_sha256": "aeb0b0b936d84d5d9b3f5c8de2b78ccfc826749d3399cc8871cf5150ba03735e",
+        "checkpoint_count": 2,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
+      },
+      {
+        "case_id": "held-repeat",
+        "status": "skipped-pending",
+        "reason": "Native repeat integration passed an independent frozen-source release/focus-loss gate. This generic fixed-duration/five-character case remains pending because its reusable oracle must adapt to actual wl_keyboard.repeat_info, suppress upstream Xvfb autorepeat, bound growth and prove post-release/focus-loss stability; a fixed count cannot be promoted from observed timing."
+      },
+      {
+        "case_id": "ime-composition",
+        "status": "skipped-unsupported",
+        "reason": "GPUI host IME adapter is unimplemented. Version 1 intentionally has no fabricated composition events; a future real-adapter case must cover preedit/candidates/commit/cancel. Japanese literals and paste do not establish IME."
+      },
+      {
+        "case_id": "standalone-modifiers",
+        "status": "passed",
+        "case_sha256": "b823e97b6bc7dfea2dd9d7a2445ff6540be8acc2a1677163c1429b4812fa1049",
+        "wayland_key_events": 6,
+        "planned_os_key_events": 6,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 719.361587005551,
+        "final_rgba_sha256": "2c0ec0ede4763bd07c50ba8033f0c902fd5ecc93a81822381431d381d8723792",
+        "checkpoint_count": 1,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
+      },
+      {
+        "case_id": "undo-branch-edit",
+        "status": "passed",
+        "case_sha256": "122ae0839a20614131119602c17fdaff902010b4e377838683b132c595d69a94",
+        "wayland_key_events": 22,
+        "planned_os_key_events": 22,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 1489.0215009945678,
+        "final_rgba_sha256": "e192672c552f66d04259c492c57d4aac89158d010652ec284114f5e348938713",
+        "checkpoint_count": 4,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": true,
+        "no_op_checkpoint_count": 1
+      },
+      {
+        "case_id": "undo-redo",
+        "status": "passed",
+        "case_sha256": "9c1c025d847602f9e6b863a09e1b662e26f5ebd60c5a0af6bc682d7363176eb5",
+        "wayland_key_events": 30,
+        "planned_os_key_events": 30,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 1801.5483630006202,
+        "final_rgba_sha256": "c436f7911632af285ed9cf0ca58a61510266beaed1f8d10be77ee5cb40271ee2",
+        "checkpoint_count": 5,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
+      }
+    ],
+    "owned_xvfb_cleanup_verified": true
+  },
+  "prior_failed_proof": {
+    "artifact": "current-source-v2/summary.json (preserved outside repository)",
+    "summary_sha256": "2e134c82b7facb2c1063db5d26f77cdf056e8e2654e180c6b1f8fba147ef16ba",
+    "source_commit": "eb6c164f0277a656125804154a3d8ad9a8abb78d",
+    "app_sha256": "6a6a318ad8e82b6a3a161a100ea33e0378b4f0241149fe934821314d98885b34",
+    "actual_rgba_sha256": "f0e10b080d3fb964ad85580aafbf9759ba4e9aea9db3a9b0e6f9e428d326baf3",
+    "changed_pixels": 1231,
+    "difference_bbox": [
+      28,
+      36,
+      157,
+      57
+    ],
+    "cause": "105-package prefix omitted fonts-dejavu-extra; generic sans selected DejaVu Sans instead of historical DejaVu Math TeX Gyre",
+    "fix": "Add official Debian fonts-dejavu-extra 2.37-8 archive SHA-256 83128d00e5d7db412fe5a7a4e2ee32aebbf8d9ed560ad611202fb43078f80323; font file exactly matches historical host bytes",
+    "golden_unchanged": true
+  },
+  "publication_relation": {
+    "logical_changes": "Only the five app commits after the already-merged PR32 baseline, plus reviewed infrastructure and documentation. Do not republish the four PR32 commits.",
+    "compiled_input_equivalence": "The later publication assembly changes documentation and infrastructure only. Verify tracked application/compiler input bytes against frozen eb6c164f and rebuild/prepare the exact assembly before publication.",
+    "native_execution_applies_to": "Frozen eb6c164f and the R4 app binary above. Identical application inputs do not turn a later rebuild into the exact native-executed binary.",
+    "required_publication_checks": "Fresh upstream ref/tree check, expected published commit/tree mapping, and CI for the exact published head."
+  },
+  "limitations": [
+    "Seven runnable catalog cases passed; all_cases_executed remains false because held-repeat is pending and GPUI IME unsupported.",
+    "Independent frozen-source held-repeat release/focus-loss R2 proof is retained separately and not counted as a reusable catalog pass.",
+    "No-op state stability is qualified only for focus-loss-reentry and standalone-modifiers, where it was actually exercised.",
+    "Unchanged reviewed golden passed after adding the official missing DejaVu font archive; the earlier 1,231-pixel mismatch proof is preserved.",
+    "Isolated Debian 13 private Xvfb/Weston software route only; no physical-device, Ubuntu/Mutter, production, broad timing or support-tier claim.",
+    "Unreviewed Mozc artifacts are excluded. GTK/IBus/Mozc conversion would establish an environment baseline only, not GPUI IME."
+  ]
+}

@@ -224,8 +224,13 @@ autorepeat was verified off for the held gates; observed `repeat_info` was
 40 Hz/400 ms. Real protocol delivery, presented state or reviewed golden
 pixels, liveness and owned cleanup were checked separately; held gates also
 required independently completed frames.
-These source-level passes do not qualify a rebuilt recovery profile, every
-catalog case, physical devices or general desktop repeat accuracy. Japanese
+The later packaged R4 profile rebuilt that frozen app source and passed all
+seven runnable keyboard cases, including the unchanged basic golden. Its
+[source/binary qualification](native-input-qualification-r4.json) is separate
+from the source-level proof and from later publication rebuilds. Held-repeat
+remains a pending reusable case; GPUI IME is explicitly skipped. These passes
+do not qualify every catalog case, physical devices or general desktop repeat
+accuracy. Japanese
 GPUI IME, general bidi and drag selection remain unimplemented/unqualified.
 Any GTK/IBus/Mozc conversion baseline qualifies only that environment, not
 GPUI IME. See the [exact-source qualification](native-input-qualification.json).
@@ -313,7 +318,8 @@ a desktop frame-rate claim.
 | PR30/31 field and origin CI | Ubuntu 24.04; Weston 13; declared sans/Pango fixture profile | Headless GL kiosk shell; llvmpipe; scales 1/2 | [PR31 exact-head run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37392223946) passed actual Host.present and nine injected accepted field frames plus origin/preflight preservation checks. This rendering tier does not inject real keys; see compositor observation below. |
 | PR32 bounded history CI | Ubuntu 24.04; Weston 13; declared sans/Pango fixture profile | Headless GL kiosk shell; llvmpipe; scales 1/2 | [PR run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37402479619) and [merged-main run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37403927714) passed 16/16 Host.present field tests per scale and 11 accepted scenes from 13 fixtures; reviewed undo/redo decoded pixels agree. This is injected rendering, not keyboard/IME. |
 | Historical restricted-executor validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Strict C compile and clipboard transfer helper passed; Weston headless launch blocked | Native E2E was unrun there: the runner observed Weston fail to add its socket with `No such file or directory`; a separate AF_UNIX diagnostic returned `EPERM`. Retained as the earlier executor-specific limit, not the status of the later permitted route. |
-| Frozen integrated native input | Debian 13 amd64; Weston 14.0.2; authenticated private Xvfb | Weston X11/Pixman/kiosk; application software EGL/GLES; owned permitted native launch | Exact source eb6c164f/tree d1b53388 passed basic/Shift golden, Ctrl+A presented state, held-key release and focus-loss/refocus; upstream autorepeat disabled for repeat proof. Source/binary/artifact identities are in the [qualification manifest](native-input-qualification.json). Recovery-profile replay and generic pending cases are separate. |
+| Frozen integrated native input | Debian 13 amd64; Weston 14.0.2; authenticated private Xvfb | Weston X11/Pixman/kiosk; application software EGL/GLES; owned permitted native launch | Exact source eb6c164f/tree d1b53388 passed basic/Shift golden, Ctrl+A presented state, held-key release and focus-loss/refocus; upstream autorepeat disabled for repeat proof. Source/binary/artifact identities are in the [qualification manifest](native-input-qualification.json). The later packaged replay is qualified separately below. |
+| Packaged current-candidate R4 | Debian 13 amd64; locked 106-package prefix; matching MoonBit/core | Authenticated private Xvfb; Weston 14 X11/Pixman/kiosk; XTest to real `wl_keyboard` | Frozen eb6c164f rebuilt between matching source/runtime snapshots; seven runnable cases passed, two explicit skips. Basic pixels match the unchanged reviewed golden; failed font-resolution evidence retained. [R4 qualification](native-input-qualification-r4.json) pins the exact binary and driver; later integrated builds require fresh provenance. |
 | Real Ubuntu desktop | Ubuntu 24.04 GNOME Wayland/Mutter | Desktop GPU, IME and assistive technology | Pending |
 
 ### Known hosted-compositor observation

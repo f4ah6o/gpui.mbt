@@ -333,18 +333,27 @@ Evidence is tiered and must not be conflated:
   repeat/state/timing oracles; both R2 scenarios passed. The restricted-shell
   socket denial and earlier hosted compositor exit139 remain historical
   evidence; the permitted native route does not erase or explain them.
-  The packaged recovery profile and generic catalog require their own exact
-  replay; these source-level gates do not activate pending catalog cases.
+  A later independently qualified packaged R4 replay passed all seven runnable
+  keyboard cases against the same frozen app source. Held-repeat remains a
+  pending reusable catalog case and GPUI IME is explicitly unsupported; the
+  independent source-level repeat proof does not activate those cases.
   GPUI IME, composition UI/candidate positioning, accessibility, reconnect,
   broader desktop qualification, and release/support gates remain open.
 
-The later [qualification manifest](native-input-qualification.json) records
+The original [qualification manifest](native-input-qualification.json) records
 source/binary identities, retained artifact hashes and coverage boundaries.
 Its test counts apply to the frozen integrated source, not to older individual
 feature checkouts. The earlier pre-native verification manifest and failed
 attempts are preserved rather than rewritten as passes. A docs-only publication
 commit has a new Git tree; it is not the exact native-executed commit. Rebuild
 and prepare fresh provenance when executing another source/runtime iteration.
+The [R4 successor qualification](native-input-qualification-r4.json) records
+the later locked-prefix build and seven-case native replay. It preserves the
+earlier manifest and failed 1,231-pixel font-mismatch evidence. The official
+missing DejaVu archive restored the unchanged historical golden; no pixels
+were promoted to a new baseline. Native execution remains attributed to frozen
+`eb6c164f` and the exact R4 binary, rather than a later publication rebuild.
+
 Any successful GTK/IBus/Mozc Japanese conversion is environment-baseline
 evidence only and does not establish GPUI composition, candidates, commit or
 cancel support.
