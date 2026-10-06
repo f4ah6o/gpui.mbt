@@ -27,7 +27,7 @@ COMMON_STEPS = [
     ("protocols", "Prepare existing Wayland bindings", "sh scripts/prepare_ubuntu.sh"),
     ("linux-text", "Linux text C harnesses and native tests", "sh scripts/test_linux_text.sh"),
 ]
-PACKAGES = "text controls/text_field platform ubuntu"
+PACKAGES = "text controls/text_field platform ubuntu examples/linux_text_field"
 FAST_STEPS = COMMON_STEPS + [
     ("check-native", "Check affected native packages", 'moon check ' + PACKAGES + ' --target native --deny-warn --target-dir "$GPUI_ACTRUN_BUILD_DIR"'),
     ("test-native", "Test affected native packages", 'env -u DISPLAY -u WAYLAND_DISPLAY moon test ' + PACKAGES + ' --target native --deny-warn --no-parallelize --target-dir "$GPUI_ACTRUN_BUILD_DIR"'),

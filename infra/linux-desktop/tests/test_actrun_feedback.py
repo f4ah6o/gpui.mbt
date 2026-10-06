@@ -150,7 +150,7 @@ class ActrunFeedbackTests(unittest.TestCase):
             self.assertNotIn("uses:", text)
             self.assertNotIn("sudo", text)
             self.assertNotIn("npm install", text)
-        self.assertIn("moon test text controls/text_field platform ubuntu --target native --deny-warn", fast)
+        self.assertIn("moon test text controls/text_field platform ubuntu examples/linux_text_field --target native --deny-warn", fast)
         self.assertNotIn("case_runner.py", fast)
         self.assertNotIn("--target all", fast)
         self.assertIn("moon test --target all --deny-warn", wider)

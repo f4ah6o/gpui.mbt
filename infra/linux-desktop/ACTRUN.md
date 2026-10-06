@@ -9,7 +9,7 @@ untested platforms, pending IME/repeat cases, or production release evidence.
 - Default `fast`: contracts/Python tests, Linux infrastructure and Mozc safety
   guards, formatting, three C text harnesses, the 19-test Linux text package,
   and warning-denied native checks/tests for `text`, `controls/text_field`,
-  `platform`, and `ubuntu`.
+  `platform`, `ubuntu`, and the field example's owner/controller tests.
 - `--mode acceptance`: the same common checks, all Linux-runnable MoonBit
   targets, then a freshly built manifest-bound candidate and every ready native
   private-display keyboard case. IPC/oracle prerequisites are required. A denied
