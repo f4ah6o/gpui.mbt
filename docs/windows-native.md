@@ -256,10 +256,10 @@ established. Do not infer Tier 1 support from a successful build or smoke.
 | Portable MoonBit formatting, type checks, and headless tests | Passed locally and in hosted run (6/6) |
 | MinGW Windows-header syntax and link check | Locally verified; compile-only, not the MoonBit Windows toolchain |
 | MSVC/Windows SDK build, native readback, clipboard and lifecycle E2E, app smoke | Passed in hosted run 37189457500 for PR head `a1f6e523dc41317064c5657179baa20456dcf6b1` |
-| Independent Win32 clipboard process: exact Unicode read/write, real-lock Busy/no-clobber/recovery, queued-wake preservation, lock expiry | Passed in focused local Windows native E2E on 2026-10-07; separate runner/actrun evidence run pending |
+| Independent Win32 clipboard process: exact Unicode read/write, real-lock Busy/no-clobber/recovery, queued-wake preservation, lock expiry | Passed in the pinned local actrun native profile on 2026-10-07 against implementation source `dfa0695bc1903a55824635a5506f68b377548279`; no fixture processes remained |
 | Text-field owner/controller tests | 12/12 passed locally; synthetic geometry/session tests only |
 | DirectWrite/D3D11 mixed-frame text readback and rejection atomicity | Passed in local MSVC/D3D11 backend tests; validates renderer pixels, not exact field caret/selection pixels |
 | Field startup smoke (default and opt-in session) | Both passed locally through `FrameCompleted`; default epoch 0, experimental session epoch 1; no typing or IME behavior exercised |
-| Pinned local actrun execution of the Windows workflow and portable profile | Passed locally on 2026-10-06; both profiles completed. The checked source head and per-task records are in `_build/windows-actrun/manifest.json`, with detailed logs alongside it |
+| Pinned local actrun execution of the Windows workflow and portable profile | Passed locally on 2026-10-07 against implementation source `dfa0695bc1903a55824635a5506f68b377548279`; native and portable run 1 both exited 0 with all required tasks successful. WasmGC, JavaScript, and Wasm tests were each 382/382; contracts 30/30 plus repository validation; Windows package 12/12; DirectWrite 4/4; field 12/12; native GPU/clipboard E2E and lifecycle 1/1 each; both startup smokes reached `FrameCompleted`. Manifest and task logs: `_build/windows-actrun/manifest.json` and adjacent logs |
 | Physical multi-monitor DPI, real IME, accessibility, multi-window and fault recovery | Pending |
 | Broad third-party clipboard application compatibility | Pending |

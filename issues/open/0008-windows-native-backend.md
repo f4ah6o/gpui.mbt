@@ -56,8 +56,10 @@ application compatibility remains open.
   reads and writes, preserves its sentinel, and permits later operations.
 - [x] Bounded fixture expiry releases the clipboard and the child process is
   reaped; the sent-message wait pump preserves an ordinary queued wake event.
-- [ ] Run the Windows native runner with the fixture in its evidence directory
-  and the fixture path set for the opt-in native E2E gate.
+- [x] Run the Windows native runner with the fixture in its evidence directory
+  and the fixture path set for the opt-in native E2E gate; the pinned local
+  actrun run recorded below passed against implementation source
+  `dfa0695bc1903a55824635a5506f68b377548279`.
 
 ### Dependencies
 
@@ -78,7 +80,17 @@ bounded wait now services sent messages with `PM_NOREMOVE`; the focused E2E
 passes with the normal clipboard notification and leaves the queued wake for
 the backend dispatcher. The standard and pinned local-actrun runner paths are
 wired to retain fixture/build/E2E logs under `_build/windows-native/` and
-`_build/windows-actrun/`; the full local-actrun evidence run remains pending.
+`_build/windows-actrun/`. On 2026-10-07, the pinned local actrun native and
+portable profiles both completed run 1 with exit code 0 and all required tasks
+successful on Windows 11 x64, against the unchanged implementation source
+`dfa0695bc1903a55824635a5506f68b377548279`. The run recorded WasmGC, JavaScript,
+and Wasm tests at 382/382 each; contract tests at 30/30 plus repository
+validation; Windows package tests at 12/12; DirectWrite and field tests at
+4/4 and 12/12; native GPU/clipboard E2E and lifecycle at 1/1 each; and both
+startup smokes through `FrameCompleted`. No fixture processes remained. The
+manifest and task logs are retained under `_build/windows-actrun/`. This
+qualifies only the bounded fixture cases on this host; the broader roadmap
+gates above remain open.
 
 ## Goal
 
