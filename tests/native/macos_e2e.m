@@ -18,6 +18,76 @@ static void drain(void) {
 static BOOL same_nullable_string(NSString *left, NSString *right) {
   return left == right || [left isEqualToString:right];
 }
+static void test_app_local_key_event_constructor(void) {
+  int status = 0;
+  NSArray<NSEvent *> *events = create_app_local_key_events(45, 0, 1, @"n", @"n", &status);
+  assert(status == 0 && events.count == 2);
+  NSEvent *down = events[0], *up = events[1];
+  assert(down.type == NSEventTypeKeyDown && up.type == NSEventTypeKeyUp);
+  assert(down.keyCode == 45 && up.keyCode == 45);
+  assert(down.CGEvent && down.eventRef && up.CGEvent && up.eventRef);
+  assert([down.characters isEqualToString:@"n"] &&
+         [down.charactersIgnoringModifiers isEqualToString:@"n"]);
+  int64_t keyboard_type = CGEventGetIntegerValueField(down.CGEvent, kCGKeyboardEventKeyboardType);
+  assert(keyboard_type > 0);
+  int64_t dispatch_nonce = INT64_C(0x4750554900000001);
+  assert(CGEventGetIntegerValueField(down.CGEvent, kCGEventSourceUserData) == dispatch_nonce);
+  assert(CGEventGetIntegerValueField(up.CGEvent, kCGEventSourceUserData) == dispatch_nonce);
+  status = 0;
+  NSArray<NSEvent *> *mismatch = create_app_local_key_events(45, 0, 2, @"x", @"n", &status);
+  assert(!mismatch && status == 5);
+}
+static void test_testing_key_dispatch_identity(GPWindow *w) {
+  assert(w && w.testingPostedKeys);
+  w.testingTextFocusOverride = YES;
+  [w.testingPostedKeys removeAllObjects];
+  [w.testingPostedKeys addObject:testing_key_dispatch_record(8, 45, @"down", host_epoch,
+    w.sessionEpoch, w.directEpoch, w.sessionActive, w.directText)];
+
+  // A tagged event from another dispatch must not consume a pending same-key
+  // marker. Ordinary physical events without our nonce leave it untouched too.
+  int status = 0;
+  NSArray<NSEvent *> *wrong_nonce = create_app_local_key_events(45, 0, 7, @"n", @"n", &status);
+  assert(status == 0 && wrong_nonce.count == 2);
+  assert(take_testing_key_dispatch(w, wrong_nonce[0], @"down") == -1);
+  assert(w.testingPostedKeys.count == 1);
+  NSEvent *ordinary = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
+    modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime
+    windowNumber:w.window.windowNumber context:nil characters:@"n"
+    charactersIgnoringModifiers:@"n" isARepeat:NO keyCode:45];
+  assert(take_testing_key_dispatch(w, ordinary, @"down") == 0);
+  assert(w.testingPostedKeys.count == 1);
+
+  // A correctly tagged event aimed at no window is rejected and consumes only
+  // its own marker, never falling back to key-code matching.
+  NSArray<NSEvent *> *wrong_target = create_app_local_key_events(45, 0, 8, @"n", @"n", &status);
+  assert(status == 0 && wrong_target.count == 2);
+  assert(wrong_target[0].window != w.window);
+  assert(take_testing_key_dispatch(w, wrong_target[0], @"down") == -1);
+  assert(w.testingPostedKeys.count == 0);
+
+  // A tagged marker from an earlier host generation is fenced even when its
+  // key code, phase, dispatch ID, and session state otherwise match.
+  int64_t stale_host_epoch = host_epoch > 0 ? host_epoch - 1 : -1;
+  [w.testingPostedKeys addObject:testing_key_dispatch_record(9, 45, @"down", stale_host_epoch,
+    w.sessionEpoch, w.directEpoch, w.sessionActive, w.directText)];
+  NSEvent *stale_epoch = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
+    modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime
+    windowNumber:w.window.windowNumber context:nil characters:@"n"
+    charactersIgnoringModifiers:@"n" isARepeat:NO keyCode:45];
+  assert(stale_epoch.CGEvent && stale_epoch.window == w.window &&
+         stale_epoch.windowNumber == w.window.windowNumber && key_window_owns_view(w));
+  CGEventRef stale_tagged = CGEventCreateCopy(stale_epoch.CGEvent);
+  assert(stale_tagged);
+  CGEventSetIntegerValueField(stale_tagged, kCGEventSourceUserData,
+    INT64_C(0x4750554900000009));
+  assert(CGEventGetIntegerValueField(stale_tagged, kCGEventSourceUserData) ==
+         INT64_C(0x4750554900000009));
+  int64_t stale_result = take_testing_key_dispatch_with_cg(w, stale_epoch, stale_tagged, @"down");
+  CFRelease(stale_tagged);
+  assert(stale_result == -1);
+  assert(w.testingPostedKeys.count == 0);
+}
 static void test_input_source_selection(GPWindow *w) {
   GPView *view = (GPView *)w.window.contentView;
   NSTextInputContext *context = view.inputContext;
@@ -277,6 +347,7 @@ static void native_text_session_bounds(GPWindow *w, NSString *snapshot) {
   w.testingFocusOverride = YES;
   assert_focus_event_once(w, 5);
   make_test_window_key(w);
+  test_testing_key_dispatch_identity(w);
   GPView *view = (GPView *)w.window.contentView;
   NSString *boolean_cursor = @"{\"text\":\"ab\",\"cursor\":true,\"anchor\":1,\"utf16_length\":2,\"owner_revision\":1,\"rect\":{\"x\":20,\"y\":20,\"width\":1,\"height\":18}}";
   NSString *boolean_rect = @"{\"text\":\"ab\",\"cursor\":1,\"anchor\":1,\"utf16_length\":2,\"owner_revision\":1,\"rect\":{\"x\":true,\"y\":20,\"width\":1,\"height\":18}}";
@@ -465,6 +536,7 @@ int main(void) {
     assert(call_op(2,0,0,0,nil)==0);
     assert(call_op(3,0,320,240,@"before start")==1);
     assert(call_op(1,0,0,0,nil)==0);
+    test_app_local_key_event_constructor();
     assert(call_op(1,0,0,0,nil)==12);
     assert(call_op(3,0,NAN,240,@"invalid")==5);
     uint8_t invalid[]={0xff}; assert(api->call(3,0,320,240,invalid,1)==17);

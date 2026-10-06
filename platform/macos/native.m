@@ -545,17 +545,91 @@ static BOOL current_text_origin(GPWindow *owner, double *x, double *y) {
   return isfinite(*x) && isfinite(*y);
 }
 #ifdef GPUI_TESTING
-static int64_t take_testing_key_dispatch(GPWindow *w, NSEvent *event, NSString *phase) {
-  if (!w || !w.testingPostedKeys) return 0;
+static NSArray<NSEvent *> *create_app_local_key_events(unsigned short key_code,
+                                                       NSUInteger modifier_flags,
+                                                       int64_t dispatch_id,
+                                                       NSString *expected_characters,
+                                                       NSString *expected_ignoring,
+                                                       int *status) {
+  if (status) *status = 5;
+  if (!expected_characters || !expected_ignoring || !status || dispatch_id <= 0 ||
+      dispatch_id > UINT32_MAX) return nil;
+  NSEventType types[] = {NSEventTypeKeyDown, NSEventTypeKeyUp};
+  NSEvent *created[2] = {nil, nil};
+  const CGEventFlags allowed_cg_modifiers = kCGEventFlagMaskShift | kCGEventFlagMaskControl |
+    kCGEventFlagMaskAlternate | kCGEventFlagMaskCommand;
+  const NSUInteger allowed_ns_modifiers = NSEventModifierFlagShift | NSEventModifierFlagControl |
+    NSEventModifierFlagOption | NSEventModifierFlagCommand;
+  CGEventFlags requested_cg_modifiers = (CGEventFlags)(modifier_flags & allowed_ns_modifiers);
+  int64_t event_nonce = INT64_C(0x4750554900000000) | dispatch_id;
+  for (NSUInteger i = 0; i < 2; i++) {
+    CGEventRef cg_event = CGEventCreateKeyboardEvent(NULL, (CGKeyCode)key_code, i == 0);
+    if (!cg_event) { *status = 13; return nil; }
+    // Keep runtime metadata such as the non-coalescing marker, but replace the
+    // four requested modifier bits so the current physical modifier state can
+    // never leak into this deterministic app-local event.
+    CGEventFlags event_flags = CGEventGetFlags(cg_event) & ~allowed_cg_modifiers;
+    CGEventSetFlags(cg_event, event_flags | requested_cg_modifiers);
+    CGEventSetIntegerValueField(cg_event, kCGEventSourceUserData, event_nonce);
+    NSEvent *event = [NSEvent eventWithCGEvent:cg_event];
+    CGEventRef wrapped_cg_event = event.CGEvent;
+    BOOL valid = event && event.CGEvent && event.eventRef && event.type == types[i] &&
+      event.keyCode == key_code &&
+      ((((NSUInteger)event.modifierFlags) & allowed_ns_modifiers) ==
+        (((NSUInteger)modifier_flags) & allowed_ns_modifiers)) &&
+      [(event.characters ?: @"") isEqualToString:expected_characters] &&
+      [(event.charactersIgnoringModifiers ?: @"") isEqualToString:expected_ignoring] &&
+      CGEventGetIntegerValueField(wrapped_cg_event, kCGEventSourceUserData) == event_nonce;
+    CFRelease(cg_event);
+    if (!valid) { *status = 5; return nil; }
+    created[i] = event;
+  }
+  *status = 0;
+  return @[created[0], created[1]];
+}
+static NSMutableDictionary *testing_key_dispatch_record(int64_t dispatch_id,
+                                                       int key_code,
+                                                       NSString *phase,
+                                                       int64_t event_host_epoch,
+                                                       int session_epoch,
+                                                       int direct_epoch,
+                                                       BOOL session_active,
+                                                       BOOL direct_text) {
+  return [@{
+    @"dispatch_id": @(dispatch_id), @"key_code": @(key_code), @"phase": phase,
+    @"host_epoch": @(event_host_epoch), @"session_epoch": @(session_epoch),
+    @"direct_epoch": @(direct_epoch), @"session_active": @(session_active),
+    @"direct_text": @(direct_text),
+  } mutableCopy];
+}
+static int64_t take_testing_key_dispatch_with_cg(GPWindow *w, NSEvent *event,
+                                                 CGEventRef cg_event, NSString *phase) {
+  if (!cg_event) return 0;
+  int64_t event_nonce = CGEventGetIntegerValueField(cg_event, kCGEventSourceUserData);
+  uint64_t nonce_bits = (uint64_t)event_nonce;
+  if ((nonce_bits & UINT64_C(0xFFFFFFFF00000000)) != UINT64_C(0x4750554900000000)) return 0;
+  int64_t dispatch_id = (int64_t)(nonce_bits & UINT64_C(0x00000000FFFFFFFF));
+  if (!w || !event || !w.testingPostedKeys) return -1;
   for (NSUInteger i = 0; i < w.testingPostedKeys.count; i++) {
     NSMutableDictionary *pending = w.testingPostedKeys[i];
-    if ([pending[@"phase"] isEqual:phase] && [pending[@"key_code"] intValue] == event.keyCode) {
-      int64_t dispatch_id = [pending[@"dispatch_id"] longLongValue];
+    if ([pending[@"phase"] isEqual:phase] &&
+        [pending[@"key_code"] intValue] == event.keyCode &&
+        [pending[@"dispatch_id"] longLongValue] == dispatch_id) {
       [w.testingPostedKeys removeObjectAtIndex:i];
-      return dispatch_id;
+      BOOL current_owner = key_window_owns_view(w) && event.window == w.window &&
+        event.windowNumber == w.window.windowNumber &&
+        [pending[@"host_epoch"] longLongValue] == host_epoch &&
+        [pending[@"session_epoch"] intValue] == w.sessionEpoch &&
+        [pending[@"direct_epoch"] intValue] == w.directEpoch &&
+        [pending[@"session_active"] boolValue] == w.sessionActive &&
+        [pending[@"direct_text"] boolValue] == w.directText;
+      return current_owner ? dispatch_id : -1;
     }
   }
-  return 0;
+  return -1;
+}
+static int64_t take_testing_key_dispatch(GPWindow *w, NSEvent *event, NSString *phase) {
+  return take_testing_key_dispatch_with_cg(w, event, event.CGEvent, phase);
 }
 static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSString *phase) {
   if (!w || dispatch_id <= 0) return;
@@ -613,6 +687,7 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
 - (void)keyDown:(NSEvent *)e {
 #ifdef GPUI_TESTING
   int64_t dispatch_id = take_testing_key_dispatch(self.owner, e, @"down");
+  if (dispatch_id < 0) return;
 #endif
   [self dispatchKeyDown:e];
 #ifdef GPUI_TESTING
@@ -624,6 +699,7 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
   if (!owner || owner.closing) return;
 #ifdef GPUI_TESTING
   int64_t dispatch_id = take_testing_key_dispatch(owner, e, @"up");
+  if (dispatch_id < 0) return;
 #endif
   resize_surface(owner);
   if (owner.sessionActive) {
@@ -1721,16 +1797,12 @@ static int32_t native_call(int32_t op, int64_t token, double x, double y, const 
           ((int)y & 2 ? NSEventModifierFlagControl : 0) |
           ((int)y & 4 ? NSEventModifierFlagOption : 0) |
           ((int)y & 8 ? NSEventModifierFlagCommand : 0);
-        NSEvent *events_to_post[2];
-        NSEventType key_types[] = {NSEventTypeKeyDown, NSEventTypeKeyUp};
-        for (NSUInteger i = 0; i < 2; i++) {
-          events_to_post[i] = [NSEvent keyEventWithType:key_types[i] location:NSZeroPoint
-            modifierFlags:flags timestamp:NSProcessInfo.processInfo.systemUptime
-            windowNumber:w.window.windowNumber context:nil characters:characters
-            charactersIgnoringModifiers:ignoring isARepeat:NO keyCode:(unsigned short)x];
-          if (!events_to_post[i]) return 5;
-        }
-        int64_t dispatch_id = ++w.testingDispatchId;
+        int64_t dispatch_id = w.testingDispatchId + 1;
+        int event_status = 0;
+        NSArray<NSEvent *> *events_to_post = create_app_local_key_events((unsigned short)x,
+          flags, dispatch_id, characters, ignoring, &event_status);
+        if (event_status) return event_status;
+        w.testingDispatchId = dispatch_id;
         NSMutableDictionary *receipt = [@{
           @"schema_version": @1, @"dispatch_id": @(dispatch_id), @"key_code": @((int)x),
           @"down_posted": @YES, @"up_posted": @YES, @"down_dispatched": @NO,
@@ -1740,8 +1812,10 @@ static int32_t native_call(int32_t op, int64_t token, double x, double y, const 
         } mutableCopy];
         w.testingDispatchReceipt = receipt;
         [w.testingReceipts addObject:receipt];
-        [w.testingPostedKeys addObject:[@{@"dispatch_id":@(dispatch_id), @"key_code":@((int)x), @"phase":@"down"} mutableCopy]];
-        [w.testingPostedKeys addObject:[@{@"dispatch_id":@(dispatch_id), @"key_code":@((int)x), @"phase":@"up"} mutableCopy]];
+        [w.testingPostedKeys addObject:testing_key_dispatch_record(dispatch_id, (int)x,
+          @"down", host_epoch, w.sessionEpoch, w.directEpoch, w.sessionActive, w.directText)];
+        [w.testingPostedKeys addObject:testing_key_dispatch_record(dispatch_id, (int)x,
+          @"up", host_epoch, w.sessionEpoch, w.directEpoch, w.sessionActive, w.directText)];
         [NSApp postEvent:events_to_post[0] atStart:NO];
         [NSApp postEvent:events_to_post[1] atStart:NO];
         return 0;
