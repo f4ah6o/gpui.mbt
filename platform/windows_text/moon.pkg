@@ -1,0 +1,14 @@
+import {
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/text",
+  "f4ah6o/gpui/text_layout",
+  "moonbitlang/core/int",
+  "moonbitlang/core/encoding/utf8",
+}
+
+supported_targets = "native"
+
+options(
+  "native-stub": [ "windows_text.cpp" ],
+  targets: { "ffi.mbt": [ "native" ], "unsupported.mbt": [ "not", "native" ] },
+)

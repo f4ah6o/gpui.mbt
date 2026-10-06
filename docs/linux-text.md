@@ -207,8 +207,11 @@ rejects the whole frame before presentation, even when other text is grayscale.
 `platform.Capability::GrayscaleTextFrames` is a subset-discovery flag for this
 Ubuntu drawing capability. It does not promise that every frame is accepted,
 and it does not advertise keyboard text input, an editable control, caret or
-selection UI, composition, or IME. Per-frame unsupported checks remain active;
-macOS and Windows retain their existing text rejection behavior. The public
+selection UI, composition, or IME. Per-frame unsupported checks remain active.
+Windows has a separate experimental D3D11 grayscale subset and focused
+single-line field; its private default-off IMM32 session ingress does not
+promote a support tier, and real Japanese IME qualification remains open.
+macOS retains its existing text rejection behavior. The public
 `SceneSnapshot` envelope version remains v1, and browser behavior is unchanged.
 No atlas, retained
 raster cache, or persistent Pango raster handle is introduced.

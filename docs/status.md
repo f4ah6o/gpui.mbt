@@ -43,7 +43,7 @@ array-bearing types and generic `Entity[T]` alias discipline are not changed.
 
 ### Rendering
 
-The shared scene path provides quads, rectangle clip chains, affine transforms, opacity, and canonical snapshots. `SceneItem::TextItem` adds one bounded plain-text run without changing the v1 envelope or existing quad serialization. Canvas 2D presents it using a system sans font, with a maximum font size of 1024 logical pixels and 65,536 UTF-16 code units per run. Ubuntu's experimental Wayland/GLES host now advertises `platform.Capability::GrayscaleTextFrames` and draws a bounded text subset using logical-resolution PangoFT2 grayscale masks; macOS and Windows retain their text rejection behavior. The capability is a discovery hint, not a guarantee for every frame and not text input/IME. Color glyphs reject the whole frame during preflight. Portable wrapping policy, caret/selection presentation, rich text, paths, images, and broader resource rendering remain incomplete. See [the Linux text guide](linux-text.md#ubuntu-grayscale-scene-text), [the Ubuntu guide](ubuntu.md#grayscale-text-frame-subset), [the scene implementation](../scene/snapshot.mbt), and [text validation tests](../scene/snapshot_text_test.mbt).
+The shared scene path provides quads, rectangle clip chains, affine transforms, opacity, and canonical snapshots. `SceneItem::TextItem` adds one bounded plain-text run without changing the v1 envelope or existing quad serialization. Canvas 2D presents it using a system sans font, with a maximum font size of 1024 logical pixels and 65,536 UTF-16 code units per run. Ubuntu's experimental Wayland/GLES host and Windows' experimental D3D11 host draw documented bounded grayscale subsets using PangoFT2 masks and copied DirectWrite masks, respectively; macOS still rejects native text items. Their text-rendering capabilities are discovery hints, not guarantees for every frame. Windows also has a focused single-line experimental text field and private default-off IMM32 text-session ingress; neither promotes Windows' support tier, and real Japanese IME qualification remains open. Color glyphs reject the whole frame during preflight. Portable wrapping policy, broader editor behavior, rich text, paths, images, and broader renderer resources remain incomplete. See [the Linux text guide](linux-text.md#ubuntu-grayscale-scene-text), [the Ubuntu guide](ubuntu.md#grayscale-text-frame-subset), the [Windows guide](windows-native.md), [the scene implementation](../scene/snapshot.mbt), and [text validation tests](../scene/snapshot_text_test.mbt).
 
 ### Native services
 
@@ -73,7 +73,7 @@ host-specific security integration remain open.
 - macOS: native AppKit/Metal slice implemented; production gates remain open.
 - Ubuntu / Wayland: native Wayland/EGL/GLES2 slice with an experimental, bounded grayscale text-frame renderer; quad and bounded grayscale mixed-scene checks passed in hosted CI; production desktop gates remain open.
 - Browser / JavaScript: Canvas 2D Weekboard and interaction lab implemented; exact execution and test scope is recorded in [the browser guide](browser-demo.md).
-- Windows: experimental one-window Win32/D3D11 hardware-or-WARP slice and example implemented; the hosted Windows Server 2025 run passed the MSVC shim build, portable tests, native GPU E2E, shared backend conformance, and example smoke. See [the Windows guide](windows-native.md); this does not establish a support tier or production claim.
+- Windows: experimental one-window Win32/D3D11 hardware-or-WARP slice, bounded grayscale text renderer, focused single-line text field, and private default-off IMM32 text-session ingress implemented. Hosted proof for the earlier slice does not qualify Japanese IME behavior or promote a support tier; see [the Windows guide](windows-native.md).
 - X11 / XWayland: no backend yet.
 
 These statements describe implementation and evidence, not a compatibility or support tier unless the release evidence ledger explicitly assigns one.
@@ -130,9 +130,9 @@ remain prerequisites, and neither application track replaces M7 release gates.
 
 The roadmap includes formal Linux native vlmkit support with explicit X11 and
 Wayland capability profiles. The eventual goal is macOS/Linux/Windows across
-applications and tools; new Windows-specific work is deferred while macOS/Linux
-work remains and until a user-provided Windows environment is available. Existing
-Windows functionality and checks stay intact.
+applications and tools. Windows-specific work can proceed in an available
+Windows environment, while all Windows functionality remains experimental and
+does not establish a platform support tier.
 
 ## Where future work lives
 

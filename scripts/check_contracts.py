@@ -650,6 +650,7 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "platform": {"primitives", "diagnostics", "scene"},
         "platform/macos": {"platform", "primitives", "diagnostics", "scene"},
         "platform/linux_text": {"text_layout", "text", "primitives"},
+        "platform/windows_text": {"text", "text_layout", "primitives"},
         "examples/native_macos": {"platform/macos", "platform", "primitives", "diagnostics", "scene"},
         "ubuntu": {"platform", "platform/linux_text", "text", "primitives", "diagnostics", "scene"},
         "examples/ubuntu": {
@@ -659,8 +660,16 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
             "ubuntu", "platform", "platform/linux_text", "controls/text_field",
             "text", "text_layout", "element", "primitives", "scene", "diagnostics", "controls/command_palette", "capability",
         },
-        "windows": {"platform", "primitives", "diagnostics", "scene"},
+        "windows": {
+            "platform", "primitives", "diagnostics", "scene", "text",
+            "platform/windows_text",
+        },
         "examples/windows": {"windows", "platform", "primitives", "diagnostics", "scene"},
+        "examples/windows_text_field": {
+            "windows", "platform/windows_text", "platform",
+            "controls/text_field", "text", "text_layout", "element",
+            "primitives", "scene", "diagnostics",
+        },
         "element": {"core", "primitives", "layout", "scene"},
         # Semantic capabilities are portable application-facing contracts. The
         # optional MCP adapter is a leaf above them and owns no domain state.

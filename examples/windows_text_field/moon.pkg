@@ -1,0 +1,18 @@
+import {
+  "f4ah6o/gpui/windows" @native,
+  "f4ah6o/gpui/platform/windows_text",
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/controls/text_field",
+  "f4ah6o/gpui/text",
+  "f4ah6o/gpui/text_layout",
+  "f4ah6o/gpui/element",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/scene",
+  "f4ah6o/gpui/diagnostics",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+}
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")

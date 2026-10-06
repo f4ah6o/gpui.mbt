@@ -1,8 +1,10 @@
 import {
   "f4ah6o/gpui/platform",
   "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/text",
   "f4ah6o/gpui/diagnostics",
   "f4ah6o/gpui/scene",
+  "f4ah6o/gpui/platform/windows_text",
   "moonbitlang/core/encoding/utf8",
 }
 
