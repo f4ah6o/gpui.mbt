@@ -326,7 +326,9 @@ fn run_window() -> Unit {
 
 ///|
 fn main {
-  if @env.get_env_var("GPUI_FIELD_FIXTURES") == Some("1") {
+  if @env.get_env_var("GPUI_COMMAND_PALETTE") == Some("1") {
+    run_palette_window()
+  } else if @env.get_env_var("GPUI_FIELD_FIXTURES") == Some("1") {
     emit_fixtures()
   } else if @env.get_env_var("GPUI_FIELD_WAYLAND_IME") == Some("1") {
     run_ime_window()

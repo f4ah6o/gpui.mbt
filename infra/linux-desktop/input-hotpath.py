@@ -25,6 +25,7 @@ EXCLUDED = ["native input transport", "Wayland dispatch", "GPU presentation", "s
 OBSERVE_POLICY = "observe-only: no universal timing gate"
 COMPILER_WRAPPER = "script/linux_text_cc.py"
 WORKLOAD_FILES = ["moon.mod", "moon.pkg", "main.mbt", "clock.c"]
+PRODUCER_FILES = ["input-hotpath.py"]
 EXPECTED_CALLS = {"text.measure": 256, "text.admit": 256,
                   "composition.update": 64, "composition.commit": 32,
                   "history.undo": 32, "history.redo": 32,
@@ -34,6 +35,13 @@ EXPECTED_CALLS = {"text.measure": 256, "text.admit": 256,
 
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def producer_digest():
+    # A specialized workload binds both its wrapper and this shared validator.
+    if len(PRODUCER_FILES) == 1:
+        return digest(HERE / PRODUCER_FILES[0])
+    return hashlib.sha256(b"".join((HERE / name).read_bytes() for name in PRODUCER_FILES)).hexdigest()
 
 
 def runtime_lock():
@@ -252,7 +260,7 @@ def _validate_evidence(report, directory):
         raise RuntimeError("hotpath evidence requires exact typed successful schema and stable behavior")
     if report.get("scope") != SCOPE or report.get("excluded") != EXCLUDED:
         raise RuntimeError("hotpath evidence has an incompatible measured boundary")
-    if report.get("producer_sha256") != digest(HERE / "input-hotpath.py"):
+    if report.get("producer_sha256") != producer_digest():
         raise RuntimeError("hotpath evidence has an incompatible producer")
     before = report["source_before"]
     if before != report["source_after"]:
@@ -427,7 +435,7 @@ def execute(hotpath, output, repeats=7, baseline=None, tolerance=None):
     output.mkdir(parents=True, exist_ok=False)
     before = feedback.source_snapshot(REPO)
     report = {"schema_version": SCHEMA_VERSION, "scope": SCOPE, "excluded": EXCLUDED,
-              "producer_sha256": digest(HERE / "input-hotpath.py"), "repeats": repeats,
+              "producer_sha256": producer_digest(), "repeats": repeats,
               "source_before": before, "ok": False, "runs": []}
     try:
         hotpath = Path(hotpath).resolve()

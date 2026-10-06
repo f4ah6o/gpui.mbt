@@ -1,0 +1,4 @@
+# Observe real mutations in the new reusable selection/terminal-state slice.
+# This bounded scope does not change existing ratchets or imply full coverage.
+include = ["controls/command_palette/picker.mbt", "controls/command_palette/palette.mbt"]
+operators = ["comparison", "boolean", "arithmetic", "literal", "condition"]

@@ -21,6 +21,7 @@ import time
 import xml.etree.ElementTree as ET
 import threading
 
+sys.dont_write_bytecode = True
 import evidence
 
 HERE = Path(__file__).resolve().parent
@@ -55,6 +56,9 @@ def preflight(deployment):
     data = json.loads(deployment.read_text())
     if data['schema_version'] != 1:
         raise RuntimeError('unsupported deployment')
+    if data.get('kind') == 'native-ime-recovery-baseline':
+        from recovery.prepare_deployment import verify_deployment
+        verify_deployment(deployment)
     for path, expected in data['pins'].items():
         if sha(path) != expected:
             raise RuntimeError('changed pinned input: ' + path)
@@ -126,18 +130,138 @@ def editor_click_from_pixels(png):
     return {'x': left + 50, 'y': top + 100, 'body': [left, top, right, bottom]}
 
 
+def capture_run_owner(data, baseline):
+    if data.get('kind') != 'native-ime-recovery-baseline': return None
+    if data.get('ownership_model') != 'gpui-task-owner-birth-v1':
+        raise RuntimeError('new recovery run requires the reviewed task owner model')
+    return baseline.capture_task_owner()
+
+
+def run_peer_identity(baseline, owner, pid, expected_exe=None):
+    if owner is not None:
+        return baseline.require_fresh_peer(pid, owner, expected_exe=expected_exe)
+    identity = baseline.stat_identity(pid)
+    if expected_exe is not None and identity['exe'] != expected_exe:
+        raise RuntimeError('historical peer executable differs')
+    return identity
+
+
+def record_peer(report, role, identity):
+    if report['task_owner'] is not None:
+        report['peer_ledger'].append(dict(identity, role=role))
+
+
+def require_bus_peer(stream, baseline, owner, expected_pid, expected_exe):
+    if owner is None: return None
+    # Query Linux SO_PEERCRED before GDBus starts using this stream.
+    credentials = stream.get_socket().get_credentials()
+    if credentials is None:
+        raise RuntimeError('private IBus Unix credentials unavailable')
+    pid, uid = credentials.get_unix_pid(), credentials.get_unix_user()
+    if type(pid) is not int or type(uid) is not int or pid != expected_pid or uid != owner['uid']:
+        raise RuntimeError('private IBus Unix peer identity mismatch')
+    return baseline.require_fresh_peer(pid, owner, expected_exe=expected_exe)
+
+
+def connect_owned_bus(Gio, address, socket_path, baseline, owner, expected_pid, expected_exe, cancellation):
+    flags = Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION
+    if owner is None:
+        return Gio.DBusConnection.new_for_address_sync(address, flags, None, cancellation), None
+    match = re.fullmatch('unix:path=' + re.escape(str(socket_path)) + r'(?:,guid=([0-9a-f]{32}))?', address)
+    if match is None: raise RuntimeError('private IBus address must name the exact single owned socket')
+    client = Gio.SocketClient.new(); client.set_enable_proxy(False)
+    stream = client.connect(Gio.UnixSocketAddress.new(str(socket_path)), cancellation)
+    connection = None
+    try:
+        peer = require_bus_peer(stream, baseline, owner, expected_pid, expected_exe)
+        connection = Gio.DBusConnection.new_sync(stream, None, flags, None, cancellation)
+        if match[1] is not None and connection.get_guid() != match[1]:
+            raise RuntimeError('private IBus GUID differs from its owned address')
+        return connection, peer
+    except Exception:
+        if connection is not None: connection.close_sync(None)
+        else: stream.close(None)
+        raise
+
+
+def cleanup_owned_native(x, pressed, processes, stop, baseline, token, home, config, runtime, task_owner=None):
+    """Retain an error receipt when the strict ownership scan is incomplete."""
+    errors, terminated, scan_audits = [], [], []
+    if x:
+        for name in reversed(pressed):
+            try: x.key(name, False)
+            except Exception as error: errors.append('release: ' + repr(error))
+        try: x.close()
+        except Exception as error: errors.append('display-close: ' + repr(error))
+    for child, identity in reversed(processes):
+        try: stop(child, identity)
+        except ProcessLookupError: pass
+        except Exception as error: errors.append('owned-child-stop: ' + repr(error))
+
+    def scan():
+        try:
+            audit = {}
+            if task_owner is not None:
+                scan_audits.append(audit)
+                return baseline.private_processes(token, home, config, task_owner, audit=audit)
+            return baseline.private_processes(token, home, config)
+        except Exception as error:
+            errors.append('private-process-scan: ' + repr(error))
+            return None  # Unknown ownership is never an empty successful scan.
+
+    survivors = None
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        owned = scan()
+        if owned is None:
+            survivors = None
+            break
+        for identity in owned:
+            try:
+                fd = os.pidfd_open(identity['pid'])
+                try:
+                    now = baseline.stat_identity(identity['pid'])
+                    if (now['starttime'], now['exe']) != (identity['starttime'], identity['exe']):
+                        raise RuntimeError('private-profile PID identity changed')
+                    signal.pidfd_send_signal(fd, sig); terminated.append(dict(identity, signal=int(sig)))
+                finally: os.close(fd)
+            except ProcessLookupError: pass
+            except Exception as error: errors.append('private-process-stop: ' + repr(error))
+        end = time.monotonic() + .5
+        while time.monotonic() < end:
+            survivors = scan()
+            if survivors is None or not survivors: break
+            time.sleep(.02)
+        if survivors is None: break
+    else:
+        survivors = scan()
+    complete = survivors is not None
+    verified = complete and not survivors and not errors
+    removed = False
+    if verified and task_owner is None:
+        try: shutil.rmtree(runtime); removed = True
+        except Exception as error:
+            errors.append('private-runtime-remove: ' + repr(error)); verified = False
+    return {'verified': verified, 'scan_complete': complete, 'survivors': survivors,
+        'errors': errors, 'private_profile_terminated': terminated,
+        'pidfd_signals_only': True, 'no_name_based_kill': True, 'runtime_removed': removed, 'scan_audits': scan_audits,
+        'ownership_scope': 'fresh task descendants bound by owner birth, nonce, HOME and config' if task_owner is not None else 'historical helper scope'}
+
+
+
 def run(args, data, driver, baseline):
+    task_owner = capture_run_owner(data, baseline)
     output = args.output.resolve()
     root = Path(data['output_root']).resolve()
     if root not in output.parents or output.exists():
         raise RuntimeError('output must be a new directory within the locked task output root')
     output.mkdir(parents=True, mode=0o700)
+    if task_owner is not None: write_json(output / 'task-owner.snapshot.json', task_owner)
     shutil.copyfile(__file__, output / 'probe.snapshot.py')
     shutil.copyfile(HERE / 'evidence.py', output / 'evidence.snapshot.py')
     shutil.copyfile(args.deployment, output / 'deployment.snapshot.json')
     runtime = Path(tempfile.mkdtemp(prefix='gwi-', dir='/tmp')); runtime.chmod(0o700)
     home, config = runtime / 'home', runtime / 'config'
-    for path in (home, config / 'mozc', runtime / 'cache', runtime / 'data', runtime / 'framebuffer', runtime / 'component'):
+    for path in (home, config, config / 'mozc', runtime / 'cache', runtime / 'data', runtime / 'framebuffer', runtime / 'component'):
         path.mkdir(parents=True, mode=0o700)
     prefix, support = Path(data['prefix']), Path(data['support'])
     lib = prefix / 'usr/lib/x86_64-linux-gnu'
@@ -154,7 +278,8 @@ def run(args, data, driver, baseline):
         # No runtime children or sockets exist at this preparation stage.
         shutil.rmtree(runtime)
         write_json(output / 'result.json', {'schema_version': 1, 'status': 'error',
-            'stage': 'private-schema-preparation', 'error': str(error),
+            'stage': 'private-schema-preparation', 'error': str(error), 'task_owner': task_owner,
+            'evidence_inputs': {'task-owner.snapshot.json': sha(output / 'task-owner.snapshot.json')} if task_owner is not None else {},
             'native_executed': False, 'gpui_ime_verified': False,
             'cleanup': {'verified': True, 'survivors': [], 'errors': []}})
         return 1
@@ -173,6 +298,7 @@ def run(args, data, driver, baseline):
     shutil.copyfile(ini, output / 'weston.ini')
     token = secrets.token_hex(24)
     env = {'PATH': str(prefix / 'usr/bin') + ':/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
+        'PYTHONDONTWRITEBYTECODE': '1',
         'HOME': str(home), 'XDG_CONFIG_HOME': str(config), 'XDG_CACHE_HOME': str(runtime / 'cache'),
         'XDG_DATA_HOME': str(runtime / 'data'), 'XDG_RUNTIME_DIR': str(runtime),
         'XDG_DATA_DIRS': str(prefix / 'usr/share') + ':/usr/share',
@@ -191,7 +317,8 @@ def run(args, data, driver, baseline):
     report = {'schema_version': 1, 'status': 'error', 'native_executed': True, 'gpui_ime_verified': False,
         'runtime_bind_verified': False, 'editor_conversion_verified': False, 'editor_cancel_verified': False,
         'private_display': env['DISPLAY'], 'inherited_display_excluded': os.environ.get('DISPLAY'),
-        'runtime': str(runtime), 'pins': data['pins'], 'checkpoints': [], 'cleanup': {'verified': False},
+        'runtime': str(runtime), 'pins': data['pins'], 'task_owner': task_owner, 'peer_ledger': [],
+        'evidence_inputs': {'task-owner.snapshot.json': sha(output / 'task-owner.snapshot.json')} if task_owner is not None else {}, 'checkpoints': [], 'cleanup': {'verified': False},
         'route': 'XTest -> authenticated private Xvfb -> Weston X11 desktop-shell -> privileged IBus Wayland v1 -> Mozc -> stock weston-editor'}
     processes, streams, pressed = [], [], []
     events = (output / 'events.jsonl').open('w')
@@ -215,14 +342,15 @@ def run(args, data, driver, baseline):
     def launch(command, name, extra=None):
         stream = (output / (name + '.log')).open('wb'); streams.append(stream)
         child = subprocess.Popen(command, env=dict(env, **(extra or {})), stdout=stream, stderr=subprocess.STDOUT, start_new_session=True)
-        identity = baseline.stat_identity(child.pid); processes.append((child, identity))
+        identity = run_peer_identity(baseline, task_owner, child.pid, str(Path(command[0]).resolve())); processes.append((child, identity))
+        record_peer(report, name, identity)
         report.setdefault('children', []).append(dict(identity, argv=command, log=name + '.log'))
         return child
 
     def stop(child, identity):
         if child.poll() is not None:
             return
-        now = baseline.stat_identity(child.pid)
+        now = run_peer_identity(baseline, task_owner, child.pid, identity['exe'])
         if (now['starttime'], now['exe']) != (identity['starttime'], identity['exe']):
             raise RuntimeError('owned process identity changed')
         fd = os.pidfd_open(child.pid)
@@ -293,9 +421,10 @@ def run(args, data, driver, baseline):
         cancellation = Gio.Cancellable()
         timer = threading.Timer(left(3), cancellation.cancel); timer.daemon = True; timer.start()
         try:
-            conn = Gio.DBusConnection.new_for_address_sync(match[1], Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION, None, cancellation)
+            conn, bus_peer = connect_owned_bus(Gio, match[1], runtime / 'ibus-bus', baseline, task_owner, ibus.pid, str(Path(prefix / 'usr/bin/ibus-daemon').resolve()), cancellation)
         finally:
             timer.cancel()
+        if bus_peer is not None: record_peer(report, 'ibus-unix-peer', bus_peer)
         conn.call_sync('org.freedesktop.IBus', '/org/freedesktop/IBus', 'org.freedesktop.IBus', 'SetGlobalEngine', GLib.Variant('(s)', ('mozc-jp',)), GLib.VariantType.new('()'), Gio.DBusCallFlags.NONE, int(left()*1000), None)
         description = IBus.Serializable.deserialize_object(conn.call_sync('org.freedesktop.IBus', '/org/freedesktop/IBus', 'org.freedesktop.IBus', 'GetGlobalEngine', None, None, Gio.DBusCallFlags.NONE, int(left()*1000), None).get_child_value(0).get_variant())
         if description.get_name() != 'mozc-jp':
@@ -316,7 +445,8 @@ def run(args, data, driver, baseline):
             return all(re.search(r'\.bind\(\d+, "' + name + r'", 1,', log) for name in ('zwp_input_method_v1', 'zwp_input_panel_v1'))
         wait(ibus_bind_ready, 'privileged compositor-launched IBus v1 bindings')
         ui_pid = int((output / 'ibus-wayland.pid').read_text().strip())
-        ui_identity = baseline.stat_identity(ui_pid)
+        ui_identity = run_peer_identity(baseline, task_owner, ui_pid, str(prefix / 'usr/libexec/ibus-ui-gtk3'))
+        record_peer(report, 'ibus-wayland', ui_identity)
         if ui_identity['exe'] != str(prefix / 'usr/libexec/ibus-ui-gtk3') or ui_identity['uid'] != os.getuid():
             raise RuntimeError('IBus Wayland exec identity mismatch')
         report['ibus_wayland_process'] = ui_identity
@@ -371,12 +501,14 @@ def run(args, data, driver, baseline):
             raise RuntimeError('stock editor rejected native text-input events')
         # Freeze complete runtime diagnostics before orderly shutdown appends
         # warnings or terminates a partially printed, unrelated D-Bus frame.
-        before_audit = baseline.stat_identity(ui_pid)
+        before_audit = run_peer_identity(baseline, task_owner, ui_pid, ui_identity['exe'])
         if (before_audit['starttime'], before_audit['exe']) != (ui_identity['starttime'], ui_identity['exe']):
             raise RuntimeError('owned IBus Wayland process identity changed before audit')
         for name in ('ibus-wayland', 'editor'):
             shutil.copyfile(output / (name + '.log'), output / (name + '-snapshot.log'))
         report['evidence_inputs'] = {name: sha(output / name) for name in evidence.INPUT_FILES}
+        if task_owner is not None: report['evidence_inputs']['task-owner.snapshot.json'] = sha(output / 'task-owner.snapshot.json')
+        if task_owner is not None: baseline.validate_task_owner_receipt(output, report, require_cleanup=False)
         report['transport_evidence'] = evidence.qualify(output, report, data)
         write_json(output / 'transport-evidence.json', report['transport_evidence'])
         report['status'] = 'passed'
@@ -385,38 +517,30 @@ def run(args, data, driver, baseline):
     except Exception as error:
         report['error'] = str(error)
     finally:
-        if x:
-            for name in reversed(pressed):
-                try: x.key(name, False)
-                except Exception: pass
-            x.close()
-        errors, terminated = [], []
-        for child, identity in reversed(processes):
-            try: stop(child, identity)
-            except ProcessLookupError: pass
-            except Exception as error: errors.append(str(error))
-        for sig in (signal.SIGTERM, signal.SIGKILL):
-            for identity in baseline.private_processes(token, home, config):
-                try:
-                    fd = os.pidfd_open(identity['pid'])
-                    try:
-                        now = baseline.stat_identity(identity['pid'])
-                        if (now['starttime'], now['exe']) != (identity['starttime'], identity['exe']):
-                            raise RuntimeError('private-profile PID identity changed')
-                        signal.pidfd_send_signal(fd, sig); terminated.append(dict(identity, signal=int(sig)))
-                    finally: os.close(fd)
-                except ProcessLookupError: pass
-                except Exception as error: errors.append(str(error))
-            end = time.monotonic() + .5
-            while time.monotonic() < end and baseline.private_processes(token, home, config): time.sleep(.02)
-        survivors = baseline.private_processes(token, home, config)
-        report['cleanup'] = {'verified': not survivors and not errors, 'survivors': survivors, 'errors': errors, 'private_profile_terminated': terminated, 'pidfd_signals_only': True, 'no_name_based_kill': True}
-        if survivors or errors:
-            report['status'] = 'error'; report['cleanup_blocker'] = 'runtime retained because owned cleanup was not verified'
-        else:
-            shutil.rmtree(runtime)
-        for stream in streams: stream.close()
-        events.close()
+        try:
+            report['cleanup'] = cleanup_owned_native(x, pressed, processes, stop,
+                baseline, token, home, config, runtime, task_owner)
+        except Exception as error:
+            report['cleanup'] = {'verified': False, 'scan_complete': False,
+                'survivors': None, 'errors': ['unexpected-cleanup: ' + repr(error)],
+                'private_profile_terminated': [], 'pidfd_signals_only': True,
+                'no_name_based_kill': True, 'runtime_removed': False}
+        for stream in (*streams, events):
+            try: stream.close()
+            except Exception as error:
+                report['cleanup']['errors'].append('stream-close: ' + repr(error))
+                report['cleanup']['verified'] = False
+        if not report['cleanup']['verified']:
+            report['status'] = 'error'; report['cleanup_blocker'] = 'owned cleanup was not verified; inspect runtime and diagnostics'
+        if task_owner is not None and report['cleanup']['verified']:
+            try:
+                report['owner_receipt_validation'] = baseline.validate_task_owner_receipt(output, report)
+                shutil.rmtree(runtime)
+                report['cleanup']['runtime_removed'] = True
+            except Exception as error:
+                report['cleanup']['verified'] = False
+                report['cleanup']['errors'].append('owner-receipt-validation: ' + repr(error))
+                report['status'] = 'error'
         report['elapsed_seconds'] = round(time.monotonic() - started, 3)
         report['probe_sha256'] = sha(__file__)
         write_json(output / 'result.json', report)

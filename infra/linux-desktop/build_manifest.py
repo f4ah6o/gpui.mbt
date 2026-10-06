@@ -7,7 +7,10 @@ from pathlib import Path
 import shlex
 import shutil
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
+
+sys.dont_write_bytecode = True
 
 HERE = Path(__file__).resolve().parent
 GENERATED_PROTOCOLS = ("xdg-shell-client-protocol.h", "xdg-shell-protocol.c",
@@ -99,6 +102,7 @@ def tool_command(value, role):
 def configured_fonts(fontconfig, prefix, fc_list, environment=None):
     require_closed_fontconfig(fontconfig)
     env = (environment or os.environ).copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["FONTCONFIG_FILE"] = str(fontconfig)
     env["FONTCONFIG_PATH"] = str(Path(fontconfig).parent)
     lib = Path(prefix) / "usr/lib/x86_64-linux-gnu"

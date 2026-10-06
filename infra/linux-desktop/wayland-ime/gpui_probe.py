@@ -21,6 +21,7 @@ import time
 import xml.etree.ElementTree as ET
 import threading
 
+sys.dont_write_bytecode = True
 import probe as frozen_probe
 import evidence
 import gpui_evidence
@@ -97,7 +98,7 @@ presentation_frame_ready=gpui_evidence.presentation_frame_ready
 
 
 def await_presented_pixels(stage,presentation,read_current,capture,pixel_path,audit,
-                          *,locate=False,timeout_seconds=5,clock=time.monotonic,poll=None):
+                          *,locate=False,timeout_seconds=5,clock=time.monotonic,poll=None,locator=None):
     """Bounded real readiness observations; no fixed settling sleep or input."""
     poll=poll or (lambda:time.sleep(.02))
     started=clock();end=started+timeout_seconds;attempt=0
@@ -108,7 +109,7 @@ def await_presented_pixels(stage,presentation,read_current,capture,pixel_path,au
             item['status']='awaiting-correlated-frame';audit.append(item);poll();continue
         attempt+=1;pixels=capture(stage+'-readiness-'+str(attempt));item.update(attempt=attempt,pixels=pixels)
         try:
-            geometry=gpui_click_from_pixels(pixel_path(pixels)) if locate else None
+            geometry=(locator or gpui_click_from_pixels)(pixel_path(pixels)) if locate else None
         except PixelsNotReady as error:
             item.update(status='awaiting-actual-viewport-field-pixels',reason=str(error));audit.append(item);poll();continue
         except Exception as error:
@@ -167,6 +168,25 @@ def surrounding_text(log):
     return re.findall(r'zwp_text_input_v1(?:#|@)\d+\.set_surrounding_text\("([^"\\]*)", (\d+), (\d+)\)', log)
 
 
+# One shared fail-closed finalizer for stock and GPUI native callers.
+cleanup_owned_native = frozen_probe.cleanup_owned_native
+
+
+def capture_launcher_diagnostics(path, output, root):
+    """Capture this bounded launch only; never overwrite or follow a log link."""
+    path, output, root = Path(path), Path(output).resolve(), Path(root)
+    if path != root / (output.name + '.launcher.log') or output.parent != root / 'runs':
+        raise RuntimeError('diagnostic log must match this owned run')
+    marker = root / '.gpui-ime-recovery-evidence'
+    if root.is_symlink() or root.resolve() != root or root.stat().st_uid != os.geteuid() or root.stat().st_mode & 0o077 or marker.is_symlink() or marker.read_text() != 'native-ime-recovery-evidence-v1\n':
+        raise RuntimeError('diagnostic root is not the owned recovery admission')
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        sys.stdout.flush(); sys.stderr.flush()
+        os.dup2(fd, 1); os.dup2(fd, 2)
+    finally: os.close(fd)
+
+
 def editor_click_from_pixels(png):
     """Read-only stock editor white-body geometry; fail on ambiguous placement."""
     from PIL import Image
@@ -191,13 +211,16 @@ def editor_click_from_pixels(png):
     return {'x': left + 50, 'y': top + 100, 'body': [left, top, right, bottom]}
 
 
-def run(args, data, driver, baseline):
+def run(args, data, driver, baseline, suite=None):
+    task_owner = frozen_probe.capture_run_owner(data, baseline)
     output = args.output.resolve()
     root = Path(data['output_root']).resolve()
     if root not in output.parents or output.exists():
         raise RuntimeError('output must be a new directory within the locked task output root')
     output.mkdir(parents=True, mode=0o700)
+    if task_owner is not None: write_json(output / 'task-owner.snapshot.json', task_owner)
     shutil.copyfile(__file__, output / 'probe.snapshot.py')
+    if suite is not None: shutil.copyfile(suite.__file__, output/'palette-suite.snapshot.py')
     shutil.copyfile(HERE / 'gpui_evidence.py', output / 'gpui-evidence.snapshot.py')
     shutil.copyfile(HERE / 'probe.py', output / 'frozen-probe.snapshot.py')
     shutil.copyfile(HERE / 'evidence.py', output / 'frozen-evidence.snapshot.py')
@@ -206,7 +229,7 @@ def run(args, data, driver, baseline):
     write_json(output/'current-candidate-verification.snapshot.json',data['candidate_verification'])
     runtime = Path(tempfile.mkdtemp(prefix='gwi-', dir='/tmp')); runtime.chmod(0o700)
     home, config = runtime / 'home', runtime / 'config'
-    for path in (home, config / 'mozc', runtime / 'cache', runtime / 'data', runtime / 'framebuffer', runtime / 'component'):
+    for path in (home, config, config / 'mozc', runtime / 'cache', runtime / 'data', runtime / 'framebuffer', runtime / 'component'):
         path.mkdir(parents=True, mode=0o700)
     prefix, support = Path(data['prefix']), Path(data['support'])
     lib = prefix / 'usr/lib/x86_64-linux-gnu'
@@ -223,7 +246,8 @@ def run(args, data, driver, baseline):
         # No runtime children or sockets exist at this preparation stage.
         shutil.rmtree(runtime)
         write_json(output / 'result.json', {'schema_version': 1, 'status': 'error',
-            'stage': 'private-schema-preparation', 'error': str(error),
+            'stage': 'private-schema-preparation', 'error': str(error), 'task_owner': task_owner,
+            'evidence_inputs': {'task-owner.snapshot.json': sha(output / 'task-owner.snapshot.json')} if task_owner is not None else {},
             'native_executed': False, 'gpui_ime_verified': False,
             'cleanup': {'verified': True, 'survivors': [], 'errors': []}})
         return 1
@@ -242,6 +266,7 @@ def run(args, data, driver, baseline):
     shutil.copyfile(ini, output / 'weston.ini')
     token = secrets.token_hex(24)
     env = {'PATH': str(prefix / 'usr/bin') + ':/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
+        'PYTHONDONTWRITEBYTECODE': '1',
         'HOME': str(home), 'XDG_CONFIG_HOME': str(config), 'XDG_CACHE_HOME': str(runtime / 'cache'),
         'XDG_DATA_HOME': str(runtime / 'data'), 'XDG_RUNTIME_DIR': str(runtime),
         'XDG_DATA_DIRS': str(prefix / 'usr/share') + ':/usr/share',
@@ -261,12 +286,14 @@ def run(args, data, driver, baseline):
         'runtime_bind_verified': False, 'conversion_verified': False, 'cancel_verified': False,
         'history_verified': False, 'blur_refocus_verified': False,
         'private_display': env['DISPLAY'], 'inherited_display_excluded': os.environ.get('DISPLAY'),
-        'runtime': str(runtime), 'pins': data['pins'], 'checkpoints': [], 'render_readiness':[], 'cleanup': {'verified': False},
+        'runtime': str(runtime), 'pins': data['pins'], 'task_owner': task_owner, 'peer_ledger': [],
+        'evidence_inputs': {'task-owner.snapshot.json': sha(output / 'task-owner.snapshot.json')} if task_owner is not None else {}, 'checkpoints': [], 'render_readiness':[], 'cleanup': {'verified': False},
         'shortcut_hold_ms':100 if args.held_shortcuts else 0,
         'route': 'XTest -> authenticated private Xvfb -> Weston X11 desktop-shell -> privileged IBus Wayland v1 -> Mozc -> GPUI native text-session ABI3 -> owned experimental field'}
     processes, streams, pressed = [], [], []
     events = (output / 'events.jsonl').open('w')
     x = None
+    click = {}
 
     def left(maximum=5):
         remaining = min(maximum, deadline - time.monotonic())
@@ -286,14 +313,15 @@ def run(args, data, driver, baseline):
     def launch(command, name, extra=None):
         stream = (output / (name + '.log')).open('wb'); streams.append(stream)
         child = subprocess.Popen(command, env=dict(env, **(extra or {})), stdout=stream, stderr=subprocess.STDOUT, start_new_session=True)
-        identity = baseline.stat_identity(child.pid); processes.append((child, identity))
+        identity = frozen_probe.run_peer_identity(baseline, task_owner, child.pid, str(Path(command[0]).resolve())); processes.append((child, identity))
+        frozen_probe.record_peer(report, name, identity)
         report.setdefault('children', []).append(dict(identity, argv=command, log=name + '.log'))
         return child
 
     def stop(child, identity):
         if child.poll() is not None:
             return
-        now = baseline.stat_identity(child.pid)
+        now = frozen_probe.run_peer_identity(baseline, task_owner, child.pid, identity['exe'])
         if (now['starttime'], now['exe']) != (identity['starttime'], identity['exe']):
             raise RuntimeError('owned process identity changed')
         fd = os.pidfd_open(child.pid)
@@ -329,7 +357,9 @@ def run(args, data, driver, baseline):
 
     def state():
         values = gpui_evidence.presented_states(current_gpui())
-        return values[-1] if values else None
+        field = values[-1] if values else None
+        if suite is not None: return suite.merge_state(current_gpui(), field)
+        return field
 
     def expect(label, **values):
         found = wait(lambda: (value if value and all(value[k] == v for k,v in values.items()) else None)
@@ -343,7 +373,7 @@ def run(args, data, driver, baseline):
                 return active == activations and grabs == activations and evidence.native_context_ready(read_log(output / 'ibus-dbus.log'))
             wait(fresh_native_ready, label + ' latest matching native activation/FocusIn/grab')
         pixels,geometry=await_presented_pixels(label,found['presentation'],current_gpui,capture,
-            lambda value:output/value['file'],report['render_readiness'],locate=label=='initial',timeout_seconds=left(5))
+            lambda value:output/value['file'],report['render_readiness'],locate=label=='initial',timeout_seconds=left(5),locator=suite.locate if suite is not None else None)
         # Preserve each unsuccessful capture separately, then retain a stable
         # stage-named alias for independent pixel pairing and panel replay.
         shutil.copyfile(output/pixels['file'],output/(label+'.png'))
@@ -405,9 +435,10 @@ def run(args, data, driver, baseline):
         cancellation = Gio.Cancellable()
         timer = threading.Timer(left(3), cancellation.cancel); timer.daemon = True; timer.start()
         try:
-            conn = Gio.DBusConnection.new_for_address_sync(match[1], Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION, None, cancellation)
+            conn, bus_peer = frozen_probe.connect_owned_bus(Gio, match[1], runtime / 'ibus-bus', baseline, task_owner, ibus.pid, str(Path(prefix / 'usr/bin/ibus-daemon').resolve()), cancellation)
         finally:
             timer.cancel()
+        if bus_peer is not None: frozen_probe.record_peer(report, 'ibus-unix-peer', bus_peer)
         conn.call_sync('org.freedesktop.IBus', '/org/freedesktop/IBus', 'org.freedesktop.IBus', 'SetGlobalEngine', GLib.Variant('(s)', ('mozc-jp',)), GLib.VariantType.new('()'), Gio.DBusCallFlags.NONE, int(left()*1000), None)
         description = IBus.Serializable.deserialize_object(conn.call_sync('org.freedesktop.IBus', '/org/freedesktop/IBus', 'org.freedesktop.IBus', 'GetGlobalEngine', None, None, Gio.DBusCallFlags.NONE, int(left()*1000), None).get_child_value(0).get_variant())
         if description.get_name() != 'mozc-jp':
@@ -428,84 +459,92 @@ def run(args, data, driver, baseline):
             return all(re.search(r'\.bind\(\d+, "' + name + r'", 1,', log) for name in ('zwp_input_method_v1', 'zwp_input_panel_v1'))
         wait(ibus_bind_ready, 'privileged compositor-launched IBus v1 bindings')
         ui_pid = int((output / 'ibus-wayland.pid').read_text().strip())
-        ui_identity = baseline.stat_identity(ui_pid)
+        ui_identity = frozen_probe.run_peer_identity(baseline, task_owner, ui_pid, str(prefix / 'usr/libexec/ibus-ui-gtk3'))
+        frozen_probe.record_peer(report, 'ibus-wayland', ui_identity)
         if ui_identity['exe'] != str(prefix / 'usr/libexec/ibus-ui-gtk3') or ui_identity['uid'] != os.getuid():
             raise RuntimeError('IBus Wayland exec identity mismatch')
         report['ibus_wayland_process'] = ui_identity
         client_env = {'WAYLAND_DISPLAY': 'gpui-ime-v1', 'XDG_SESSION_TYPE': 'wayland', 'WAYLAND_DEBUG': 'client'}
         client_env.update(GPUI_FIELD_WAYLAND_IME='1', GPUI_FIELD_E2E_STATE='1')
+        if suite is not None: client_env['GPUI_COMMAND_PALETTE']='1'
         gpui = launch([data['gpui_app']], 'gpui', client_env)
-        initial = expect('initial', committed='Hello 日本', preview='Hello 日本', focused=False,
-            composing=False, commits=0, can_undo=False, can_redo=False)
-        if initial['selection'] != {'anchor':0,'head':0}:
-            raise RuntimeError('unexpected initial selection')
-        x.focus(window)
-        click = gpui_click_from_pixels(output / 'initial.png'); report['focus_click'] = click
-        click_field('focus-field')
-        focused = expect('focused', focused=True, entered=True, committed='Hello 日本', composing=False)
-        wait(lambda: evidence.native_context_ready(read_log(output / 'ibus-dbus.log')) and
-            re.search(r'zwp_input_method_context_v1(?:#|@)\d+\.grab_keyboard\(', read_log(output / 'ibus-wayland.log')),
-            'GPUI native IBus FocusIn and keyboard grab')
-        report['runtime_bind_verified'] = True
-        chord('a','select-all')
-        expect('selected', entered=True, focused=True, selection={'anchor':0,'head':8}, committed='Hello 日本', composing=False)
-        for name in 'nihonn': key(name,'roman-preedit')
-        expect('kana-preedit', committed='Hello 日本', preview='にほん', composing=True,
-            marked={'start':0,'end':3}, commits=0)
-        for name in ('space','space','Up'): key(name,'conversion')
-        expect('conversion', committed='Hello 日本', preview='日本', composing=True, commits=0)
-        key('Return','commit')
-        committed = expect('committed', committed='日本', preview='日本', composing=False,
-            marked=None, selection={'anchor':2,'head':2}, commits=1, can_undo=True, can_redo=False)
-        report['conversion_verified'] = True
-        chord('z','undo')
-        expect('undone', entered=True, focused=True, committed='Hello 日本', preview='Hello 日本', composing=False,
-            selection={'anchor':0,'head':8}, commits=1, can_undo=False, can_redo=True)
-        chord('z','redo',('Control_L','Shift_L'))
-        expect('redone', entered=True, focused=True, committed='日本', preview='日本', composing=False,
-            selection={'anchor':2,'head':2}, commits=1, can_undo=True, can_redo=False)
-        report['history_verified'] = True
-        for name in 'nihonn': key(name,'cancel-preedit')
-        expect('cancel-preedit', committed='日本', preview='日本にほん', composing=True, commits=1)
-        key('space','cancel-convert')
-        expect('cancel-conversion', committed='日本', preview='日本日本', composing=True, commits=1)
-        key('Escape','cancel-revert')
-        expect('cancel-reverted', committed='日本', preview='日本にほん', composing=True, commits=1)
-        key('Escape','cancel-clear')
-        expect('cancelled', committed='日本', preview='日本', composing=False, marked=None,
-            selection={'anchor':2,'head':2}, commits=1)
-        report['cancel_verified'] = True
-        for name in 'nihonn': key(name,'blur-preedit')
-        before_blur = expect('blur-preedit', committed='日本', preview='日本にほん', composing=True, commits=1)
-        x.focus(x.away_window()); log_event({'stage':'blur','type':'focus','target':'private-decoy'})
-        expect('blurred', committed='日本', preview='日本', focused=False, composing=False,
-            entered=False, epoch=0, commits=1)
-        x.focus(window); click_field('refocus-field')
-        refocused = expect('refocused', committed='日本', preview='日本', selection={'anchor':2,'head':2}, focused=True,
-            composing=False, entered=True, commits=1)
-        if refocused['epoch'] <= before_blur['epoch']:
-            raise RuntimeError('refocus did not establish a newer session epoch')
-        # Fresh typing verifies stale engine composition cannot revive on reactivation.
-        key('k','refocus-preedit'); key('a','refocus-preedit')
-        expect('refocus-preedit', committed='日本', preview='日本か', composing=True, commits=1)
-        key('Escape','refocus-cancel')
-        expect('final', committed='日本', preview='日本', composing=False, marked=None,
-            focused=True, entered=True, selection={'anchor':2,'head':2}, commits=1)
-        report['blur_refocus_verified'] = True
+        if suite is not None:
+            suite.exercise(expect,key,chord,click_field,x,window,current_gpui,output,report,wait,click,log_event)
+        else:
+            initial = expect('initial', committed='Hello 日本', preview='Hello 日本', focused=False,
+                composing=False, commits=0, can_undo=False, can_redo=False)
+            if initial['selection'] != {'anchor':0,'head':0}:
+                raise RuntimeError('unexpected initial selection')
+            x.focus(window)
+            click = gpui_click_from_pixels(output / 'initial.png'); report['focus_click'] = click
+            click_field('focus-field')
+            focused = expect('focused', focused=True, entered=True, committed='Hello 日本', composing=False)
+            wait(lambda: evidence.native_context_ready(read_log(output / 'ibus-dbus.log')) and
+                re.search(r'zwp_input_method_context_v1(?:#|@)\d+\.grab_keyboard\(', read_log(output / 'ibus-wayland.log')),
+                'GPUI native IBus FocusIn and keyboard grab')
+            report['runtime_bind_verified'] = True
+            chord('a','select-all')
+            expect('selected', entered=True, focused=True, selection={'anchor':0,'head':8}, committed='Hello 日本', composing=False)
+            for name in 'nihonn': key(name,'roman-preedit')
+            expect('kana-preedit', committed='Hello 日本', preview='にほん', composing=True,
+                marked={'start':0,'end':3}, commits=0)
+            for name in ('space','space','Up'): key(name,'conversion')
+            expect('conversion', committed='Hello 日本', preview='日本', composing=True, commits=0)
+            key('Return','commit')
+            committed = expect('committed', committed='日本', preview='日本', composing=False,
+                marked=None, selection={'anchor':2,'head':2}, commits=1, can_undo=True, can_redo=False)
+            report['conversion_verified'] = True
+            chord('z','undo')
+            expect('undone', entered=True, focused=True, committed='Hello 日本', preview='Hello 日本', composing=False,
+                selection={'anchor':0,'head':8}, commits=1, can_undo=False, can_redo=True)
+            chord('z','redo',('Control_L','Shift_L'))
+            expect('redone', entered=True, focused=True, committed='日本', preview='日本', composing=False,
+                selection={'anchor':2,'head':2}, commits=1, can_undo=True, can_redo=False)
+            report['history_verified'] = True
+            for name in 'nihonn': key(name,'cancel-preedit')
+            expect('cancel-preedit', committed='日本', preview='日本にほん', composing=True, commits=1)
+            key('space','cancel-convert')
+            expect('cancel-conversion', committed='日本', preview='日本日本', composing=True, commits=1)
+            key('Escape','cancel-revert')
+            expect('cancel-reverted', committed='日本', preview='日本にほん', composing=True, commits=1)
+            key('Escape','cancel-clear')
+            expect('cancelled', committed='日本', preview='日本', composing=False, marked=None,
+                selection={'anchor':2,'head':2}, commits=1)
+            report['cancel_verified'] = True
+            for name in 'nihonn': key(name,'blur-preedit')
+            before_blur = expect('blur-preedit', committed='日本', preview='日本にほん', composing=True, commits=1)
+            x.focus(x.away_window()); log_event({'stage':'blur','type':'focus','target':'private-decoy'})
+            expect('blurred', committed='日本', preview='日本', focused=False, composing=False,
+                entered=False, epoch=0, commits=1)
+            x.focus(window); click_field('refocus-field')
+            refocused = expect('refocused', committed='日本', preview='日本', selection={'anchor':2,'head':2}, focused=True,
+                composing=False, entered=True, commits=1)
+            if refocused['epoch'] <= before_blur['epoch']:
+                raise RuntimeError('refocus did not establish a newer session epoch')
+            # Fresh typing verifies stale engine composition cannot revive on reactivation.
+            key('k','refocus-preedit'); key('a','refocus-preedit')
+            expect('refocus-preedit', committed='日本', preview='日本か', composing=True, commits=1)
+            key('Escape','refocus-cancel')
+            expect('final', committed='日本', preview='日本', composing=False, marked=None,
+                focused=True, entered=True, selection={'anchor':2,'head':2}, commits=1)
+            report['blur_refocus_verified'] = True
         if 'GPUI_IME_REJECT' in current_gpui():
             raise RuntimeError('GPUI rejected genuine IME output')
-        before_audit = baseline.stat_identity(ui_pid)
+        before_audit = frozen_probe.run_peer_identity(baseline, task_owner, ui_pid, ui_identity['exe'])
         if (before_audit['starttime'], before_audit['exe']) != (ui_identity['starttime'], ui_identity['exe']):
             raise RuntimeError('owned IBus Wayland identity changed before audit')
         for name in ('ibus-wayland','ibus-dbus','gpui'):
             shutil.copyfile(output / (name + '.log'), output / (name + '-snapshot.log'))
         write_json(output/'render-readiness.json',report['render_readiness'])
         report['evidence_inputs'] = {name:sha(output/name) for name in gpui_evidence.INPUT_FILES}
-        report['transport_evidence'] = gpui_evidence.qualify(output,report,data)
+        if task_owner is not None: report['evidence_inputs']['task-owner.snapshot.json'] = sha(output / 'task-owner.snapshot.json')
+        if task_owner is not None: baseline.validate_task_owner_receipt(output, report, require_cleanup=False)
+        if suite is not None: report['evidence_inputs']['palette-suite.snapshot.py']=sha(output/'palette-suite.snapshot.py')
+        report['transport_evidence'] = suite.qualify(output,report,data) if suite is not None else gpui_evidence.qualify(output,report,data)
         write_json(output/'transport-evidence.json',report['transport_evidence'])
         report['gpui_ime_verified'] = True
-        report['panel'] = gpui_evidence.panel_evidence(output,report)
-        report['full_suite_verified'] = args.held_shortcuts and report['panel']['pixel_show_verified'] and report['panel']['pixel_hide_verified']
+        report['panel'] = {'status':'UNRUN','scope':'candidate window contents/highlight excluded'} if suite is not None else gpui_evidence.panel_evidence(output,report)
+        report['full_suite_verified'] = report.get('palette_flow_verified') is True if suite is not None else args.held_shortcuts and report['panel']['pixel_show_verified'] and report['panel']['pixel_hide_verified']
         report['status'] = 'passed' if report['full_suite_verified'] else 'qualified-partial'
     except Exception as error:
         report['error'] = str(error)
@@ -514,38 +553,30 @@ def run(args, data, driver, baseline):
             source=output/(name+'.log'); target=output/(name+'-snapshot.log')
             if source.exists() and not target.exists(): shutil.copyfile(source,target)
     finally:
-        if x:
-            for name in reversed(pressed):
-                try: x.key(name, False)
-                except Exception: pass
-            x.close()
-        errors, terminated = [], []
-        for child, identity in reversed(processes):
-            try: stop(child, identity)
-            except ProcessLookupError: pass
-            except Exception as error: errors.append(str(error))
-        for sig in (signal.SIGTERM, signal.SIGKILL):
-            for identity in baseline.private_processes(token, home, config):
-                try:
-                    fd = os.pidfd_open(identity['pid'])
-                    try:
-                        now = baseline.stat_identity(identity['pid'])
-                        if (now['starttime'], now['exe']) != (identity['starttime'], identity['exe']):
-                            raise RuntimeError('private-profile PID identity changed')
-                        signal.pidfd_send_signal(fd, sig); terminated.append(dict(identity, signal=int(sig)))
-                    finally: os.close(fd)
-                except ProcessLookupError: pass
-                except Exception as error: errors.append(str(error))
-            end = time.monotonic() + .5
-            while time.monotonic() < end and baseline.private_processes(token, home, config): time.sleep(.02)
-        survivors = baseline.private_processes(token, home, config)
-        report['cleanup'] = {'verified': not survivors and not errors, 'survivors': survivors, 'errors': errors, 'private_profile_terminated': terminated, 'pidfd_signals_only': True, 'no_name_based_kill': True}
-        if survivors or errors:
-            report['status'] = 'error'; report['cleanup_blocker'] = 'runtime retained because owned cleanup was not verified'
-        else:
-            shutil.rmtree(runtime)
-        for stream in streams: stream.close()
-        events.close()
+        try:
+            report['cleanup'] = cleanup_owned_native(x, pressed, processes, stop,
+                baseline, token, home, config, runtime, task_owner)
+        except Exception as error:
+            report['cleanup'] = {'verified': False, 'scan_complete': False,
+                'survivors': None, 'errors': ['unexpected-cleanup: ' + repr(error)],
+                'private_profile_terminated': [], 'pidfd_signals_only': True,
+                'no_name_based_kill': True, 'runtime_removed': False}
+        for stream in (*streams, events):
+            try: stream.close()
+            except Exception as error:
+                report['cleanup']['errors'].append('stream-close: ' + repr(error))
+                report['cleanup']['verified'] = False
+        if not report['cleanup']['verified']:
+            report['status'] = 'error'; report['cleanup_blocker'] = 'owned cleanup was not verified; inspect runtime and diagnostics'
+        if task_owner is not None and report['cleanup']['verified']:
+            try:
+                report['owner_receipt_validation'] = baseline.validate_task_owner_receipt(output, report)
+                shutil.rmtree(runtime)
+                report['cleanup']['runtime_removed'] = True
+            except Exception as error:
+                report['cleanup']['verified'] = False
+                report['cleanup']['errors'].append('owner-receipt-validation: ' + repr(error))
+                report['status'] = 'error'
         report['elapsed_seconds'] = round(time.monotonic() - started, 3)
         report['probe_sha256'] = sha(__file__)
         if not (output/'render-readiness.json').exists():write_json(output/'render-readiness.json',report['render_readiness'])
@@ -559,16 +590,27 @@ def main(argv=None):
     mode.add_argument('--check', action='store_true'); mode.add_argument('--run-native', action='store_true')
     parser.add_argument('--deployment', type=Path, required=True)
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--diagnostic-log', type=Path)
+    parser.add_argument('--palette', action='store_true', help='qualify the reusable command-palette flow with the shared native harness')
     parser.add_argument('--held-shortcuts', action='store_true', help='hold Ctrl+A/undo/redo for 100ms; required regression tier')
     parser.add_argument('--timeout-seconds', type=int, default=60, choices=range(30, 91))
     args = parser.parse_args(argv)
     data, driver, baseline = preflight(args.deployment,current=True)
     if args.check:
+        if args.diagnostic_log is not None: parser.error('--check cannot write a diagnostic log')
         print(json.dumps({'pins': data['pins'], 'native_executed': False, 'gpui_ime_verified': False, 'candidate': data['overlay']['candidate'], 'candidate_verification': data['candidate_verification']}, indent=2)); return 0
     if args.output is None:
         parser.error('--run-native needs --output')
+    if args.diagnostic_log is not None:
+        # The diagnostic file also belongs to this newly captured native owner.
+        if frozen_probe.capture_run_owner(data, baseline) is None:
+            parser.error('owned diagnostics require the new recovery owner model')
+        capture_launcher_diagnostics(args.diagnostic_log, args.output, data['output_root'])
     if os.environ.get('LD_LIBRARY_PATH', '').split(':')[0] != str(Path(data['prefix']) / 'usr/lib/x86_64-linux-gnu'):
         parser.error('native Python startup requires the locked prefix library path')
+    if args.palette:
+        import palette_suite
+        return run(args,data,driver,baseline,palette_suite)
     return run(args, data, driver, baseline)
 
 

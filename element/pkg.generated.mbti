@@ -101,6 +101,7 @@ pub enum ElementError {
   InvalidPreorder
   UnknownElement
   NotFocusable
+  FocusIdentityExhausted
   RootRequired
   InvalidChildRoot
   MissingLayoutItem
@@ -140,14 +141,17 @@ pub fn ElementTree::dispatch_input(Self, @primitives.InputEvent) -> DispatchPlan
 pub fn ElementTree::dispatch_input_with(Self, @primitives.InputEvent, (DispatchContext, @primitives.InputEvent) -> Result[Unit, ElementError]) -> Result[DispatchOutcome, ElementError]
 pub fn ElementTree::dispatch_pointer(Self, @primitives.Point) -> DispatchPlan
 pub fn ElementTree::dispatch_pointer_with(Self, @primitives.Point, (DispatchContext) -> Result[Unit, ElementError]) -> Result[DispatchOutcome, ElementError]
+pub fn ElementTree::focus_owner(Self) -> FocusOwner?
 pub fn ElementTree::focused(Self) -> UInt64?
 pub fn ElementTree::hit_test(Self, @primitives.Point) -> UInt64?
 pub fn ElementTree::new(Array[ElementNode]) -> Result[Self, ElementError]
 pub fn ElementTree::node(Self, UInt64) -> ElementNode?
 pub fn ElementTree::nodes(Self) -> Array[ElementNode]
 pub fn ElementTree::path_to_root(Self, UInt64) -> Result[Array[UInt64], ElementError]
+pub fn ElementTree::restore_focus(Self, FocusOwner?, FocusOwner) -> Self
 pub fn ElementTree::to_scene(Self) -> @scene.Scene
 pub fn ElementTree::with_focus(Self, UInt64) -> Result[Self, ElementError]
+pub fn ElementTree::with_focus_owner(Self, FocusOwner) -> Result[Self, ElementError]
 pub fn ElementTree::without_subtree(Self, UInt64) -> Result[Self, ElementError]
 
 pub(all) enum EventPhase {
@@ -156,6 +160,13 @@ pub(all) enum EventPhase {
 } derive(Eq)
 pub fn EventPhase::equal(Self, Self) -> Bool
 pub fn EventPhase::not_equal(Self, Self) -> Bool
+
+pub struct FocusOwner {
+  // private fields
+} derive(Eq)
+pub fn FocusOwner::equal(Self, Self) -> Bool
+pub fn FocusOwner::id(Self) -> UInt64
+pub fn FocusOwner::not_equal(Self, Self) -> Bool
 
 pub struct Prepainted {
   tree : ElementTree

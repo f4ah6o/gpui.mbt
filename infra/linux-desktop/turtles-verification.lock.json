@@ -21,8 +21,8 @@
   "turtles_tree": "2693674efc52cf05da69fd474eb20ac0130bc4ff",
   "repository": "https://github.com/gpui-mbt/turtles.mbt",
   "source_mapping": "Published commit metadata differs; all104treeblobs/modes and adapterbytes equal independently reviewed localfd397e6.",
-  "native_environment_provider_sha256": "3c0df9d447f679a72b9f9fd01c11ef2e4ed0717e7d8156368a5dc20f583fb847",
+  "native_environment_provider_sha256": "cd343f989f89896f20646a3e2cc27d4198b41b08a16fb70529d2ff86c68fd3ef",
   "native_profile_lock_sha256": "81b05b4f473617d03c8b11980b7e884863fdd181f040f96482a1a6f915abf503",
   "portable_environment_policy": "verified-profile-ffi-flags-v1",
-  "native_environment_dependency_sha256": "cc1e9976380a1b0d4ff7fc6d505387249124e910b46ea7c380134c8f6f9115fe"
+  "native_environment_dependency_sha256": "21dcc2b2e7ce74f00623bef63e55dfd43baacae8c67f50f80f8d1ff6b9ae6cbf"
 }

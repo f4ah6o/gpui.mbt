@@ -100,7 +100,10 @@ class GpuiProbeTests(unittest.TestCase):
 
     def test_owned_cleanup_and_optin(self):
         s=(HERE/'gpui_probe.py').read_text()
-        for word in ('pidfd_send_signal','private_processes','GPUI_FIELD_WAYLAND_IME','GPUI_FIELD_E2E_STATE','held-shortcuts'): self.assertIn(word,s)
+        shared=(HERE/'probe.py').read_text()
+        self.assertIs(p.cleanup_owned_native,p.frozen_probe.cleanup_owned_native)
+        for word in ('pidfd_send_signal','private_processes'): self.assertIn(word,shared)
+        for word in ('GPUI_FIELD_WAYLAND_IME','GPUI_FIELD_E2E_STATE','held-shortcuts'): self.assertIn(word,s)
         for word in ('killall','pkill','weston-editor'): self.assertNotIn(word,s)
 
     def test_observer_schema(self): self.assertEqual(e.presented_states(line(state())),[state()])

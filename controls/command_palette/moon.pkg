@@ -1,0 +1,15 @@
+import {
+  "moonbitlang/core/int",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/text",
+  "f4ah6o/gpui/text_layout",
+  "f4ah6o/gpui/controls/text_field",
+  "f4ah6o/gpui/element",
+  "f4ah6o/gpui/capability",
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/scene",
+}
+
+import {
+  "moonbitlang/core/quickcheck",
+} for "wbtest"

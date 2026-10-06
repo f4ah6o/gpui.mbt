@@ -27,6 +27,13 @@ that Nix cannot address that path contract.
 
 ## Recover after a reset
 
+The base bootstrap below restores the package/toolchain SDK. Complete native
+IME recovery additionally needs a fresh relocated Mozc build and the new
+[self-contained recovery closure](wayland-ime/recovery/README.md). That separate
+constructor includes the formerly private helper APIs as reviewed source and
+writes a new explicitly unqualified deployment; historical native pins and
+qualification records remain unchanged.
+
 Run from a new checkout, keeping installation/state outside the repository:
 
 ```sh

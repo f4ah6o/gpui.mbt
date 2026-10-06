@@ -18,6 +18,7 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 
+sys.dont_write_bytecode = True
 import build_manifest
 
 HERE = Path(__file__).resolve().parent
@@ -87,6 +88,8 @@ def native_environment(root):
     prefix = root / "prefix"
     lib = prefix / "usr/lib" / TRIPLET
     env = os.environ.copy()
+    # Keep archive-installed prefix bytes stable across diagnostics/native runs.
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     def prepend(key, value):
         env[key] = str(value) + (":" + env[key] if env.get(key) else "")
     env["GPUI_DESKTOP_ROOT"] = str(root)
