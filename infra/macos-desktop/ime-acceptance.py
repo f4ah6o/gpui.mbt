@@ -28,10 +28,19 @@ MAX_CAPTURE_BYTES = 64 * 1024 * 1024
 MAX_DECODED_BYTES = 64 * 1024 * 1024
 FRAME_IDENTITY_FIELDS = {"schema_version", "window_id", "host_epoch", "session_epoch", "batch_sequence",
                          "accepted_revision", "frame_revision", "frame_sha256", "text"}
+KOTOERI_JAPANESE_ROMAJI_SOURCE_IDS = frozenset({
+    # AppKit reports the active Hiragana mode as an input-source ID, not the
+    # containing RomajiTyping input-method bundle ID.
+    "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
+})
 
 
 class AcceptanceError(RuntimeError):
     pass
+
+
+def is_supported_kotoeri_japanese_romaji_source(value):
+    return type(value) is str and value in KOTOERI_JAPANESE_ROMAJI_SOURCE_IDS
 
 
 def digest(path):
@@ -408,10 +417,12 @@ def validate_window_geometry(value, context):
 
 def validate_initial_window(checkpoint, state, identity):
     geometry = validate_window_geometry(checkpoint.get("window_geometry"), "initial-ready")
+    checkpoint_source = checkpoint.get("input_source")
     if geometry["window_key"] is not True or geometry["app_key_matches"] is not True or \
        geometry["first_responder_is_content_view"] is not True or geometry["window_visible"] is not True or \
        geometry["session_active"] is not True or geometry["direct_text"] is not False or \
-       geometry["selected_input_source"] != "com.apple.inputmethod.Kotoeri.RomajiTyping" or \
+       not is_supported_kotoeri_japanese_romaji_source(checkpoint_source) or \
+       geometry["selected_input_source"] != checkpoint_source or \
        geometry["window_id"] != identity["window_id"] or geometry["host_epoch"] != identity["host_epoch"] or \
        geometry["session_epoch"] != identity["session_epoch"] or \
        geometry["content_size"]["width"] + 1 < state["field_bounds"]["x"] + state["field_bounds"]["width"] or \
@@ -503,7 +514,7 @@ def validate_final(record, source, binary_sha, initial_revision=None, initial_fr
        type(record.get("commit_count")) is not int or type(record.get("commit_callbacks")) is not int or \
        type(record.get("cancel_callbacks")) is not int or record.get("cancel_callbacks", 0) < 1 or \
        any(record.get(key) != value for key, value in expected.items() if key != "input_source") or \
-       not isinstance(record.get("input_source"), str) or "Kotoeri" not in record["input_source"] or \
+       not is_supported_kotoeri_japanese_romaji_source(record.get("input_source")) or \
        type(record.get("preedit_callbacks")) is not int or record["preedit_callbacks"] < 1 or \
        type(record.get("window_id")) is not int or record["window_id"] <= 0 or \
        type(record.get("host_epoch")) is not int or record["host_epoch"] <= 0 or \
@@ -832,7 +843,10 @@ def validate_summary(path, repo=REPO, expected_source=None):
     composition_identity = composition.get("frame_identity")
     validate_frame_identity(composition_identity, "composition checkpoint frame")
     geometry = validate_initial_window(initial_checkpoint, initial, initial_identity)
-    if not isinstance(initial_checkpoint.get("input_source"), str) or "Kotoeri" not in initial_checkpoint["input_source"] or \
+    if not is_supported_kotoeri_japanese_romaji_source(initial_checkpoint.get("input_source")) or \
+       report.get("input_source") != initial_checkpoint.get("input_source") or \
+       composition.get("input_source") != initial_checkpoint.get("input_source") or \
+       final.get("input_source") != initial_checkpoint.get("input_source") or \
        initial_checkpoint.get("text") != "Hello " or initial_checkpoint.get("session_epoch") != initial["session_epoch"] or \
        initial_checkpoint.get("field_revision") != initial["revision"] or \
        type(initial_identity) is not dict or set(initial_identity) != {"schema_version", "window_id", "host_epoch",
@@ -1104,9 +1118,8 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
         initial_state = app.wait_line("GPUI_FIELD_MACOS_STATE ", timeout)
         initial_ready = app.wait_line("GPUI_MACOS_IME_CHECKPOINT ", timeout)
         initial_ready = validate_checkpoint(initial_ready, "initial-ready", before, binary_sha)
-        if not isinstance(initial_ready.get("input_source"), str) or \
-           "Kotoeri" not in initial_ready["input_source"]:
-            raise AcceptanceError("initial checkpoint did not prove selected Kotoeri input source")
+        if not is_supported_kotoeri_japanese_romaji_source(initial_ready.get("input_source")):
+            raise AcceptanceError("initial checkpoint did not prove a supported Kotoeri Japanese Romaji mode")
         validate_state(initial_state, before, binary_sha, initial=True)
         initial_identity = initial_ready.get("frame_identity")
         validate_frame_identity(initial_identity, "initial checkpoint frame")

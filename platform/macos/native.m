@@ -1501,6 +1501,34 @@ static int pump_native_event(double timeout_ms) {
   if (overflow) { overflow=NO; return 13; }
   return 0;
 }
+#ifdef GPUI_TESTING
+static BOOL testing_select_input_source(GPWindow *w, NSString *target) {
+  GPView *view = w ? (GPView *)w.window.contentView : nil;
+  NSTextInputContext *context = view.inputContext;
+  NSArray<NSString *> *sources = context.keyboardInputSources;
+  if (!context || ![sources containsObject:target]) return NO;
+  if (!w.testingInputSourceSaved) {
+    w.testingOriginalInputSource = [context.selectedKeyboardInputSource copy];
+    w.testingInputSourceSaved = YES;
+  }
+  context.selectedKeyboardInputSource = target;
+  if ([context.selectedKeyboardInputSource isEqualToString:target]) return YES;
+
+  // A source bundle identifier may be listed by AppKit but rejected as a
+  // selected source when the input method exposes explicit mode identifiers.
+  // Restore the exact per-context selection before reporting failure. Keep the
+  // saved state if that restoration cannot be verified so teardown can retry.
+  NSString *original = w.testingOriginalInputSource;
+  context.selectedKeyboardInputSource = original;
+  BOOL restored = original ? [context.selectedKeyboardInputSource isEqualToString:original] :
+    context.selectedKeyboardInputSource == nil;
+  if (restored) {
+    w.testingOriginalInputSource = nil;
+    w.testingInputSourceSaved = NO;
+  }
+  return NO;
+}
+#endif
 static int32_t native_call(int32_t op, int64_t token, double x, double y, const uint8_t *bytes, int32_t len) {
   if (![NSThread isMainThread]) return 18;
   if (len < 0 || len > 16*1024*1024 || (len && !bytes)) return 5;
@@ -1720,15 +1748,8 @@ static int32_t native_call(int32_t op, int64_t token, double x, double y, const 
       }
       case 31: {
         if (!key_window_owns_view(w)) return 12;
-        GPView *view = (GPView *)w.window.contentView;
-        NSString *target = @"com.apple.inputmethod.Kotoeri.RomajiTyping";
-        if (![view.inputContext.keyboardInputSources containsObject:target]) return 9;
-        if (!w.testingInputSourceSaved) {
-          w.testingOriginalInputSource = [view.inputContext.selectedKeyboardInputSource copy];
-          w.testingInputSourceSaved = YES;
-        }
-        view.inputContext.selectedKeyboardInputSource = target;
-        return [view.inputContext.selectedKeyboardInputSource isEqualToString:target] ? 0 : 9;
+        NSString *target = @"com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese";
+        return testing_select_input_source(w, target) ? 0 : 9;
       }
       case 32: {
         if (!w.testingInputSourceSaved) return 0;

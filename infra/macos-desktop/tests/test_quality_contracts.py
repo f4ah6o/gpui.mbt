@@ -35,6 +35,7 @@ verification = load("test_macos_verification", "turtles-verification.py")
 def valid_final():
     source = {"commit": "a" * 40, "tree": "b" * 40}
     binary = "c" * 64
+    input_source = "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"
     host, initial_epoch = 11, 7
     batches = []
     for index, (sequence, counts) in enumerate(zip((4, 7, 9), ((1, 0, 0), (0, 1, 0), (0, 0, 1))), 1):
@@ -60,7 +61,7 @@ def valid_final():
                       "frame_revision": 40, "frame_sha256": "d" * 64, "text": "Hello 日本語"}
     report = {"schema_version": 1, "window_id": 3, "host_epoch": host,
               "session_epoch": initial_epoch, "final_session_epoch": 0,
-              "input_source": "Kotoeri", "preedit_callbacks": 1, "commit_callbacks": 1,
+              "input_source": input_source, "preedit_callbacks": 1, "commit_callbacks": 1,
               "cancel_callbacks": 1, "committed_text": "Hello 日本語", "composing": False,
               "focused": False, "commit_count": 1, "batches": batches, "receipts": receipts,
               "candidate_screen_rect": {"x": 10, "y": 20, "width": 100, "height": 22},
@@ -83,6 +84,7 @@ def make_png(path, rgba, width=640, height=272):
 
 def successful_ime_summary(directory, repo):
     source = acceptance.source_snapshot(repo)
+    input_source = "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"
     final, _, binary_sha = valid_final()
     app_bundle = directory / "checks/text-field/build/macos/GpuiTextField.app"
     executable = app_bundle / "Contents/MacOS/GpuiTextField"
@@ -115,17 +117,17 @@ def successful_ime_summary(directory, repo):
                        "first_responder_is_content_view": True, "first_responder_class": "GPView",
                        "content_view_class": "GPView", "window_visible": True, "session_active": True,
                        "direct_text": False, "session_epoch": 7,
-                       "selected_input_source": "com.apple.inputmethod.Kotoeri.RomajiTyping",
+                       "selected_input_source": "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
                        "coordinate_space": "top_left_window_points", "content_origin_in_window": {"x": 0, "y": 32},
                        "content_size": {"width": 640, "height": 240},
                        "window_size": {"width": 640, "height": 272}}
-    initial_checkpoint = {"schema_version": 1, "phase": "initial-ready", "input_source": "Kotoeri",
+    initial_checkpoint = {"schema_version": 1, "phase": "initial-ready", "input_source": input_source,
                           "text": "Hello ", "field_revision": 8, "session_epoch": 7,
                           "frame_identity": initial_identity, "source_revision": source["commit"],
                           "source_tree": source["tree"], "binary_sha256": actual_binary,
                           "field_bounds": initial_state["field_bounds"], "window_geometry": window_geometry}
     comp_identity = copy.deepcopy(final["batches"][0]["frame_identity"])
-    composition = {"schema_version": 1, "phase": "composition-ready", "input_source": "Kotoeri",
+    composition = {"schema_version": 1, "phase": "composition-ready", "input_source": input_source,
                    "text": "Hello 日本語", "committed": "Hello ", "field_revision": 12,
                    "session_epoch": 7, "composing": True, "marked": {"start": 6, "end": 9},
                    "caret": {"x": 50, "y": 20, "width": 1, "height": 20},
@@ -201,7 +203,8 @@ def successful_ime_summary(directory, repo):
                     "engine": "ScreenCaptureKit.SCScreenshotManager",
                     "helper_source_sha256": hashlib.sha256(helper_source.read_bytes()).hexdigest()},
             "initial_state": initial_state, "initial_checkpoint": initial_checkpoint,
-            "input_source": "Kotoeri", "composition_checkpoint": composition,
+            "input_source": input_source,
+            "composition_checkpoint": composition,
             "final_acceptance": final, "screenshots": screenshots, "pixel_differences": differences,
             "text_roi_differences": text_differences,
             "screenshots_index": index_path.name, "screenshots_index_sha256": hashlib.sha256(index_path.read_bytes()).hexdigest()}
@@ -310,6 +313,17 @@ class ActrunInventoryTests(unittest.TestCase):
 
 
 class ImeEvidenceTests(unittest.TestCase):
+    def test_japanese_romaji_source_allowlist_rejects_bundle_parent_and_other_modes(self):
+        expected = "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"
+        self.assertEqual(acceptance.KOTOERI_JAPANESE_ROMAJI_SOURCE_IDS, frozenset({expected}))
+        self.assertTrue(acceptance.is_supported_kotoeri_japanese_romaji_source(expected))
+        for source in ("Kotoeri", "com.apple.inputmethod.Kotoeri.RomajiTyping",
+                       "com.apple.inputmethod.Kotoeri.RomajiTyping.Roman",
+                       "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese.Katakana",
+                       "com.apple.inputmethod.Kotoeri.Japanese"):
+            with self.subTest(source=source):
+                self.assertFalse(acceptance.is_supported_kotoeri_japanese_romaji_source(source))
+
     def test_abort_acknowledgement_binds_restoration_and_session_epochs(self):
         receipt = {"schema_version": 1, "restored": True, "session_closed": True,
                    "host_epoch": 11, "session_epoch": 7}
@@ -423,6 +437,14 @@ class ImeEvidenceTests(unittest.TestCase):
             cases = [
                 lambda value: value["source_before"].update(commit="e" * 40),
                 lambda value: value["initial_checkpoint"].update(phase="missing"),
+                lambda value: value.update(input_source="Kotoeri"),
+                lambda value: value["initial_checkpoint"].update(input_source="Kotoeri"),
+                lambda value: value["initial_checkpoint"]["window_geometry"].update(
+                    selected_input_source="com.apple.inputmethod.Kotoeri.RomajiTyping"),
+                lambda value: value["composition_checkpoint"].update(
+                    input_source="com.apple.inputmethod.Kotoeri.RomajiTyping.Roman"),
+                lambda value: value["final_acceptance"].update(
+                    input_source="com.apple.inputmethod.Kotoeri.RomajiTyping.Roman"),
                 lambda value: value["final_acceptance"].update(binary_sha256="f" * 64),
                 lambda value: value["initial_checkpoint"]["window_geometry"].update(native_window_id=100),
                 lambda value: value["screenshots"]["initial"]["window_geometry"].update(app_key_matches=False),

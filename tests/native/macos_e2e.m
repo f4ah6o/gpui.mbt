@@ -15,6 +15,45 @@ static void drain(void) {
   for(int i=0;i<256;i++) { assert(call_op(6,0,0,0,nil)==0); if (!api->integer(1)) return; }
   assert(!"event queue did not drain");
 }
+static BOOL same_nullable_string(NSString *left, NSString *right) {
+  return left == right || [left isEqualToString:right];
+}
+static void test_input_source_selection(GPWindow *w) {
+  GPView *view = (GPView *)w.window.contentView;
+  NSTextInputContext *context = view.inputContext;
+  NSString *original = [context.selectedKeyboardInputSource copy];
+  NSString *hiragana = @"com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese";
+  NSString *romaji_bundle = @"com.apple.inputmethod.Kotoeri.RomajiTyping";
+
+  assert(!testing_select_input_source(w, @"org.gpui.missing.input-source"));
+  assert(same_nullable_string(context.selectedKeyboardInputSource, original));
+  assert(!w.testingInputSourceSaved && !w.testingOriginalInputSource);
+
+  if ([context.keyboardInputSources containsObject:hiragana]) {
+    assert(testing_select_input_source(w, hiragana));
+    assert([context.selectedKeyboardInputSource isEqualToString:hiragana]);
+    assert(w.testingInputSourceSaved);
+    assert(call_op(32, w.token, 0, 0, nil) == 0);
+    assert(same_nullable_string(context.selectedKeyboardInputSource, original));
+    assert(!w.testingInputSourceSaved && !w.testingOriginalInputSource);
+  }
+
+  // The method's bundle identifier can be advertised but rejected as a
+  // selected mode. Such a failed assignment must restore the exact previous
+  // source, and keep retry state only when restoration itself fails.
+  if ([context.keyboardInputSources containsObject:romaji_bundle]) {
+    BOOL selected = testing_select_input_source(w, romaji_bundle);
+    if (selected) {
+      assert([context.selectedKeyboardInputSource isEqualToString:romaji_bundle]);
+      assert(w.testingInputSourceSaved);
+      assert(call_op(32, w.token, 0, 0, nil) == 0);
+    } else {
+      assert(same_nullable_string(context.selectedKeyboardInputSource, original));
+      assert(!w.testingInputSourceSaved && !w.testingOriginalInputSource);
+    }
+    assert(same_nullable_string(context.selectedKeyboardInputSource, original));
+  }
+}
 static void assert_focus_event_once(GPWindow *w, int expected_kind) {
   int seen = 0;
   BOOL drained = NO;
@@ -374,6 +413,7 @@ static void native_text_session_bounds(GPWindow *w, NSString *snapshot) {
   NSString *focus_session = session_payload(@"ready", 5, 5, 14, 0, 40, 30, NO);
   assert(call_op(19, w.token, 0, 0, focus_session) == 0 && w.sessionActive);
   assert(api->integer(0) > 0);
+  test_input_source_selection(w);
   w.testingOriginalInputSource = [view.inputContext.selectedKeyboardInputSource copy];
   w.testingInputSourceSaved = YES;
   w.testingTextFocusOverride = NO;

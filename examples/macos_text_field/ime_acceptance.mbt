@@ -9,7 +9,6 @@ struct MacImeAcceptance {
   enabled : Bool
   started : Bool
   finished : Bool
-  source_selected : Bool
   source_restored : Bool
   step : Int
   expected_dispatch_id : Int64
@@ -45,7 +44,6 @@ fn mac_acceptance_new(enabled : Bool) -> MacImeAcceptance {
     enabled,
     started: false,
     finished: false,
-    source_selected: false,
     source_restored: false,
     step: -1,
     expected_dispatch_id: 0L,
@@ -106,8 +104,8 @@ fn mac_acceptance_abort(
       }
     None => true
   }
-  let source_restored = if !state.source_selected || state.source_restored {
-    state.source_restored || !state.source_selected
+  let source_restored = if state.source_restored {
+    true
   } else {
     match host.testing_restore_input_source(window) {
       Ok(_) => true
@@ -357,7 +355,6 @@ fn mac_acceptance_start(
         "could not select the enabled Kotoeri source for this app context: \{error.operation()} \{error.code().label()}",
       )
   }
-  let selected_state = { ..session_state, source_selected: true, }
   let source = match host.testing_selected_input_source(window) {
     Ok(value) => value
     Err(error) =>
@@ -365,7 +362,7 @@ fn mac_acceptance_start(
         host,
         window,
         Some(owner),
-        selected_state,
+        session_state,
         "could not query the selected input source: \{error.operation()} \{error.code().label()}",
       )
   }
@@ -374,7 +371,7 @@ fn mac_acceptance_start(
       host,
       window,
       Some(owner),
-      selected_state,
+      session_state,
       "selected input source is not Kotoeri: \{source}",
     )
   }
@@ -385,7 +382,7 @@ fn mac_acceptance_start(
         host,
         window,
         Some(owner),
-        selected_state,
+        session_state,
         "native window geometry unavailable: \{error.operation()} \{error.code().label()}",
       )
   }
@@ -396,7 +393,7 @@ fn mac_acceptance_start(
         host,
         window,
         Some(owner),
-        selected_state,
+        session_state,
         "initial frame identity unavailable: \{error.operation()} \{error.code().label()}",
       )
   }
@@ -413,7 +410,7 @@ fn mac_acceptance_start(
       host,
       window,
       Some(owner),
-      selected_state,
+      session_state,
       "initial accepted frame identity did not match the focused owner",
     )
   }
@@ -429,7 +426,6 @@ fn mac_acceptance_start(
   let ready = {
     ..state,
     started: true,
-    source_selected: true,
     step: -1,
     host_epoch: owner.host_epoch,
     session_epoch: owner.epoch,
