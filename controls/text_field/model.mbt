@@ -13,6 +13,8 @@ pub(all) enum TextFieldError {
   HitTestFailed
   InvalidHitResult
   RevisionExhausted
+  CompositionActive
+  NoComposition
 } derive(Eq)
 
 ///|
@@ -43,6 +45,7 @@ pub struct TextField {
   priv scroll_offset : Double
   priv revision : Int
   priv history : FieldHistory
+  priv composition : FieldComposition?
 }
 
 ///|
@@ -514,6 +517,7 @@ pub fn TextField::new(
     scroll_offset: 0.0,
     revision: 0,
     history: FieldHistory::empty(),
+    composition: None,
   }
   Ok({
     ..provisional,
@@ -689,6 +693,9 @@ pub fn TextField::replace_selection(
   if !self.focused {
     return Ok(self)
   }
+  if self.is_composing() {
+    return Err(CompositionActive)
+  }
   prepare_field_replacement(
     self,
     self.document.selection().normalized_range(),
@@ -753,6 +760,9 @@ pub fn TextField::undo(
   if !self.focused {
     return Ok(self)
   }
+  if self.is_composing() {
+    return Err(CompositionActive)
+  }
   let entry = match self.history.undo_entry() {
     Some(value) => value
     None => return Ok(self)
@@ -782,6 +792,9 @@ pub fn TextField::redo(
   if !self.focused {
     return Ok(self)
   }
+  if self.is_composing() {
+    return Err(CompositionActive)
+  }
   let entry = match self.history.redo_entry() {
     Some(value) => value
     None => return Ok(self)
@@ -795,13 +808,19 @@ pub fn TextField::redo(
 }
 
 ///|
-/// Change logical focus without changing document or selection. Native owners
-/// should arm or disarm their input target before installing this value.
+/// Change logical focus. Focus loss cancels an active composition and restores
+/// its originally admitted document, directional selection and history. Font
+/// style is immutable and bounds changes validate the saved original geometry.
+/// Native owners should disarm their input target before installing a blur.
 pub fn TextField::with_focus(
   self : TextField,
   focused : Bool,
 ) -> Result[TextField, TextFieldError] {
-  field_changed_selection(self, self.document, focused)
+  if focused {
+    field_changed_selection(self, self.document, true)
+  } else {
+    blur_field_composition(self)
+  }
 }
 
 ///|
@@ -823,6 +842,22 @@ pub fn TextField::with_bounds(
     rect_height(content) < self.font_size ||
     rect_height(run_bounds) > rect_height(content) {
     return Err(InvalidBounds)
+  }
+  // A resized composition must keep its original restoration snapshot valid.
+  // Style has no mutating API, and content edits are blocked until resolution.
+  match self.composition {
+    Some(state) =>
+      match
+        validate_field_measurement(
+          state.original,
+          state.measurement,
+          true,
+          rect_height(content),
+        ) {
+        Ok(_) => ()
+        Err(error) => return Err(error)
+      }
+    None => ()
   }
   let revision = match bump_field_revision(self.revision) {
     Ok(value) => value
@@ -1063,6 +1098,16 @@ pub fn TextField::handle_input(
     TextFieldError,
   ],
 ) -> Result[(TextField, TextFieldAction?), TextFieldError] {
+  // Generic input has no composition ownership/commit semantics. Require the
+  // owner to resolve it explicitly before editing or moving a selection.
+  if self.is_composing() {
+    match event {
+      @primitives.TextInput(..)
+      | @primitives.KeyPressed(..)
+      | @primitives.PointerButtonPressed(..) => return Err(CompositionActive)
+      _ => ()
+    }
+  }
   match event {
     @primitives.TextInput(text~) => {
       if !self.focused || text.length() == 0 {
