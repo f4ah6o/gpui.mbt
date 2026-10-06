@@ -15,7 +15,7 @@ sudo apt-get update
 sudo apt-get install -y build-essential pkg-config libwayland-dev wayland-protocols \
   libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri \
   libpango1.0-dev libfontconfig1-dev fonts-dejavu-core fonts-noto-cjk \
-  fonts-noto-color-emoji adwaita-icon-theme weston
+  fonts-noto-color-emoji adwaita-icon-theme weston wayland-utils
 sh scripts/prepare_ubuntu.sh
 moon run examples/ubuntu --target native
 ```
@@ -181,6 +181,14 @@ Run the native gates with:
 ```sh
 sh scripts/test_ubuntu.sh
 ```
+
+The E2E test tooling requires `wayland-utils` (`wayland-info`) in addition to
+Weston and the native build dependencies above. `scripts/wait_wayland_ready.py`
+allows up to 30 monotonic seconds for compositor startup and requires both a
+live child and a successful protocol roundtrip; a socket alone is insufficient.
+Missing probe, process exit, absent socket timeout and failed roundtrip timeout
+are reported separately. This is test tooling, not an application runtime
+dependency.
 
 The runner starts isolated Weston GL headless sessions at integer scales 1 and
 2, runs opt-in MoonBit E2E plus the native executable, and runs a strict-warning

@@ -47,6 +47,8 @@ pub(all) enum Capability {
   QuadFrames
   /// Logical-resolution grayscale glyph masks; no color text, input or IME.
   GrayscaleTextFrames
+  /// Explicitly armed native XKB/Compose commits; no Wayland IME contract.
+  DirectKeyboardText
   FrameScheduling
   PointerKeyboard
   Clipboard

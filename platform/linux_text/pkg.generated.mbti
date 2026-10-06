@@ -8,6 +8,8 @@ import {
 }
 
 // Values
+pub fn admit_scene_text_run(@text.TextDocument, Double, Double, Double) -> Result[Unit, LinuxTextError]
+
 pub fn hit_test(@text.TextDocument, String, Double, @primitives.Point) -> Result[@text_layout.TextHit, LinuxTextError]
 
 pub let max_font_family_bytes : Int
@@ -28,7 +30,9 @@ pub enum LinuxTextError {
   InvalidFontSize
   InvalidCoordinates
   UnsupportedInput
+  UnsupportedColor
   UnsupportedRaster
+  ResourceLimit
   InputTooLarge
   BufferTooSmall
   NativeFailure

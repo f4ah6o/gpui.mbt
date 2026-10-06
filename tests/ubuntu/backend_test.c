@@ -875,6 +875,9 @@ static void test_input_serial_lifetime(void) {
 
   /* Removing the seat global leaves late events from its bound proxies unable
    * to restore a writable serial. */
+  /* The prior write test used dummy service proxies, not owned Wayland objects. */
+  host.data_device = NULL;
+  host.data_manager = NULL;
   host.scale = 1;
   host.width = 100;
   host.height = 80;

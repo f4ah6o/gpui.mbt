@@ -639,6 +639,9 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         # Intrinsic layout results are portable values layered over text and
         # finite primitives; shaping and native handles remain in platform leaves.
         "text_layout": {"text", "primitives"},
+        # Reusable editing/paint state consumes portable layout results; native
+        # shaping, raster admission and clipboard ownership remain in leaves.
+        "controls/text_field": {"text", "text_layout", "primitives", "scene", "element"},
         "diagnostics": {"primitives"},
         "core": {"primitives", "diagnostics"},
         "layout": {"primitives"},
@@ -650,6 +653,10 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "ubuntu": {"platform", "platform/linux_text", "text", "primitives", "diagnostics", "scene"},
         "examples/ubuntu": {
             "ubuntu", "platform", "platform/linux_text", "text", "primitives", "diagnostics", "scene",
+        },
+        "examples/linux_text_field": {
+            "ubuntu", "platform", "platform/linux_text", "controls/text_field",
+            "text", "text_layout", "element", "primitives", "scene", "diagnostics",
         },
         "windows": {"platform", "primitives", "diagnostics", "scene"},
         "examples/windows": {"windows", "platform", "primitives", "diagnostics", "scene"},

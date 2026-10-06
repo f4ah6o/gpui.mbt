@@ -23,6 +23,7 @@
 #include <wayland-cursor.h>
 #include <wayland-egl.h>
 #include <xkbcommon/xkbcommon.h>
+#include <xkbcommon/xkbcommon-compose.h>
 
 #define QUEUE_CAPACITY 1024
 #define OUTPUT_CAPACITY 16
@@ -48,6 +49,13 @@ struct output {
   struct wl_output *proxy;
   uint32_t name;
   int scale, entered;
+};
+struct direct_event_meta {
+  int epoch, direct_origin, text_length;
+  uint8_t text[GPUI_DIRECT_TEXT_MAX_BYTES + 1];
+};
+struct direct_key_state {
+  int epoch, direct_origin, swallowed, pressed;
 };
 enum input_serial_origin {
   INPUT_SERIAL_NONE,
@@ -87,6 +95,10 @@ struct host {
   struct xkb_context *xkb;
   struct xkb_keymap *keymap;
   struct xkb_state *keys;
+  struct xkb_compose_table *compose_table;
+  struct xkb_compose_state *compose;
+  int compose_attempted, direct_keymap_valid;
+  int direct_enabled, direct_epoch, direct_exhausted, direct_ever_enabled;
   struct output outputs[OUTPUT_CAPACITY];
   struct wl_surface *surface;
   struct xdg_surface *xdg;
@@ -103,6 +115,8 @@ struct host {
   double px, py;
   int modifiers;
   double queue[QUEUE_CAPACITY][10];
+  struct direct_event_meta direct_queue[QUEUE_CAPACITY];
+  struct direct_key_state direct_keys[GPUI_DIRECT_KEY_CAPACITY];
   int read, count;
 };
 static struct host *active;
@@ -172,7 +186,9 @@ static void event(struct host *h, int kind, double detail, double x, double y) {
     h->error = GPUI_RESOURCE;
     return;
   }
-  double *e = h->queue[(h->read + h->count++) % QUEUE_CAPACITY];
+  int slot = (h->read + h->count++) % QUEUE_CAPACITY;
+  double *e = h->queue[slot];
+  memset(&h->direct_queue[slot], 0, sizeof(h->direct_queue[slot]));
   e[0] = kind;
   e[1] = h->window;
   e[2] = ++h->seq;
@@ -183,6 +199,243 @@ static void event(struct host *h, int kind, double detail, double x, double y) {
   e[7] = y;
   e[8] = detail;
   e[9] = h->modifiers;
+}
+static void reset_compose(struct host *h) {
+  if (h->compose)
+    xkb_compose_state_reset(h->compose);
+}
+/* A target generation is never reused, including on resource exhaustion. */
+static int advance_direct_epoch(struct host *h) {
+  reset_compose(h);
+  if (h->direct_exhausted || h->direct_epoch == INT_MAX) {
+    h->direct_exhausted = 1;
+    h->direct_enabled = 0;
+    return GPUI_RESOURCE;
+  }
+  ++h->direct_epoch;
+  return GPUI_OK;
+}
+static void reset_direct_text(struct host *h, int disable, int clear_device) {
+  /* The same physical keyboard's consumed releases survive focus/keymap
+   * resets. Removing that keyboard excludes old callbacks before clearing. */
+  if (clear_device)
+    memset(h->direct_keys, 0, sizeof(h->direct_keys));
+  if (disable)
+    h->direct_enabled = 0;
+  (void)advance_direct_epoch(h);
+}
+static void quiesce_host(struct host *h) {
+  /* All transitions out of Running revoke the editor target exactly once.
+   * Repeated exit/error handling must not consume more generations. */
+  if (h->state == 0 || h->direct_enabled)
+    reset_direct_text(h, 1, 0);
+  h->state = 1;
+}
+static void release_compose(struct host *h) {
+  xkb_compose_state_unref(h->compose);
+  xkb_compose_table_unref(h->compose_table);
+  h->compose = NULL;
+  h->compose_table = NULL;
+  h->compose_attempted = 0;
+}
+static int require_direct_keyboard(struct host *h) {
+  if (h->direct_exhausted)
+    return GPUI_RESOURCE;
+  if (h->state != 0)
+    return GPUI_STOPPING;
+  if (!h->seat_name || !h->keyboard || !h->direct_keymap_valid ||
+      !h->keymap || !h->keys || !h->xkb ||
+      xkb_keymap_max_keycode(h->keymap) >= GPUI_DIRECT_KEY_CAPACITY + 8)
+    return GPUI_UNSUPPORTED;
+  if (!h->compose_table && !h->compose_attempted) {
+    const char *locale = getenv("LC_ALL");
+    if (!locale || !*locale)
+      locale = getenv("LC_CTYPE");
+    if (!locale || !*locale)
+      locale = getenv("LANG");
+    if (!locale || !*locale)
+      locale = "C";
+    h->compose_attempted = 1;
+    h->compose_table = xkb_compose_table_new_from_locale(
+        h->xkb, locale, XKB_COMPOSE_COMPILE_NO_FLAGS);
+  }
+  if (!h->compose_table)
+    return GPUI_UNSUPPORTED;
+  if (!h->compose) {
+    h->compose = xkb_compose_state_new(h->compose_table,
+                                      XKB_COMPOSE_STATE_NO_FLAGS);
+    if (!h->compose)
+      return GPUI_RESOURCE;
+  }
+  return GPUI_OK;
+}
+/* Strict UTF8, independent of text-field policy. The producer omits action
+ * controls as text, while the reusable field validates all committed inputs. */
+static int direct_utf8_valid(const uint8_t *text, int length) {
+  int i = 0;
+  while (i < length) {
+    uint32_t value;
+    int count;
+    uint8_t first = text[i];
+    if (first < 0x80) {
+      value = first;
+      count = 1;
+    } else if (first >= 0xc2 && first <= 0xdf) {
+      value = first & 0x1f;
+      count = 2;
+    } else if (first >= 0xe0 && first <= 0xef) {
+      value = first & 0x0f;
+      count = 3;
+    } else if (first >= 0xf0 && first <= 0xf4) {
+      value = first & 0x07;
+      count = 4;
+    } else {
+      return 0;
+    }
+    if (count > length - i)
+      return 0;
+    for (int j = 1; j < count; ++j) {
+      uint8_t next = text[i + j];
+      if ((next & 0xc0) != 0x80)
+        return 0;
+      value = (value << 6) | (next & 0x3f);
+    }
+    if ((count == 2 && value < 0x80) ||
+        (count == 3 && value < 0x800) ||
+        (count == 4 && value < 0x10000) || value > 0x10ffff ||
+        (value >= 0xd800 && value <= 0xdfff))
+      return 0;
+    i += count;
+  }
+  return 1;
+}
+static int direct_has_control(const uint8_t *text, int length) {
+  for (int i = 0; i < length; ++i) {
+    if (text[i] < 0x20 || text[i] == 0x7f)
+      return 1;
+    if (text[i] == 0xc2 && i + 1 < length &&
+        text[i + 1] >= 0x80 && text[i + 1] <= 0x9f)
+      return 1;
+    if (text[i] == 0xe2 && i + 2 < length && text[i + 1] == 0x80 &&
+        (text[i + 2] == 0xa8 || text[i + 2] == 0xa9))
+      return 1;
+  }
+  return 0;
+}
+static void direct_key_record(struct host *h, int kind, xkb_keysym_t sym,
+                               uint32_t scalar, int epoch, int origin) {
+  int slot = (h->read + h->count) % QUEUE_CAPACITY;
+  int prior = h->count;
+  event(h, kind, sym, scalar, 0);
+  if (h->count != prior) {
+    h->direct_queue[slot].epoch = epoch;
+    h->direct_queue[slot].direct_origin = origin;
+  }
+}
+static void direct_text_record(struct host *h, const uint8_t *text, int length) {
+  int slot = (h->read + h->count) % QUEUE_CAPACITY;
+  int prior = h->count;
+  event(h, 13, length, 0, 0);
+  if (h->count != prior) {
+    struct direct_event_meta *meta = &h->direct_queue[slot];
+    meta->epoch = h->direct_epoch;
+    meta->direct_origin = 1;
+    meta->text_length = length;
+    memcpy(meta->text, text, (size_t)length);
+    meta->text[length] = 0;
+  }
+}
+static void direct_keyboard_key(struct host *h, uint32_t key, uint32_t state,
+                                 xkb_keysym_t sym) {
+  struct direct_key_state *pressed = key < GPUI_DIRECT_KEY_CAPACITY
+                                         ? &h->direct_keys[key]
+                                         : NULL;
+  uint32_t scalar = xkb_keysym_to_utf32(sym);
+  if (h->state != 0 && h->direct_ever_enabled) {
+    if (pressed && state == WL_KEYBOARD_KEY_STATE_RELEASED)
+      memset(pressed, 0, sizeof(*pressed));
+    return;
+  }
+  if (h->direct_exhausted && h->direct_ever_enabled) {
+    if (pressed && state == WL_KEYBOARD_KEY_STATE_RELEASED)
+      memset(pressed, 0, sizeof(*pressed));
+    h->error = GPUI_RESOURCE;
+    return;
+  }
+  if (state == WL_KEYBOARD_KEY_STATE_RELEASED) {
+    int epoch = pressed && pressed->pressed ? pressed->epoch : 0;
+    int origin = pressed && pressed->pressed ? pressed->direct_origin : 0;
+    int swallowed = pressed && pressed->swallowed;
+    if (pressed)
+      memset(pressed, 0, sizeof(*pressed));
+    if (!swallowed)
+      direct_key_record(h, 12, sym, scalar, epoch, origin);
+    return;
+  }
+  if (pressed) {
+    pressed->pressed = 1;
+    pressed->epoch = h->direct_epoch;
+    pressed->direct_origin = h->direct_enabled;
+    pressed->swallowed = 0;
+  }
+  if (!h->direct_enabled) {
+    direct_key_record(h, 11, sym, scalar, h->direct_epoch, 0);
+    return;
+  }
+  if (!h->keyboard_focus_current)
+    return;
+  if (!pressed || state != WL_KEYBOARD_KEY_STATE_PRESSED) {
+    h->error = GPUI_INVALID;
+    return;
+  }
+  int admission = require_direct_keyboard(h);
+  if (admission != GPUI_OK) {
+    h->error = admission;
+    return;
+  }
+  uint8_t text[GPUI_DIRECT_TEXT_MAX_BYTES + 1];
+  int length = 0;
+  int emit_key = 1;
+  if (h->modifiers & (2 | 8)) {
+    reset_compose(h);
+  } else {
+    enum xkb_compose_feed_result feed = xkb_compose_state_feed(h->compose, sym);
+    enum xkb_compose_status status = xkb_compose_state_get_status(h->compose);
+    if (feed == XKB_COMPOSE_FEED_ACCEPTED &&
+        status != XKB_COMPOSE_NOTHING) {
+      emit_key = 0;
+      pressed->swallowed = 1;
+      if (status == XKB_COMPOSE_COMPOSED) {
+        length = xkb_compose_state_get_utf8(h->compose, (char *)text,
+                                           sizeof(text));
+        reset_compose(h);
+      } else if (status == XKB_COMPOSE_CANCELLED) {
+        reset_compose(h);
+      }
+    } else {
+      length = xkb_state_key_get_utf8(h->keys, key + 8, (char *)text,
+                                      sizeof(text));
+    }
+  }
+  if (length < 0 || length > GPUI_DIRECT_TEXT_MAX_BYTES) {
+    h->error = GPUI_RESOURCE;
+    return;
+  }
+  if (!direct_utf8_valid(text, length)) {
+    h->error = GPUI_INVALID;
+    return;
+  }
+  if (direct_has_control(text, length))
+    length = 0;
+  int records = emit_key + (length > 0);
+  if (records > QUEUE_CAPACITY - h->count || records > INT_MAX - h->seq) {
+    h->error = GPUI_RESOURCE;
+    return;
+  }
+  if (emit_key)
+    direct_key_record(h, 11, sym, scalar, h->direct_epoch, 1);
+  if (length > 0)
+    direct_text_record(h, text, length);
 }
 static ssize_t write_without_sigpipe(int fd, const void *bytes, size_t length) {
   sigset_t blocked, old_mask, pending;
@@ -336,8 +589,14 @@ static const struct wl_data_offer_listener offer_listener = {.offer =
                                                                   offer_mime};
 static void data_offer(void *d, struct wl_data_device *device,
                        struct wl_data_offer *offer) {
-  UNUSED(device);
   struct host *h = d;
+  if (device != h->data_device) {
+    /* This event introduces a fresh proxy, unlike selection/MIME callbacks
+     * which may name already-retired offers. Release the orphan exactly once. */
+    if (offer)
+      wl_data_offer_destroy(offer);
+    return;
+  }
   if (h->pending_offer && h->pending_offer != h->selection_offer)
     wl_data_offer_destroy(h->pending_offer);
   h->pending_offer = offer;
@@ -374,12 +633,17 @@ static void data_drop(void *d, struct wl_data_device *device) {
 }
 static void data_selection(void *d, struct wl_data_device *device,
                            struct wl_data_offer *offer) {
-  UNUSED(device);
   struct host *h = d;
+  if (device != h->data_device)
+    return;
   struct wl_data_offer *previous = h->selection_offer;
   struct wl_data_offer *pending = h->pending_offer;
+  if (offer && offer != previous && offer != pending)
+    return;
   if (previous && previous != offer)
     wl_data_offer_destroy(previous);
+  if (pending && pending != previous && pending != offer)
+    wl_data_offer_destroy(pending);
   if (offer && offer == pending) {
     /* The data_offer MIME events may describe a drag-and-drop offer rather
      * than the clipboard selection. Publish staged types only when the
@@ -408,8 +672,25 @@ static const struct wl_data_device_listener data_device_listener = {
     .motion = data_motion,
     .drop = data_drop,
     .selection = data_selection};
+static void detach_seat_data_device(struct host *h) {
+  struct wl_data_device *device = h->data_device;
+  struct wl_data_offer *selection = h->selection_offer;
+  struct wl_data_offer *pending = h->pending_offer;
+  h->data_device = NULL;
+  h->selection_offer = h->pending_offer = NULL;
+  clear_selection_mime_types(h);
+  reset_pending_mime_types(h);
+  if (selection)
+    wl_data_offer_destroy(selection);
+  if (pending && pending != selection)
+    wl_data_offer_destroy(pending);
+  if (device)
+    wl_data_device_destroy(device);
+  /* Owned sources and active transfers retain their existing cancel/refcount
+   * cleanup. A completed read result keeps its documented next-read lifetime. */
+}
 static void maybe_create_data_device(struct host *h) {
-  if (!h->data_device && h->data_manager && h->seat) {
+  if (!h->data_device && h->data_manager && h->seat && h->seat_name) {
     h->data_device =
         wl_data_device_manager_get_data_device(h->data_manager, h->seat);
     if (h->data_device)
@@ -585,9 +866,10 @@ static void frame_done(void *d, struct wl_callback *c, uint32_t time) {
 static const struct wl_callback_listener frame_listener = {.done = frame_done};
 static void pointer_enter(void *d, struct wl_pointer *p, uint32_t serial,
                           struct wl_surface *s, wl_fixed_t x, wl_fixed_t y) {
-  UNUSED(p);
   UNUSED(serial);
   struct host *h = d;
+  if (p != h->pointer)
+    return;
   invalidate_input_serial(h, INPUT_SERIAL_POINTER);
   h->pointer_serial = serial;
   h->pointer_inside = 1;
@@ -600,9 +882,10 @@ static void pointer_enter(void *d, struct wl_pointer *p, uint32_t serial,
 }
 static void pointer_leave(void *d, struct wl_pointer *p, uint32_t serial,
                           struct wl_surface *s) {
-  UNUSED(p);
   UNUSED(s);
   struct host *h = d;
+  if (p != h->pointer)
+    return;
   h->pointer_inside = 0;
   h->pointer_focus_current = 0;
   h->pointer_serial = serial;
@@ -610,18 +893,20 @@ static void pointer_leave(void *d, struct wl_pointer *p, uint32_t serial,
 }
 static void pointer_motion(void *d, struct wl_pointer *p, uint32_t time,
                            wl_fixed_t x, wl_fixed_t y) {
-  UNUSED(p);
   UNUSED(time);
   struct host *h = d;
+  if (p != h->pointer)
+    return;
   h->px = wl_fixed_to_double(x);
   h->py = wl_fixed_to_double(y);
   event(h, 7, 0, h->px, h->py);
 }
 static void pointer_button(void *d, struct wl_pointer *p, uint32_t serial,
                            uint32_t time, uint32_t button, uint32_t state) {
-  UNUSED(p);
   UNUSED(time);
   struct host *h = d;
+  if (p != h->pointer)
+    return;
   if (state == WL_POINTER_BUTTON_STATE_PRESSED)
     remember_input_serial(h, serial, INPUT_SERIAL_POINTER);
   if (button >= 0x110 && button <= 0x114)
@@ -629,9 +914,10 @@ static void pointer_button(void *d, struct wl_pointer *p, uint32_t serial,
 }
 static void pointer_axis(void *d, struct wl_pointer *p, uint32_t time,
                          uint32_t axis, wl_fixed_t value) {
-  UNUSED(p);
   UNUSED(time);
   struct host *h = d;
+  if (p != h->pointer)
+    return;
   event(h, 10, axis, h->px, h->py);
   if (h->count)
     h->queue[(h->read + h->count - 1) % QUEUE_CAPACITY][4] =
@@ -644,9 +930,15 @@ static const struct wl_pointer_listener pointer_listener = {
     .button = pointer_button,
     .axis = pointer_axis};
 static void keyboard_keymap(void *d, struct wl_keyboard *k, uint32_t format,
-                            int32_t fd, uint32_t size) {
-  UNUSED(k);
+                             int32_t fd, uint32_t size) {
   struct host *h = d;
+  if (k != h->keyboard) {
+    close(fd);
+    return;
+  }
+  int was_enabled = h->direct_enabled;
+  reset_direct_text(h, 1, 0);
+  h->direct_keymap_valid = 0;
   if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1 || size == 0) {
     close(fd);
     return;
@@ -672,23 +964,32 @@ static void keyboard_keymap(void *d, struct wl_keyboard *k, uint32_t format,
   xkb_keymap_unref(h->keymap);
   h->keymap = keymap;
   h->keys = keys;
+  h->direct_keymap_valid = 1;
+  if (!h->compose_table)
+    h->compose_attempted = 0;
+  if (was_enabled && require_direct_keyboard(h) == GPUI_OK)
+    h->direct_enabled = 1;
 }
 static void keyboard_enter(void *d, struct wl_keyboard *k, uint32_t serial,
                            struct wl_surface *s, struct wl_array *keys) {
-  UNUSED(k);
   UNUSED(serial);
   UNUSED(keys);
   struct host *h = d;
+  if (k != h->keyboard)
+    return;
+  reset_direct_text(h, 1, 0);
   invalidate_input_serial(h, INPUT_SERIAL_KEYBOARD);
   h->keyboard_focus_current = h->surface && s == h->surface;
   event(h, 6, 1, 0, 0);
 }
 static void keyboard_leave(void *d, struct wl_keyboard *k, uint32_t serial,
                            struct wl_surface *s) {
-  UNUSED(k);
   UNUSED(serial);
   UNUSED(s);
   struct host *h = d;
+  if (k != h->keyboard)
+    return;
+  reset_direct_text(h, 1, 0);
   h->modifiers = 0;
   h->keyboard_focus_current = 0;
   invalidate_input_serial(h, INPUT_SERIAL_KEYBOARD);
@@ -696,22 +997,28 @@ static void keyboard_leave(void *d, struct wl_keyboard *k, uint32_t serial,
 }
 static void keyboard_key(void *d, struct wl_keyboard *k, uint32_t serial,
                          uint32_t time, uint32_t key, uint32_t state) {
-  UNUSED(k);
   UNUSED(time);
   struct host *h = d;
+  if (k != h->keyboard)
+    return;
   if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
     remember_input_serial(h, serial, INPUT_SERIAL_KEYBOARD);
   if (!h->keys)
     return;
+  if (h->direct_enabled && key >= GPUI_DIRECT_KEY_CAPACITY) {
+    h->error = GPUI_INVALID;
+    return;
+  }
   xkb_keysym_t sym = xkb_state_key_get_one_sym(h->keys, key + 8);
-  event(h, state ? 11 : 12, sym, xkb_keysym_to_utf32(sym), 0);
+  direct_keyboard_key(h, key, state, sym);
 }
 static void keyboard_modifiers(void *d, struct wl_keyboard *k, uint32_t serial,
                                uint32_t dep, uint32_t lat, uint32_t lock,
                                uint32_t group) {
-  UNUSED(k);
   UNUSED(serial);
   struct host *h = d;
+  if (k != h->keyboard)
+    return;
   if (!h->keys)
     return;
   xkb_state_update_mask(h->keys, dep, lat, lock, 0, 0, group);
@@ -740,6 +1047,8 @@ static const struct wl_keyboard_listener keyboard_listener = {
     .modifiers = keyboard_modifiers};
 static void seat_caps(void *d, struct wl_seat *s, uint32_t caps) {
   struct host *h = d;
+  if (s != h->seat)
+    return;
   if ((caps & WL_SEAT_CAPABILITY_POINTER) && !h->pointer) {
     h->pointer = wl_seat_get_pointer(s);
     wl_pointer_add_listener(h->pointer, &pointer_listener, h);
@@ -766,6 +1075,8 @@ static void seat_caps(void *d, struct wl_seat *s, uint32_t caps) {
       wl_keyboard_destroy(h->keyboard);
       h->keyboard = NULL;
     }
+    reset_direct_text(h, 1, 1);
+    h->direct_keymap_valid = 0;
   }
 }
 static const struct wl_seat_listener seat_listener = {.capabilities =
@@ -818,6 +1129,13 @@ static void global_remove(void *d, struct wl_registry *r, uint32_t name) {
     h->data_manager_name = 0;
   }
   if (h->seat_name && name == h->seat_name) {
+    detach_seat_data_device(h);
+    /* Remove the proxies before a later seat can bind. Their callbacks must
+     * not repopulate focus/key state or re-arm this removed input device. */
+    seat_caps(h, h->seat, 0);
+    if (h->seat)
+      wl_seat_destroy(h->seat);
+    h->seat = NULL;
     h->seat_name = 0;
     invalidate_input_serial(h, INPUT_SERIAL_NONE);
     h->pointer_inside = 0;
@@ -860,6 +1178,12 @@ static void release_renderer(struct host *h, int terminate_display) {
  * to the externally owned wl_display alive for the host lifetime. */
 static void release_gpu(struct host *h) { release_renderer(h, 0); }
 static void release_window(struct host *h) {
+  if (h->state == 0)
+    reset_direct_text(h, 1, 0);
+  else {
+    h->direct_enabled = 0;
+    reset_compose(h);
+  }
   invalidate_input_serial(h, INPUT_SERIAL_NONE);
   h->pointer_focus_current = 0;
   h->keyboard_focus_current = 0;
@@ -900,12 +1224,7 @@ static void release_host(struct host *h) {
     free(source);
   }
   free(h->clipboard_result);
-  if (h->selection_offer)
-    wl_data_offer_destroy(h->selection_offer);
-  if (h->pending_offer && h->pending_offer != h->selection_offer)
-    wl_data_offer_destroy(h->pending_offer);
-  if (h->data_device)
-    wl_data_device_destroy(h->data_device);
+  detach_seat_data_device(h);
   if (h->data_manager)
     wl_data_device_manager_destroy(h->data_manager);
   if (h->cursor_surface)
@@ -920,6 +1239,7 @@ static void release_host(struct host *h) {
     wl_keyboard_destroy(h->keyboard);
   if (h->seat)
     wl_seat_destroy(h->seat);
+  release_compose(h);
   xkb_state_unref(h->keys);
   xkb_keymap_unref(h->keymap);
   xkb_context_unref(h->xkb);
@@ -953,9 +1273,14 @@ static int display_failure(struct host *h, const char *where) {
           "object_id=%u interface=%s errno=%d\n",
           where, display_error, protocol_error, object_id,
           interface ? interface->name : "-", errno);
-  return GPUI_NATIVE;
+  // Clipboard flush calls this path directly as well as the pump consumers.
+  // A verified display failure always revokes the admitted editor target.
+  if (!h->error)
+    h->error = GPUI_NATIVE;
+  quiesce_host(h);
+  return h->error;
 }
-static int pump(struct host *h, int timeout) {
+static int pump_impl(struct host *h, int timeout) {
   if (h->error)
     return h->error;
   for (int i = 0; i < SOURCE_TRANSFER_CAPACITY; ++i)
@@ -1019,6 +1344,19 @@ static int pump(struct host *h, int timeout) {
     return display_failure(h, "dispatch_pending");
   flush_transfers(h);
   return h->error;
+}
+static int pump(struct host *h, int timeout) {
+  int status = pump_impl(h, timeout);
+  if (status) {
+    /* Native event-loop failures revoke the target for every consumer,
+     * including present, clipboard and teardown/sync paths. Normal no-event
+     * timeout is OK; frame preflight/Busy errors do not pass this boundary. */
+    if (!h->error)
+      h->error = status;
+    quiesce_host(h);
+    return h->error;
+  }
+  return GPUI_OK;
 }
 static int settle_frame(struct host *h) {
   int status = GPUI_OK;
@@ -1222,6 +1560,7 @@ int32_t gpui_stop(int32_t token) {
     return GPUI_OK;
   if (s)
     return s;
+  quiesce_host(h);
   pthread_mutex_lock(&registry_mutex);
   active = NULL;
   pthread_mutex_unlock(&registry_mutex);
@@ -1243,7 +1582,7 @@ int32_t gpui_exit(int32_t token) {
   int s = check(token, &h);
   if (s)
     return s;
-  h->state = 1;
+  quiesce_host(h);
   return gpui_wake(token);
 }
 static int title_valid(const uint8_t *title, int length) {
@@ -1400,10 +1739,6 @@ int32_t gpui_dispatch(int32_t token, int32_t timeout) {
   if (timeout < 0 || timeout > 60000)
     return GPUI_INVALID;
   s = pump(h, h->count || h->state ? 0 : timeout);
-  if (s) {
-    h->state = 1;
-    h->error = s;
-  }
   return s;
 }
 int32_t gpui_next(int32_t token, double *out) {
@@ -1411,12 +1746,135 @@ int32_t gpui_next(int32_t token, double *out) {
   int s = check(token, &h);
   if (s)
     return -s;
+  if (!out)
+    return -GPUI_INVALID;
+  if (h->direct_exhausted && h->direct_ever_enabled)
+    return -GPUI_RESOURCE;
+  if (h->direct_enabled)
+    return -GPUI_UNSUPPORTED;
+  for (int i = 0; i < h->count; ++i) {
+    int slot = (h->read + i) % QUEUE_CAPACITY;
+    if (h->queue[slot][0] == 13 || h->direct_queue[slot].direct_origin)
+      return -GPUI_UNSUPPORTED;
+  }
   if (!h->count)
     return 0;
   memcpy(out, h->queue[h->read], sizeof(h->queue[0]));
   h->read = (h->read + 1) % QUEUE_CAPACITY;
   --h->count;
   return 1;
+}
+static int stale_direct_record(const struct host *h, int slot) {
+  double kind = h->queue[slot][0];
+  if (kind != 11 && kind != 12 && kind != 13)
+    return 0;
+  const struct direct_event_meta *meta = &h->direct_queue[slot];
+  if (h->state != 0 && meta->direct_origin)
+    return 1;
+  if (meta->direct_origin && h->direct_exhausted)
+    return 1;
+  if ((meta->direct_origin || h->direct_enabled) &&
+      meta->epoch != h->direct_epoch)
+    return 1;
+  return meta->direct_origin &&
+         (!h->direct_enabled || !h->keyboard_focus_current);
+}
+static void consume_event(struct host *h) {
+  memset(&h->direct_queue[h->read], 0, sizeof(h->direct_queue[h->read]));
+  h->read = (h->read + 1) % QUEUE_CAPACITY;
+  --h->count;
+}
+int32_t gpui_next_v2(int32_t abi, int32_t token, double *out,
+                     int32_t out_capacity, uint8_t *text,
+                     int32_t text_capacity) {
+  if (abi != GPUI_DIRECT_TEXT_ABI)
+    return -GPUI_UNSUPPORTED;
+  if (!out || out_capacity < 0 || text_capacity < 0 ||
+      (!text && text_capacity > 0))
+    return -GPUI_INVALID;
+  if (out_capacity < 10)
+    return -GPUI_RESOURCE;
+  struct host *h;
+  int status = check(token, &h);
+  if (status)
+    return -status;
+  if (h->direct_exhausted && h->direct_ever_enabled)
+    return -GPUI_RESOURCE;
+  int skipped = 0;
+  while (skipped < h->count &&
+         stale_direct_record(h, (h->read + skipped) % QUEUE_CAPACITY))
+    ++skipped;
+  if (skipped == h->count) {
+    while (h->count)
+      consume_event(h);
+    return 0;
+  }
+  int slot = (h->read + skipped) % QUEUE_CAPACITY;
+  const struct direct_event_meta *meta = &h->direct_queue[slot];
+  if (h->queue[slot][0] == 13) {
+    if (meta->text_length <= 0 ||
+        meta->text_length > GPUI_DIRECT_TEXT_MAX_BYTES ||
+        h->queue[slot][8] != meta->text_length ||
+        !direct_utf8_valid(meta->text, meta->text_length))
+      return -GPUI_INVALID;
+    if (text_capacity < meta->text_length)
+      return -GPUI_RESOURCE;
+  }
+  memcpy(out, h->queue[slot], sizeof(h->queue[slot]));
+  if (h->queue[slot][0] == 13)
+    memcpy(text, meta->text, (size_t)meta->text_length);
+  for (int i = 0; i <= skipped; ++i)
+    consume_event(h);
+  return 1;
+}
+int32_t gpui_direct_keyboard_text_mode(int32_t token, int32_t window,
+                                      int32_t enabled) {
+  struct host *h;
+  int status = check(token, &h);
+  if (status)
+    return status;
+  if (!h->window || window != h->window)
+    return GPUI_STALE;
+  if (enabled != 0 && enabled != 1)
+    return GPUI_INVALID;
+  if (h->direct_exhausted)
+    return GPUI_RESOURCE;
+  if (enabled) {
+    if (h->state != 0)
+      return GPUI_STOPPING;
+    if (!h->keyboard_focus_current)
+      return GPUI_UNSUPPORTED;
+    status = require_direct_keyboard(h);
+    if (status)
+      return status;
+  }
+  status = advance_direct_epoch(h);
+  if (status)
+    return status;
+  h->direct_enabled = enabled;
+  if (enabled)
+    h->direct_ever_enabled = 1;
+  return GPUI_OK;
+}
+int32_t gpui_direct_keyboard_text_epoch(int32_t token, int32_t window) {
+  struct host *h;
+  int status = check(token, &h);
+  if (status)
+    return -status;
+  if (!h->window || window != h->window)
+    return -GPUI_STALE;
+  if (h->direct_exhausted)
+    return -GPUI_RESOURCE;
+  if (h->state != 0)
+    return -GPUI_STOPPING;
+  if (!h->direct_enabled || !h->keyboard_focus_current)
+    return -GPUI_UNSUPPORTED;
+  return h->direct_epoch;
+}
+int32_t gpui_direct_keyboard_text_active(int32_t token) {
+  struct host *h;
+  int status = check(token, &h);
+  return status ? -status : h->state == 0 && h->direct_enabled;
 }
 struct staged_text {
   int item_index;
@@ -1757,6 +2215,8 @@ int32_t gpui_capability(int32_t token, int32_t capability) {
                    h->cursors[2]
                ? GPUI_OK
                : GPUI_UNSUPPORTED;
+  if (capability == 3)
+    return require_direct_keyboard(h);
   return GPUI_UNSUPPORTED;
 }
 static int64_t monotonic_milliseconds(void) {

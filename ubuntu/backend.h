@@ -43,6 +43,28 @@ int32_t gpui_size(int32_t host, int32_t window, int32_t width, int32_t height);
 int32_t gpui_metrics(int32_t host, int32_t window, double *metrics);
 int32_t gpui_dispatch(int32_t host, int32_t timeout_ms);
 int32_t gpui_next(int32_t host, double *event);
+/* Private copied direct-keyboard text ingress. `event` must be non-null and
+ * have at least 10 doubles. Negative capacities, or NULL text with a positive
+ * capacity, are invalid. NULL text with zero capacity admits non-text records;
+ * a text record then returns Resource without consuming it. Text tag 13 stores
+ * its 1..128 UTF-8 byte length in slot 8; only those bytes are copied (no NUL).
+ * Invalid/insufficient buffers leave both outputs and the head untouched.
+ * v1 next rejects active direct mode or any queued direct key/text record,
+ * even after disarm, without consuming any record. */
+#define GPUI_DIRECT_TEXT_ABI 2
+#define GPUI_DIRECT_TEXT_MAX_BYTES 128
+#define GPUI_DIRECT_KEY_CAPACITY 1024
+int32_t gpui_next_v2(int32_t abi, int32_t host, double *event,
+                     int32_t event_capacity, uint8_t *text,
+                     int32_t text_capacity);
+/* An ever-armed host with an exhausted epoch cannot fall back to editor key
+ * delivery: next v1/v2 report Resource and recovery requires a fresh host. */
+int32_t gpui_direct_keyboard_text_mode(int32_t host, int32_t window,
+                                      int32_t enabled);
+/* Positive nonwrapping epoch for a focused active target, negative status
+ * otherwise. Active is 0/1 or negative status. No native handle is returned. */
+int32_t gpui_direct_keyboard_text_epoch(int32_t host, int32_t window);
+int32_t gpui_direct_keyboard_text_active(int32_t host);
 int32_t gpui_present(int32_t host, int32_t window, const double *data,
                      int32_t length);
 /* v2 records: kind(0=quad,1=text), the same19 common fields as v1,

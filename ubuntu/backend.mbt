@@ -76,8 +76,31 @@ extern "C" fn native_metrics(
 extern "C" fn native_dispatch(host : Int, timeout : Int) -> Int = "gpui_dispatch"
 
 ///|
-#borrow(event)
-extern "C" fn native_next(host : Int, event : FixedArray[Double]) -> Int = "gpui_next"
+#borrow(event, text)
+extern "C" fn native_next_v2(
+  abi : Int,
+  host : Int,
+  event : FixedArray[Double],
+  event_capacity : Int,
+  text : Bytes,
+  text_capacity : Int,
+) -> Int = "gpui_next_v2"
+
+///|
+extern "C" fn native_direct_keyboard_text_mode(
+  host : Int,
+  window : Int,
+  enabled : Int,
+) -> Int = "gpui_direct_keyboard_text_mode"
+
+///|
+extern "C" fn native_direct_keyboard_text_epoch(
+  host : Int,
+  window : Int,
+) -> Int = "gpui_direct_keyboard_text_epoch"
+
+///|
+extern "C" fn native_direct_keyboard_text_active(host : Int) -> Int = "gpui_direct_keyboard_text_active"
 
 ///|
 #borrow(data)
@@ -411,37 +434,213 @@ fn decode_event(data : FixedArray[Double]) -> @platform.EventKind? {
 }
 
 ///|
+const DIRECT_TEXT_ABI : Int = 2
+
+///|
+const DIRECT_TEXT_MAX_BYTES : Int = 128
+
+///|
+fn native_text_decode_error(
+  code : @diagnostics.ErrorCode,
+  operation : String,
+  message : String,
+) -> @diagnostics.FrameworkError {
+  @diagnostics.FrameworkError::new(
+    code,
+    operation,
+    backend="ubuntu-wayland",
+    subsystem="native",
+    message~,
+  )
+}
+
+///|
+fn exact_i32(value : Double) -> Bool {
+  !value.is_nan() &&
+  !value.is_inf() &&
+  value >= -2147483648.0 &&
+  value <= 2147483647.0 &&
+  value.to_int().to_double() == value
+}
+
+///|
+/// Strictly copies and decodes only the bytes reported by a native text event.
+/// The native array is borrowed storage and is never exposed to callers.
+fn decode_direct_text_event(
+  data : FixedArray[Double],
+  text : Bytes,
+  operation : String,
+) -> Result[@platform.EventKind, @diagnostics.FrameworkError] {
+  if !exact_i32(data[0]) || data[0] != 13.0 {
+    return Err(
+      native_text_decode_error(
+        @diagnostics.InvalidInput,
+        operation,
+        "invalid direct text event tag",
+      ),
+    )
+  }
+  let length_value = data[8]
+  if length_value.is_nan() ||
+    length_value.is_inf() ||
+    length_value < 1.0 ||
+    length_value > DIRECT_TEXT_MAX_BYTES.to_double() ||
+    !exact_i32(length_value) {
+    return Err(
+      native_text_decode_error(
+        @diagnostics.InvalidInput,
+        operation,
+        "invalid direct text byte length",
+      ),
+    )
+  }
+  let length = length_value.to_int()
+  if text.length() < length {
+    return Err(
+      native_text_decode_error(
+        @diagnostics.InvalidInput,
+        operation,
+        "direct text buffer is shorter than its reported length",
+      ),
+    )
+  }
+  if !exact_i32(data[1]) ||
+    data[1] < 1.0 ||
+    !exact_i32(data[2]) ||
+    data[2] < 1.0 ||
+    !exact_i32(data[9]) ||
+    data[9] < 0.0 ||
+    data[9] > 15.0 ||
+    data[3].is_nan() ||
+    data[3].is_inf() ||
+    data[3] <= 0.0 ||
+    data[6] != 0.0 ||
+    data[7] != 0.0 {
+    return Err(
+      native_text_decode_error(
+        @diagnostics.InvalidInput,
+        operation,
+        "invalid direct text event fields",
+      ),
+    )
+  }
+  let exact_bytes = Bytes::makei(length, index => text[index])
+  try @utf8.decode(exact_bytes) catch {
+    _ =>
+      Err(
+        native_text_decode_error(
+          @diagnostics.ConversionFailed,
+          operation,
+          "direct text event is not valid UTF-8",
+        ),
+      )
+  } noraise {
+    value => Ok(@platform.Input(@primitives.TextInput(text=value)))
+  }
+}
+
+///|
+/// V2 preserves the old decoder for non-text records. Malformed text records
+/// are errors rather than silently disappearing from incremental or batch IO.
+fn decode_v2_event(
+  data : FixedArray[Double],
+  text : Bytes,
+  operation : String,
+) -> Result[@platform.EventKind?, @diagnostics.FrameworkError] {
+  if !exact_i32(data[0]) {
+    return Err(
+      native_text_decode_error(
+        @diagnostics.InvalidInput,
+        operation,
+        "event tag is not a finite integer",
+      ),
+    )
+  }
+  if data[0] == 13.0 {
+    match decode_direct_text_event(data, text, operation) {
+      Err(error) => Err(error)
+      Ok(kind) => Ok(Some(kind))
+    }
+  } else {
+    Ok(decode_event(data))
+  }
+}
+
+///|
+fn make_event(
+  buffer : FixedArray[Double],
+  kind : @platform.EventKind,
+) -> @platform.Event {
+  @platform.Event::new(
+    @platform.WindowId::new(Int64::from_int(buffer[1].to_int())),
+    Int64::from_int(buffer[2].to_int()),
+    buffer[3],
+    kind,
+  )
+}
+
+///|
+fn active_direct_text_dispatch_gate(
+  active : Int,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  if active < 0 {
+    Err(backend_error(-active, "dispatch"))
+  } else if active == 1 {
+    Err(backend_error(1, "dispatch"))
+  } else if active == 0 {
+    Ok(())
+  } else {
+    Err(backend_error(3, "dispatch"))
+  }
+}
+
+///|
+fn direct_text_capability_outcome(
+  status : Int,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  outcome(status, "require_capability")
+}
+
+///|
 pub fn Host::next_event(
   self : Host,
   timeout_ms? : Int = 16,
 ) -> Result[@platform.Event?, @diagnostics.FrameworkError] {
   let buffer = FixedArray::make(10, 0.0)
-  let mut status = native_next(self.token, buffer)
+  let text = Bytes::makei(DIRECT_TEXT_MAX_BYTES, _ => (0).to_byte())
+  let mut status = native_next_v2(
+    DIRECT_TEXT_ABI,
+    self.token,
+    buffer,
+    buffer.length(),
+    text,
+    text.length(),
+  )
   if status == 0 {
     match outcome(native_dispatch(self.token, timeout_ms), "next_event") {
       Err(error) => return Err(error)
       Ok(_) => ()
     }
-    status = native_next(self.token, buffer)
+    status = native_next_v2(
+      DIRECT_TEXT_ABI,
+      self.token,
+      buffer,
+      buffer.length(),
+      text,
+      text.length(),
+    )
   }
   if status < 0 {
     Err(backend_error(-status, "next_event"))
   } else if status == 0 {
     Ok(None)
+  } else if status != 1 {
+    Err(backend_error(3, "next_event"))
   } else {
-    match decode_event(buffer) {
-      None => Err(backend_error(2, "next_event"))
-      Some(kind) =>
-        Ok(
-          Some(
-            @platform.Event::new(
-              @platform.WindowId::new(Int64::from_int(buffer[1].to_int())),
-              Int64::from_int(buffer[2].to_int()),
-              buffer[3],
-              kind,
-            ),
-          ),
-        )
+    match decode_v2_event(buffer, text, "next_event") {
+      Err(error) => Err(error)
+      Ok(None) => Err(backend_error(2, "next_event"))
+      Ok(Some(kind)) => Ok(Some(make_event(buffer, kind)))
     }
   }
 }
@@ -451,29 +650,46 @@ pub fn Host::dispatch(
   self : Host,
   timeout_ms : Int,
 ) -> Result[Array[@platform.Event], @diagnostics.FrameworkError] {
+  match
+    active_direct_text_dispatch_gate(
+      native_direct_keyboard_text_active(self.token),
+    ) {
+    Err(error) => return Err(error)
+    Ok(_) => ()
+  }
   match outcome(native_dispatch(self.token, timeout_ms), "dispatch") {
     Err(error) => Err(error)
     Ok(_) => {
       let events : Array[@platform.Event] = []
       let buffer = FixedArray::make(10, 0.0)
-      let mut status = native_next(self.token, buffer)
+      let text = Bytes::makei(DIRECT_TEXT_MAX_BYTES, _ => (0).to_byte())
+      let mut status = native_next_v2(
+        DIRECT_TEXT_ABI,
+        self.token,
+        buffer,
+        buffer.length(),
+        text,
+        text.length(),
+      )
       while status == 1 {
-        match decode_event(buffer) {
-          None => ()
-          Some(kind) =>
-            events.push(
-              @platform.Event::new(
-                @platform.WindowId::new(Int64::from_int(buffer[1].to_int())),
-                Int64::from_int(buffer[2].to_int()),
-                buffer[3],
-                kind,
-              ),
-            )
+        match decode_v2_event(buffer, text, "dispatch") {
+          Err(error) => return Err(error)
+          Ok(None) => ()
+          Ok(Some(kind)) => events.push(make_event(buffer, kind))
         }
-        status = native_next(self.token, buffer)
+        status = native_next_v2(
+          DIRECT_TEXT_ABI,
+          self.token,
+          buffer,
+          buffer.length(),
+          text,
+          text.length(),
+        )
       }
       if status < 0 {
         Err(backend_error(-status, "dispatch"))
+      } else if status != 0 {
+        Err(backend_error(3, "dispatch"))
       } else {
         Ok(events)
       }
@@ -736,6 +952,8 @@ pub fn Host::require_capability(
       outcome(native_capability(self.token, 1), "require_capability")
     @platform.Cursor =>
       outcome(native_capability(self.token, 2), "require_capability")
+    @platform.DirectKeyboardText =>
+      direct_text_capability_outcome(native_capability(self.token, 3))
     _ => Err(backend_error(1, "require_capability"))
   }
 }
@@ -793,6 +1011,68 @@ pub fn Host::set_cursor(
     @platform.Text => 2
   }
   outcome(native_set_cursor(self.token, tag), "set_cursor")
+}
+
+///|
+/// Reject portable identities that cannot be represented by the native ABI.
+fn direct_window_token(
+  window : @platform.WindowId,
+  operation : String,
+) -> Result[Int, @diagnostics.FrameworkError] {
+  let value = window.value()
+  if value < 1L || value > 2147483647L {
+    Err(backend_error(3, operation))
+  } else {
+    Ok(value.to_int())
+  }
+}
+
+///|
+/// Explicitly arm or disarm copied direct-keyboard text for this logical
+/// window. Keyboard text remains unsupported until the native target admits it.
+pub fn Host::set_direct_keyboard_text(
+  self : Host,
+  window : @platform.WindowId,
+  enabled : Bool,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  let native_window = match
+    direct_window_token(window, "set_direct_keyboard_text") {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  outcome(
+    native_direct_keyboard_text_mode(
+      self.token,
+      native_window,
+      if enabled {
+        1
+      } else {
+        0
+      },
+    ),
+    "set_direct_keyboard_text",
+  )
+}
+
+///|
+/// Current positive, nonwrapping epoch of an armed native direct-text target.
+pub fn Host::direct_keyboard_text_epoch(
+  self : Host,
+  window : @platform.WindowId,
+) -> Result[Int, @diagnostics.FrameworkError] {
+  let native_window = match
+    direct_window_token(window, "direct_keyboard_text_epoch") {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  let epoch = native_direct_keyboard_text_epoch(self.token, native_window)
+  if epoch > 0 {
+    Ok(epoch)
+  } else if epoch < 0 {
+    Err(backend_error(-epoch, "direct_keyboard_text_epoch"))
+  } else {
+    Err(backend_error(3, "direct_keyboard_text_epoch"))
+  }
 }
 
 ///|
