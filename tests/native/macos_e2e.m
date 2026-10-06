@@ -265,6 +265,11 @@ static NSDictionary *accept_batch_and_present(GPWindow *w, int epoch,
   return identity;
 }
 static void native_text_session_bounds(GPWindow *w, NSString *snapshot) {
+  // A cached/key-window match is not foreground ownership when the app is
+  // inactive (for example, while the desktop is locked). Such a window must
+  // not accept editor input or publish focus.
+  assert(!native_window_has_active_key_focus(w, NO));
+  assert(!native_window_owns_text_view_in_active_app(w, NO));
   w.testingFocusOverrideEnabled = YES;
   w.testingFocusOverride = NO;
   reconcile_window_focus(w);
@@ -433,6 +438,25 @@ static void native_text_session_bounds(GPWindow *w, NSString *snapshot) {
   w.testingFocusOverrideEnabled = YES;
   w.testingFocusOverride = YES;
   assert_focus_event_once(w, 5);
+
+  // Losing app activity fences an active editor even if its window and first
+  // responder still match. Keep the test override false while draining so the
+  // native harness does not depend on this runner being the foreground app.
+  w.testingTextFocusOverride = YES;
+  NSString *inactive_session = session_payload(@"ready", 5, 5, 15, 0, 40, 30, NO);
+  assert(call_op(19, w.token, 0, 0, inactive_session) == 0 && w.sessionActive);
+  w.testingTextFocusOverride = NO;
+  w.testingFocusOverrideEnabled = NO;
+  assert(!native_window_owns_text_view_in_active_app(w, NO));
+  reconcile_window_focus_for_activity(w, NO);
+  assert(!w.reportedKeyFocus && !w.sessionActive && !w.directText);
+
+  // Force only the event drain's observed state after the real app-activity
+  // predicate has fenced the editor above.
+  w.testingFocusOverrideEnabled = YES;
+  w.testingFocusOverride = NO;
+  assert_focus_event_once(w, 6);
+  w.testingFocusOverrideEnabled = NO;
 }
 int main(void) {
   @autoreleasepool {
@@ -449,7 +473,7 @@ int main(void) {
     int64_t token=api->integer(0), previous=0;
     GPWindow *w=windows[@(token)];
     assert(w && w.surface && w.window.visible);
-    assert(w.reportedKeyFocus == window_is_key_focus(w));
+    assert(w.reportedKeyFocus == native_window_has_active_key_focus(w, NSApp.isActive));
     drain();
     NSString *snapshot=[NSString stringWithFormat:
       @"{\"schema_version\":1,\"viewport\":{\"x\":0,\"y\":0,\"width\":320,\"height\":240},\"scale\":%g,\"resources\":[],\"clip_chains\":[{\"id\":0,\"rects\":[{\"x\":60,\"y\":60,\"width\":80,\"height\":40}]}],\"items\":[{\"kind\":\"quad\",\"bounds\":{\"x\":40,\"y\":40,\"width\":40,\"height\":80},\"color\":{\"red\":255,\"green\":0,\"blue\":0,\"alpha\":255},\"transform\":{\"a\":1,\"b\":0,\"c\":0,\"d\":1,\"tx\":20,\"ty\":0},\"opacity\":1,\"clip_chain_id\":0},{\"kind\":\"quad\",\"bounds\":{\"x\":80,\"y\":60,\"width\":60,\"height\":40},\"color\":{\"red\":0,\"green\":0,\"blue\":255,\"alpha\":255},\"transform\":{\"a\":1,\"b\":0,\"c\":0,\"d\":1,\"tx\":0,\"ty\":0},\"opacity\":0.5,\"clip_chain_id\":null}]}",w.scale];

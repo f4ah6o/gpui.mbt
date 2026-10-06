@@ -293,15 +293,20 @@ static void fence_session(GPWindow *w, BOOL close_session, int error) {
     w.caretRectMatchesVisible = YES;
   }
 }
-static BOOL window_is_key_focus(GPWindow *w) {
-#ifdef GPUI_TESTING
-  if (w && w.testingFocusOverrideEnabled) return w.testingFocusOverride;
-#endif
-  return w && !w.closing && w.window && w.window.isKeyWindow && NSApp.keyWindow == w.window;
+static BOOL native_window_has_active_key_focus(GPWindow *w, BOOL app_active) {
+  return app_active && w && !w.closing && w.window && w.window.isKeyWindow &&
+    NSApp.keyWindow == w.window;
 }
-static void reconcile_window_focus(GPWindow *w) {
+static BOOL native_window_owns_text_view_in_active_app(GPWindow *w, BOOL app_active) {
+  return native_window_has_active_key_focus(w, app_active) &&
+    w.window.firstResponder == w.window.contentView;
+}
+static void reconcile_window_focus_for_activity(GPWindow *w, BOOL app_active) {
   if (!w) return;
-  BOOL focused = window_is_key_focus(w);
+  BOOL focused = native_window_has_active_key_focus(w, app_active);
+#ifdef GPUI_TESTING
+  if (w.testingFocusOverrideEnabled) focused = w.testingFocusOverride;
+#endif
   if (focused == w.reportedKeyFocus) return;
   w.reportedKeyFocus = focused;
   if (focused) {
@@ -311,6 +316,9 @@ static void reconcile_window_focus(GPWindow *w) {
     fence_session(w, YES, 0);
     emit(w, 6, 0, 0, 0, 0, 0);
   }
+}
+static void reconcile_window_focus(GPWindow *w) {
+  reconcile_window_focus_for_activity(w, NSApp.isActive);
 }
 static void reconcile_all_window_focus(void) {
   if (!windows) return;
@@ -1337,8 +1345,7 @@ static BOOL key_window_owns_view(GPWindow *w) {
 #ifdef GPUI_TESTING
   if (w && w.testingTextFocusOverride) return YES;
 #endif
-  return w && w.window && !w.closing && NSApp.keyWindow == w.window &&
-    w.window.firstResponder == w.window.contentView;
+  return native_window_owns_text_view_in_active_app(w, NSApp.isActive);
 }
 static int begin_text_session(GPWindow *w, const uint8_t *bytes, int32_t length) {
   if (!key_window_owns_view(w)) return 12;
