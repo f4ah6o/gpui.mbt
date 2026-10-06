@@ -7,6 +7,27 @@ extern "C" fn native_readback(
 ) -> Int = "gpui_windows_readback"
 
 ///|
+#borrow(expected_rgba, output)
+extern "C" fn native_test_readback_region(
+  host : Int,
+  window : Int,
+  x : Double,
+  y : Double,
+  width : Double,
+  height : Double,
+  expected_rgba : FixedArray[Double],
+  output : FixedArray[Double],
+) -> Int = "gpui_windows_test_readback_region"
+
+///|
+#borrow(counts)
+extern "C" fn native_test_renderer_counts(
+  host : Int,
+  window : Int,
+  counts : FixedArray[Int64],
+) -> Int = "gpui_windows_test_renderer_counts"
+
+///|
 extern "C" fn native_wrong_thread(host : Int, window : Int) -> Int = "gpui_windows_test_wrong_thread"
 
 ///|
@@ -33,10 +54,56 @@ extern "C" fn native_mouse_arm_destroy(host : Int, window : Int) -> Int = "gpui_
 extern "C" fn native_mouse_destroy_reset(host : Int, window : Int) -> Int = "gpui_windows_test_mouse_destroy_reset"
 
 ///|
+#borrow(failed_stage)
+extern "C" fn native_text_session_staging(
+  failed_stage : FixedArray[Int],
+) -> Int = "gpui_windows_test_text_session_staging"
+
+///|
 fn rect(w : Double, h : Double) -> @primitives.Rect {
   match @primitives.Rect::new(0.0, 0.0, w, h) {
     Ok(r) => r
     Err(_) => abort("fixture")
+  }
+}
+
+///|
+fn required_scene_text_run(
+  id : UInt64,
+  bounds : @primitives.Rect,
+  origin : @primitives.Point,
+  text : String,
+  font_size : Double,
+  color : @primitives.Color,
+  transform : @scene.AffineTransform,
+) -> @scene.SceneItem {
+  match
+    @scene.SceneItem::text_run(
+      id,
+      bounds,
+      origin,
+      text,
+      font_size,
+      color,
+      transform,
+      1.0,
+      None,
+    ) {
+    Ok(item) => item
+    Err(_) => abort("text run fixture")
+  }
+}
+
+///|
+fn required_scene_quad(
+  id : UInt64,
+  bounds : @primitives.Rect,
+  color : @primitives.Color,
+  transform : @scene.AffineTransform,
+) -> @scene.SceneItem {
+  match @scene.SceneItem::quad(id, bounds, color, transform, 1.0, None) {
+    Ok(item) => item
+    Err(_) => abort("quad fixture")
   }
 }
 
@@ -122,20 +189,12 @@ test "Win32 event translation keeps logical input and portable key values" {
     }
     _ => fail("horizontal scroll translation")
   }
-  data[0] = 11.0
+  data[0] = 16.0
   data[6] = 0x3042.0
   data[8] = 0.0
   assert_true(
     decode_event(data)
-    is Some(
-      @platform.Input(
-        @primitives.KeyPressed(
-          key=@primitives.Character("あ"),
-          modifiers=_,
-          repeat=false
-        )
-      )
-    ),
+    is Some(@platform.Input(@primitives.TextInput(text="あ"))),
   )
   data[0] = 6.0
   data[8] = 1.0
@@ -281,6 +340,30 @@ fn[T] required(result : Result[T, @diagnostics.FrameworkError]) -> T {
 }
 
 ///|
+fn await_frame_completed(host : Host, last_sequence : Int64) -> Int64 {
+  let mut completed = false
+  let mut polls = 0
+  let mut last = last_sequence
+  while !completed && polls < 40 {
+    let events = required(host.dispatch(16))
+    for event in events {
+      if event.sequence() <= last {
+        abort("frame event sequence did not advance")
+      }
+      last = event.sequence()
+      if event.kind() is @platform.FrameCompleted {
+        completed = true
+      }
+    }
+    polls += 1
+  }
+  if !completed {
+    abort("frame did not complete")
+  }
+  last
+}
+
+///|
 test "non-Windows native stub never claims a real host" {
   if @env.get_env_var("GPUI_WINDOWS_E2E") != Some("1") {
     match Host::start() {
@@ -288,6 +371,20 @@ test "non-Windows native stub never claims a real host" {
       Ok(host) => required(host.stop())
     }
   }
+}
+
+///|
+test "Win32 production IMM session staging is atomic" {
+  let failed_stage = FixedArray::make(1, -1)
+  let status = native_text_session_staging(failed_stage)
+  if status == 1 {
+    // The portable non-Windows backend keeps the experimental native path
+    // explicitly unavailable.
+    assert_eq(failed_stage[0], -1)
+    return
+  }
+  assert_eq(status, 0)
+  assert_eq(failed_stage[0], 0)
 }
 
 ///|
@@ -339,6 +436,11 @@ test "Windows D3D11 HWND renders and reads back first frame" {
       Err(error) => assert_eq(error.code().label(), "unsupported_capability")
       Ok(_) => fail("renderer recovery must remain an unclaimed capability")
     }
+    required(host.require_capability(@platform.GrayscaleTextFrames))
+    match host.require_capability(@platform.TextInput) {
+      Err(error) => assert_eq(error.code().label(), "unsupported_capability")
+      Ok(_) => fail("private IMM ingress must not advertise public TextInput")
+    }
     match host.set_title(window, "prefix\u{0}suffix") {
       Err(error) => assert_eq(error.code().label(), "conversion_failed")
       Ok(_) => fail("a title containing NUL must be rejected")
@@ -374,6 +476,301 @@ test "Windows D3D11 HWND renders and reads back first frame" {
       completion_polls += 1
     }
     assert_true(frame_completed)
+
+    // Core DirectWrite masks are copied and clipped before touching the
+    // backbuffer; the staging readback scans actual D3D11 output, not a model.
+    let text_viewport = rect(128.0, 96.0)
+    let white = match @primitives.Color::rgba(255, 255, 255, 255) {
+      Ok(value) => value
+      Err(_) => abort("text color fixture")
+    }
+    let run_bounds = match @primitives.Rect::new(16.0, 20.0, 40.0, 32.0) {
+      Ok(value) => value
+      Err(_) => abort("text clip fixture")
+    }
+    let run_origin = match @primitives.Point::new(16.0, 20.0) {
+      Ok(value) => value
+      Err(_) => abort("text origin fixture")
+    }
+    let identity = @scene.AffineTransform::identity()
+    let clipped_run = required_scene_text_run(
+      70, run_bounds, run_origin, "MMMMMMMMMMMM", 22.0, white, identity,
+    )
+    let clipped_scene = match
+      @scene.SceneSnapshot::new(text_viewport, scale, [], [], [clipped_run]) {
+      Ok(value) => value
+      Err(_) => abort("bounded text snapshot fixture")
+    }
+    required(host.present(window, clipped_scene))
+    last_sequence = await_frame_completed(host, last_sequence)
+    let transparent = FixedArray::make(4, 0.0)
+    let clipped_stats = FixedArray::make(4, 0.0)
+    required(
+      outcome(
+        native_test_readback_region(
+          host.token,
+          window.value().to_int(),
+          16.0,
+          20.0,
+          40.0,
+          32.0,
+          transparent,
+          clipped_stats,
+        ),
+        "text_mask_readback",
+      ),
+    )
+    assert_true(clipped_stats[1] > 0.0)
+    assert_true(clipped_stats[2] > 0.0)
+    let clipped_outside = FixedArray::make(4, 0.0)
+    required(
+      outcome(
+        native_test_readback_region(
+          host.token,
+          window.value().to_int(),
+          56.0,
+          20.0,
+          16.0,
+          32.0,
+          transparent,
+          clipped_outside,
+        ),
+        "text_clip_readback",
+      ),
+    )
+    assert_eq(clipped_outside[1], 0.0)
+
+    // The run's local origin is outside the global viewport coordinates, but
+    // its item translation places it at the viewport's top-left. Raster
+    // preflight must stay in item-local space; the viewport is applied after
+    // the transform by the D3D scissor and vertex mapping.
+    let offset_viewport = match @primitives.Rect::new(40.0, 24.0, 128.0, 96.0) {
+      Ok(value) => value
+      Err(_) => abort("offset viewport fixture")
+    }
+    let local_bounds = match @primitives.Rect::new(0.0, 0.0, 64.0, 32.0) {
+      Ok(value) => value
+      Err(_) => abort("translated text bounds")
+    }
+    let local_origin = match @primitives.Point::new(0.0, 0.0) {
+      Ok(value) => value
+      Err(_) => abort("translated text origin")
+    }
+    let translated = match
+      @scene.AffineTransform::new(1.0, 0.0, 0.0, 1.0, 40.0, 24.0) {
+      Ok(value) => value
+      Err(_) => abort("translated text transform")
+    }
+    let translated_run = required_scene_text_run(
+      73, local_bounds, local_origin, "MMMM", 24.0, white, translated,
+    )
+    let translated_scene = match
+      @scene.SceneSnapshot::new(offset_viewport, scale, [], [], [translated_run]) {
+      Ok(value) => value
+      Err(_) => abort("translated text snapshot")
+    }
+    required(host.present(window, translated_scene))
+    last_sequence = await_frame_completed(host, last_sequence)
+    let translated_pixels = FixedArray::make(4, 0.0)
+    required(
+      outcome(
+        native_test_readback_region(
+          host.token,
+          window.value().to_int(),
+          0.0,
+          0.0,
+          32.0,
+          32.0,
+          transparent,
+          translated_pixels,
+        ),
+        "translated_text_readback",
+      ),
+    )
+    assert_true(translated_pixels[1] > 0.0)
+    assert_true(translated_pixels[2] > 0.0)
+
+    // A later opaque quad masks the right side of an earlier text run. The
+    // left side retains real fractional glyph coverage, proving both item
+    // ordering and the alpha-texture draw path.
+    let overlap_bounds = match @primitives.Rect::new(16.0, 20.0, 80.0, 32.0) {
+      Ok(value) => value
+      Err(_) => abort("overlap text clip")
+    }
+    let overlap_run = required_scene_text_run(
+      71, overlap_bounds, run_origin, "MMMMMMMM", 24.0, white, identity,
+    )
+    let overlay_bounds = match @primitives.Rect::new(80.0, 16.0, 32.0, 40.0) {
+      Ok(value) => value
+      Err(_) => abort("overlay bounds")
+    }
+    let red = match @primitives.Color::rgba(255, 0, 0, 255) {
+      Ok(value) => value
+      Err(_) => abort("overlay color")
+    }
+    let overlay = required_scene_quad(72, overlay_bounds, red, identity)
+    let overlap_scene = match
+      @scene.SceneSnapshot::new(text_viewport, scale, [], [], [
+        overlap_run, overlay,
+      ]) {
+      Ok(value) => value
+      Err(_) => abort("overlap snapshot fixture")
+    }
+    required(host.present(window, overlap_scene))
+    last_sequence = await_frame_completed(host, last_sequence)
+    let text_region = FixedArray::make(4, 0.0)
+    required(
+      outcome(
+        native_test_readback_region(
+          host.token,
+          window.value().to_int(),
+          20.0,
+          20.0,
+          50.0,
+          32.0,
+          transparent,
+          text_region,
+        ),
+        "interleaved_text_readback",
+      ),
+    )
+    assert_true(text_region[1] > 0.0)
+    assert_true(text_region[2] > 0.0)
+    let red_pixel = FixedArray::make(4, 0.0)
+    red_pixel[0] = 255.0
+    red_pixel[3] = 255.0
+    let overlay_region = FixedArray::make(4, 0.0)
+    required(
+      outcome(
+        native_test_readback_region(
+          host.token,
+          window.value().to_int(),
+          84.0,
+          20.0,
+          24.0,
+          32.0,
+          red_pixel,
+          overlay_region,
+        ),
+        "ordered_quad_readback",
+      ),
+    )
+    assert_eq(overlay_region[3], overlay_region[0])
+
+    // An invalid final UTF-8 run fails after an earlier mask was staged. The
+    // payload bypasses the high-level serializer deliberately; actual native
+    // clear/draw/present call counts prove rejection precedes GPU submission.
+    let rejected_frame = FixedArray::make(55, 0.0)
+    rejected_frame[0] = 0.0
+    rejected_frame[1] = 0.0
+    rejected_frame[2] = 128.0
+    rejected_frame[3] = 96.0
+    rejected_frame[4] = scale
+    for run_index = 0; run_index < 2; run_index = run_index + 1 {
+      let record = 5 + run_index * 25
+      let q = record + 1
+      rejected_frame[record] = 2.0
+      rejected_frame[q] = 16.0
+      rejected_frame[q + 1] = 20.0
+      rejected_frame[q + 2] = 80.0
+      rejected_frame[q + 3] = 32.0
+      rejected_frame[q + 4] = 255.0
+      rejected_frame[q + 5] = 255.0
+      rejected_frame[q + 6] = 255.0
+      rejected_frame[q + 7] = 255.0
+      rejected_frame[q + 8] = 1.0
+      rejected_frame[q + 11] = 1.0
+      rejected_frame[q + 14] = 1.0
+      rejected_frame[q + 15] = 0.0
+      rejected_frame[q + 16] = 0.0
+      rejected_frame[q + 17] = 128.0
+      rejected_frame[q + 18] = 96.0
+      rejected_frame[q + 19] = run_index.to_double()
+      rejected_frame[q + 20] = 1.0
+      rejected_frame[q + 21] = 24.0
+      rejected_frame[q + 22] = 16.0
+      rejected_frame[q + 23] = 20.0
+    }
+    let invalid_utf8 = Bytes::makei(2, index => {
+      if index == 0 {
+        (77).to_byte()
+      } else {
+        (255).to_byte()
+      }
+    })
+    let renderer_counts_before = FixedArray::make(3, Int64::from_int(0))
+    required(
+      outcome(
+        native_test_renderer_counts(
+          host.token,
+          window.value().to_int(),
+          renderer_counts_before,
+        ),
+        "renderer_counts_before_reject",
+      ),
+    )
+    assert_eq(
+      native_present_text(
+        2,
+        host.token,
+        window.value().to_int(),
+        rejected_frame,
+        rejected_frame.length(),
+        invalid_utf8,
+        invalid_utf8.length(),
+      ),
+      1,
+    )
+    let renderer_counts_after = FixedArray::make(3, Int64::from_int(0))
+    required(
+      outcome(
+        native_test_renderer_counts(
+          host.token,
+          window.value().to_int(),
+          renderer_counts_after,
+        ),
+        "renderer_counts_after_reject",
+      ),
+    )
+    for index = 0; index < 3; index = index + 1 {
+      assert_eq(renderer_counts_after[index], renderer_counts_before[index])
+    }
+    let after_reject_text = FixedArray::make(4, 0.0)
+    required(
+      outcome(
+        native_test_readback_region(
+          host.token,
+          window.value().to_int(),
+          20.0,
+          20.0,
+          50.0,
+          32.0,
+          transparent,
+          after_reject_text,
+        ),
+        "atomic_text_readback",
+      ),
+    )
+    let after_reject_overlay = FixedArray::make(4, 0.0)
+    required(
+      outcome(
+        native_test_readback_region(
+          host.token,
+          window.value().to_int(),
+          84.0,
+          20.0,
+          24.0,
+          32.0,
+          red_pixel,
+          after_reject_overlay,
+        ),
+        "atomic_overlay_readback",
+      ),
+    )
+    for index = 0; index < 4; index = index + 1 {
+      assert_eq(after_reject_text[index], text_region[index])
+      assert_eq(after_reject_overlay[index], overlay_region[index])
+    }
 
     let (initial_width, initial_height, _) = required(
       host.window_metrics(window),
