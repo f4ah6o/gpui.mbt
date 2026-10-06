@@ -98,6 +98,15 @@
       "size": 840460
     },
     {
+      "name": "fonts-dejavu-extra",
+      "version": "2.37-8",
+      "archive": "fonts-dejavu-extra_2.37-8_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/f/fonts-dejavu/fonts-dejavu-extra_2.37-8_all.deb",
+      "sha256": "83128d00e5d7db412fe5a7a4e2ee32aebbf8d9ed560ad611202fb43078f80323",
+      "depends": "fonts-dejavu-core",
+      "size": 1792460
+    },
+    {
       "name": "fonts-noto-cjk",
       "version": "1:20240730+repack1-1",
       "archive": "fonts-noto-cjk_20240730+repack1-1_all.deb",

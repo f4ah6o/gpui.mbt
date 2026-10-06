@@ -9,7 +9,7 @@ plus MoonBit **0.10.14+7d59c7ec9** and its matching core. Exact versions, source
 URLs and SHA-256 values are committed in `profile.lock.json`. All archives must
 match before extraction. No `curl | sh`, floating `latest`, personal paths,
 credentials, repository changes, system-service changes, or sandbox changes
-are required. A 105-package prefix is about 130 MB compressed, excluding MoonBit.
+are required. A 106-package prefix is about 132 MB compressed, excluding MoonBit.
 
 This is a bounded profile, **not a hermetic OS image**. It expects a matching
 Debian 13 amd64 host with a C compiler, libc development files, pkg-config,
@@ -19,9 +19,11 @@ the package database, and desktop authentication to the host. `doctor` checks
 actual linkage rather than claiming that `.deb` extraction ran package
 maintainer scripts or satisfied the entire distribution dependency graph.
 
-Nix is not required: the tested host has neither a usable apt database in its
-restricted shell nor an established Nix graphical profile. Introducing a
-second package manager would not solve Mozc's compiled server-path contract.
+The tested Debian-prefix recipe was chosen because official recovery archives,
+a working package cache and the available cloud environment already supported
+it. No comparison established Nix as faster for this setup. Nix could encode a
+source build with the required compiled server path; this recipe does not claim
+that Nix cannot address that path contract.
 
 ## Recover after a reset
 
@@ -65,6 +67,12 @@ sh scripts/test_linux_text.sh
 
 The generated fonts configuration points at prefix-installed DejaVu/Noto
 fixtures instead of assuming fonts are installed under system `/usr/share`.
+`fonts-dejavu-extra` is required: the unchanged historical golden used DejaVu
+Math TeX Gyre for the neutral `sans` request. The initial 105-package profile
+omitted that file and selected DejaVu Sans, changing 1,231 glyph/caret pixels.
+The new lock adds the official 2.37-8 archive, whose math-font bytes match the
+historical host file. No golden or semantic target was repinned. Font inventory
+and the current runtime identities are captured with every candidate.
 Host runtime targets for otherwise-dangling development `.so` symlinks are
 linked only when that file exists; the host ABI remains an explicit dependency.
 
@@ -107,7 +115,13 @@ uses the host's software Mesa driver. GPUI receives `XDG_SESSION_TYPE=wayland`
 and its private socket. It must not inherit the outer X11 session-type value.
 The script terminates only its own processes when the field window exits.
 
-Manual smoke, using real desktop key events:
+The accepted PR32 baseline lacks Ctrl+A/select-all and the native unmapped
+modifier fix. It can fail when Shift is delivered. The final integrated source
+provides those fixes; build that current candidate for the ready semantic
+cases. This infrastructure's copied PR32 app source is not itself that final
+integration. The historical golden retains its independently reviewed origin.
+
+Optional manual smoke against the final integrated source, using real keys:
 
 1. Click the native field. Check the initial `Hello 日本` text renders.
 2. Select all with Ctrl+A; type `abc` as keyboard events. Confirm one insertion
@@ -190,10 +204,10 @@ that directory is cleaned up.
 
 ### Declarative case catalog
 
-The packaged `basic-text-shift` case was replayed through the generated owned
+The historical packaged `basic-text-shift` case was replayed through the generated owned
 native entry and full locked prefix: 14 compositor key events, a healthy app,
 the exact reviewed RGBA pixels and the ASCII OCR check passed in 1.344 seconds
-including cleanup. `keyboard-validation.json` records source/build/driver/font
+including cleanup. `keyboard-validation.json` retains that historical source/build/driver/font
 and XKB hashes plus the precise coverage boundary. This is a measured replay,
 not a performance guarantee or a pass for every catalog case.
 
@@ -205,11 +219,15 @@ python3 infra/linux-desktop/input_cases.py --list
 python3 infra/linux-desktop/case_runner.py --validate
 ```
 
-The first frozen catalog has one reviewed basic pixel case. Ctrl+A is an
-unresolved observer-only expected-failure pilot; replacement, navigation,
-undo/redo, focus reentry, standalone modifiers and held repeat remain pending
-until their exact presented-state/pixel oracles and provenance are reviewed.
-GPUI IME composition remains unsupported. `--all` records explicit skipped
+The archived version 1 catalog has one reviewed basic pixel case and an
+unresolved observer-only Ctrl+A expected-failure pilot. The default version 2
+catalog supports the unchanged basic golden plus predeclared Ctrl+A replacement,
+navigation/deletion/selection, standalone modifiers, undo/redo, branch-edit
+redo invalidation and private focus reentry using the accepted read-only
+observer. Semantic checkpoints independently require their matching completed
+Default Queue compositor frame. Held repeat still needs an adaptive reusable
+policy oracle; its independently passed frozen-source release/focus-loss proof
+is separate. GPUI IME composition remains unsupported. `--all` records explicit skipped
 pending/unsupported cases, rather than counting them as passes. The schema and
 activation requirements are in `fixtures/cases/FORMAT.md`.
 
@@ -221,12 +239,51 @@ python3 infra/linux-desktop/case_runner.py --case basic-text-shift \
   --output "$GPUI_DESKTOP_ROOT/results/fresh-basic-case"
 ```
 
-The frozen case requires its recorded source, binary, patch and fontconfig
-hashes. A freshly rebuilt executable or a newly generated prefix fontconfig
-needs a separately reviewed case update; the runner deliberately does not
-silently re-pin them. The optional read-only presented-state observer is off by
-default, reports only after successful presentation, and is never an edit/input
-API. A new driver/catalog's static validation does not replace its native replay.
+Version 2 semantic cases use a separately prepared current-candidate bundle;
+normal rebuilds require no edits to committed case SHAs. The legacy version 1
+catalog is preserved under `fixtures/cases-v1` for exact historical replay.
+Candidate bytes, source/patch, toolchain and font identities remain hash-checked
+at runtime. The optional read-only presented-state observer is off by default,
+reports only after successful presentation, and is never an edit/input API.
+A new driver/catalog's static validation does not replace its native replay.
+
+The current qualification is recorded separately in
+`keyboard-current-validation.json`: fresh offline 106-package bootstrap,
+matching source/runtime build snapshots, 80 static tests, and seven actual
+private-display keyboard scenarios passed. Basic input still matches every
+reviewed RGBA pixel. The held-repeat and GPUI IME entries remain explicit
+skips, and the initial 1,231-pixel font mismatch evidence is preserved.
+
+### Build, prepare, run the current candidate
+
+Use a separate external build directory, especially when preserving an earlier
+frozen executable or native evidence:
+
+```sh
+python3 infra/linux-desktop/gpui-desktop.py --root "$GPUI_DESKTOP_ROOT" build \
+  --repo "$CURRENT_SOURCE_REPO" --output-dir "$GPUI_DESKTOP_ROOT/build-current"
+python3 infra/linux-desktop/candidate_bundle.py prepare \
+  --profile-root "$GPUI_DESKTOP_ROOT" --output "$GPUI_DESKTOP_ROOT/candidates/current-iteration"
+python3 infra/linux-desktop/case_runner.py --candidate "$GPUI_DESKTOP_ROOT/candidates/current-iteration" \
+  --case basic-text-shift --output "$GPUI_DESKTOP_ROOT/results/current-basic"
+python3 infra/linux-desktop/case_runner.py --candidate "$GPUI_DESKTOP_ROOT/candidates/current-iteration" \
+  --all --output "$GPUI_DESKTOP_ROOT/results/current-all"
+```
+
+Build writes `field-build.json` only after matching pre/post source and runtime
+snapshots. It captures the actual compiler/pkg-config commands, disables Git
+textconv and rejects hidden index flags. Fontconfig must be self-contained;
+external XML includes need a separately captured closure and fail closed here.
+Prepare makes a fresh outside-repository bundle with copied executable and
+provenance bytes. It retains the original live Fontconfig base so relative
+font paths are not changed by copying. Native launch still uses the supported
+desktop execution context; bundle preparation does not relax IPC permissions.
+Explicit `--bind-app` mode records an externally supplied artifact and does not
+claim it was compiled from the sampled source. See `BUILD-MANIFEST.md`.
+
+Source edits or runtime/font drift require a new build/preparation, while
+semantic expected states and reviewed golden hashes remain unchanged. No
+candidate output is automatically promoted to a golden or review approval.
 
 ### Optional native desktop entry
 

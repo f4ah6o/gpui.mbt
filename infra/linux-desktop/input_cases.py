@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small, strict v1 OS-input case catalog. Validation never launches a process."""
+"""Small, strict v1/v2 OS-input case catalog. Validation never launches a process."""
 import argparse
 import json
 from pathlib import Path
@@ -8,7 +8,7 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 CASES = HERE / "fixtures/cases"
-VERSION = 1
+VERSIONS = (1, 2)
 MAX_BYTES = 65536
 MODIFIERS = ("Control_L", "Shift_L")
 KEYSYMS = set("abcdefghijklmnopqrstuvwxyz0123456789") | {
@@ -127,11 +127,14 @@ def validate_event(event, where):
 
 
 def validate_case(case):
-    obj(case, {"version", "id", "description", "platform", "disposition", "reason",
-               "timeout_ms", "initial", "focus_click", "steps", "oracle",
-               "expected_failure", "artifacts", "provenance"}, "case")
-    if type(case["version"]) is not int or case["version"] != VERSION:
+    if not isinstance(case, dict) or type(case.get("version")) is not int or case["version"] not in VERSIONS:
         fail("case.version", "unsupported format version")
+    fields = {"version", "id", "description", "platform", "disposition", "reason",
+               "timeout_ms", "initial", "focus_click", "steps", "oracle",
+               "expected_failure", "artifacts"}
+    if case["version"] == 1:
+        fields.add("provenance")
+    obj(case, fields, "case")
     named(case["id"], "case.id")
     string(case["description"], 1, 1024, "case.description")
     if case["platform"] != "linux-x11-weston":
@@ -211,17 +214,20 @@ def validate_case(case):
         fail("case.expected_failure", "only expected-failure cases may declare failure")
     if case["artifacts"] != ARTIFACTS:
         fail("case.artifacts", "required artifact list must be retained without custom paths")
-    source = case["provenance"]
-    obj(source, {"source_commit", "source_tree", "app_sha256", "patch_sha256", "fontconfig_sha256", "notes"}, "case.provenance")
-    for key in ("source_commit", "source_tree"):
-        hash_value(source[key], GIT_SHA, "case.provenance." + key)
-    for key in ("app_sha256", "patch_sha256", "fontconfig_sha256"):
-        hash_value(source[key], SHA256, "case.provenance." + key, nullable=True)
-    string(source["notes"], 1, 2048, "case.provenance.notes")
     if case["disposition"] == "supported" and kind == "pending":
         fail("case.oracle", "supported case needs a reviewed oracle")
-    if case["disposition"] == "supported" and any(source[key] is None for key in ("app_sha256", "fontconfig_sha256")):
-        fail("case.provenance", "supported case requires app/fontconfig hashes")
+    if case["disposition"] == "expected-failure" and kind not in {"pending", "presented_state"}:
+        fail("case.oracle", "expected-failure requires exact presented state")
+    if case["version"] == 1:
+        source = case["provenance"]
+        obj(source, {"source_commit", "source_tree", "app_sha256", "patch_sha256", "fontconfig_sha256", "notes"}, "case.provenance")
+        for key in ("source_commit", "source_tree"):
+            hash_value(source[key], GIT_SHA, "case.provenance." + key)
+        for key in ("app_sha256", "patch_sha256", "fontconfig_sha256"):
+            hash_value(source[key], SHA256, "case.provenance." + key, nullable=True)
+        string(source["notes"], 1, 2048, "case.provenance.notes")
+        if case["disposition"] == "supported" and any(source[key] is None for key in ("app_sha256", "fontconfig_sha256")):
+            fail("case.provenance", "supported case requires app/fontconfig hashes")
     return case
 
 

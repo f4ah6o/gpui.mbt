@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 1,
   "id": "ime-composition",
   "description": "Real Japanese preedit, candidate conversion, commit and cancel.",
   "platform": "linux-x11-weston",
@@ -34,5 +34,13 @@
     "weston.log",
     "xvfb.log",
     "events.jsonl"
-  ]
+  ],
+  "provenance": {
+    "source_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "source_tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "app_sha256": null,
+    "patch_sha256": null,
+    "fontconfig_sha256": null,
+    "notes": "Accepted text-field/undo source baseline. This planned case has not run through the packaged driver. Pin the actual reviewed observer/repeat build and source diff before activation."
+  }
 }

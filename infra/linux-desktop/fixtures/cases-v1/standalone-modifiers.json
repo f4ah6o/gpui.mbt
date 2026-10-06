@@ -1,10 +1,10 @@
 {
-  "version": 2,
+  "version": 1,
   "id": "standalone-modifiers",
   "description": "Standalone Shift and Control must preserve liveness before typing.",
   "platform": "linux-x11-weston",
-  "disposition": "supported",
-  "reason": "Predeclared semantic checkpoints exercised through real private-display OS input. Requires the accepted read-only presented-state observer and matching completed compositor frame; current candidate build identity is verified externally. Native qualification is recorded separately.",
+  "disposition": "pending",
+  "reason": "Standalone modifier decoding is fixed in the frozen candidate, but this distinct case still needs a reviewed final-state oracle.",
   "timeout_ms": 15000,
   "initial": {
     "text": "Hello 日本",
@@ -50,10 +50,8 @@
     }
   ],
   "oracle": {
-    "kind": "presented_state",
-    "version": 1,
-    "prefix": "GPUI_FIELD_STATE ",
-    "review": "Uses the accepted read-only observer contract from the frozen source integration: exact UTF-16 directional selection and text are emitted only after successful presentation. The runner independently requires the matching Default Queue compositor callback and retains pixels; no input/edit callback or auto-generated golden is used. Expected states were declared before this replay."
+    "kind": "pending",
+    "reason": "Exact presented-state observer is proposed but not integrated/reviewed; do not treat OCR or a fresh screenshot as a golden."
   },
   "expected_failure": null,
   "artifacts": [
@@ -65,5 +63,13 @@
     "weston.log",
     "xvfb.log",
     "events.jsonl"
-  ]
+  ],
+  "provenance": {
+    "source_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "source_tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "app_sha256": null,
+    "patch_sha256": null,
+    "fontconfig_sha256": null,
+    "notes": "Accepted text-field/undo source baseline. This planned case has not run through the packaged driver. Pin the actual reviewed observer/repeat build and source diff before activation."
+  }
 }

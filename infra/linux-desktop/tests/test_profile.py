@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import tarfile
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -34,6 +35,7 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(versions["xvfb"], "2:21.1.16-1.3+deb13u3")
         self.assertEqual(versions["xserver-common"], versions["xvfb"])
         self.assertIn("libxtst6", versions)
+        self.assertEqual(versions["fonts-dejavu-extra"], "2.37-8")
 
     def test_valid_offline_cache_avoids_network(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -83,6 +85,83 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(env["HOME"], "/home/example")
         self.assertIn("'-I/tmp/a root/prefix/usr/include'", env["CPPFLAGS"])
         self.assertEqual(env["MOON_HOME"], "/tmp/a root/moon")
+
+    def test_build_runtime_snapshots_bracket_compile_and_write_readiness(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root, repo = base / "profile", base / "repo"
+            root.mkdir()
+            repo.mkdir()
+            binary = root / "build/native/debug/build/examples/linux_text_field/field.exe"
+            order = []
+            source = {"repo": str(repo), "head": "fixture"}
+            runtime = {"identity": "stable"}
+
+            def fake_run(command, **kwargs):
+                if command[0] == "sh":
+                    order.append("prepare-protocols")
+                else:
+                    order.append("compile")
+                    binary.parent.mkdir(parents=True)
+                    binary.write_bytes(b"fixture executable")
+
+            def capture_runtime(*args):
+                order.append("capture-runtime")
+                return dict(runtime)
+
+            with patch.object(desktop, "run", side_effect=fake_run), \
+                 patch.object(desktop.build_manifest, "capture_source", return_value=source), \
+                 patch.object(desktop.build_manifest, "capture_runtime", side_effect=capture_runtime), \
+                 patch("sys.stdout", new=io.StringIO()):
+                desktop.build(SimpleNamespace(repo=repo, output_dir=None), root)
+            self.assertEqual(order, ["prepare-protocols", "capture-runtime", "compile", "capture-runtime"])
+            recorded = json.loads((root / "field-build.json").read_text())
+            self.assertEqual(recorded["runtime"], runtime)
+            self.assertEqual(recorded["binary"]["sha256"], desktop.digest(binary))
+            self.assertEqual((root / "field-binary.txt").read_text(), str(binary) + "\n")
+
+    def test_build_runtime_drift_removes_stale_readiness_and_never_writes_new_claim(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root, repo = base / "profile", base / "repo"
+            root.mkdir()
+            repo.mkdir()
+            for name in ["field-build.json", "field-binary.txt"]:
+                (root / name).write_text("stale readiness")
+            binary = root / "build/native/debug/build/examples/linux_text_field/field.exe"
+
+            def fake_run(command, **kwargs):
+                if command[0] != "sh":
+                    binary.parent.mkdir(parents=True)
+                    binary.write_bytes(b"fixture executable")
+
+            with patch.object(desktop, "run", side_effect=fake_run), \
+                 patch.object(desktop.build_manifest, "capture_source", return_value={"repo": str(repo)}), \
+                 patch.object(desktop.build_manifest, "capture_runtime", side_effect=[{"compiler": "before"}, {"compiler": "after"}]), \
+                 patch.object(desktop.build_manifest, "write_build_manifest") as write:
+                with self.assertRaisesRegex(RuntimeError, "runtime changed during build"):
+                    desktop.build(SimpleNamespace(repo=repo, output_dir=None), root)
+                write.assert_not_called()
+            self.assertFalse((root / "field-build.json").exists())
+            self.assertFalse((root / "field-binary.txt").exists())
+
+    def test_failed_prebuild_runtime_capture_stops_compilation_without_readiness(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root, repo = base / "profile", base / "repo"
+            root.mkdir()
+            repo.mkdir()
+            for name in ["field-build.json", "field-binary.txt"]:
+                (root / name).write_text("stale readiness")
+            with patch.object(desktop, "run") as run, \
+                 patch.object(desktop.build_manifest, "capture_source", return_value={"repo": str(repo)}), \
+                 patch.object(desktop.build_manifest, "capture_runtime", side_effect=RuntimeError("missing captured tool")):
+                with self.assertRaisesRegex(RuntimeError, "missing captured tool"):
+                    desktop.build(SimpleNamespace(repo=repo, output_dir=None), root)
+                self.assertEqual(run.call_count, 1)
+                self.assertEqual(run.call_args.args[0][0], "sh")
+            self.assertFalse((root / "field-build.json").exists())
+            self.assertFalse((root / "field-binary.txt").exists())
 
     def test_graphical_session_has_isolated_ibus_registry(self):
         env = desktop.graphical_environment(Path("/tmp/profile"))

@@ -1,10 +1,10 @@
 {
-  "version": 2,
+  "version": 1,
   "id": "ctrl-a-replacement",
   "description": "Ctrl+A should select all before ASCII replacement.",
   "platform": "linux-x11-weston",
-  "disposition": "supported",
-  "reason": "Required select-all replacement regression. The preserved observer-only baseline reproduced an exact failure; the isolated select-all candidate subsequently reached the predeclared abc state at UTF-16 3→3. Candidate build identity belongs in an external manifest, not this semantic case.",
+  "disposition": "expected-failure",
+  "reason": "Accepted source handles Ctrl+Z/Y/C/X/V but lacks Ctrl+A; intended replacement is an expected failure until implemented. Exact observed mismatch needs the reviewed state observer.",
   "timeout_ms": 15000,
   "initial": {
     "text": "Hello 日本",
@@ -57,12 +57,20 @@
     }
   ],
   "oracle": {
-    "kind": "presented_state",
-    "version": 1,
-    "prefix": "GPUI_FIELD_STATE ",
-    "review": "Root-reviewed read-only observer after successful presentation. Preserved native source dbad647b transition reached abc with directional selection 3→3, actual OS delivery, retained pixels and liveness. Requires a candidate implementing the observer; missing behavior must fail this semantic target."
+    "kind": "pending",
+    "reason": "Exact presented-state observer is proposed but not integrated/reviewed; do not treat OCR or a fresh screenshot as a golden."
   },
-  "expected_failure": null,
+  "expected_failure": {
+    "kind": "state_mismatch",
+    "observed": {
+      "text": "Hello 日本abc",
+      "selection": {
+        "anchor": 11,
+        "head": 11
+      },
+      "focused": true
+    }
+  },
   "artifacts": [
     "case.json",
     "result.json",
@@ -72,5 +80,13 @@
     "weston.log",
     "xvfb.log",
     "events.jsonl"
-  ]
+  ],
+  "provenance": {
+    "source_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "source_tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "app_sha256": null,
+    "patch_sha256": null,
+    "fontconfig_sha256": null,
+    "notes": "Accepted text-field/undo source baseline. This planned case has not run through the packaged driver. Pin the actual reviewed observer/repeat build and source diff before activation."
+  }
 }

@@ -18,6 +18,8 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 
+import build_manifest
+
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 LOCK = HERE / "profile.lock.json"
@@ -349,15 +351,36 @@ def doctor(args, root):
 
 def build(args, root):
     env = native_environment(root)
-    run(["sh", REPO / "scripts/prepare_ubuntu.sh"], cwd=REPO, env=env)
-    target = root / "build"
-    run([root / "moon/bin/moon", "build", "examples/linux_text_field", "--target", "native",
-         "--target-dir", target], cwd=REPO, env=env)
+    repo = Path(args.repo).expanduser().resolve()
+    if root == repo or repo in root.parents:
+        raise RuntimeError("keep build/profile output outside the candidate source checkout")
+    build_record = root / "field-build.json"
+    build_record.unlink(missing_ok=True)
+    (root / "field-binary.txt").unlink(missing_ok=True)
+    source_before = build_manifest.capture_source(repo)
+    run(["sh", repo / "scripts/prepare_ubuntu.sh"], cwd=repo, env=env)
+    target = Path(args.output_dir).expanduser().resolve() if args.output_dir else root / "build"
+    if target == repo or repo in target.parents:
+        raise RuntimeError("keep candidate build output outside its source checkout")
+    command = [root / "moon/bin/moon", "build", "examples/linux_text_field", "--target", "native",
+               "--target-dir", target]
+    # Generated protocols are build inputs, so capture them after preparation
+    # together with the compiler, core, prefix and configured font identities.
+    runtime_before = build_manifest.capture_runtime(root, Path(env["FONTCONFIG_FILE"]), env, repo)
+    run(command, cwd=repo, env=env)
     binaries = list(target.glob("native/debug/build/examples/linux_text_field/*.exe"))
     if len(binaries) != 1:
         raise RuntimeError("expected exactly one field executable; inspect build output")
+    source_after = build_manifest.capture_source(repo)
+    if source_before != source_after:
+        raise RuntimeError("source changed during build; no executable readiness claim written")
+    runtime = build_manifest.capture_runtime(root, Path(env["FONTCONFIG_FILE"]), env, repo)
+    build_manifest.require_matching_runtime(runtime_before, runtime)
+    build_manifest.write_build_manifest(build_record, source_before, source_after,
+                                        binaries[0], runtime, command)
     (root / "field-binary.txt").write_text(str(binaries[0].resolve()) + "\n")
     print("Built: " + str(binaries[0]))
+    print("Build manifest: " + str(build_record))
 
 
 def wait_for(predicate, process, description, seconds=10):
@@ -460,7 +483,11 @@ def main(argv=None):
     doctor_parser.add_argument("--build-only", action="store_true", help="do not require DISPLAY for build diagnostics")
     doctor_parser.add_argument("--input-e2e", action="store_true", help="check private-Xvfb/XTest and host screenshot/text-oracle prerequisites")
     commands.add_parser("env")
-    commands.add_parser("build")
+    build_parser = commands.add_parser("build")
+    build_parser.add_argument("--repo", type=Path, default=REPO,
+                              help="current candidate checkout; defaults to this project")
+    build_parser.add_argument("--output-dir", type=Path,
+                              help="separate external build directory; defaults to profile/build")
     for name in ["launch", "ime-baseline"]:
         commands.add_parser(name).add_argument("--session", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)

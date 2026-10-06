@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import stat
 import struct
 import subprocess
 import sys
@@ -26,6 +27,12 @@ STATE_PREFIX = "GPUI_FIELD_STATE "
 KEY_EVENT = re.compile(r"wl_keyboard(?:#|@)\d+\.key\(")
 KEYBOARD_ENTER = re.compile(r"wl_keyboard(?:#|@)\d+\.enter\(")
 KEYBOARD_LEAVE = re.compile(r"wl_keyboard(?:#|@)\d+\.leave\(")
+FRAME = re.compile(r"\{Default Queue\}[^\n]*wl_surface(?:#|@)(?P<surface>\d+)\.frame\(new id wl_callback(?:#|@)(?P<callback>\d+)\)")
+DONE = re.compile(r"\{Default Queue\}[^\n]*wl_callback(?:#|@)(\d+)\.done\(")
+POINTER_ENTER = re.compile(r"wl_pointer(?:#|@)\d+\.enter\(\d+,\s*wl_surface(?:#|@)(\d+),\s*([-\d.]+),\s*([-\d.]+)\)")
+POINTER_LEAVE = re.compile(r"wl_pointer(?:#|@)\d+\.leave\(")
+POINTER_MOTION = re.compile(r"wl_pointer(?:#|@)\d+\.motion\(\d+,\s*([-\d.]+),\s*([-\d.]+)\)")
+POINTER_BUTTON = re.compile(r"wl_pointer(?:#|@)\d+\.button\(\d+,\s*\d+,\s*(\d+),\s*(\d+)\)")
 XKB_RESOURCES = ("rules/evdev", "keycodes/evdev", "symbols/pc", "symbols/us", "types/complete", "compat/complete")
 
 
@@ -64,6 +71,43 @@ def private_display_number(inherited_display, choose=None, exists=None):
     return number
 
 
+def xvfb_readiness(process, number, framebuffer, uid=None):
+    """Read-only readiness for the owned server; never probes a connection."""
+    if process.poll() is not None:
+        raise RuntimeError("owned Xvfb exited before readiness")
+    uid = os.geteuid() if uid is None else uid
+    lock = Path(f"/tmp/.X{number}-lock")
+    socket = Path(f"/tmp/.X11-unix/X{number}")
+    paths = [(lock, stat.S_ISREG), (socket, stat.S_ISSOCK), (Path(framebuffer), stat.S_ISREG)]
+    observations = []
+    for path, allowed in paths:
+        try:
+            entry = path.lstat()
+        except FileNotFoundError:
+            return None
+        if entry.st_uid != uid or not allowed(entry.st_mode):
+            raise RuntimeError("owned Xvfb readiness ownership/type mismatch: " + str(path))
+        observations.append([entry.st_dev, entry.st_ino, entry.st_uid, entry.st_mode, entry.st_size])
+    pid_text = lock.read_text(encoding="ascii").strip()
+    if not pid_text:
+        return None
+    if not pid_text.isdecimal() or int(pid_text) != process.pid:
+        raise RuntimeError("Xvfb lock PID does not match the owned child")
+    if observations[-1][-1] < 100:
+        return None
+    return {"pid": process.pid, "display": number, "identities": observations}
+
+
+def connect_owned_once(x, process, display, authority, number, framebuffer, wait, pause):
+    ready = wait(lambda: xvfb_readiness(process, number, framebuffer), "owned Xvfb PID/socket/framebuffer readiness")
+    pause(80)
+    if xvfb_readiness(process, number, framebuffer) != ready:
+        raise RuntimeError("owned Xvfb readiness drift before authenticated connection")
+    if not x.connect(display, authority):
+        raise RuntimeError("one authenticated private X connection failed; no retry")
+    return ready
+
+
 def presented_states(log):
     """Parse the proposed read-only observer. It is never an input channel."""
     states = []
@@ -88,6 +132,42 @@ def presented_states(log):
 
 def state_of(record):
     return {key: record[key] for key in ("text", "selection", "focused")}
+
+
+def completed_frame(log, observer=False):
+    """Match the actual app queue callback; accepted state alone is insufficient."""
+    accepted_at = log.rfind(STATE_PREFIX) if observer else len(log)
+    if accepted_at < 0:
+        return None
+    requests = list(FRAME.finditer(log[:accepted_at]))
+    if not requests:
+        return None
+    request = requests[-1]
+    after = accepted_at if observer else request.end()
+    done = [match for match in DONE.finditer(log, after) if match[1] == request["callback"]]
+    if not done:
+        return None
+    result = {"surface_id": int(request["surface"]), "callback_id": int(request["callback"]),
+              "request_offset": request.start(), "done_offset": done[-1].start(),
+              "queue": "Default Queue", "callback_completed": True}
+    if observer:
+        result.update(accepted_record=presented_states(log)[-1], accepted_state_offset=accepted_at,
+                      callback_completed_after_accepted=True)
+    return result
+
+
+def pointer_ready(log, surface, x, y):
+    """Require wire pointer focus/coordinates before sending the click."""
+    target = None
+    for line in log.splitlines():
+        enter, motion = POINTER_ENTER.search(line), POINTER_MOTION.search(line)
+        if enter:
+            target = (int(enter[1]), float(enter[2]), float(enter[3]))
+        elif POINTER_LEAVE.search(line):
+            target = None
+        elif motion and target is not None:
+            target = (target[0], float(motion[1]), float(motion[2]))
+    return target == (surface, float(x), float(y))
 
 
 def key_event_count(case, client_only=False):
@@ -133,7 +213,7 @@ def verify_prefix_resources(prefix):
     return {name: digest(root / name) for name in XKB_RESOURCES}
 
 
-def verify_inputs(case, args):
+def verify_v1_inputs(case, args):
     for name in ("prefix", "repo", "app", "fontconfig"):
         path = getattr(args, name)
         if not path or not path.exists():
@@ -166,6 +246,10 @@ def verify_inputs(case, args):
                      "patch_sha256": patch_hash, "fontconfig_sha256": digest(args.fontconfig),
                      "worktree_diff_sha256": hashlib.sha256(diff).hexdigest(),
                      "worktree_diff_empty": not diff, "xkb_resources": xkb_resources}
+    return actual_source, verified_golden(case, args)
+
+
+def verified_golden(case, args):
     golden = None
     if case["oracle"]["kind"] == "reviewed_pixels":
         golden = args.golden or HERE / "fixtures" / case["oracle"]["fixture"]
@@ -176,7 +260,38 @@ def verify_inputs(case, args):
             image = image.convert("RGBA")
             if image.size != (960, 480) or hashlib.sha256(image.tobytes()).hexdigest() != case["oracle"]["rgba_sha256"]:
                 raise RuntimeError("refusing changed golden pixels")
-    return actual_source, golden
+    return golden
+
+
+def verify_inputs(case, args):
+    if case["version"] == 1:
+        if getattr(args, "candidate", None):
+            raise RuntimeError("historical v1 cases require their exact runtime pins, not a candidate override")
+        return verify_v1_inputs(case, args)
+    if not getattr(args, "candidate", None):
+        raise RuntimeError("semantic v2 cases require --candidate PREPARED_BUNDLE; do not repin committed cases")
+    import candidate_bundle
+    if not getattr(args, "_candidate_applied", False):
+        for name in ("prefix", "repo", "app", "app_sha256", "fontconfig", "source_patch"):
+            if getattr(args, name, None) is not None:
+                raise RuntimeError("--candidate cannot override recorded --" + name.replace("_", "-"))
+    manifest, resolved = candidate_bundle.verify_candidate(args.candidate)
+    candidate_sha = digest(args.candidate / "manifest.json")
+    prior = getattr(args, "_candidate_manifest_sha256", None)
+    if prior is not None and prior != candidate_sha:
+        raise RuntimeError("candidate manifest changed within this run")
+    args._candidate_manifest_sha256 = candidate_sha
+    for name, value in resolved.items():
+        setattr(args, name, value)
+    args._candidate_applied = True
+    source = manifest["source"]
+    provenance = {"candidate_manifest_sha256": candidate_sha, "candidate_mode": manifest["mode"],
+                  "source_claim": manifest["source_claim"], "source_commit": source["head"],
+                  "source_tree": source["tree"], "worktree_diff_sha256": source["tracked_patch_sha256"],
+                  "source_untracked_files": source["untracked_files"], "app_sha256": resolved["app_sha256"],
+                  "fontconfig_sha256": digest(resolved["fontconfig"]), "runtime_manifest": manifest["runtime"],
+                  "xkb_resources": verify_prefix_resources(resolved["prefix"])}
+    return provenance, verified_golden(case, args)
 
 
 class PrivateX:
@@ -377,6 +492,20 @@ def run_case(case, args, output):
     def emit(event, step_id):
         nonlocal focus_target
         record_event(event, step_id, "semantic-intent")
+        if case["version"] == 2 and event["type"] == "click":
+            frame = wait_for(lambda: completed_frame(read_log(output / "app.log")), "completed app frame before click", 2)
+            x.motion(event["x"], event["y"])
+            record_event({"type": "motion", "x": event["x"], "y": event["y"]}, step_id, "successful-XTest")
+            wait_for(lambda: pointer_ready(read_log(output / "app.log"), frame["surface_id"], event["x"], event["y"]),
+                     "actual app pointer entry/motion before click", 2)
+            offset = len(read_log(output / "app.log"))
+            for down in (True, False):
+                x.button(1, down)
+                record_event({"type": "button", "button": 1, "down": down}, step_id, "successful-XTest")
+                expected = [("272", "1")] if down else [("272", "1"), ("272", "0")]
+                wait_for(lambda: POINTER_BUTTON.findall(read_log(output / "app.log")[offset:]) == expected,
+                         "actual primary button " + ("press" if down else "press/release") + " delivery", 2)
+            return
         for action in physical_actions(event):
             if action["type"] == "focus":
                 marker = KEYBOARD_ENTER if action["target"] == "app" else KEYBOARD_LEAVE
@@ -412,7 +541,13 @@ def run_case(case, args, output):
         report.update(private_display=env["DISPLAY"], inherited_display_excluded=inherited_display)
         xvfb = launch([str(args.prefix / "usr/bin/Xvfb"), env["DISPLAY"], "-screen", "0", "960x480x24", "-nolisten", "tcp", "-auth", env["XAUTHORITY"], "-fbdir", str(framebuffer)], output / "xvfb.log")
         x = PrivateX()
-        wait_for(lambda: x.connect(env["DISPLAY"], runtime / "Xauthority") or (xvfb.poll() is not None and (_ for _ in ()).throw(RuntimeError("Xvfb exited"))), "authenticated private X display")
+        if case["version"] == 2:
+            report["xvfb_readiness"] = connect_owned_once(x, xvfb, env["DISPLAY"], runtime / "Xauthority", number,
+                                                        framebuffer / "Xvfb_screen0", wait_for, pause)
+            report["authenticated_connect_attempts"] = 1
+        else:
+            # Preserved strict historical v1 replay path; v2 never retries connect.
+            wait_for(lambda: x.connect(env["DISPLAY"], runtime / "Xauthority") or (xvfb.poll() is not None and (_ for _ in ()).throw(RuntimeError("Xvfb exited"))), "authenticated private X display")
         weston = launch([str(args.prefix / "usr/bin/weston"), "--backend=x11", "--renderer=pixman", "--shell=" + str(lib / "weston/kiosk-shell.so"), "--socket=gpui-e2e", "--width=960", "--height=480", "--idle-time=0", "--no-config", "--log=" + str(output / "weston.log")], output / "weston-stdio.log")
         def find_window():
             if weston.poll() is not None:
@@ -431,14 +566,18 @@ def run_case(case, args, output):
             if app.poll() is not None:
                 raise RuntimeError("GPUI exited before first frame")
             log = read_log(output / "app.log")
+            if case["version"] == 2:
+                return completed_frame(log)
             return ".frame(" in log and ".done(" in log[log.rfind(".frame("):]
-        wait_for(first_frame, "GPUI first frame")
+        report["first_frame_evidence"] = wait_for(first_frame, "GPUI first completed frame")
         x.focus(window)
         emit(case["focus_click"], "initial-focus")
         wait_for(lambda: ".button(" in read_log(output / "app.log"), "compositor pointer focus", 2)
         if case["oracle"]["kind"] == "presented_state":
             wait_for(lambda: observed_state() and state_of(observed_state()) == case["initial"], "exact initial presented state", 2)
             report["observed_initial"] = observed_state()
+            report["observed_initial_frame"] = wait_for(lambda: completed_frame(read_log(output / "app.log"), observer=True),
+                                                        "matching completed initial compositor frame", 2)
         else:
             report["initial_state_evidence"] = "accepted source literal, controlled end-of-field click, retained focused pixels; no integrated state observer"
         report["focused_pixels"] = capture("focused")
@@ -469,8 +608,16 @@ def run_case(case, args, output):
                         return None
                     return record
                 checkpoint["observed"] = wait_for(checkpoint_state, "exact presented checkpoint " + step["id"], 2)
+                checkpoint["observer_frame"] = wait_for(lambda: completed_frame(read_log(output / "app.log"), observer=True),
+                                                         "matching completed checkpoint compositor frame " + step["id"], 2)
+                if checkpoint["observer_frame"]["accepted_record"] != checkpoint["observed"]:
+                    raise RuntimeError("checkpoint state changed before its completed frame")
                 checkpoint["state_match"] = state_of(checkpoint["observed"]) == step["expect"]
                 checkpoint["fresh_presentation"] = previous_state is None or checkpoint["observed"]["presentation"] > previous_state["presentation"]
+                if previous_state and step["expect"] == state_of(previous_state):
+                    checkpoint["no_op_record_unchanged"] = checkpoint["observed"] == previous_state
+                    if not checkpoint["no_op_record_unchanged"]:
+                        raise RuntimeError("no-op checkpoint changed the accepted revision/presentation record")
             checkpoint["pixels"] = capture("step-" + step["id"])
             report["checkpoints"].append(checkpoint)
         report["final_pixels"] = capture("final")
@@ -539,7 +686,8 @@ def main(argv=None):
     parser.add_argument("--validate", action="store_true", help="validation only; no process/display access")
     for name in ("prefix", "repo", "app", "fontconfig", "output", "golden", "source-patch"):
         parser.add_argument("--" + name, type=Path)
-    parser.add_argument("--app-sha256")
+    parser.add_argument("--app-sha256", help="historical v1 replay only")
+    parser.add_argument("--candidate", type=Path, help="verified outside-repo bundle for reusable v2 semantic cases")
     args = parser.parse_args(argv)
     try:
         cases = [input_cases.select_case(args.case, args.cases_dir)] if args.case else input_cases.catalog(args.cases_dir)
@@ -552,6 +700,9 @@ def main(argv=None):
         selected = [case for case in cases if input_cases.runnable(case)]
         if not selected and args.case:
             print(json.dumps({"case_id": cases[0]["id"], "status": "skipped-" + cases[0]["disposition"], "reason": cases[0]["reason"], "oracle": cases[0]["oracle"]}, ensure_ascii=False))
+            return 3
+        if not selected and not args.output:
+            print(json.dumps({"status": "skipped-no-runnable-cases", "executed": 0, "skipped": len(cases), "results": [{"case_id": case["id"], "status": "skipped-" + case["disposition"], "reason": case["reason"]} for case in cases]}, ensure_ascii=False))
             return 3
         if not args.output:
             raise RuntimeError("--output FRESH_DIR is required")
@@ -566,7 +717,7 @@ def main(argv=None):
                 result = {"case_id": case["id"], "disposition": case["disposition"], "status": "skipped-" + case["disposition"], "reason": case["reason"], "oracle": case["oracle"]}
             results.append(result)
             print(json.dumps(result, ensure_ascii=False), flush=True)
-        summary = {"status": "completed" if selected else "skipped-no-runnable-cases", "version": 1, "results": results, "executed": len(selected), "skipped": len(cases) - len(selected), "all_cases_executed": len(selected) == len(cases)}
+        summary = {"status": "completed" if selected else "skipped-no-runnable-cases", "version": 1, "results": results, "executed": len(selected), "skipped": len(cases) - len(selected), "all_cases_executed": bool(selected) and len(selected) == len(cases)}
         write_json(args.output / "summary.json", summary)
         if not selected:
             print(json.dumps({"status": "skipped-no-runnable-cases", "executed": 0, "skipped": len(cases)}, ensure_ascii=False), flush=True)

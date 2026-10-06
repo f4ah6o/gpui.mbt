@@ -1,10 +1,10 @@
 {
-  "version": 2,
-  "id": "undo-branch-edit",
-  "description": "A new edit after undo invalidates the redo branch.",
+  "version": 1,
+  "id": "undo-redo",
+  "description": "Undo and both documented redo shortcuts.",
   "platform": "linux-x11-weston",
-  "disposition": "supported",
-  "reason": "Predeclared semantic checkpoints exercised through real private-display OS input. Requires the accepted read-only presented-state observer and matching completed compositor frame; current candidate build identity is verified externally. Native qualification is recorded separately.",
+  "disposition": "pending",
+  "reason": "Accepted owner/control has undo/redo; protocol-driven state checkpoints remain unverified by this packaged runner.",
   "timeout_ms": 15000,
   "initial": {
     "text": "Hello 日本",
@@ -81,25 +81,7 @@
       }
     },
     {
-      "id": "branch",
-      "events": [
-        {
-          "type": "key",
-          "keysym": "x",
-          "modifiers": []
-        }
-      ],
-      "expect": {
-        "text": "abx",
-        "selection": {
-          "anchor": 3,
-          "head": 3
-        },
-        "focused": true
-      }
-    },
-    {
-      "id": "redo-no-op",
+      "id": "redo-y",
       "events": [
         {
           "type": "key",
@@ -110,7 +92,48 @@
         }
       ],
       "expect": {
-        "text": "abx",
+        "text": "abc",
+        "selection": {
+          "anchor": 3,
+          "head": 3
+        },
+        "focused": true
+      }
+    },
+    {
+      "id": "undo-again",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "z",
+          "modifiers": [
+            "Control_L"
+          ]
+        }
+      ],
+      "expect": {
+        "text": "ab",
+        "selection": {
+          "anchor": 2,
+          "head": 2
+        },
+        "focused": true
+      }
+    },
+    {
+      "id": "redo-shift-z",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "z",
+          "modifiers": [
+            "Control_L",
+            "Shift_L"
+          ]
+        }
+      ],
+      "expect": {
+        "text": "abc",
         "selection": {
           "anchor": 3,
           "head": 3
@@ -120,10 +143,8 @@
     }
   ],
   "oracle": {
-    "kind": "presented_state",
-    "version": 1,
-    "prefix": "GPUI_FIELD_STATE ",
-    "review": "Uses the accepted read-only observer contract from the frozen source integration: exact UTF-16 directional selection and text are emitted only after successful presentation. The runner independently requires the matching Default Queue compositor callback and retains pixels; no input/edit callback or auto-generated golden is used. Expected states were declared before this replay."
+    "kind": "pending",
+    "reason": "Exact presented-state observer is proposed but not integrated/reviewed; do not treat OCR or a fresh screenshot as a golden."
   },
   "expected_failure": null,
   "artifacts": [
@@ -135,5 +156,13 @@
     "weston.log",
     "xvfb.log",
     "events.jsonl"
-  ]
+  ],
+  "provenance": {
+    "source_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "source_tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "app_sha256": null,
+    "patch_sha256": null,
+    "fontconfig_sha256": null,
+    "notes": "Accepted text-field/undo source baseline. This planned case has not run through the packaged driver. Pin the actual reviewed observer/repeat build and source diff before activation."
+  }
 }
