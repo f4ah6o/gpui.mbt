@@ -389,7 +389,24 @@ test "Linux field Host.present admission and serializer rejection E2E" {
     }
 
     field_e2e_drain_frame(host, window)
-    let _candidate = field_e2e_present_ready(host, window, candidate)
+    let candidate = field_e2e_present_ready(host, window, candidate)
+    field_e2e_drain_frame(host, window)
+    assert_true(candidate.can_undo())
+
+    // Real control history reaches actual MoonBit serialization/presentation.
+    // Navigation after the edit and after undo cannot rewrite either endpoint.
+    let navigated = change(candidate, key_event(@primitives.Home)).unwrap()
+    let undone = navigated.undo(measure, admit).unwrap()
+    assert_true(undone.document() == selected.document())
+    assert_true(undone.can_redo())
+    let undone = field_e2e_present_ready(host, window, undone)
+    field_e2e_drain_frame(host, window)
+    let moved = change(undone, key_event(@primitives.End)).unwrap()
+    let redone = moved.redo(measure, admit).unwrap()
+    assert_true(redone.document() == candidate.document())
+    assert_true(redone.can_undo())
+    assert_false(redone.can_redo())
+    let _redone = field_e2e_present_ready(host, window, redone)
     field_e2e_drain_frame(host, window)
     field_e2e_required(host.destroy_window(window))
     field_e2e_required(host.stop())

@@ -1,6 +1,6 @@
 # Codebase gap snapshot and foundation-first development
 
-Observed 2026-10-05, refreshed after merged PR28 grayscale drawing and the focused-routing implementation. This is a source-grounded prioritization record, not a claim of runtime compatibility or production readiness.
+Observed 2026-10-05; gpui.mbt boundaries refreshed 2026-10-06 against merged PR30/PR31 main `73e7082` and the current bounded undo/redo change. Other project pins remain historical audit facts and were not rechecked in this refresh. This is a source-grounded prioritization record, not a claim of runtime compatibility or production readiness.
 
 ## Development decision
 
@@ -9,6 +9,13 @@ Use lightweight foundation development as the primary loop: inspect source requi
 The existing same-window proof is retained: [MZed PR3](https://github.com/gpui-mbt/MZed/pull/3) merged as `59a4a2b6daa48967c79de114a9de2ed119115c7b`; [main Linux evidence](https://github.com/gpui-mbt/MZed/actions/runs/37273659532) demonstrates the bounded 1x/2x mouse interaction, teardown/remount and original editor save. This does not satisfy all issue0019 gates, native text/IME/accessibility, all platforms, or the release ledger. Further fault-probe work is paused while foundation gaps are addressed.
 
 ## Source pins and evidence categories
+
+Earlier gpui.mbt pins below are historical checkpoints. The current accepted
+field/origin baseline is main `73e70822841024a7131c54fb4529cd40186d529c`, tree
+`108cf4e9ebb0055477b649e2008520c5efe1ee7b`, after merged PR30/PR31. Bounded
+undo/redo in the current change has local coverage; its new hosted GPU cases
+are pending. Zed and supporting-tool pins describe the earlier source audit,
+not newly verified current main states.
 
 - gpui.mbt main before the composition slice: `d3c142ef9ac2b856277059e41526f32e5845447a` (the portable UTF-16 text foundation; composition was not yet in this historical audited base).
 - gpui.mbt main after PR25 composition merge: `231400425d06f6be157f84ff27bb53134fa18ef3` (historical composition checkpoint).
@@ -26,19 +33,58 @@ Distinguish source capability present, partial contract, missing implementation,
 
 | Area | Verified current boundary | Foundation work | Later runtime gate |
 | --- | --- | --- | --- |
-| Text editing semantics | Historical PR25 added immutable composition to the UTF-16 document/selection model; PR26 merged strict UTF-16/UTF-8 scalar-boundary conversion at `7335e13`. No host input owner or widget is part of this model. | Host-owned sequencing/freshness and history semantics, then a focused input adapter with explicit offset-to-geometry mapping. | Actual native/browser IME behavior, Japanese IME, candidate placement, undo, multi-cursor, accessibility and production gates. |
-| Text measurement/rendering | PR27 is merged as `d0335f6`: the portable copied measurement/caret/hit contract and Linux PangoFT2 adapter exist. The current Ubuntu slice draws the supported SceneSnapshot v1 subset through logical-resolution grayscale A8 masks. Per-frame unsupported/resource checks remain; color glyphs reject a frame. | Build a Linux input control on matching `sans` family/font-size/context measurement, then caret/selection policy and broader renderer qualification. | Native/browser editor behavior, Japanese IME, accessibility, font/scale workload evidence and production gates. |
-| Input and focus | ElementTree routes pointer and focused key/text events; native backends still lack committed TextInput/IME ingress. Validated tree/snapshot backing arrays are private behind copy accessors. | Real native committed-text ingress, editable control integration, explicit composition ownership, cancellation and stale-input rules. | Native focus transitions, lost input pairs, IME and accessibility input behavior. |
-| Lists and reusable controls | Flex layout and element lifecycle exist; editor-facing virtualization and editable control contracts are not complete. | Build list/picker/text-field behavior from tested primitives, with bounded visible-range work. | Real large-tree/scroll performance and semantic accessibility. |
+| Text editing semantics | Portable UTF-16 document/selection, composition and strict UTF-8 offset conversion exist. Merged PR30/PR31 add a bounded Linux single-line LTR field with directional selection, cursor-stop navigation, clipboard guards and owner freshness/rollback. The current change adds bounded immutable undo/redo with local model/provider coverage; new hosted history cases are pending. | General editable-control/composition ownership, typing coalescing and broader editor history, then multi-cursor and reusable control integration. | Actual compositor-delivered typing, Japanese IME/candidate placement, new undo/redo GPU qualification, accessibility and production gates. |
+| Text measurement/rendering | Copied measurement/caret/hit values and Linux PangoFT2 exist. Merged PR30/PR31 paint field text/caret/selection/scroll with a shared origin-aware logical/ink union; declared Weston/llvmpipe injection checks passed at 1x/2x. Logical-resolution grayscale masks remain bounded; unknown/color glyphs reject. | Broader font/scale and renderer qualification, reusable controls, rich text and supported color-glyph behavior. | Native/browser editor behavior, font/scale workloads, accessibility and production gates; injected drawing is not typing evidence. |
+| Input and focus | ElementTree routes pointer and focused key/text events with private copy-safe validated backing arrays. Ubuntu has an opt-in private direct XKB/locale-Compose committed-text ingress with focus/epoch/stale-record guards; it does not advertise public TextInput/IME. Browser committed-text services are separate from a full editor model. | Public native text-input protocol/IME integration, explicit composition ownership and reusable editable-control sequencing. | Actual compositor-delivered field typing, Japanese IME, input-capable desktop focus transitions/lost pairs and accessibility input behavior. |
+| Lists and reusable controls | Flex layout and element lifecycle exist, plus the experimental bounded Linux field. General reusable editor-facing controls and virtualization are incomplete. | Build picker/list and broader text-field behavior from tested primitives, with bounded visible-range work. | Real large-tree/scroll performance and semantic accessibility. |
 | Host services and asynchronous work | Native clipboard/cursor adapters exist on macOS, Ubuntu and Windows, and portable host-service envelopes exist; native desktop dialog/filesystem adapters and complete async endpoint topology do not. | Reuse the existing clipboard/cursor adapters through controls; add dialog/filesystem/execution behavior only for a concrete consumer. Keep parked issue 0016 work distinct from accepted main. | Cross-client permission behavior, native file/dialog flow, lifetime/cancel races and complete host integration. |
 
-The first bounded implementation is the portable UTF-16 range, selection, and immutable document model. PR25 merged composition at `231400425d06f6be157f84ff27bb53134fa18ef3`; `TextComposition` previews replace the original target range, rebase relative directional selections, commit caller-supplied final text, and cancel to the original selection. PR26 merged the strict scalar-boundary UTF-16/UTF-8 bridge at `7335e13abe85c65d2a0f60571adc68faa8e64cdd`. PR27 then merged copied measurement/caret/hit values over that existing bridge plus a Linux PangoFT2 implementation at main commit `d0335f65f6758b5ecaf91353500ad6978f9ae13e`. The current Ubuntu implementation adds ordered grayscale mask drawing for supported text items without changing the public SceneSnapshot schema. It uses the generic `sans` family and item font size; caret/hit geometry in a future control must use the same family, size, and Pango context, while arbitrary-family measurement does not imply rendering parity. The shared element tree now supplies focused key/text dispatch, but no text field, actual native committed-text ingress, visible caret or selection, grapheme navigation, host IME input, undo history, rich text, or color-glyph output is provided. Frame limits and validation are recorded in [the Linux text guide](linux-text.md#ubuntu-grayscale-scene-text).
+The portable UTF-16 model, immutable composition, strict scalar-boundary offset
+bridge and copied Pango measurement/caret/hit values remain the foundations.
+Merged PR29 focused routing and PR30/PR31 field/origin work now connect those
+foundations in a bounded Ubuntu control: native direct committed-text ingress,
+visible caret/directional selection, cursor-stop navigation, clipboard guards,
+scroll and origin-aware grayscale drawing use matching `sans` family, font size
+and Pango context. The current change adds one group per content edit, bounded
+immutable history and current-style re-admission on undo/redo; clipboard and
+presentation transactions retain or roll back matching history. Those local
+history checks do not yet qualify the new hosted GPU cases.
+
+This is not a general editor. Actual compositor-delivered typing into the field
+and Japanese IME remain unrun. The direct XKB/locale-Compose path is distinct
+from a public native TextInput/IME protocol. General bidi, rich text, color-glyph
+output, multi-cursor, drag/word selection, typing coalescing and semantic
+accessibility remain missing or unqualified at their respective layers. See the
+[field guide](linux-text-field.md) for the bounded implemented behavior and the
+[Linux text guide](linux-text.md#ubuntu-grayscale-scene-text) for frame limits.
 
 On Debian 13 / PangoFT2 1.56.3 / Fontconfig 2.15.0 with the declared DejaVu/Noto fixtures, the headless C mask consumer passes normally and with ASan+UBSan when leak detection is disabled. The leak-enabled LeakSanitizer run reports that it does not work under ptrace in this environment; this is neither a leak pass nor a product leak failure. [PR28's Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37346110201) passed real Weston/llvmpipe mixed-scene checks at 1x/2x, including late invalid/color/resource preservation and retained Latin/Japanese clipping/overlap readbacks. PR28 merged as `3cc72f548dc6138e17f949efad8eae92c70a1cb0`, tree `14b8ce67796bcb08e08b60d8fcdb495afb7257b4`. Local GPU tests remain unrun because AF_UNIX stream-socket creation returns `EPERM`. This bounded software-rendered acceptance does not establish a platform support tier or text-performance qualification. Measurement/caret/hit values are still copied snapshots without session IDs or freshness guarantees; hosts must own sequencing and reject stale or cross-owner events.
 
-Next, build a usable Linux text field that connects actual native committed text through focused key/text dispatch to the portable model and merged measurement/drawing foundations; expose caret and selection geometry, reuse clipboard services, define composition/commit/cancel and focus-loss ownership, and qualify real Japanese IME. Then use that control in a picker/command palette and scalable collections, checking bounded work and keyboard navigation. Native text drawing does not complete input, IME, accessibility, undo, multi-cursor, or production gates. Return to MZed when a real component can migrate, not for each lower-level foundation increment. See [issue 0004](../issues/open/0004-platform-rendering-and-native-boundaries.md) and [issue 0007](../issues/open/0007-ubuntu-native-backend.md) for implementation scope and validation boundaries.
+Merged [PR30](https://github.com/gpui-mbt/gpui.mbt/pull/30) and
+[PR31](https://github.com/gpui-mbt/gpui.mbt/pull/31) extend that baseline with
+actual `Host.present` and injected field text/caret/selection/scroll/overhang
+checks at 1x/2x in [PR31's Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37392223946).
+They establish control-to-renderer acceptance, not compositor keyboard delivery
+or IME. The [known hosted-compositor observation](ubuntu.md#known-hosted-compositor-observation)
+retains a first-attempt Weston exit139 on merged main and a successful retry on
+the unchanged SHA; its cause remains unknown.
+
+Next, qualify this change's hosted undo/redo rendering and the field's actual
+compositor-delivered typing, then define native IME composition/commit/cancel
+and focus-loss ownership and qualify Japanese IME. Use the bounded field in a
+picker/command palette and scalable collections when a concrete consumer is
+ready, checking bounded work and keyboard navigation. Neither direct ingress
+nor drawing completes public IME, accessibility, general editor history,
+multi-cursor or production gates. Return to MZed when a real component can
+migrate, not for each lower-level foundation increment. See
+[issue 0004](../issues/open/0004-platform-rendering-and-native-boundaries.md) and
+[issue 0007](../issues/open/0007-ubuntu-native-backend.md) for implementation scope
+and validation boundaries.
 
 ## Why text is a shared dependency
+
+The requirements and source links in this section come from the historical
+pinned audit; they are not a fresh audit of upstream Zed or browser main.
 
 Zed's command palette uses a Picker backed by a single-line Editor through a registered erased-editor factory. Its platform input contract uses UTF-16 selected, marked and replacement ranges, while internal buffer offsets are distinct types. Its project tree uses a virtualized visible-row list and text-bearing rows, with an editor for inline rename. These provide concrete requirements, but their whole dependency graphs are not the required implementation unit.
 
@@ -50,6 +96,9 @@ Zed's command palette uses a Picker backed by a single-line Editor through a reg
 - [Platform text measurement contract](https://github.com/zed-industries/zed/blob/76659a55a8c10ed355a070f8764a0b1733e3c115/crates/gpui/src/platform.rs#L1176-L1212)
 
 ## Supporting tools: adopt, qualify, then extend
+
+This table preserves the historical pinned tool audit. No supporting-tool main
+state or source pin was rechecked by the field/history documentation refresh.
 
 | Tool | Present capability | Concrete gap / next use |
 | --- | --- | --- |

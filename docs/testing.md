@@ -81,7 +81,8 @@ are logged because exact metrics vary by distro and font revision. See the
 
 ## Determinism and workload budgets
 
-Every property or generated model test uses a recorded unsigned 64-bit seed.
+Except for the explicitly declared bounded regression below, every property or
+generated model test uses a recorded unsigned 64-bit seed.
 The fixed PR seed root is `0x47505549` (`GPUI`). A suite seed is the first 64
 bits of `SHA-256("gpui.mbt:pbt:v1:<root-hex>:<suite-id>")`, interpreted as an
 unsigned big-endian integer. Current QuickCheck properties pass this suite seed
@@ -89,6 +90,16 @@ directly to the core library. For generated model cases, derive a replay seed
 from the suite seed and stable case identifier; a model runner must pass and
 report it. If the selected API cannot accept the required seed, that suite is
 not eligible for a deterministic gate until an adapter is provided.
+
+The fixed-sequence ASCII history regression in
+[`history_reference_test.mbt`](../controls/text_field/history_reference_test.mbt)
+is an explicit bounded deterministic exception: it records literal `Int` seeds
+`1`, `1777`, and `4242`, runs 256 commands per seed with at most 12 ASCII
+characters, and checks an independent journal plus retained snapshot branches.
+It does not derive unsigned-64-bit suite/case seeds or shrink failures. Replay
+uses the recorded literal seed and source revision; this regression is not the
+general generated-model runner or a nightly/stress qualification. The seed
+policy above remains the requirement for new general property/model suites.
 
 | Job | Seeds | Cases per property | Max model commands | Shrink candidates | Wall-clock cap |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -105,7 +116,8 @@ to this table and the CI configuration. A timeout is a failure with its seed and
 last completed case; rerun-to-pass does not erase it.
 
 For every failed generated case, retain the original seed, derived suite/case
-seeds, property or model identifier, generator version, attempted case count,
+seeds where applicable (or the declared literal regression seed), property or
+model identifier, generator version, attempted case count,
 shrink trace, minimized counterexample, toolchain, target, and reproducing
 command. A failure should be reproducible from the recorded seed and fixture
 revision alone.
@@ -295,3 +307,24 @@ PR CI runs `moon fmt --check`, `moon check --target all --deny-warn`, and
 `moon test --target all --deny-warn`. At this slice the MoonBit suite passes
 62/62 tests on wasm, wasm-gc, js, and native. This is headless target evidence,
 not native GUI/platform evidence.
+
+
+## Bounded field history and hosted compositor observation
+
+The bounded field history tests cover original before/after selections,
+independent entry/payload caps, whole-group eviction, failed restore/clipboard
+transactions, Busy/undo rollback and immutable branching. Fixed-seed reference
+coverage uses three 256-operation ASCII histories with documents of at most
+12 characters; it is not general Unicode segmentation or arbitrary-layout
+coverage. Native real-sans tests separately cover mixed fallback and bearings.
+Undo/redo GPU fixtures replay actual-control scenes, while actual MoonBit
+Host.present tests exercise serialization; neither injects compositor keyboard
+input. Their new hosted gate remains pending for this change.
+
+The merged origin baseline's
+[main Ubuntu run37393518087](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37393518087)
+recorded compositor exit139/reset in attempt1 and passed an unchanged-source
+failed-job retry in attempt2. First-failure and successful artifacts remain
+separate. Cause is unknown; a successful retry is not proof of production
+stability or live keyboard/IME qualification. See the
+[Ubuntu stability/recovery limits](ubuntu.md#known-hosted-compositor-observation).

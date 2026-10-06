@@ -25,7 +25,7 @@ enum {
   FIELD_DOUBLE_LIMIT = 5 + 25 * 100000,
   FIELD_STRIDE_LEGACY = 23,
   FIELD_STRIDE_ORIGIN = 25,
-  FIELD_FIXTURE_CAPACITY = 11,
+  FIELD_FIXTURE_CAPACITY = 13,
   FIELD_TEXT_LIMIT = 1024 * 1024,
   FIELD_FILE_LIMIT = 20 * 1024 * 1024
 };
@@ -34,7 +34,7 @@ _Static_assert(sizeof(double) == 8 && DBL_MANT_DIG == 53 && FLT_RADIX == 2,
 static const char *fixture_labels[] = {
     "end", "selected", "edited", "rejected_newline", "rejected_bidi",
     "scroll_end", "blurred", "j_start", "accent_start", "j_scroll",
-    "accent_scroll"};
+    "accent_scroll", "undo_selected", "redo_edited"};
 static int field_swap_count;
 static int bootstrap_swap_count;
 static int bootstrap_mode;
@@ -63,6 +63,8 @@ struct field_fixture {
 static struct field_fixture fixtures[FIELD_FIXTURE_CAPACITY];
 static struct field_fixture *swapping_fixture;
 static const char *capture_path;
+static int undo_capture_written;
+static int redo_capture_written;
 static int diagnostic_mode;
 static double *diagnostic_record;
 
@@ -199,7 +201,7 @@ static struct field_fixture *load_fixture(const char *directory, int index) {
   for (uint32_t i = 0; i < fixture->double_count; ++i)
     assert(isfinite(fixture->data[i]));
   uint32_t item_count = (fixture->double_count - 5) / fixture_stride;
-  int expected_items = index == 1 ? 9 : (index == 6 ? 7 : 8);
+  int expected_items = (index == 1 || index == 11) ? 9 : (index == 6 ? 7 : 8);
   assert(item_count == (uint32_t)expected_items);
   fixture->text_record = -1;
   fixture->caret_record = -1;
@@ -329,7 +331,7 @@ static void check_manifest_head(const char *directory) {
   if (strstr(format, "\"format\":\"GPF2\"")) {
     fixture_abi = GPUI_ORIGIN_FRAME_ABI;
     fixture_stride = FIELD_STRIDE_ORIGIN;
-    fixture_count = 11;
+    fixture_count = strstr(fixture_manifest, "\"label\":\"undo_selected\"") ? 13 : 11;
     assert(strstr(fixture_manifest, "\"abi\":3"));
     assert(strstr(fixture_manifest, "\"stride_doubles\":25"));
   } else {
@@ -447,10 +449,10 @@ static void verify_fixture_set(const char *directory) {
     size_t offset = (size_t)text_record[20], bytes = (size_t)text_record[21];
     const uint8_t *expected = NULL;
     size_t expected_length = 0;
-    if (i <= 1) {
+    if (i <= 1 || i == 11) {
       expected = short_text;
       expected_length = sizeof(short_text) - 1;
-    } else if (i <= 4) {
+    } else if (i <= 4 || i == 12) {
       expected = edited_text;
       expected_length = sizeof(edited_text) - 1;
     } else if (i <= 6 || i == 9) {
@@ -466,7 +468,7 @@ static void verify_fixture_set(const char *directory) {
       expected = (const uint8_t *)"Wide ";
       expected_length = 5;
     }
-    if (i <= 4 || i == 7 || i == 8) {
+    if (i <= 4 || i == 7 || i == 8 || i == 11 || i == 12) {
       assert(bytes == expected_length);
       assert(!memcmp(fixture->text + offset, expected, expected_length));
     } else if (i == 9) {
@@ -504,6 +506,38 @@ static void verify_fixture_set(const char *directory) {
     assert(!memcmp(rejected_scene, edited_scene, edited_scene_length));
     assert(rejected->file_length == edited->file_length);
     assert(!memcmp(rejected->file_bytes, edited->file_bytes, edited->file_length));
+  }
+
+  struct field_fixture *selected = &fixtures[1];
+  struct field_fixture *undo_selected = &fixtures[11];
+  struct field_fixture *redo_edited = &fixtures[12];
+  if (fixture_count == FIELD_FIXTURE_CAPACITY) {
+    assert(undo_selected->anchor == selected->anchor &&
+           undo_selected->head == selected->head &&
+           undo_selected->anchor != undo_selected->head);
+    const uint8_t *undo_scene = NULL, *selected_scene = NULL;
+    size_t undo_scene_length = scene_json_length(undo_selected, &undo_scene);
+    size_t selected_scene_length = scene_json_length(selected, &selected_scene);
+    assert(undo_scene_length == selected_scene_length &&
+           !memcmp(undo_scene, selected_scene, selected_scene_length));
+    assert(undo_selected->file_length == selected->file_length &&
+           !memcmp(undo_selected->file_bytes, selected->file_bytes,
+                   selected->file_length));
+
+    struct field_fixture *edited_fixture = &fixtures[2];
+    assert(redo_edited->anchor == edited_fixture->anchor &&
+           redo_edited->head == edited_fixture->head &&
+           redo_edited->anchor == redo_edited->head);
+    const uint8_t *redo_scene = NULL, *edited_identity_scene = NULL;
+    size_t redo_scene_length = scene_json_length(redo_edited, &redo_scene);
+    size_t edited_identity_scene_length = scene_json_length(
+        edited_fixture, &edited_identity_scene);
+    assert(redo_scene_length == edited_identity_scene_length &&
+           !memcmp(redo_scene, edited_identity_scene,
+                   edited_identity_scene_length));
+    assert(redo_edited->file_length == edited_fixture->file_length &&
+           !memcmp(redo_edited->file_bytes, edited_fixture->file_bytes,
+                   edited_fixture->file_length));
   }
 }
 
@@ -756,7 +790,8 @@ static void assert_text_coverage(struct field_fixture *fixture,
       unsigned char pixel[4];
       glReadPixels(x, height - 1 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
       assert(glGetError() == GL_NO_ERROR);
-      const double *selection_q = !strcmp(fixture->label, "selected")
+      const double *selection_q = (!strcmp(fixture->label, "selected") ||
+                                   !strcmp(fixture->label, "undo_selected"))
           ? item_record(fixture, 6) + 1 : NULL;
       int expected[3];
       expected_field_text_rgb(selection_q, sx, sy, q, coverage, expected);
@@ -820,7 +855,8 @@ static void assert_bearing_overhang_pixels(
 static void assert_selection_coverage(
     struct field_fixture *fixture,
     const struct gpui_linux_text_mask_v2 *reference) {
-  assert(!strcmp(fixture->label, "selected"));
+  assert(!strcmp(fixture->label, "selected") ||
+         !strcmp(fixture->label, "undo_selected"));
   int selection_record = 6;
   double *selection_q = item_record(fixture, selection_record) + 1;
   double *text_record = fixture->data + 5 + fixture->text_record * fixture_stride;
@@ -905,7 +941,8 @@ static void verify_field_pixels(struct field_fixture *fixture) {
   if (!strcmp(fixture->label, "j_start") ||
       !strcmp(fixture->label, "accent_start"))
     assert_bearing_overhang_pixels(fixture, &reference);
-  if (!strcmp(fixture->label, "selected"))
+  if (!strcmp(fixture->label, "selected") ||
+      !strcmp(fixture->label, "undo_selected"))
     assert_selection_coverage(fixture, &reference);
   double *text_record = fixture->data + 5 + fixture->text_record * fixture_stride;
   int text_capacity = GPUI_LINUX_TEXT_HEADER_DOUBLES +
@@ -1104,7 +1141,8 @@ static EGLBoolean field_verified_swap(EGLDisplay display, EGLSurface surface) {
     if (!strcmp(label, "scroll_end")) {
       capture_field_ppm(capture_path);
     } else if (!strcmp(label, "j_start") || !strcmp(label, "accent_start") ||
-               !strcmp(label, "j_scroll") || !strcmp(label, "accent_scroll")) {
+               !strcmp(label, "j_scroll") || !strcmp(label, "accent_scroll") ||
+               !strcmp(label, "undo_selected") || !strcmp(label, "redo_edited")) {
       char bearing_path[4096];
       size_t prefix = strlen(capture_path);
       if (prefix >= 4 && !strcmp(capture_path + prefix - 4, ".ppm")) prefix -= 4;
@@ -1113,6 +1151,8 @@ static EGLBoolean field_verified_swap(EGLDisplay display, EGLSurface surface) {
                              (int)prefix, capture_path, label);
       assert(length > 0 && (size_t)length < sizeof(bearing_path));
       capture_field_ppm(bearing_path);
+      if (!strcmp(label, "undo_selected")) undo_capture_written = 1;
+      if (!strcmp(label, "redo_edited")) redo_capture_written = 1;
     }
   }
   return eglSwapBuffers(display, surface);
@@ -1480,6 +1520,20 @@ int main(void) {
       continue;
     }
     present_fixture(host, window, &fixtures[i]);
+  }
+  if (fixture_count == FIELD_FIXTURE_CAPACITY && capture_path && *capture_path) {
+    char expected_path[4096];
+    size_t prefix = strlen(capture_path);
+    if (prefix >= 4 && !strcmp(capture_path + prefix - 4, ".ppm")) prefix -= 4;
+    assert(prefix < sizeof(expected_path));
+    int length = snprintf(expected_path, sizeof(expected_path),
+                          "%.*s-undo_selected.ppm", (int)prefix, capture_path);
+    assert(length > 0 && (size_t)length < sizeof(expected_path));
+    assert(undo_capture_written && access(expected_path, R_OK) == 0);
+    length = snprintf(expected_path, sizeof(expected_path),
+                      "%.*s-redo_edited.ppm", (int)prefix, capture_path);
+    assert(length > 0 && (size_t)length < sizeof(expected_path));
+    assert(redo_capture_written && access(expected_path, R_OK) == 0);
   }
   if (fixture_abi == GPUI_ORIGIN_FRAME_ABI)
     test_origin_gpu_diagnostic_and_late_preservation(host, window);

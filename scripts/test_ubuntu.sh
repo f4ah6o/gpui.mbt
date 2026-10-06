@@ -49,7 +49,8 @@ env -u DISPLAY -u WAYLAND_DISPLAY GPUI_FIELD_FIXTURES=1 \
     fi
   done
   sha256sum examples/linux_text_field/field.mbt controls/text_field/model.mbt \
-    controls/text_field/paint.mbt platform/linux_text/linux_text.c "$FONTCONFIG_FILE"
+    controls/text_field/history.mbt controls/text_field/paint.mbt \
+    platform/linux_text/linux_text.c "$FONTCONFIG_FILE"
 } > "$field_run/font-profile.txt"
 python3 scripts/encode_field_fixtures.py "$field_run/fixtures.jsonl" \
   --output-dir "$field_run/encoded" --source-head "$(git rev-parse HEAD)"

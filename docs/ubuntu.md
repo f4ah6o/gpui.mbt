@@ -183,24 +183,29 @@ Local GPU execution remains unrun because AF_UNIX stream socket creation
 returns `EPERM`. This software-rendered proof does not establish broader
 platform support or text performance qualification.
 
-The origin-aware field path is separate local, unpublished progress based on
-reviewed PR #30 tree `5ac17e9`. [PR #30](https://github.com/gpui-mbt/gpui.mbt/pull/30)
-remains draft after pre-start runner cancellation. Windows, macOS, documentation,
-and headless Pango jobs passed; GPU, core, browser, and mutation jobs remain
-unqualified. A bounded Ubuntu failed-job retry was again cancelled before
-runner start, with no source or billing cause established. Actual-font headless
-field and negative-mask tests pass, including composed/decomposed accents and
-scrolling; new encoder/GPU acceptance cases compile; hosted execution is
-pending, and no GPU execution or publication is claimed. The local geometry
-uses one outward-rounded logical/ink union with carets contained in the logical line for admission, paint, hit test,
-and scroll. The field remains single-line LTR, rejects unknown/color glyphs
-and reflow/resource-limit cases, and uses logical-resolution masks that may
-soften under scaling. IME, autorepeat, general bidi, drag, undo, and actual
-compositor-delivered typing remain unqualified. See the
-[field guide](linux-text-field.md) for full limits and evidence tiers.
+The bounded field and origin-aware drawing are merged in
+[PR30](https://github.com/gpui-mbt/gpui.mbt/pull/30) and
+[PR31](https://github.com/gpui-mbt/gpui.mbt/pull/31). The current baseline is main
+`73e70822841024a7131c54fb4529cd40186d529c`, tree `108cf4e9`. The
+[PR31 Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37392223946)
+passed real `Host.present` and injected control-to-renderer text/caret/selection/
+scroll/overhang checks under Weston/llvmpipe at 1x/2x. Actual-font headless field
+and negative-mask tests also pass, including composed/decomposed accents and
+scrolling. The shared geometry uses one outward-rounded logical/ink union with
+carets contained in the logical line for admission, paint, hit test, and scroll.
+The current undo/redo addition has local model/provider and transaction coverage;
+its new hosted rendering cases remain pending for this change. The field remains
+single-line LTR, rejects unknown/color glyphs and reflow/resource-limit cases,
+and uses logical-resolution masks that may soften under scaling. Direct native
+committed-text ingress exists, but actual compositor-delivered typing, Japanese
+IME, autorepeat, general bidi and drag selection remain unqualified. The
+[known hosted-compositor observation](#known-hosted-compositor-observation)
+retains the unchanged-main first failure and successful retry without assigning
+a cause. See the [field guide](linux-text-field.md) for full limits and evidence
+tiers.
 
 The bounded experimental field now paints visible caret/selection and scrolls,
-but it is not a general control. Text-input/IME, semantic accessibility, menus,
+but it is not a general control. Public TextInput/IME, semantic accessibility, menus,
 background enqueue, timers, fractional scaling, and broader service capability
 negotiation remain roadmap work. Native clipboard
 and cursor protocols are implemented, while a
@@ -253,8 +258,22 @@ a desktop frame-rate claim.
 | --- | --- | --- | --- |
 | Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Hosted run 2026-10-04 passed MoonBit E2E (4/4), C lifecycle/render/recovery checks at both scales, and 30 timing samples per scale. Measurement report completed with `no_baseline`; see [run and diagnostic results](performance.md#hosted-ubuntu-observation-2026-10-04). |
 | PR28 grayscale text CI | Ubuntu 24.04 x86-64; Weston 13; PangoFT2 1.52.1; Fontconfig 2.15.0 | Weston headless GL kiosk shell; llvmpipe (LLVM 20.1.2); integer scales 1/2 | [Run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37346110201) passed headless raster, 5/5 MoonBit E2E per scale and C mixed-scene/preservation assertions; readback PPMs retained. Recovery timing report is `captured_live` + `no_baseline`, not text performance qualification. |
+| PR30/31 field and origin CI | Ubuntu 24.04; Weston 13; declared sans/Pango fixture profile | Headless GL kiosk shell; llvmpipe; scales 1/2 | [PR31 exact-head run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37392223946) passed actual Host.present and nine injected accepted field frames plus origin/preflight preservation checks. Real keyboard delivery remains unrun; see compositor observation below. |
 | Local implementation validation | Debian 13 x86-64; Weston 14.0.2; Wayland 1.23.1; wayland-protocols 1.44; xkbcommon 1.7.0; Mesa 25.0.7 | Strict C compile and clipboard transfer helper passed; Weston headless launch blocked | Full native E2E unrun: the runner observed Weston fail to add its socket with `No such file or directory`; a separate AF_UNIX socket-creation diagnostic returned `EPERM` in this environment |
 | Real Ubuntu desktop | Ubuntu 24.04 GNOME Wayland/Mutter | Desktop GPU, IME and assistive technology | Pending |
+
+### Known hosted-compositor observation
+
+The merged field/origin main source `73e7082` was checked in
+[Ubuntu run37393518087](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37393518087).
+Attempt1 passed scale1, then scale2 lifecycle/stress dispatch reported native
+failure with compositor exit139 and client reset/broken-pipe diagnostics.
+The Weston log ended without a backtrace; the cause is unknown. One authorized
+failed-job retry on the unchanged source passed both scales in attempt2.
+Both artifacts/first-failure diagnostics were retained separately. This
+establishes the declared profile's acceptance after retry, not a causal fix or
+production stability. Device/surface/display loss retains the existing typed
+recovery/stop behavior and does not promise prior pixels survive loss.
 
 CI pins the distro and MoonBit release; Ubuntu archive package patch versions
 are recorded by `dpkg-query` on each run, not frozen. CI's Weston package major

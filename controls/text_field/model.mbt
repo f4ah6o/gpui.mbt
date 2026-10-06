@@ -42,6 +42,7 @@ pub struct TextField {
   priv focused : Bool
   priv scroll_offset : Double
   priv revision : Int
+  priv history : FieldHistory
 }
 
 ///|
@@ -512,6 +513,7 @@ pub fn TextField::new(
     focused: false,
     scroll_offset: 0.0,
     revision: 0,
+    history: FieldHistory::empty(),
   }
   Ok({
     ..provisional,
@@ -519,6 +521,47 @@ pub fn TextField::new(
       provisional,
       document.selection().head(),
     ),
+  })
+}
+
+///|
+/// Install only fully validated, currently admitted document geometry. Both
+/// editing and history restoration use this same checked preparation boundary.
+fn prepare_field_document(
+  field : TextField,
+  document : @text.TextDocument,
+  measurement : @text_layout.TextMeasurement,
+  admit : (@text.TextDocument, @text_layout.TextMeasurement) -> Result[
+    Unit,
+    TextFieldError,
+  ],
+) -> Result[TextField, TextFieldError] {
+  match validate_field_text(document) {
+    Ok(_) => ()
+    Err(error) => return Err(error)
+  }
+  match
+    validate_field_measurement(
+      document,
+      measurement,
+      true,
+      rect_height(field_content_bounds(field.bounds)),
+    ) {
+    Ok(_) => ()
+    Err(error) => return Err(error)
+  }
+  let revision = match bump_field_revision(field.revision) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  match admit(document, measurement) {
+    Ok(_) => ()
+    Err(_) => return Err(AdmissionFailed)
+  }
+  let candidate = { ..field, document, measurement, revision, }
+  Ok({
+    ..candidate,
+    scroll_offset: field_scroll_for_head(candidate, document.selection().head()),
   })
 }
 
@@ -616,34 +659,16 @@ fn prepare_field_replacement(
       Err(error) => return Err(error)
     }
   }
-  match
-    validate_field_measurement(
-      final_document,
-      final_measurement,
-      true,
-      rect_height(field_content_bounds(field.bounds)),
-    ) {
-    Ok(_) => ()
-    Err(error) => return Err(error)
-  }
-  let revision = match bump_field_revision(field.revision) {
+  let candidate = match
+    prepare_field_document(field, final_document, final_measurement, admit) {
     Ok(value) => value
     Err(error) => return Err(error)
   }
-  match admit(final_document, final_measurement) {
-    Ok(_) => ()
-    Err(_) => return Err(AdmissionFailed)
+  let history = match field.history.record(field.document, final_document) {
+    Ok(value) => value
+    Err(error) => return Err(error)
   }
-  let candidate = {
-    ..field,
-    document: final_document,
-    measurement: final_measurement,
-    revision,
-  }
-  Ok({
-    ..candidate,
-    scroll_offset: field_scroll_for_head(candidate, final_head),
-  })
+  Ok({ ..candidate, history, })
 }
 
 ///|
@@ -671,6 +696,102 @@ pub fn TextField::replace_selection(
     measure,
     admit,
   )
+}
+
+///|
+/// Whether a previous content edit is retained. Availability is independent of
+/// focus; undo itself is a no-op while the field is unfocused.
+pub fn TextField::can_undo(self : TextField) -> Bool {
+  self.history.can_undo()
+}
+
+///|
+/// Whether an undone edit is retained for restoring its original post-edit
+/// directional selection, unaffected by later selection-only navigation.
+pub fn TextField::can_redo(self : TextField) -> Bool {
+  self.history.can_redo()
+}
+
+///|
+fn restore_field_history(
+  field : TextField,
+  document : @text.TextDocument,
+  measure : (@text.TextDocument) -> Result[
+    @text_layout.TextMeasurement,
+    TextFieldError,
+  ],
+  admit : (@text.TextDocument, @text_layout.TextMeasurement) -> Result[
+    Unit,
+    TextFieldError,
+  ],
+) -> Result[TextField, TextFieldError] {
+  match validate_field_text(document) {
+    Ok(_) => ()
+    Err(error) => return Err(error)
+  }
+  let measurement = match measure(document) {
+    Ok(value) => value
+    Err(_) => return Err(MeasurementFailed)
+  }
+  prepare_field_document(field, document, measurement, admit)
+}
+
+///|
+/// Restore a retained edit's pre-edit document and selection using current
+/// style, bounds and focus. The whole value and history survive any failure.
+pub fn TextField::undo(
+  self : TextField,
+  measure : (@text.TextDocument) -> Result[
+    @text_layout.TextMeasurement,
+    TextFieldError,
+  ],
+  admit : (@text.TextDocument, @text_layout.TextMeasurement) -> Result[
+    Unit,
+    TextFieldError,
+  ],
+) -> Result[TextField, TextFieldError] {
+  if !self.focused {
+    return Ok(self)
+  }
+  let entry = match self.history.undo_entry() {
+    Some(value) => value
+    None => return Ok(self)
+  }
+  let candidate = match
+    restore_field_history(self, entry.before, measure, admit) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  Ok({ ..candidate, history: self.history.move_undo(), })
+}
+
+///|
+/// Restore the original successful edit's post-edit document and selection.
+/// Selection-only navigation does not change the retained redo endpoint.
+pub fn TextField::redo(
+  self : TextField,
+  measure : (@text.TextDocument) -> Result[
+    @text_layout.TextMeasurement,
+    TextFieldError,
+  ],
+  admit : (@text.TextDocument, @text_layout.TextMeasurement) -> Result[
+    Unit,
+    TextFieldError,
+  ],
+) -> Result[TextField, TextFieldError] {
+  if !self.focused {
+    return Ok(self)
+  }
+  let entry = match self.history.redo_entry() {
+    Some(value) => value
+    None => return Ok(self)
+  }
+  let candidate = match
+    restore_field_history(self, entry.after, measure, admit) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  Ok({ ..candidate, history: self.history.move_redo(), })
 }
 
 ///|
@@ -835,7 +956,7 @@ fn delete_field_selection(
 }
 
 ///|
-fn is_clipboard_command(key : @primitives.Key, letter : String) -> Bool {
+fn is_field_shortcut(key : @primitives.Key, letter : String) -> Bool {
   match key {
     @primitives.Character(label) =>
       label == letter || label == letter.to_upper()
@@ -967,10 +1088,22 @@ pub fn TextField::handle_input(
         if modifiers.alt() {
           return Ok((self, None))
         }
-        if is_clipboard_command(key, "c") {
+        if is_field_shortcut(key, "z") {
+          return field_without_action(
+            if modifiers.shift() {
+              self.redo(measure, admit)
+            } else {
+              self.undo(measure, admit)
+            },
+          )
+        }
+        if modifiers.control() && is_field_shortcut(key, "y") {
+          return field_without_action(self.redo(measure, admit))
+        }
+        if is_field_shortcut(key, "c") {
           return Ok((self, Some(Copy(self.document.selected_text()))))
         }
-        if is_clipboard_command(key, "x") {
+        if is_field_shortcut(key, "x") {
           let selection = self.document.selection()
           if selection.is_collapsed() {
             return Ok((self, None))
@@ -989,7 +1122,7 @@ pub fn TextField::handle_input(
           }
           return Ok((self, Some(Cut(text=selected_text, candidate~))))
         }
-        if is_clipboard_command(key, "v") {
+        if is_field_shortcut(key, "v") {
           return Ok((self, Some(Paste)))
         }
         return Ok((self, None))
