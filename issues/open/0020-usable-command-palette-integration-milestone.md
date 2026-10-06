@@ -25,7 +25,7 @@ A user can complete this flow using reusable gpui.mbt components on the declared
 7. Close or cancel the palette.
 8. Restore focus to the prior owner without leaking the closing key/action to the background UI.
 
-After the standalone fixture is qualified, integrate the same reusable palette/component boundary into MZed as the next application-level island milestone.
+After the standalone fixture is qualified, integrate the same reusable palette/component boundary into MZed as the next application-level island milestone, subject to the MZed admission gate below.
 
 ## Why this milestone
 
@@ -79,7 +79,7 @@ Candidate-window contents/highlight remain outside scope unless separately quali
 
 ### MZed integration
 
-Once the standalone component is qualified:
+Once the standalone component is qualified and the reviewed application/framework pins have a recorded go decision under [0019](0019-mzed-native-coexistence-proof.md#go-or-fallback-decision):
 
 - mount the command palette inside the existing MZed application/window boundary;
 - keep upstream Zed read-only;
@@ -87,6 +87,8 @@ Once the standalone component is qualified:
 - prove open/search/navigate/activate/cancel and restoration to the editor;
 - prove the original editor remains usable after palette teardown/remount;
 - keep framework code independently authored and application-derived integration code in MZed.
+
+If the coexistence boundary fails its gates, stop expansion and prepare the 0019 fallback decision report.
 
 Do not rebuild or run the full MZed editor for every lower-level framework change. Use focused framework fixtures during development and return to MZed at the integration checkpoint.
 
@@ -181,7 +183,7 @@ Do not block the Linux command-palette milestone on unfinished macOS vlmkit work
 4. Qualify focus containment, dismissal and restoration.
 5. Qualify actual Linux keyboard and Japanese IME behavior.
 6. Add bounded performance observations and targeted mutation coverage.
-7. Integrate the same component boundary into MZed.
+7. Record or reconfirm the 0019 go decision on the reviewed pins, then integrate the same component boundary into MZed.
 8. Record the resulting framework gaps before choosing the next component migration.
 
 ## Exit criteria
