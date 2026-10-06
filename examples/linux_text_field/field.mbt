@@ -98,8 +98,17 @@ fn field_scene(
   }
   if field.marked_range() is Some(marked) {
     let measurement = field.measurement()
-    let start = measurement.caret_at(marked.start()).unwrap().strong()
-    let end = measurement.caret_at(marked.end()).unwrap().strong()
+    let start = match measurement.caret_at(marked.start()) {
+      Ok(value) if value.is_cursor_position() => value.strong()
+      _ => return Err(@text_field.InvalidSelection)
+    }
+    let end = match measurement.caret_at(marked.end()) {
+      Ok(value) if value.is_cursor_position() => value.strong()
+      _ => return Err(@text_field.InvalidSelection)
+    }
+    if end.left() < start.left() {
+      return Err(@text_field.UnsupportedLayout)
+    }
     let (origin, _) = @text_field.scene_text_run_geometry(measurement).unwrap()
     let underline = @primitives.Rect::new(
       field.content_bounds().left() -

@@ -313,3 +313,23 @@ test "IME caret rejects out of signed native range before integer conversion" {
     assert_true(ime_caret_rect(field) is Err(@text_field.InvalidBounds))
   }
 }
+
+///|
+test "IME underline endpoints cannot split a grapheme joined across the original prefix" {
+  let original = make_field(
+      "ba",
+      @primitives.Rect::new(32.0, 28.0, 180.0, 44.0).unwrap(),
+    )
+    .unwrap()
+    .with_focus(true)
+    .unwrap()
+  let original = change(original, key_event(@primitives.ArrowRight)).unwrap()
+  assert_eq(original.selection().head(), 1)
+  assert_true(
+    ime_preedit(original, "\u{301}", Some(1), [])
+    is Err(Field(@text_field.InvalidSelection)),
+  )
+  assert_eq(original.document().text(), "ba")
+  assert_false(original.is_composing())
+  assert_false(original.can_undo())
+}

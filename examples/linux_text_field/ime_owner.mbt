@@ -77,7 +77,17 @@ fn ime_preedit(
     Err(_) => return Err(Field(@text_field.InvalidSelection))
   }
   match field.update_composition(text, selection, measure, admit) {
-    Ok(value) => Ok(value)
+    Ok(value) => {
+      let range = value.marked_range().unwrap()
+      let start = value.measurement().caret_at(range.start()).unwrap()
+      let end = value.measurement().caret_at(range.end()).unwrap()
+      if !start.is_cursor_position() ||
+        !end.is_cursor_position() ||
+        end.strong().left() < start.strong().left() {
+        return Err(Field(@text_field.InvalidSelection))
+      }
+      Ok(value)
+    }
     Err(error) => Err(Field(error))
   }
 }
