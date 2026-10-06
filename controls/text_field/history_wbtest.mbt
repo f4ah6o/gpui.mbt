@@ -191,6 +191,98 @@ test "field history independently caps logical bytes and evicts whole oldest gro
 }
 
 ///|
+test "field history charges UTF-8 bytes from both directional endpoints" {
+  // UTF-8 byte counts are independent of the UTF-16 selection offsets:
+  // "é🙂" is 2 + 4 bytes and "猫é" is 3 + 2 bytes.
+  let before = history_test_document("é🙂", 3, 1)
+  let after = history_test_document("猫é", 2, 0)
+  let recorded = history_test_record(FieldHistory::empty(), before, after)
+  assert_eq(recorded.payload_bytes, 11)
+  assert_true(recorded.undo_entry().unwrap().before == before)
+  assert_true(recorded.undo_entry().unwrap().after == after)
+
+  let undone = recorded.move_undo()
+  assert_eq(undone.payload_bytes, 11)
+  let redone = undone.move_redo()
+  assert_eq(redone.payload_bytes, 11)
+  assert_true(redone.undo_entry().unwrap().before == before)
+  assert_true(redone.undo_entry().unwrap().after == after)
+}
+
+///|
+test "field history drops redo charge before retaining and evicting whole entries" {
+  let mut full = FieldHistory::empty()
+  for index in 0..<64 {
+    // Each retained edit costs 1,024 bytes: 512 ASCII bytes at each endpoint.
+    full = history_test_record(
+      full,
+      history_test_document(history_test_symbol(index).repeat(512), 0, 0),
+      history_test_document(history_test_symbol(90).repeat(512), 0, 0),
+    )
+  }
+  assert_eq(history_test_undo_depth(full), 64)
+  assert_eq(full.payload_bytes, 65536)
+
+  // The just-undone 1,024-byte entry remains charged while in redo. A new
+  // small edit can reuse that space without evicting an undo entry.
+  let after_undo = full.move_undo()
+  assert_eq(history_test_undo_depth(after_undo), 63)
+  assert_true(after_undo.can_redo())
+  assert_eq(after_undo.payload_bytes, 65536)
+  let small_before = history_test_document(
+    history_test_symbol(70).repeat(512),
+    0,
+    0,
+  )
+  let small_after = history_test_document(
+    history_test_symbol(71).repeat(512),
+    0,
+    0,
+  )
+  let reused_redo_charge = history_test_record(
+    after_undo, small_before, small_after,
+  )
+  let small_entries = history_test_undo_before_texts(reused_redo_charge)
+  assert_eq(history_test_undo_depth(reused_redo_charge), 64)
+  assert_eq(reused_redo_charge.payload_bytes, 65536)
+  assert_false(reused_redo_charge.can_redo())
+  assert_eq(small_entries.length(), 64)
+  assert_eq(small_entries[0], small_before.text())
+  assert_eq(small_entries[1], history_test_symbol(62).repeat(512))
+  assert_eq(small_entries[63], history_test_symbol(0).repeat(512))
+
+  // One maximum-sized edit (4,096 bytes at each endpoint) needs 8,192 bytes.
+  // The remaining 63 small undo entries provide only 1,024 bytes each, so
+  // seven entire oldest entries must be discarded to fit this one edit.
+  let large_before = history_test_document("L".repeat(4096), 0, 0)
+  let large_after = history_test_document("R".repeat(4096), 0, 0)
+  let large_branch = history_test_record(after_undo, large_before, large_after)
+  let large_entries = history_test_undo_before_texts(large_branch)
+  assert_eq(history_test_undo_depth(large_branch), 57)
+  assert_eq(large_branch.payload_bytes, 65536)
+  assert_false(large_branch.can_redo())
+  assert_eq(large_entries.length(), 57)
+  assert_eq(large_entries[0], large_before.text())
+  assert_eq(large_entries[1], history_test_symbol(62).repeat(512))
+  assert_eq(large_entries[56], history_test_symbol(7).repeat(512))
+
+  // The shared snapshots remain immutable after both branches are recorded.
+  assert_eq(history_test_undo_depth(full), 64)
+  assert_false(full.can_redo())
+  assert_eq(full.payload_bytes, 65536)
+  assert_eq(history_test_undo_depth(after_undo), 63)
+  assert_true(after_undo.can_redo())
+  assert_eq(after_undo.payload_bytes, 65536)
+  assert_true(
+    after_undo.redo_entry().unwrap().before == full.undo_entry().unwrap().before,
+  )
+  assert_eq(
+    history_test_undo_before_texts(after_undo)[62],
+    history_test_symbol(0).repeat(512),
+  )
+}
+
+///|
 test "field history validates endpoint text with field errors before recording" {
   let too_large = history_test_document("x".repeat(4097), 0, 0)
   let valid = history_test_document("ok", 0, 0)

@@ -112,15 +112,29 @@ test "fixed-seed ASCII edit histories match an independent reference journal" {
     let mut redo : Array[FieldReferenceEdit] = []
     let snapshots : Array[FieldReferenceSnapshot] = []
     let mut rng = seed
+    let mut saw_replace = false
+    let mut saw_backspace = false
+    let mut saw_undo = false
+    let mut saw_redo = false
+    let mut saw_home = false
+    let mut saw_end = false
+    let mut successful_undo_count = 0
+    let mut successful_redo_count = 0
+    let mut saw_inserted_a = false
+    let mut saw_inserted_b = false
+    let mut saw_insert_after_undo_clearing_redo = false
 
     for step = 0; step < 256; step = step + 1 {
       rng = field_reference_next(rng)
-      let operation = rng % 6
+      // Use the high bits of the LCG state: its low bits have short,
+      // correlated cycles that can starve particular history operations.
+      let operation = rng / 256 % 6
       rng = field_reference_next(rng)
-      let inserted = if rng % 2 == 0 { "a" } else { "b" }
+      let inserted = if rng / 32768 == 0 { "a" } else { "b" }
 
       match operation {
         0 => {
+          saw_replace = true
           let projected_length = current.text().length() -
             current.selection().normalized_range().length() +
             inserted.length()
@@ -130,8 +144,18 @@ test "fixed-seed ASCII edit histories match an independent reference journal" {
             field = field_test_text(field, inserted).0
             current = after
             if before.text() != after.text() {
+              if inserted == "a" {
+                saw_inserted_a = true
+              } else {
+                saw_inserted_b = true
+              }
+              let cleared_redo = redo.length() > 0
               undo.push({ before, after, })
               redo = []
+              if cleared_redo {
+                assert_eq(redo.length(), 0)
+                saw_insert_after_undo_clearing_redo = true
+              }
               while undo.length() > 64 {
                 let _ = undo.remove(0)
               }
@@ -143,6 +167,7 @@ test "fixed-seed ASCII edit histories match an independent reference journal" {
           }
         }
         1 => {
+          saw_backspace = true
           let before = current
           let after = field_reference_backspace(before)
           field = field_test_key(
@@ -160,22 +185,27 @@ test "fixed-seed ASCII edit histories match an independent reference journal" {
           }
         }
         2 => {
+          saw_undo = true
           field = field_test_undo(field)
           if undo.length() > 0 {
             let edit = undo.remove(undo.length() - 1)
             current = edit.before
             redo.push(edit)
+            successful_undo_count += 1
           }
         }
         3 => {
+          saw_redo = true
           field = field_test_redo(field)
           if redo.length() > 0 {
             let edit = redo.remove(redo.length() - 1)
             current = edit.after
             undo.push(edit)
+            successful_redo_count += 1
           }
         }
         4 => {
+          saw_home = true
           field = field_test_key(
               field,
               @primitives.Home,
@@ -193,6 +223,7 @@ test "fixed-seed ASCII edit histories match an independent reference journal" {
           )
         }
         _ => {
+          saw_end = true
           field = field_test_key(
               field,
               @primitives.End,
@@ -208,6 +239,20 @@ test "fixed-seed ASCII edit histories match an independent reference journal" {
         snapshots.push({ field, current, undo: undo.copy(), redo: redo.copy(), })
       }
     }
+
+    // Keep every deterministic seed honest about exercising both content
+    // directions, all scripted operations, and a genuine branch edit.
+    assert_true(saw_replace)
+    assert_true(saw_backspace)
+    assert_true(saw_undo)
+    assert_true(saw_redo)
+    assert_true(saw_home)
+    assert_true(saw_end)
+    assert_true(successful_undo_count > 0)
+    assert_true(successful_redo_count > 0)
+    assert_true(saw_inserted_a)
+    assert_true(saw_inserted_b)
+    assert_true(saw_insert_after_undo_clearing_redo)
 
     // Replay both branches from detached reference snapshots only after all
     // later edits, undos, redos, and navigation have run.
