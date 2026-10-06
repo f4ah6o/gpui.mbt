@@ -7,7 +7,8 @@ Hosted workflow files/settings are unchanged. This policy does not promote
 untested platforms, pending IME/repeat cases, or production release evidence.
 
 - Default `fast`: contracts/Python tests, Linux infrastructure and Mozc safety
-  guards, formatting, three C text harnesses, the 19-test Linux text package,
+  guards, read-only IME owner safety and native direct/repeat/experimental IME
+  ingress checks, formatting, three C text harnesses, the Linux text package,
   and warning-denied native checks/tests for `text`, `controls/text_field`,
   `platform`, `ubuntu`, and the field example's owner/controller tests.
 - `--mode acceptance`: the same common checks, all Linux-runnable MoonBit
@@ -16,6 +17,21 @@ untested platforms, pending IME/repeat cases, or production release evidence.
   IPC probe fails this mode; it is never converted into a skipped Green.
 - `--mode headless`: the original three C harnesses plus Linux text package
   only, for the shortest geometry loop. Its pass is explicitly subset-scoped.
+- `--mode mutation`: independent composition state-machine/boundary oracle,
+  then fresh turtles 0.3.0/schema-2 file-scope mutation and reviewed-survivor
+  audit. See [exact scope, setup and limits](COMPOSITION-MUTATION.md).
+- `--mode proof`: the separately qualified bounded Moon proof and its negative
+  controls. Missing tools, blocked IPC, unknown or timed-out proof cannot pass.
+- `--mode verification`: actual turtles schema-3 helper mutants, each checked
+  against the portable runtime/PBT suite and independently fixed source-exact
+  proof contracts. The strict collector reopens the fresh campaign's source,
+  edit, compiler, test and solver evidence. Sanity controls are never mutants.
+- `--mode performance`: the pinned hotpath input workload using an explicit
+  support-library checkout.
+- `--mode quality`: fast checks, composition mutation, bounded proof, actual
+  helper-mutant verification, and hotpath workload. Every requested stage is required; incomplete installation
+  or qualification leaves this combined mode failed/not-run. Keep this longer
+  qualification outside the repeated fast loop.
 
 Fast mode is the repeated-development gate for these affected Linux packages.
 Choose acceptance when qualifying a current native input/render candidate or
@@ -24,6 +40,8 @@ packages need their relevant additional checks. The wider mode does not run
 macOS/Windows native, browser proof, mutation, MCP stdio interoperability, or
 the separate Ubuntu scale/readback/lifecycle GPU suite;
 these are explicit separate scopes rather than silently passing checks.
+Mutation is now available through its own named local mode; the wider native
+acceptance mode continues to report that scope separately.
 
 ## Prepare once
 
@@ -55,6 +73,33 @@ The lock records the official npm tarball/integrity and the installed CLI's
 SHA-256. Both package identity/version and CLI bytes must match before execution.
 The explicit profile doctor runs every time before actrun. No hosted setup step
 is disabled or replaced with a blanket no-op.
+
+### Real-mutant helper verification
+
+Keep the separately reviewed turtles source checkout, schema-3 executable and
+bounded helper profile outside this checkout. Their identities are pinned by
+the verification integration lock. See the [exact public pin, reset recipe and
+scope](TURTLES-VERIFICATION.md). They are separate inputs from the official
+turtles 0.3.0/schema-2 executable used by composition mutation. The entrypoint
+does not install or upgrade either tool.
+
+```sh
+python3 infra/linux-desktop/actrun-feedback.py --root "$GPUI_DESKTOP_ROOT" \
+  --mode verification \
+  --turtles-verification-root "$GPUI_TURTLES_VERIFICATION_ROOT" \
+  --turtles-schema3-bin "$GPUI_TURTLES_SCHEMA3_BIN" \
+  --turtles-verification-profile "$GPUI_TURTLES_VERIFICATION_PROFILE" \
+  --proof-why3 "$GPUI_PROOF_WHY3" --proof-solver "$GPUI_PROOF_SOLVER"
+```
+
+Those explicit environment variables may instead be inherited by the runner.
+`quality` requires the same inputs plus the composition `--turtles-bin` and
+performance `--hotpath-root` inputs. Missing tools or an unreviewed profile
+leave the requested stage failed/not-run. The denominator is the bounded
+eligible helper scope, not every mutation in GPUI. Runtime/PBT kills, real SAT
+proof kills, unviable candidates and inconclusive outcomes remain separate in
+the retained report. Unknown, timeout, stale source or changed fixed contracts
+cannot become proof kills or a combined quality Green.
 
 ## Workload, records and safety
 
@@ -93,7 +138,10 @@ local mode, and removes only that file in a `finally` block. The existing hosted
 workflow files are never changed. The narrow gitignore rule for this generated
 filename keeps it outside candidate source manifests, so the persisted native
 bundle remains verifiable after cleanup. The exact workflow bytes/hash are kept
-in the run record. Do not force-add or push this temporary workflow. Normal success/failure/interruption removes it; an uncatchable
+in the run record. The real-mutant verification collector accepts only this
+parent-attested exact workflow path, hash and file mode when comparing the
+campaign to current source after cleanup. Other files have no such exception.
+Do not force-add or push this temporary workflow. Normal success/failure/interruption removes it; an uncatchable
 process kill can leave the uniquely named file for manual inspection/removal.
 
 Each invocation creates new external records under

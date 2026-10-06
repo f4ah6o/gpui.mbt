@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "kind": "composition-survivor-review",
+  "turtles_version": "0.3.0",
+  "report_schema": 2,
+  "selection": "complete explicitly selected source files, not changed lines",
+  "survivors": [
+    {
+      "id": "m-f65596855162e5c7",
+      "path": "controls/text_field/composition.mbt",
+      "offset": 1351,
+      "end": 1356,
+      "original": "false",
+      "replacement": "true",
+      "group": "literal",
+      "source_sha256": "a7863220e377c7a7bfc5f07e5527aaea0a5ca41b9d241143d73a1a8120d0571d",
+      "diff_sha256": "60f7af2a155b644f37c2ea16169281331cd7ffcff551bcbcac7478b8256114e3",
+      "classification": "unobservable-initializer",
+      "rationale": "begin_field_composition is private and is called only after update_composition has rejected the no-owner empty-preedit case. A newly created state therefore reaches the nonempty branch, which overwrites preview_visible with true before publishing it. Failure publishes no candidate. Later empty preedit assigns false explicitly. Changing this initial flag cannot affect any public field snapshot."
+    },
+    {
+      "id": "m-845b5133d7ea49b2",
+      "path": "controls/text_field/composition.mbt",
+      "offset": 10302,
+      "end": 10306,
+      "original": "true",
+      "replacement": "false",
+      "group": "literal",
+      "source_sha256": "a7863220e377c7a7bfc5f07e5527aaea0a5ca41b9d241143d73a1a8120d0571d",
+      "diff_sha256": "e39442d2b46249a2872a1c297948d1a279b4902d1f505a834fa355726bcff178",
+      "rationale_dependencies_sha256": {
+        "controls/text_field/model.mbt": "dba2742dd3dfbe1a885e6778e8ce4029714b636925436b2c9077e5e00ea3f48a",
+        "text/document.mbt": "44e18346aba2f8b2693a57cd4cda8ac894da50608b6b019884f0398d7af33258",
+        "text/range.mbt": "0827a318e2eecdd9a5761d7a67e883f28ad6e80e3611b523818feb234511e669",
+        "text_layout/model.mbt": "eaae47045a8b6a7ca4144fe6ef1145b69dfb21924c8432217fca0f7ad09478fc"
+      },
+      "classification": "admitted-snapshot-invariant",
+      "rationale": "The saved original document and measurement were admitted with exact anchor/head cursor stops before composition began. Both are immutable snapshots under immutable font style. with_bounds validates the same saved pair before a resize. This boolean controls only rechecking those original cursor endpoints; all other geometry checks still run. Public operations cannot create an invalid saved selection, so disabling this redundant endpoint check on blur is equivalent for reachable public states."
+    }
+  ],
+  "source_review": {
+    "production_main": "2de439f38682dfb55ae0f59864824f37a7017c20",
+    "production_tree": "aaa853b09b2ba2c392a53afe257226a7c6d2b8f4",
+    "change": "getter-only append independently reviewed; original mutant spans, raw diff hashes and rationale dependencies unchanged",
+    "fresh_campaign_required": true
+  }
+}

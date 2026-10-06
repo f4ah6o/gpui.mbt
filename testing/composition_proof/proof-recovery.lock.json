@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "platform": "Debian13 amd64, OCaml5.3.0; source build recovery, not a portable binary identity guarantee",
+  "debian_index": {
+    "url": "https://deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.xz",
+    "sha256": "7778d3e3f303b7ddb8ce0fe7c8d57473a076c6bf2e8f241f75421d2396352498",
+    "trust": "Official package index provenance captured with the recovery lock; all archives are hash-verified. No archive-signature verification is claimed by this prefix extractor."
+  },
+  "ocaml_packages": [
+    {
+      "name": "ocaml-base",
+      "version": "5.3.0-3",
+      "url": "https://deb.debian.org/debian/pool/main/o/ocaml/ocaml-base_5.3.0-3_amd64.deb",
+      "sha256": "039652a52bce7fd48abc2d905225d1811bd65e139ee6b8a28650c957a235a013",
+      "filename": "ocaml-base_5.3.0-3_amd64.deb"
+    },
+    {
+      "name": "libstdlib-ocaml",
+      "version": "5.3.0-3",
+      "url": "https://deb.debian.org/debian/pool/main/o/ocaml/libstdlib-ocaml_5.3.0-3_amd64.deb",
+      "sha256": "5334efd10830ee37210e87a7ade0f74009192e6e77446f062dc3ca15f95c1043",
+      "filename": "libstdlib-ocaml_5.3.0-3_amd64.deb"
+    },
+    {
+      "name": "libstdlib-ocaml-dev",
+      "version": "5.3.0-3",
+      "url": "https://deb.debian.org/debian/pool/main/o/ocaml/libstdlib-ocaml-dev_5.3.0-3_amd64.deb",
+      "sha256": "dc30c05739633cf8313fd685b635db6eb50d41b2d42f1e83208c269964c8d322",
+      "filename": "libstdlib-ocaml-dev_5.3.0-3_amd64.deb"
+    },
+    {
+      "name": "libcompiler-libs-ocaml-dev",
+      "version": "5.3.0-3",
+      "url": "https://deb.debian.org/debian/pool/main/o/ocaml/libcompiler-libs-ocaml-dev_5.3.0-3_amd64.deb",
+      "sha256": "9b7906c3035dbb3b3e6d6e881413b8d8ccf239409c5677a0382864f0a84f4fe3",
+      "filename": "libcompiler-libs-ocaml-dev_5.3.0-3_amd64.deb"
+    },
+    {
+      "name": "ocaml-interp",
+      "version": "5.3.0-3",
+      "url": "https://deb.debian.org/debian/pool/main/o/ocaml/ocaml-interp_5.3.0-3_amd64.deb",
+      "sha256": "fe4595e7bf353c6b81a4e46ffc552f1c82cc5a33cd0c724251cbad010dddf1b0",
+      "filename": "ocaml-interp_5.3.0-3_amd64.deb"
+    },
+    {
+      "name": "ocaml",
+      "version": "5.3.0-3",
+      "url": "https://deb.debian.org/debian/pool/main/o/ocaml/ocaml_5.3.0-3_amd64.deb",
+      "sha256": "226e71a9cbb59148280298a74a3930a6d01b052cf4c17cd09675f80fe323cdd1",
+      "filename": "ocaml_5.3.0-3_amd64.deb"
+    },
+    {
+      "name": "libfindlib-ocaml",
+      "version": "1.9.8-1+b1",
+      "url": "https://deb.debian.org/debian/pool/main/f/findlib/libfindlib-ocaml_1.9.8-1+b1_amd64.deb",
+      "sha256": "e85f1626744414d024d1163a88b2a3722a20ede16b845e4aef46e79fe556500c",
+      "filename": "libfindlib-ocaml_1.9.8-1+b1_amd64.deb"
+    },
+    {
+      "name": "libfindlib-ocaml-dev",
+      "version": "1.9.8-1+b1",
+      "url": "https://deb.debian.org/debian/pool/main/f/findlib/libfindlib-ocaml-dev_1.9.8-1+b1_amd64.deb",
+      "sha256": "4cd991eddffd16d6cfbd42c82d2fd56fca3cd210049e558916b32d05da643477",
+      "filename": "libfindlib-ocaml-dev_1.9.8-1+b1_amd64.deb"
+    },
+    {
+      "name": "ocaml-findlib",
+      "version": "1.9.8-1+b1",
+      "url": "https://deb.debian.org/debian/pool/main/f/findlib/ocaml-findlib_1.9.8-1+b1_amd64.deb",
+      "sha256": "e2b01155de7bfe233d29eeff2b14527b0798399c19a40fdb8931ffe0e15a4925",
+      "filename": "ocaml-findlib_1.9.8-1+b1_amd64.deb"
+    },
+    {
+      "name": "libnum-ocaml",
+      "version": "1.5-1+b3",
+      "url": "https://deb.debian.org/debian/pool/main/o/ocaml-num/libnum-ocaml_1.5-1+b3_amd64.deb",
+      "sha256": "5a770440f2596f013553618521768f552cf0130302ffc5e19d83d4d9011ffb8b",
+      "filename": "libnum-ocaml_1.5-1+b3_amd64.deb"
+    },
+    {
+      "name": "libnum-ocaml-dev",
+      "version": "1.5-1+b3",
+      "url": "https://deb.debian.org/debian/pool/main/o/ocaml-num/libnum-ocaml-dev_1.5-1+b3_amd64.deb",
+      "sha256": "e5e589e7cff5d32a690130181795fafd7eedda8153107df81c1055d93a79841f",
+      "filename": "libnum-ocaml-dev_1.5-1+b3_amd64.deb"
+    },
+    {
+      "name": "libmenhir-ocaml-dev",
+      "version": "20240715+ds-1+b2",
+      "url": "https://deb.debian.org/debian/pool/main/m/menhir/libmenhir-ocaml-dev_20240715+ds-1+b2_amd64.deb",
+      "sha256": "5289b5236ff083273ffe566715decb94bfd1b367fae507f7f47d7c203271e70e",
+      "filename": "libmenhir-ocaml-dev_20240715+ds-1+b2_amd64.deb"
+    },
+    {
+      "name": "menhir",
+      "version": "20240715+ds-1+b2",
+      "url": "https://deb.debian.org/debian/pool/main/m/menhir/menhir_20240715+ds-1+b2_amd64.deb",
+      "sha256": "5872a5707d06954e25aa340796f9ecab6444c0dedb8a742dd7bf7f8e578b047b",
+      "filename": "menhir_20240715+ds-1+b2_amd64.deb"
+    }
+  ],
+  "why3_source": {
+    "version": "1.7.2",
+    "url": "https://why3.gitlabpages.inria.fr/releases/why3-1.7.2.tar.gz",
+    "registry_cache_url": "https://opam.ocaml.org/cache/sha256/55/55a486fc588ed8c0dd49215718926b232950c742cfc2d4fc005ed3a4f5598424",
+    "sha256": "55a486fc588ed8c0dd49215718926b232950c742cfc2d4fc005ed3a4f5598424",
+    "filename": "why3-1.7.2.tar.gz",
+    "checksum_source": "https://github.com/ocaml/opam-repository/blob/master/packages/why3/why3.1.7.2/opam"
+  },
+  "configure_flags": [
+    "--disable-frama-c",
+    "--disable-coq-libs",
+    "--disable-js-of-ocaml",
+    "--disable-re",
+    "--enable-ocamlfind",
+    "--disable-zarith",
+    "--disable-mpfr",
+    "--disable-zip",
+    "--disable-hypothesis-selection",
+    "--disable-stackify",
+    "--disable-ide"
+  ],
+  "ocamlparam": "_,w=-46,keywords=5.2",
+  "install_targets": [
+    "install-bin",
+    "install-data"
+  ],
+  "binary_identity": "Why3 embeds its configured absolute prefix. Rebuild at a different prefix normally changes CLI/plugin hashes. Never automatically re-pin; independently review and requalify all five goals and both controls after an explicit pin update."
+}

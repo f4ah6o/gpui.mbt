@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "moonc_version": "0.10.14+7d59c7ec9",
+  "moon_version": "0.1.20260920",
+  "why3_version": "1.7.2",
+  "solver": {
+    "name": "z3",
+    "version": "4.13.3",
+    "archive_url": "https://deb.debian.org/debian/pool/main/z/z3/z3_4.13.3-1_amd64.deb",
+    "archive_sha256": "4330fbffdcb23b708fa3008cde5ba00f63fe0a75bd67ac469ce16f2bd4213a1d",
+    "installation": "Extract only into a user-owned prefix; no OS package or security changes.",
+    "executable_sha256": "c28f5598836fe6312ed4b25a98525fb58e2800d4c4f8117a1daeb04e6327686c"
+  },
+  "integer_model": "mathematical integers; range-length precondition and postcondition explicitly keep subtraction within signed Int bounds",
+  "prelude": "Bundled lib/prelude_proof/moonbit_builtin_prelude.mlw; no override",
+  "artifact_sha256": {
+    "bin/moonc": "d163b2c4c878ca584870764b75e633d73e8b9c178dcc6b00c692f6b2a6b1b2dc",
+    "lib/why3/why3server": "da4d66108537e3039deb93d0fd797c06715d69e1057931cc845ab6a6fab8aabe",
+    "lib/prelude_proof/moonbit_builtin_prelude.mlw": "2c17e3da5a0cb51e94246d646c610a5ae92ec2ccf8eaa16f3930c5c718dd7620",
+    "bin/moon": "6da4919f45f4abf7c6d7f3cf8d9a457de77dca430d6fb811d21b27ae1ac8e11d",
+    "lib/core/_build/wasm/release/bundle/prelude/prelude.mi": "e72d19774700d3e12dfb53731430453e08de9b8f8fefa35bb4f6999f0fcd2217"
+  },
+  "proof_report_schema_source": "https://github.com/moonbitlang/moon/blob/914d7da/crates/moon/src/cli/prove.rs#L559-L577",
+  "export_backend": {
+    "why3_version": "1.7.2",
+    "source_archive_url": "https://why3.gitlabpages.inria.fr/releases/why3-1.7.2.tar.gz",
+    "registry_cache_url": "https://opam.ocaml.org/cache/sha256/55/55a486fc588ed8c0dd49215718926b232950c742cfc2d4fc005ed3a4f5598424",
+    "source_archive_sha256": "55a486fc588ed8c0dd49215718926b232950c742cfc2d4fc005ed3a4f5598424",
+    "cli_sha256": "5d344c0f1be95d974691111663b9717a26816735c55e014dddbf5bf222e85323",
+    "prove_plugin_sha256": "bb7e192a011d2d8c5372e7c9f371c3f3872c6f68844fffc7eed6ed19910fbc5c",
+    "moon_why3_datadir_sha256": "5d8c6163b205abe755fc042149ba73588fa2049a9f8a35b13e068f3f02817a3f",
+    "transformations": [
+      "inline_all",
+      "remove_unused"
+    ],
+    "driver": "z3_471.drv",
+    "expected_goal_count": 5,
+    "documentation": "https://why3.org/doc/manpages.html#the-prove-command",
+    "expected_goal_ids": [
+      "preconditions_are_inhabited'vc",
+      "mbtp___40f4ah6o_2fcomposition_proof_2eTextRange_3a_3alength'vc",
+      "utf8_scalar_width'vc",
+      "utf16_scalar_width'vc",
+      "range_preconditions_are_inhabited'vc"
+    ]
+  }
+}
