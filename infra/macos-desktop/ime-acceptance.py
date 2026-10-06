@@ -633,7 +633,8 @@ def validate_final(record, source, binary_sha, initial_revision=None, initial_fr
     return record
 
 
-SWIFT_WINDOW_CAPTURE = r'''import CoreGraphics
+SWIFT_WINDOW_CAPTURE = r'''import AppKit
+import CoreGraphics
 import Foundation
 import ImageIO
 import ScreenCaptureKit
@@ -641,12 +642,15 @@ import UniformTypeIdentifiers
 
 @main
 struct OwnedWindowCapture {
+  @MainActor
   static func main() async {
     guard CommandLine.arguments.count == 4,
           let pid = Int32(CommandLine.arguments[1]) else {
       fputs("usage: owned-window-capture PID TITLE OUTPUT.png\n", stderr)
       exit(2)
     }
+    // Establish the process's WindowServer connection before CoreGraphics' capture path.
+    _ = NSApplication.shared
     let title = CommandLine.arguments[2]
     let output = URL(fileURLWithPath: CommandLine.arguments[3])
     do {
@@ -821,10 +825,15 @@ def validate_summary(path, repo=REPO, expected_source=None):
     except (OSError, subprocess.SubprocessError) as error:
         raise AcceptanceError("current pinned Swift compiler could not be resolved: " + str(error)) from None
     if type(capture) is not dict or set(capture) != {"swiftc", "swiftc_resolved", "swiftc_sha256", "swiftc_version",
-        "compile_environment", "helper_sha256", "engine", "helper_source_sha256"} or \
+        "compile_environment", "helper_sha256", "helper_compile_argv", "engine", "helper_source_sha256"} or \
        capture.get("engine") != "ScreenCaptureKit.SCScreenshotManager" or \
        capture.get("compile_environment") != compile_environment or capture.get("swiftc") != str(selected_swiftc) or \
        capture.get("swiftc_version") != current_swiftc_version or \
+       capture.get("helper_compile_argv") != [
+           str(selected_swiftc), "-parse-as-library", "-framework", "AppKit",
+           "-framework", "ScreenCaptureKit", "-framework", "ImageIO",
+           str(helper_source), "-o", str(helper),
+       ] or \
        swiftc is None or not swiftc.is_absolute() or not swiftc.is_file() or \
        swiftc_resolved is None or not swiftc_resolved.is_absolute() or \
        swiftc.resolve(strict=True) != swiftc_resolved or digest(swiftc_resolved) != capture.get("swiftc_sha256") or \
@@ -1083,8 +1092,10 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
     swift_source = output / "owned-window-capture.swift"
     helper = output / "owned-window-capture"
     swift_source.write_text(SWIFT_WINDOW_CAPTURE)
-    compile_result = subprocess.run([str(swiftc), "-parse-as-library", "-framework", "ScreenCaptureKit", "-framework", "ImageIO",
-                                     str(swift_source), "-o", str(helper)],
+    helper_compile_argv = [str(swiftc), "-parse-as-library", "-framework", "AppKit",
+                           "-framework", "ScreenCaptureKit", "-framework", "ImageIO",
+                           str(swift_source), "-o", str(helper)]
+    compile_result = subprocess.run(helper_compile_argv,
                                     env=env, text=True, stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, timeout=60)
     (output / "window-capture-build.log").write_text(compile_result.stdout)
@@ -1110,6 +1121,7 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
                                   "swiftc_sha256": digest(swiftc_resolved),
                                   "swiftc_version": swiftc_version,
                                   "compile_environment": compile_environment,
+                                  "helper_compile_argv": helper_compile_argv,
                                   "helper_sha256": digest(helper), "engine": "ScreenCaptureKit.SCScreenshotManager",
                                   "helper_source_sha256": hashlib.sha256(SWIFT_WINDOW_CAPTURE.encode()).hexdigest()},
               "screenshots": {}, "ok": False}

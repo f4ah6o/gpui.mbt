@@ -83,6 +83,7 @@ def make_png(path, rgba, width=640, height=272):
 
 
 def successful_ime_summary(directory, repo):
+    directory = directory.resolve(strict=True)
     source = acceptance.source_snapshot(repo)
     input_source = "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"
     final, _, binary_sha = valid_final()
@@ -200,6 +201,9 @@ def successful_ime_summary(directory, repo):
                     "swiftc_sha256": hashlib.sha256(swiftc_resolved.read_bytes()).hexdigest(),
                     "swiftc_version": swiftc_version, "compile_environment": compile_environment,
                     "helper_sha256": hashlib.sha256(helper_path.read_bytes()).hexdigest(),
+                    "helper_compile_argv": [str(swiftc), "-parse-as-library", "-framework", "AppKit",
+                                            "-framework", "ScreenCaptureKit", "-framework", "ImageIO",
+                                            str(helper_source), "-o", str(helper_path)],
                     "engine": "ScreenCaptureKit.SCScreenshotManager",
                     "helper_source_sha256": hashlib.sha256(helper_source.read_bytes()).hexdigest()},
             "initial_state": initial_state, "initial_checkpoint": initial_checkpoint,
@@ -445,6 +449,8 @@ class ImeEvidenceTests(unittest.TestCase):
                     input_source="com.apple.inputmethod.Kotoeri.RomajiTyping.Roman"),
                 lambda value: value["final_acceptance"].update(
                     input_source="com.apple.inputmethod.Kotoeri.RomajiTyping.Roman"),
+                lambda value: value["capture_runtime"].pop("helper_compile_argv"),
+                lambda value: value["capture_runtime"].update(helper_compile_argv=["swiftc", "-framework", "ImageIO"]),
                 lambda value: value["final_acceptance"].update(binary_sha256="f" * 64),
                 lambda value: value["initial_checkpoint"]["window_geometry"].update(native_window_id=100),
                 lambda value: value["screenshots"]["initial"]["window_geometry"].update(app_key_matches=False),
