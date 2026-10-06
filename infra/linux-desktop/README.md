@@ -118,8 +118,9 @@ The script terminates only its own processes when the field window exits.
 The accepted PR32 baseline lacks Ctrl+A/select-all and the native unmapped
 modifier fix. It can fail when Shift is delivered. The final integrated source
 provides those fixes; build that current candidate for the ready semantic
-cases. This infrastructure's copied PR32 app source is not itself that final
-integration. The historical golden retains its independently reviewed origin.
+cases. The original infrastructure checkout was captured against PR32 and did not
+contain the final app integration. The publication assembly includes the
+reviewed integrated app source; qualify each build by its own manifest. The historical golden retains its independently reviewed origin.
 
 Optional manual smoke against the final integrated source, using real keys:
 
@@ -132,8 +133,8 @@ Optional manual smoke against the final integrated source, using real keys:
 
 Do not substitute clipboard paste, scripted document replacement, or a
 render-only frame smoke for the keyboard test. The archived PR32 application
-baseline in this infrastructure checkout lacks the separate held-key-repeat
-change. The final integrated source includes repeat and has its independent
+baseline used for the original infrastructure profile lacked the separate
+held-key-repeat change. The final integrated source includes repeat and has its independent
 release/focus-loss proof, while the reusable held-repeat catalog case remains
 pending its adaptive policy oracle.
 
