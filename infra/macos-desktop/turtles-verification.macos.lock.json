@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "upstream": {
+    "repository": "https://github.com/gpui-mbt/turtles.mbt.git",
+    "commit": "b91db91a00e5dd0cc2964f7fb7ed497a4256af10",
+    "tree": "2693674efc52cf05da69fd474eb20ac0130bc4ff",
+    "adapter": "scripts/verify_moon_profile.py",
+    "adapter_sha256": "fc5d5134a876e86c1e05a259ddc756601ef2439997fdf273fa6926cc3d4620aa"
+  },
+  "binary_path": "build/turtles-verification/native/release/build/cmd/turtles/turtles.exe",
+  "binary_hash_policy": "profile receipt: native build metadata can vary with the external source/build path",
+  "version": "turtles 0.3.0",
+  "profile_template": {
+    "schema": 1,
+    "profile": "moonbit-composition-helpers-v1",
+    "pilot_revision": "packaging-39b1275",
+    "target": "wasm",
+    "runtime_packages": ["text", "controls/text_field"],
+    "max_mutants": 64,
+    "timeout_seconds": 60
+  },
+  "registry_index": {
+    "url": "https://mooncakes.io/git/index",
+    "commit": "443ef9df8944d5087b3c0af898ae1b3186592b05",
+    "tree": "c717a388d9c805c49b7123a13a89a6acf5b212ec",
+    "package_records_sha256": {
+      "user/f4ah6o/turtles.index": "2f37df73cd4b61d7db19a3f4cc8c3f47d120be8ff66a79bb167b54a8731b7208",
+      "user/moonbit-community/prettyprinter.index": "042ac7d9810006889a19ebcfd520fa86033fef790e7cc782bf5511e99e13050c",
+      "user/moonbitlang/async.index": "85d7712259c1519650246882f15abe5a296716ae669af9bac8b115929c910ce1",
+      "user/moonbitlang/lexer.index": "0957586cd9d88309c63e0e98846fe2b0360e44600c112703f649b85cb69e34e9",
+      "user/moonbitlang/moon_config.index": "9d5d1bad4485fad7c8acba373740a287d7e9a4d44806780bc8a0ddd119d0911f",
+      "user/moonbitlang/parser.index": "d5ef09c6560c67d28f98041d9693ee2c2424e1669e255f78e5adf3ba9a585793",
+      "user/moonbitlang/x.index": "9a773355c880053483d0b9ba1d034db2b054095cfdda69de91722dd7a215f9c5"
+    }
+  },
+  "build": {
+    "command": ["moon", "build", "--target", "native", "--release", "--deny-warn"],
+    "target": "native",
+    "release": true,
+    "deny_warn": true,
+    "build_root_bound": true,
+    "cc": "profile-locked-xcode-clang",
+    "sdkroot": "profile-locked-xcode-sdk",
+    "deployment_target": "26.0"
+  },
+  "toolchain_profile_lock": "profile.lock.json"
+}

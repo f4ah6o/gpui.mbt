@@ -1,0 +1,24 @@
+import {
+  "f4ah6o/hotpath/src" @hotpath,
+  "f4ah6o/gpui/controls/text_field" @field,
+  "f4ah6o/gpui/platform/macos_text" @macos_text,
+  "f4ah6o/gpui/text" @text,
+  "f4ah6o/gpui/text_layout" @text_layout,
+  "f4ah6o/gpui/primitives" @primitives,
+  "f4ah6o/gpui/scene" @scene,
+  "moonbitlang/core/env",
+}
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")
+
+options(
+  "native-stub": [ "clock.c" ],
+  link: {
+    "native": {
+      "cc-flags": "-O2 -std=c11 -Wall -Wextra",
+      "cc-link-flags": "-lm",
+    },
+  },
+)

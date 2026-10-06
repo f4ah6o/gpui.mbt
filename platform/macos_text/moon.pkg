@@ -1,0 +1,20 @@
+import {
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/text",
+  "f4ah6o/gpui/text_layout",
+  "moonbitlang/core/encoding/utf8",
+}
+
+supported_targets = "native"
+
+options(
+  "native-stub": [ "core_text.c" ],
+  link: {
+    "native": {
+      "cc": "script/macos_text_cc.py",
+      "cc-flags": "-O2 -std=c11",
+      "stub-cc": "script/macos_text_cc.py",
+      "stub-cc-flags": "-O2 -std=c11",
+    },
+  },
+)

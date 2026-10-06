@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "name": "@mizchi/actrun",
+  "version": "0.32.0",
+  "repository": "https://github.com/mizchi/actrun",
+  "registry_tarball": "https://registry.npmjs.org/@mizchi/actrun/-/actrun-0.32.0.tgz",
+  "registry_integrity": "sha512-RrFy81H/XpXgHeIAeFVlxI5NryFk2V3QLpKTIlaV6SNcS/un8k/Vt/BE4k8QZafo8GrQe7kd1Wo/qqURomswBw==",
+  "cli_sha256": "f40b51358877bba1c922039eff40daab739a4a4a99a9cb1c4d9c35557de06088",
+  "node_minimum_major": 18
+}

@@ -4,7 +4,9 @@ package "f4ah6o/gpui/platform/macos"
 import {
   "f4ah6o/gpui/diagnostics",
   "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/primitives",
   "f4ah6o/gpui/scene",
+  "f4ah6o/gpui/text",
 }
 
 // Values
@@ -12,11 +14,29 @@ import {
 // Errors
 
 // Types and methods
+pub(all) struct EditorBatch {
+  target : TextSessionTarget
+  events : Array[TextSessionEvent]
+}
+pub fn EditorBatch::events(Self) -> Array[TextSessionEvent]
+pub fn EditorBatch::target(Self) -> TextSessionTarget
+
+pub(all) enum EditorEvent {
+  Platform(@platform.Event)
+  TextSession(EditorBatch)
+}
+
 pub struct Host {
   // private fields
 }
+pub fn Host::begin_text_session(Self, @platform.WindowId, @text.TextDocument, @primitives.Rect, owner_revision? : Int64) -> Result[Int, @diagnostics.FrameworkError]
+pub fn Host::cancel_text_session(Self, @platform.WindowId, Int) -> Result[Int, @diagnostics.FrameworkError]
 pub fn Host::create_window(Self, String, Double, Double) -> Result[@platform.WindowId, @diagnostics.FrameworkError]
 pub fn Host::destroy_window(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::direct_keyboard_text_epoch(Self, @platform.WindowId) -> Result[Int, @diagnostics.FrameworkError]
+pub fn Host::end_text_session(Self, @platform.WindowId, Int) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::generation(Self) -> Result[Int64, @diagnostics.FrameworkError]
+pub fn Host::next_editor_event(Self, timeout_ms? : Int) -> Result[EditorEvent?, @diagnostics.FrameworkError]
 pub fn Host::next_event(Self, timeout_ms? : Int) -> Result[@platform.Event?, @diagnostics.FrameworkError]
 pub fn Host::present(Self, @platform.WindowId, @scene.SceneSnapshot) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::read_clipboard(Self) -> Result[String, @diagnostics.FrameworkError]
@@ -25,14 +45,55 @@ pub fn Host::request_close(Self, @platform.WindowId) -> Result[Unit, @diagnostic
 pub fn Host::request_exit(Self) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::require_capability(Self, @platform.Capability) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::set_cursor(Self, @platform.Cursor) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::set_direct_keyboard_text(Self, @platform.WindowId, Bool) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::set_size(Self, @platform.WindowId, Double, Double) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::set_title(Self, @platform.WindowId, String) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::start() -> Result[Self, @diagnostics.FrameworkError]
 pub fn Host::stop(Self) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::testing_candidate_rect(Self, @platform.WindowId) -> Result[@primitives.Rect, @diagnostics.FrameworkError]
+pub fn Host::testing_frame_identity(Self, @platform.WindowId) -> Result[String, @diagnostics.FrameworkError]
+pub fn Host::testing_key_dispatch_receipt(Self, @platform.WindowId) -> Result[String, @diagnostics.FrameworkError]
+pub fn Host::testing_post_key(Self, @platform.WindowId, Int, String, String, @primitives.Modifiers) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::testing_restore_input_source(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::testing_select_kotoeri_source(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::testing_selected_input_source(Self, @platform.WindowId) -> Result[String, @diagnostics.FrameworkError]
+pub fn Host::testing_text_window_state(Self, @platform.WindowId) -> Result[String, @diagnostics.FrameworkError]
+pub fn Host::update_direct_keyboard_text(Self, @platform.WindowId, Int, @text.TextDocument, @primitives.Rect) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::update_text_session(Self, @platform.WindowId, Int, @text.TextDocument, @primitives.Rect, external_edit? : Bool, acknowledged_sequence? : Int64?, owner_revision? : Int64) -> Result[Int, @diagnostics.FrameworkError]
 pub fn Host::wake(Self) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::window_metrics(Self, @platform.WindowId) -> Result[(Double, Double, Double), @diagnostics.FrameworkError]
 pub fn Host::write_clipboard(Self, String) -> Result[Unit, @diagnostics.FrameworkError]
 pub impl @platform.Backend for Host
+
+pub(all) enum TextSessionEvent {
+  Preedit(text~ : String, fallback~ : String, cursor_utf16~ : Int?, styles~ : Array[TextSessionStyle], replacement_range~ : @text.TextRange?)
+  Commit(text~ : String, replacement_range~ : @text.TextRange?)
+  Entered
+  Left
+  Cancelled
+  ForwardedPressed(key_code~ : Int, key~ : @primitives.Key?, modifiers~ : @primitives.Modifiers)
+  ForwardedReleased(key_code~ : Int, key~ : @primitives.Key?, modifiers~ : @primitives.Modifiers)
+}
+
+pub(all) struct TextSessionStyle {
+  range : @text.TextRange
+  style : Int
+}
+pub fn TextSessionStyle::range(Self) -> @text.TextRange
+pub fn TextSessionStyle::style(Self) -> Int
+
+pub(all) struct TextSessionTarget {
+  window : @platform.WindowId
+  host_epoch : Int64
+  epoch : Int
+  sequence : Int64
+  owner_revision : Int64
+}
+pub fn TextSessionTarget::epoch(Self) -> Int
+pub fn TextSessionTarget::host_epoch(Self) -> Int64
+pub fn TextSessionTarget::owner_revision(Self) -> Int64
+pub fn TextSessionTarget::sequence(Self) -> Int64
+pub fn TextSessionTarget::window(Self) -> @platform.WindowId
 
 // Type aliases
 
