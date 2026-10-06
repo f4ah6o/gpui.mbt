@@ -34,6 +34,9 @@ keyboard-text route. It does not establish ordinary application readiness.
   Wayland text-input protocol, candidate-window positioning, or Japanese IME.
 - Editing supports text commits, cursor-stop Left/Right, Home/End, Backspace,
   Delete, Shift-extended selection, click-to-place, and horizontal scrolling.
+  Ctrl/Meta+A selects the entire document from anchor 0 to its UTF-16 length
+  while focused. It uses the selection-only transition, retaining undo/redo
+  groups and snapshots; repeating an already full selection is a no-op.
   Unshifted Left/Right collapses a nonempty selection to its matching edge
   without an extra move; Shift keeps the original anchor. Movement and adjacent
   deletion use Pango-provided cursor stops, not scalar or UTF-16 increments.
