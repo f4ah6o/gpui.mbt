@@ -1,0 +1,36 @@
+name: Windows local portable acceptance
+on:
+  push:
+jobs:
+  windows-portable:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check formatting and all targets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          moon fmt --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          moon check --target all --deny-warn
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run portable Wasm regressions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          moon test --target wasm-gc --deny-warn
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          moon test --target js --deny-warn
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          moon test --target wasm --deny-warn
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test contract checker and validate repository contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $python = $env:GPUI_WINDOWS_PYTHON
+          if (-not $python) { throw 'GPUI_WINDOWS_PYTHON must identify the Python interpreter for this local profile.' }
+          & $python -m unittest discover -s tests -p test_check_contracts.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $python scripts/check_contracts.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -15,8 +15,16 @@ function Invoke-CheckedCommand {
     [Parameter(Mandatory = $true)][string]$LogName
   )
   $log = Join-Path $evidence $LogName
-  $output = & $Program @Arguments 2>&1
-  $status = $LASTEXITCODE
+  $previousCl = $env:CL
+  try {
+    if ($IsWindows) {
+      $env:CL = ("/EHsc $previousCl").Trim()
+    }
+    $output = & $Program @Arguments 2>&1
+    $status = $LASTEXITCODE
+  } finally {
+    $env:CL = $previousCl
+  }
   $output | Tee-Object -FilePath $log
   if ($status -ne 0) {
     throw "$Program $($Arguments -join ' ') failed with exit code $status; see $log"
@@ -34,13 +42,17 @@ if ($IsWindows) {
   ) -LogName "msvc-c-compile.log"
 }
 
-Invoke-CheckedCommand -Program "moon" -Arguments @("fmt", "--check", "windows", "examples/windows") -LogName "format.log"
+Invoke-CheckedCommand -Program "moon" -Arguments @("fmt", "--check", "windows", "platform/windows_text", "examples/windows", "examples/windows_text_field") -LogName "format.log"
 Invoke-CheckedCommand -Program "moon" -Arguments @("check", "--package-path", "windows", "--target", "native", "--deny-warn") -LogName "check-windows.log"
+Invoke-CheckedCommand -Program "moon" -Arguments @("check", "--package-path", "platform/windows_text", "--target", "native", "--deny-warn") -LogName "check-text-adapter.log"
 Invoke-CheckedCommand -Program "moon" -Arguments @("check", "--package-path", "examples/windows", "--target", "native", "--deny-warn") -LogName "check-example.log"
+Invoke-CheckedCommand -Program "moon" -Arguments @("check", "--package-path", "examples/windows_text_field", "--target", "native", "--deny-warn") -LogName "check-text-field.log"
 
 Remove-Item Env:GPUI_WINDOWS_E2E -ErrorAction SilentlyContinue
 Remove-Item Env:GPUI_WINDOWS_READBACK -ErrorAction SilentlyContinue
 Invoke-CheckedCommand -Program "moon" -Arguments @("test", "--package", "f4ah6o/gpui/windows", "--target", "native", "--deny-warn", "--no-parallelize") -LogName "portable-tests.log"
+Invoke-CheckedCommand -Program "moon" -Arguments @("test", "--package", "f4ah6o/gpui/platform/windows_text", "--target", "native", "--deny-warn", "--no-parallelize") -LogName "text-adapter-tests.log"
+Invoke-CheckedCommand -Program "moon" -Arguments @("test", "--package", "f4ah6o/gpui/examples/windows_text_field", "--target", "native", "--deny-warn", "--no-parallelize") -LogName "text-field-tests.log"
 
 if ($PortableOnly) {
   exit 0
@@ -66,3 +78,6 @@ Remove-Item Env:GPUI_WINDOWS_E2E -ErrorAction SilentlyContinue
 Remove-Item Env:GPUI_WINDOWS_READBACK -ErrorAction SilentlyContinue
 $env:GPUI_WINDOWS_SMOKE = "1"
 Invoke-CheckedCommand -Program "moon" -Arguments @("run", "examples/windows", "--target", "native") -LogName "app-smoke.log"
+
+Invoke-CheckedCommand -Program "pwsh" -Arguments @("-NoProfile", "-File", "scripts/run_windows_text_field.ps1", "-Mode", "Smoke") -LogName "text-field-smoke.log"
+Invoke-CheckedCommand -Program "pwsh" -Arguments @("-NoProfile", "-File", "scripts/run_windows_text_field.ps1", "-Mode", "Smoke", "-ExperimentalIme") -LogName "text-field-imm-smoke.log"

@@ -89,6 +89,18 @@ extern "C" fn native_present(
 ) -> Int = "gpui_windows_present"
 
 ///|
+#borrow(data, text_bytes)
+extern "C" fn native_present_text(
+  abi : Int,
+  host : Int,
+  window : Int,
+  data : FixedArray[Double],
+  length : Int,
+  text_bytes : Bytes,
+  text_length : Int,
+) -> Int = "gpui_windows_present_text"
+
+///|
 extern "C" fn native_recover(host : Int, window : Int) -> Int = "gpui_windows_recover"
 
 ///|
@@ -379,12 +391,46 @@ fn decode_event(data : FixedArray[Double]) -> @platform.EventKind? {
           Some(
             @platform.Input(
               if data[0] == 11.0 {
-                @primitives.KeyPressed(key~, modifiers=mods, repeat=false)
+                @primitives.KeyPressed(
+                  key~,
+                  modifiers=mods,
+                  repeat=data[7] != 0.0,
+                )
               } else {
                 @primitives.KeyReleased(key~, modifiers=mods)
               },
             ),
           )
+      }
+    15 =>
+      match key(0, data[6].to_int()) {
+        None => None
+        Some(key) =>
+          Some(
+            @platform.Input(
+              @primitives.KeyPressed(
+                key~,
+                modifiers=mods,
+                repeat=data[7] != 0.0,
+              ),
+            ),
+          )
+      }
+    16 =>
+      if data[6].is_nan() ||
+        data[6].is_inf() ||
+        data[6] < 0.0 ||
+        data[6] > 1114111.0 {
+        None
+      } else {
+        let scalar = data[6].to_int()
+        if scalar.to_double() != data[6] ||
+          (scalar >= 0xd800 && scalar <= 0xdfff) {
+          None
+        } else {
+          let text = scalar.unsafe_to_char().to_string()
+          Some(@platform.Input(@primitives.TextInput(text~)))
+        }
       }
     13 => Some(@platform.Wake)
     14 => Some(@platform.ExitRequested)
@@ -418,7 +464,7 @@ pub fn Host::next_event(
           Some(
             @platform.Event::new(
               @platform.WindowId::new(Int64::from_int(buffer[1].to_int())),
-              Int64::from_int(buffer[2].to_int()),
+              buffer[2].to_int64(),
               buffer[3],
               kind,
             ),
@@ -446,7 +492,7 @@ pub fn Host::dispatch(
             events.push(
               @platform.Event::new(
                 @platform.WindowId::new(Int64::from_int(buffer[1].to_int())),
-                Int64::from_int(buffer[2].to_int()),
+                buffer[2].to_int64(),
                 buffer[3],
                 kind,
               ),
@@ -540,18 +586,196 @@ fn frame_data(
 }
 
 ///|
+priv struct MixedFrame {
+  data : FixedArray[Double]
+  text_bytes : Bytes
+}
+
+///|
+/// Windows private mixed-frame ABI v2. It preserves item order, borrows one
+/// bounded UTF-8 sidecar, and keeps the legacy 19-double quad ABI unchanged.
+fn mixed_frame_data(
+  snapshot : @scene.SceneSnapshot,
+) -> Result[MixedFrame, @diagnostics.FrameworkError] {
+  if snapshot.schema_version() != 1 || snapshot.resources().length() != 0 {
+    return Err(backend_error(1, "present"))
+  }
+  let viewport = snapshot.viewport()
+  let items = snapshot.items()
+  if items.length() > 100000 {
+    return Err(backend_error(8, "present"))
+  }
+  let data = FixedArray::make(5 + items.length() * 25, 0.0)
+  data[0] = viewport.left()
+  data[1] = viewport.top()
+  data[2] = viewport.size().width()
+  data[3] = viewport.size().height()
+  data[4] = snapshot.scale()
+  let blob : Array[Byte] = []
+  let chains = snapshot.clip_chains()
+  let mut text_runs = 0
+  for index = 0; index < items.length(); index = index + 1 {
+    let offset = 5 + index * 25
+    match items[index] {
+      @scene.TextItem(text~, font_size~, ..)
+      | @scene.TextRunItem(text~, font_size~, ..) => {
+        text_runs += 1
+        if text_runs > @windows_text.max_scene_text_runs {
+          return Err(backend_error(8, "present"))
+        }
+        if font_size > @windows_text.max_scene_font_size_px {
+          return Err(backend_error(1, "present"))
+        }
+        let document = match @text.TextDocument::new(text) {
+          Ok(value) => value
+          Err(_) => return Err(backend_error(1, "present"))
+        }
+        let byte_length = match document.utf8_length() {
+          Ok(value) => value
+          Err(_) => return Err(backend_error(8, "present"))
+        }
+        if byte_length > @windows_text.max_scene_text_bytes ||
+          blob.length() > @windows_text.max_frame_text_bytes - byte_length {
+          return Err(backend_error(8, "present"))
+        }
+        let bytes = @utf8.encode(document.text())
+        if bytes.length() != byte_length ||
+          blob.length() > @windows_text.max_frame_text_bytes - bytes.length() {
+          return Err(backend_error(8, "present"))
+        }
+        for scalar in text.iter() {
+          if scalar.to_int() == 0 ||
+            scalar.to_int() == 0x0A ||
+            scalar.to_int() == 0x0D ||
+            scalar.to_int() == 0x2028 ||
+            scalar.to_int() == 0x2029 {
+            return Err(backend_error(1, "present"))
+          }
+        }
+        data[offset] = if items[index] is @scene.TextRunItem(..) {
+          2.0
+        } else {
+          1.0
+        }
+        data[offset + 20] = blob.length().to_double()
+        data[offset + 21] = bytes.length().to_double()
+        data[offset + 22] = font_size
+        if items[index] is @scene.TextRunItem(text_origin~, ..) {
+          data[offset + 23] = text_origin.x()
+          data[offset + 24] = text_origin.y()
+        }
+        for byte in bytes {
+          blob.push(byte)
+        }
+      }
+      @scene.QuadItem(..) => ()
+    }
+    match items[index] {
+      @scene.QuadItem(bounds~, color~, transform~, opacity~, clip_chain_id~, ..)
+      | @scene.TextItem(
+        bounds~,
+        color~,
+        transform~,
+        opacity~,
+        clip_chain_id~,
+        ..
+      )
+      | @scene.TextRunItem(
+        bounds~,
+        color~,
+        transform~,
+        opacity~,
+        clip_chain_id~,
+        ..
+      ) => {
+        let mut clip = Some(viewport)
+        if clip_chain_id is Some(id) {
+          for chain in chains {
+            if chain.id() == id {
+              for rect in chain.rects() {
+                clip = match clip {
+                  Some(current) => current.intersection(rect)
+                  None => None
+                }
+              }
+            }
+          }
+        }
+        let item_offset = if items[index] is @scene.QuadItem(..) {
+          offset + 1
+        } else {
+          offset + 1
+        }
+        data[item_offset] = bounds.left()
+        data[item_offset + 1] = bounds.top()
+        data[item_offset + 2] = bounds.size().width()
+        data[item_offset + 3] = bounds.size().height()
+        data[item_offset + 4] = color.red().to_double()
+        data[item_offset + 5] = color.green().to_double()
+        data[item_offset + 6] = color.blue().to_double()
+        data[item_offset + 7] = color.alpha().to_double()
+        data[item_offset + 8] = transform.a()
+        data[item_offset + 9] = transform.b()
+        data[item_offset + 10] = transform.c()
+        data[item_offset + 11] = transform.d()
+        data[item_offset + 12] = transform.tx()
+        data[item_offset + 13] = transform.ty()
+        data[item_offset + 14] = opacity
+        if clip is Some(rect) {
+          data[item_offset + 15] = rect.left()
+          data[item_offset + 16] = rect.top()
+          data[item_offset + 17] = rect.size().width()
+          data[item_offset + 18] = rect.size().height()
+        }
+      }
+    }
+  }
+  Ok({ data, text_bytes: Bytes::from_array(blob), })
+}
+
+///|
 pub fn Host::present(
   self : Host,
   window : @platform.WindowId,
   snapshot : @scene.SceneSnapshot,
 ) -> Result[Unit, @diagnostics.FrameworkError] {
-  match frame_data(snapshot) {
-    Err(error) => Err(error)
-    Ok(data) =>
-      outcome(
-        native_present(self.token, window.value().to_int(), data, data.length()),
-        "present",
-      )
+  let mut contains_text = false
+  for item in snapshot.items() {
+    if item is @scene.TextItem(..) || item is @scene.TextRunItem(..) {
+      contains_text = true
+    }
+  }
+  if contains_text {
+    match mixed_frame_data(snapshot) {
+      Err(error) => Err(error)
+      Ok(frame) =>
+        outcome(
+          native_present_text(
+            2,
+            self.token,
+            window.value().to_int(),
+            frame.data,
+            frame.data.length(),
+            frame.text_bytes,
+            frame.text_bytes.length(),
+          ),
+          "present",
+        )
+    }
+  } else {
+    match frame_data(snapshot) {
+      Err(error) => Err(error)
+      Ok(data) =>
+        outcome(
+          native_present(
+            self.token,
+            window.value().to_int(),
+            data,
+            data.length(),
+          ),
+          "present",
+        )
+    }
   }
 }
 
@@ -619,6 +843,7 @@ pub fn Host::require_capability(
     | @platform.QuadFrames
     | @platform.FrameScheduling
     | @platform.PointerKeyboard
+    | @platform.GrayscaleTextFrames
     | @platform.Clipboard
     | @platform.Cursor => Ok(())
     _ => Err(backend_error(1, "require_capability"))

@@ -12,7 +12,7 @@ permissions:
 jobs:
   win32-d3d11:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
@@ -27,5 +27,7 @@ jobs:
         if: always()
         with:
           name: windows-native-evidence
-          path: _build/windows-native/
+          path: |
+            _build/windows-native/
+            _build/windows-text-field/
           if-no-files-found: ignore
