@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "scope": "Same Linux text headless workload; not equivalent full Ubuntu workflow",
+  "measured_utc": "2026-10-06",
+  "command": "sh scripts/test_linux_text.sh",
+  "runner": {
+    "package": "@mizchi/actrun",
+    "version": "0.32.0",
+    "cli_sha256": "f40b51358877bba1c922039eff40daab739a4a4a99a9cb1c4d9c35557de06088"
+  },
+  "local": {
+    "source_commit": "eb6c164f0277a656125804154a3d8ad9a8abb78d",
+    "workload_files_identical_to_hosted": 38,
+    "distro": "Debian 13 amd64",
+    "pangoft2": "1.56.3",
+    "fontconfig": "2.15.0",
+    "node": "24.19.0",
+    "moonbit_and_core": "0.10.14+7d59c7ec9",
+    "raw_runs": [
+      {
+        "name": "clean-source-build",
+        "started_at": "2026-10-06T05:13:51.475987+00:00",
+        "actrun_process_wall_seconds": 10.779824641998857,
+        "exit_code": 0,
+        "runner_started_at_ms": 1791263631653,
+        "runner_finished_at_ms": 1791263642215,
+        "task_duration_ms": 10431,
+        "task_status": "success",
+        "raw_stdout_paths_normalized": "pkg-config versions: 1.56.3 2.15.0 \npkg-config cflags/libs: -I$BENCHMARK_ROOT/profile/prefix/usr/include/pango-1.0 -I$BENCHMARK_ROOT/profile/prefix/usr/include -I$BENCHMARK_ROOT/profile/prefix/usr/include/glib-2.0 -I$BENCHMARK_ROOT/profile/prefix/usr/lib/x86_64-linux-gnu/glib-2.0/include -I$BENCHMARK_ROOT/profile/prefix/usr/include/sysprof-6 -I$BENCHMARK_ROOT/profile/prefix/usr/include/harfbuzz -I$BENCHMARK_ROOT/profile/prefix/usr/include/freetype2 -I$BENCHMARK_ROOT/profile/prefix/usr/include/libpng16 -I$BENCHMARK_ROOT/profile/prefix/usr/include/libmount -I$BENCHMARK_ROOT/profile/prefix/usr/include/blkid -I$BENCHMARK_ROOT/profile/prefix/usr/include/fribidi -I$BENCHMARK_ROOT/profile/prefix/usr/include/cairo -I$BENCHMARK_ROOT/profile/prefix/usr/include/pixman-1 -pthread -L$BENCHMARK_ROOT/profile/prefix/usr/lib/x86_64-linux-gnu -lpangoft2-1.0 -lpango-1.0 -lgobject-2.0 -lglib-2.0 -lharfbuzz -lfontconfig -lfreetype \nfont fixture: DejaVu Sans -> DejaVu Sans [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf]\nfont fixture: Noto Sans CJK JP -> Noto Sans CJK JP [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc]\nfont fixture: Noto Color Emoji -> Noto Color Emoji [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf]\nlinux_text raster tests passed\nlinux_text field admission tests passed\nlinux_text origin raster and admission tests passed\nTotal tests: 19, passed: 19, failed: 0.\n",
+        "stderr_sha256": "1255512fa2a4810d33202632c3a6c99435b92f29451a1cbdf72ca1cca5f94281",
+        "stderr_bytes": 224776
+      },
+      {
+        "name": "warm-1",
+        "started_at": "2026-10-06T05:14:02.256464+00:00",
+        "actrun_process_wall_seconds": 2.114486193997436,
+        "exit_code": 0,
+        "runner_started_at_ms": 1791263642412,
+        "runner_finished_at_ms": 1791263644348,
+        "task_duration_ms": 1832,
+        "task_status": "success",
+        "raw_stdout_paths_normalized": "pkg-config versions: 1.56.3 2.15.0 \npkg-config cflags/libs: -I$BENCHMARK_ROOT/profile/prefix/usr/include/pango-1.0 -I$BENCHMARK_ROOT/profile/prefix/usr/include -I$BENCHMARK_ROOT/profile/prefix/usr/include/glib-2.0 -I$BENCHMARK_ROOT/profile/prefix/usr/lib/x86_64-linux-gnu/glib-2.0/include -I$BENCHMARK_ROOT/profile/prefix/usr/include/sysprof-6 -I$BENCHMARK_ROOT/profile/prefix/usr/include/harfbuzz -I$BENCHMARK_ROOT/profile/prefix/usr/include/freetype2 -I$BENCHMARK_ROOT/profile/prefix/usr/include/libpng16 -I$BENCHMARK_ROOT/profile/prefix/usr/include/libmount -I$BENCHMARK_ROOT/profile/prefix/usr/include/blkid -I$BENCHMARK_ROOT/profile/prefix/usr/include/fribidi -I$BENCHMARK_ROOT/profile/prefix/usr/include/cairo -I$BENCHMARK_ROOT/profile/prefix/usr/include/pixman-1 -pthread -L$BENCHMARK_ROOT/profile/prefix/usr/lib/x86_64-linux-gnu -lpangoft2-1.0 -lpango-1.0 -lgobject-2.0 -lglib-2.0 -lharfbuzz -lfontconfig -lfreetype \nfont fixture: DejaVu Sans -> DejaVu Sans [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf]\nfont fixture: Noto Sans CJK JP -> Noto Sans CJK JP [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc]\nfont fixture: Noto Color Emoji -> Noto Color Emoji [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf]\nlinux_text raster tests passed\nlinux_text field admission tests passed\nlinux_text origin raster and admission tests passed\nTotal tests: 19, passed: 19, failed: 0.\n",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_bytes": 0
+      },
+      {
+        "name": "warm-2",
+        "started_at": "2026-10-06T05:14:04.371629+00:00",
+        "actrun_process_wall_seconds": 2.223500719992444,
+        "exit_code": 0,
+        "runner_started_at_ms": 1791263644545,
+        "runner_finished_at_ms": 1791263646576,
+        "task_duration_ms": 1915,
+        "task_status": "success",
+        "raw_stdout_paths_normalized": "pkg-config versions: 1.56.3 2.15.0 \npkg-config cflags/libs: -I$BENCHMARK_ROOT/profile/prefix/usr/include/pango-1.0 -I$BENCHMARK_ROOT/profile/prefix/usr/include -I$BENCHMARK_ROOT/profile/prefix/usr/include/glib-2.0 -I$BENCHMARK_ROOT/profile/prefix/usr/lib/x86_64-linux-gnu/glib-2.0/include -I$BENCHMARK_ROOT/profile/prefix/usr/include/sysprof-6 -I$BENCHMARK_ROOT/profile/prefix/usr/include/harfbuzz -I$BENCHMARK_ROOT/profile/prefix/usr/include/freetype2 -I$BENCHMARK_ROOT/profile/prefix/usr/include/libpng16 -I$BENCHMARK_ROOT/profile/prefix/usr/include/libmount -I$BENCHMARK_ROOT/profile/prefix/usr/include/blkid -I$BENCHMARK_ROOT/profile/prefix/usr/include/fribidi -I$BENCHMARK_ROOT/profile/prefix/usr/include/cairo -I$BENCHMARK_ROOT/profile/prefix/usr/include/pixman-1 -pthread -L$BENCHMARK_ROOT/profile/prefix/usr/lib/x86_64-linux-gnu -lpangoft2-1.0 -lpango-1.0 -lgobject-2.0 -lglib-2.0 -lharfbuzz -lfontconfig -lfreetype \nfont fixture: DejaVu Sans -> DejaVu Sans [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf]\nfont fixture: Noto Sans CJK JP -> Noto Sans CJK JP [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc]\nfont fixture: Noto Color Emoji -> Noto Color Emoji [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf]\nlinux_text raster tests passed\nlinux_text field admission tests passed\nlinux_text origin raster and admission tests passed\nTotal tests: 19, passed: 19, failed: 0.\n",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_bytes": 0
+      },
+      {
+        "name": "warm-3",
+        "started_at": "2026-10-06T05:14:06.595704+00:00",
+        "actrun_process_wall_seconds": 2.0981929559929995,
+        "exit_code": 0,
+        "runner_started_at_ms": 1791263646750,
+        "runner_finished_at_ms": 1791263648674,
+        "task_duration_ms": 1810,
+        "task_status": "success",
+        "raw_stdout_paths_normalized": "pkg-config versions: 1.56.3 2.15.0 \npkg-config cflags/libs: -I$BENCHMARK_ROOT/profile/prefix/usr/include/pango-1.0 -I$BENCHMARK_ROOT/profile/prefix/usr/include -I$BENCHMARK_ROOT/profile/prefix/usr/include/glib-2.0 -I$BENCHMARK_ROOT/profile/prefix/usr/lib/x86_64-linux-gnu/glib-2.0/include -I$BENCHMARK_ROOT/profile/prefix/usr/include/sysprof-6 -I$BENCHMARK_ROOT/profile/prefix/usr/include/harfbuzz -I$BENCHMARK_ROOT/profile/prefix/usr/include/freetype2 -I$BENCHMARK_ROOT/profile/prefix/usr/include/libpng16 -I$BENCHMARK_ROOT/profile/prefix/usr/include/libmount -I$BENCHMARK_ROOT/profile/prefix/usr/include/blkid -I$BENCHMARK_ROOT/profile/prefix/usr/include/fribidi -I$BENCHMARK_ROOT/profile/prefix/usr/include/cairo -I$BENCHMARK_ROOT/profile/prefix/usr/include/pixman-1 -pthread -L$BENCHMARK_ROOT/profile/prefix/usr/lib/x86_64-linux-gnu -lpangoft2-1.0 -lpango-1.0 -lgobject-2.0 -lglib-2.0 -lharfbuzz -lfontconfig -lfreetype \nfont fixture: DejaVu Sans -> DejaVu Sans [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf]\nfont fixture: Noto Sans CJK JP -> Noto Sans CJK JP [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc]\nfont fixture: Noto Color Emoji -> Noto Color Emoji [$BENCHMARK_ROOT/profile/prefix/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf]\nlinux_text raster tests passed\nlinux_text field admission tests passed\nlinux_text origin raster and admission tests passed\nTotal tests: 19, passed: 19, failed: 0.\n",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_bytes": 0
+      }
+    ]
+  },
+  "cached_bootstrap": {
+    "command": [
+      "python3",
+      "infra/linux-desktop/gpui-desktop.py",
+      "--root",
+      "$NEW_PROFILE",
+      "bootstrap",
+      "--cache",
+      "$VERIFIED_ARCHIVE_CACHE",
+      "--offline"
+    ],
+    "elapsed_seconds": 10.504577903993777,
+    "exit_code": 0
+  },
+  "hosted": {
+    "url": "https://github.com/gpui-mbt/gpui.mbt/actions/runs/37403927714",
+    "run_id": 37403927714,
+    "job_id": 112077121554,
+    "commit": "36bcb245845354b955a2f1bb2f07b527f4f39c4f",
+    "run_created_at": "2026-10-06T02:23:55Z",
+    "job_started_at": "2026-10-06T02:23:58Z",
+    "job_completed_at": "2026-10-06T02:24:38Z",
+    "test_step_started_at": "2026-10-06T02:24:30Z",
+    "test_step_completed_at": "2026-10-06T02:24:37Z",
+    "first_test_log_at": "2026-10-06T02:24:30.7369168Z",
+    "last_test_log_at": "2026-10-06T02:24:37.1542722Z",
+    "distro": "Ubuntu 24.04.5",
+    "pangoft2": "1.52.1",
+    "fontconfig": "2.15.0",
+    "moonbit_and_core": "0.10.14+7d59c7ec9",
+    "conclusion": "success",
+    "tests_passed": 19,
+    "c_harnesses_passed": 3,
+    "kind": "historical recorded run, not newly triggered"
+  },
+  "caveats": [
+    "Original actrun timings exclude the new wrapper doctor preflight.",
+    "Clean source build versus warm runs is explicitly distinguished.",
+    "Offline recovery uses existing verified archive cache; network downloads and computer startup are not included.",
+    "Native distribution library stacks differ.",
+    "Full Wayland/GLES job and cross-platform CI remain separate gates.",
+    "Full original stdout/stderr and run records are retained in the benchmark workspace; committed stdout paths are normalized."
+  ],
+  "entrypoint_replays_before_final_metadata_addition": {
+    "clean_then_warm": [
+      {
+        "started_at": "2026-10-06T05:19:03.140434+00:00",
+        "ok": true,
+        "source_stable": true,
+        "doctor_seconds": 0.49400421099562664,
+        "actrun_seconds": 9.9662053269858,
+        "total_seconds": 10.542759238989674,
+        "runner_cli_sha256": "f40b51358877bba1c922039eff40daab739a4a4a99a9cb1c4d9c35557de06088",
+        "node_version": "v24.19.0",
+        "tasks": [
+          {
+            "id": "linux-text-headless/step_1",
+            "status": "success",
+            "code": 0,
+            "duration_ms": 9639
+          },
+          {
+            "id": "linux-text-headless/__finish",
+            "status": "success",
+            "code": 0,
+            "duration_ms": 0
+          }
+        ]
+      },
+      {
+        "started_at": "2026-10-06T05:20:21.737796+00:00",
+        "ok": true,
+        "source_stable": true,
+        "doctor_seconds": 0.5525100290105911,
+        "actrun_seconds": 2.5584486849984387,
+        "total_seconds": 3.2419176979892654,
+        "runner_cli_sha256": "f40b51358877bba1c922039eff40daab739a4a4a99a9cb1c4d9c35557de06088",
+        "node_version": "v24.19.0",
+        "tasks": [
+          {
+            "id": "linux-text-headless/step_1",
+            "status": "success",
+            "code": 0,
+            "duration_ms": 2229
+          },
+          {
+            "id": "linux-text-headless/__finish",
+            "status": "success",
+            "code": 0,
+            "duration_ms": 0
+          }
+        ]
+      }
+    ],
+    "boundary": "Clean replay preceded addition of full input file hash to source snapshot; warm replay included it. Final metadata fields do not alter the test command."
+  }
+}
