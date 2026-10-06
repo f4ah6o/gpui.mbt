@@ -10,6 +10,11 @@ static void emit_event(gpui_windows_host *host, int32_t kind, double x,
                        double y, int32_t detail, int32_t mods);
 static int32_t modifiers_from_message(gpui_windows_host *host, WPARAM wparam);
 static int32_t gpui_text_next_epoch(gpui_windows_host *host);
+static int32_t dispatch_messages(gpui_windows_host *host, int32_t timeout_ms);
+
+/* At a queued-message boundary, pause pumping while the armed session has
+ * FIFO records so the app can apply them before a later MSG is processed. */
+static BOOL gpui_text_session_dispatch_fenced(gpui_windows_host *host);
 
 #define GPUI_TEXT_EVENT_STARTED 20
 #define GPUI_TEXT_EVENT_MARKED 21
@@ -84,6 +89,12 @@ typedef struct gpui_text_record {
 
 static gpui_imm_api g_gpui_imm;
 static gpui_text_session_state g_gpui_text_session;
+
+static BOOL gpui_text_session_dispatch_fenced(gpui_windows_host *host) {
+  return host && host->event_count > 0 && g_gpui_text_session.armed &&
+         g_gpui_text_session.window_id > 0 &&
+         g_gpui_text_session.window_id == host->window_id;
+}
 
 static int32_t gpui_text_imm_init(void) {
   if (g_gpui_imm.module)
@@ -1445,6 +1456,36 @@ static void gpui_text_session_set_platform_slot(gpui_windows_host *host,
   gpui_text_session_clear_slot(host, slot);
 }
 
+/* A failed provisional begin must stop owning this HWND immediately. Keep the
+ * epoch counter monotonic, but clear every field that can route or suppress
+ * later ordinary input. */
+static void gpui_text_session_rollback_begin(void) {
+  gpui_text_session_state *session = &g_gpui_text_session;
+  session->armed = FALSE;
+  session->awaiting_fresh_start = FALSE;
+  session->composing = FALSE;
+  session->preedit_seen = FALSE;
+  session->commit_waiting_end = FALSE;
+  session->suppress_ime_char_until_end = FALSE;
+  session->suppress_ime_messages = FALSE;
+  session->pending_high_surrogate = 0;
+  session->expected_himc = NULL;
+  session->epoch = 0;
+  session->owner_generation = 0;
+  session->window_id = 0;
+  session->document_units = 0;
+  session->anchor_utf16 = 0;
+  session->head_utf16 = 0;
+  session->target_start = 0;
+  session->target_length = 0;
+  session->caret_x = 0.0;
+  session->caret_y = 0.0;
+  session->caret_width = 0.0;
+  session->caret_height = 0.0;
+  free(session->document);
+  session->document = NULL;
+}
+
 int32_t gpui_windows_session_begin(int32_t token, int32_t window,
                                    int32_t owner_generation,
                                    const uint8_t *text, int32_t text_length,
@@ -1491,25 +1532,18 @@ int32_t gpui_windows_session_begin(int32_t token, int32_t window,
   g_gpui_text_session.window_id = window;
   g_gpui_text_session.expected_himc = NULL;
   status = gpui_text_session_reassociate(&g_host, g_host.hwnd, TRUE);
-  if (status != GPUI_WINDOWS_OK) {
-    free(copy);
-    g_gpui_text_session.armed = FALSE;
-    return -status;
-  }
+  if (status != GPUI_WINDOWS_OK)
+    goto begin_failed;
   HIMC context = g_gpui_imm.get_context(g_host.hwnd);
   if (!context) {
-    free(copy);
-    g_gpui_text_session.armed = FALSE;
-    return -GPUI_WINDOWS_UNSUPPORTED;
+    status = GPUI_WINDOWS_UNSUPPORTED;
+    goto begin_failed;
   }
   status = gpui_text_session_set_ime_rect(context, g_host.scale, x, y,
                                           width, height);
   g_gpui_imm.release_context(g_host.hwnd, context);
-  if (status != GPUI_WINDOWS_OK) {
-    free(copy);
-    g_gpui_text_session.armed = FALSE;
-    return -status;
-  }
+  if (status != GPUI_WINDOWS_OK)
+    goto begin_failed;
   free(g_gpui_text_session.document);
   g_gpui_text_session.document = copy;
   g_gpui_text_session.document_units = units;
@@ -1528,6 +1562,11 @@ int32_t gpui_windows_session_begin(int32_t token, int32_t window,
   g_gpui_text_session.armed = TRUE;
   g_gpui_text_session.suppress_ime_messages = FALSE;
   return epoch;
+
+begin_failed:
+  free(copy);
+  gpui_text_session_rollback_begin();
+  return -status;
 }
 
 int32_t gpui_windows_session_update(int32_t token, int32_t window,

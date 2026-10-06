@@ -174,6 +174,10 @@ typedef struct gpui_windows_host {
   double events[GPUI_EVENT_CAPACITY][10];
   int32_t event_read;
   int32_t event_count;
+  /* PeekMessage can remove a queued MSG after synchronously dispatching a
+   * sent message. Retain that one bounded result across the editor FIFO fence. */
+  MSG deferred_message;
+  BOOL deferred_message_pending;
   /* Metadata/payload sidecars share the event ring indices. editor_events is
    * a visibility marker for the typed reader; legacy next_event must preserve
    * records whose marker is set. */
@@ -1644,6 +1648,11 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
     }
     break;
   case WM_NCDESTROY:
+    if (host->deferred_message_pending &&
+        host->deferred_message.hwnd == hwnd) {
+      ZeroMemory(&host->deferred_message, sizeof(host->deferred_message));
+      host->deferred_message_pending = FALSE;
+    }
     gpui_text_session_forget_window(host, host->window_id);
     host->mouse_buttons = 0;
     host->mouse_tracking = FALSE;
@@ -2233,36 +2242,73 @@ static int32_t dispatch_messages(gpui_windows_host *host, int32_t timeout_ms) {
   int32_t completion_status = poll_frame_completion(host);
   if (completion_status != GPUI_WINDOWS_OK)
     return completion_status;
-  /* Probe without consuming: the dispatch loop below must see the first
-   * queued message too (notably a lone posted WM_CLOSE or host wake). */
-  BOOL got = host->api.peek_message_w(&message, NULL, 0, 0, PM_NOREMOVE);
+  if (gpui_text_session_dispatch_fenced(host))
+    return host->error ? (int32_t)host->error : GPUI_WINDOWS_OK;
+  /* A deferred queued MSG takes precedence over any later queue entry. */
+  BOOL got = FALSE;
   DWORD wait_ms = (DWORD)timeout_ms;
   if (host->frame_pending && wait_ms > 8)
     wait_ms = 8;
-  if (!got && wait_ms > 0)
-    host->api.msg_wait_for_multiple_objects(0, NULL, FALSE,
-                                           wait_ms, QS_ALLINPUT);
-  while (host->api.peek_message_w(&message, NULL, 0, 0, PM_REMOVE)) {
+  if (!host->deferred_message_pending) {
+    /* Probe without consuming: the dispatch loop below must see the first
+     * queued message too (notably a lone posted WM_CLOSE or host wake). */
+    got = host->api.peek_message_w(&message, NULL, 0, 0, PM_NOREMOVE);
+    /* PeekMessage may synchronously dispatch sent callbacks while probing.
+     * Recheck this queued-message boundary before removing the probe result. */
+    if (gpui_text_session_dispatch_fenced(host))
+      goto dispatch_finish;
+    if (!got && wait_ms > 0)
+      host->api.msg_wait_for_multiple_objects(0, NULL, FALSE,
+                                             wait_ms, QS_ALLINPUT);
+  }
+  while (TRUE) {
+    if (host->deferred_message_pending) {
+      message = host->deferred_message;
+      ZeroMemory(&host->deferred_message, sizeof(host->deferred_message));
+      host->deferred_message_pending = FALSE;
+    } else {
+      int32_t queued_events_before = host->event_count;
+      if (!host->api.peek_message_w(&message, NULL, 0, 0, PM_REMOVE))
+        break;
+      /* PeekMessage may return a removed queued MSG after a sent callback has
+       * published a record. Preserve this one MSG until the app has applied
+       * the record, then process it ahead of the remaining queue. */
+      if (gpui_text_session_dispatch_fenced(host) &&
+          host->event_count > queued_events_before) {
+        host->deferred_message = message;
+        host->deferred_message_pending = TRUE;
+        break;
+      }
+    }
     if (message.message == WM_QUIT) {
       InterlockedCompareExchange(&host->state, 1, 0);
       emit_event(host, 14, 0, 0, 0, 0);
+      if (gpui_text_session_dispatch_fenced(host))
+        break;
       continue;
     }
     if (message.message == GPUI_WAKE_MESSAGE) {
       if (message.wParam != (WPARAM)host->token)
         continue;
       emit_event(host, 13, 0, 0, 0, 0);
+      if (gpui_text_session_dispatch_fenced(host))
+        break;
       continue;
     }
     if (message.message == GPUI_EXIT_MESSAGE) {
       if (message.wParam != (WPARAM)host->token)
         continue;
       emit_event(host, 14, 0, 0, 0, 0);
+      if (gpui_text_session_dispatch_fenced(host))
+        break;
       continue;
     }
     host->api.translate_message(&message);
     host->api.dispatch_message_w(&message);
+    if (gpui_text_session_dispatch_fenced(host))
+      break;
   }
+dispatch_finish:
   completion_status = poll_frame_completion(host);
   if (completion_status != GPUI_WINDOWS_OK)
     return completion_status;
@@ -2610,6 +2656,8 @@ int32_t gpui_windows_stop(int32_t token) {
     return status;
   }
   InterlockedExchange(&g_host.state, 1);
+  ZeroMemory(&g_host.deferred_message, sizeof(g_host.deferred_message));
+  g_host.deferred_message_pending = FALSE;
   if (g_host.hwnd) {
     int32_t window_id = g_host.window_id;
     HWND hwnd = g_host.hwnd;

@@ -374,7 +374,7 @@ test "non-Windows native stub never claims a real host" {
 }
 
 ///|
-test "Win32 production IMM session staging is atomic" {
+test "Win32 production IMM session staging preserves message ordering" {
   let failed_stage = FixedArray::make(1, -1)
   let status = native_text_session_staging(failed_stage)
   if status == 1 {
@@ -383,8 +383,8 @@ test "Win32 production IMM session staging is atomic" {
     assert_eq(failed_stage[0], -1)
     return
   }
-  assert_eq(status, 0)
   assert_eq(failed_stage[0], 0)
+  assert_eq(status, 0)
 }
 
 ///|
