@@ -1,0 +1,69 @@
+{
+  "version": 2,
+  "id": "standalone-modifiers",
+  "description": "Standalone Shift and Control must preserve liveness before typing.",
+  "platform": "linux-x11-weston",
+  "disposition": "supported",
+  "reason": "Predeclared semantic checkpoints exercised through real private-display OS input. Requires the accepted read-only presented-state observer and matching completed compositor frame; current candidate build identity is verified externally. Native qualification is recorded separately.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [
+    {
+      "id": "modifiers",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "Shift_L",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "Control_L",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "a",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "Hello 日本a",
+        "selection": {
+          "anchor": 9,
+          "head": 9
+        },
+        "focused": true
+      }
+    }
+  ],
+  "oracle": {
+    "kind": "presented_state",
+    "version": 1,
+    "prefix": "GPUI_FIELD_STATE ",
+    "review": "Uses the accepted read-only observer contract from the frozen source integration: exact UTF-16 directional selection and text are emitted only after successful presentation. The runner independently requires the matching Default Queue compositor callback and retains pixels; no input/edit callback or auto-generated golden is used. Expected states were declared before this replay."
+  },
+  "expected_failure": null,
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ]
+}

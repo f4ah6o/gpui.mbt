@@ -1,0 +1,10 @@
+name: Local Linux text headless feedback
+on:
+  push:
+jobs:
+  linux-text-headless:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Run native text geometry tests with no display server
+        run: sh scripts/test_linux_text.sh

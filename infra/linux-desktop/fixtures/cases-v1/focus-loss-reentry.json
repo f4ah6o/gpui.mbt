@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "id": "focus-loss-reentry",
+  "description": "Native private-window focus loss suppresses client delivery; refocus and real click rearm the field.",
+  "platform": "linux-x11-weston",
+  "disposition": "pending",
+  "reason": "Requires a verified owned private decoy focus target, actual keyboard leave/enter and exact observed focus/text; away-target XTest keys must not reach GPUI.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [
+    {
+      "id": "blur-ignore",
+      "events": [
+        {
+          "type": "focus",
+          "target": "away"
+        },
+        {
+          "type": "key",
+          "keysym": "x",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "Hello 日本",
+        "selection": {
+          "anchor": 8,
+          "head": 8
+        },
+        "focused": false
+      }
+    },
+    {
+      "id": "reenter",
+      "events": [
+        {
+          "type": "focus",
+          "target": "app"
+        },
+        {
+          "type": "click",
+          "x": 500,
+          "y": 50
+        },
+        {
+          "type": "key",
+          "keysym": "b",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "Hello 日本b",
+        "selection": {
+          "anchor": 9,
+          "head": 9
+        },
+        "focused": true
+      }
+    }
+  ],
+  "oracle": {
+    "kind": "pending",
+    "reason": "Exact presented-state observer is proposed but not integrated/reviewed; do not treat OCR or a fresh screenshot as a golden."
+  },
+  "expected_failure": null,
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ],
+  "provenance": {
+    "source_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "source_tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "app_sha256": null,
+    "patch_sha256": null,
+    "fontconfig_sha256": null,
+    "notes": "Accepted text-field/undo source baseline. This planned case has not run through the packaged driver. Pin the actual reviewed observer/repeat build and source diff before activation."
+  }
+}

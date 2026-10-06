@@ -1,15 +1,20 @@
 # Experimental Linux single-line text field
 
 Status: experimental reusable single-line LTR field on Ubuntu/Wayland.
-[PR30](https://github.com/gpui-mbt/gpui.mbt/pull/30) and
-[PR31](https://github.com/gpui-mbt/gpui.mbt/pull/31) are merged; the source baseline
-is `73e70822841024a7131c54fb4529cd40186d529c` (tree `108cf4e9`). Their declared
+[PR30](https://github.com/gpui-mbt/gpui.mbt/pull/30),
+[PR31](https://github.com/gpui-mbt/gpui.mbt/pull/31), and bounded undo/redo
+[PR32](https://github.com/gpui-mbt/gpui.mbt/pull/32) are merged. The accepted
+PR32 baseline is `36bcb245845354b955a2f1bb2f07b527f4f39c4f` (tree
+`5441e254b2c7760e9b7184e87725f7ed2a43085c`), tree-equivalent to local
+`bf8a332595aad7fb69928719cc4b25464269a4d5`. The declared
 Ubuntu/Weston/llvmpipe profile passed real `Host.present` and injected field
-text/caret/selection/scroll/overhang checks at 1x/2x. Native direct-keyboard
-callback/queue/decoder tests are a separate tier; actual compositor-delivered
-typing and Japanese IME remain unrun. The undo/redo addition described below
-has local model/provider coverage; its new hosted rendering cases remain
-pending for the current change.
+text/caret/selection/scroll/overhang and undo/redo checks at 1x/2x. The local
+integrated input candidate `eb6c164f0277a656125804154a3d8ad9a8abb78d` (tree
+`d1b53388fdb3d0113c1d208763b61b704d50eced`) additionally passed isolated real
+OS-input basic/Shift and Ctrl+A replacement cases, plus held-repeat release
+and focus-loss/refocus gates under Debian 13/Xvfb/Weston 14. These are separate
+evidence tiers and profiles; Japanese GPUI IME remains unimplemented. See the
+[exact-source qualification manifest](native-input-qualification.json).
 
 This is a deliberately narrow, opt-in demonstration of a bounded single-line,
 left-to-right (LTR) entry field joining copied text geometry, portable editing
@@ -32,6 +37,9 @@ keyboard-text route. It does not establish ordinary application readiness.
   Wayland text-input protocol, candidate-window positioning, or Japanese IME.
 - Editing supports text commits, cursor-stop Left/Right, Home/End, Backspace,
   Delete, Shift-extended selection, click-to-place, and horizontal scrolling.
+  Ctrl/Meta+A selects the entire document from anchor 0 to its UTF-16 length
+  while focused. It uses the selection-only transition, retaining undo/redo
+  groups and snapshots; repeating an already full selection is a no-op.
   Unshifted Left/Right collapses a nonempty selection to its matching edge
   without an extra move; Shift keeps the original anchor. Movement and adjacent
   deletion use Pango-provided cursor stops, not scalar or UTF-16 increments.
@@ -58,6 +66,15 @@ focus. `undo(measure, admit)` and `redo(measure, admit)` are unchanged-value
 no-ops when unfocused or empty. Ctrl/Meta+Z undoes; Shift+Ctrl/Meta+Z or Ctrl+Y
 redoes. Alt-modified shortcuts are ignored. Key labels identify shortcuts;
 only committed `TextInput` supplies inserted text.
+
+The repeat flag does not change the field's existing command policy. A repeated
+printable `KeyPressed` inserts nothing; its following `TextInput` inserts once.
+Each repeated content-changing commit or deletion is a separate history group.
+Repeated navigation adds no history. Repeated undo/redo executes once per press,
+and repeated copy/cut/paste, Submit and Blur still emit their usual owner actions.
+Consumers that want a one-shot command must check `KeyPressed.repeat` before
+routing that command. The native repeat feature adds no typing coalescing or
+new shortcut suppression.
 
 Each successful content-changing text commit, deletion, paste or installed cut
 is one group, without typing coalescing. An entry stores immutable pre-edit and
@@ -152,6 +169,39 @@ remain key events; Control/Meta commands reset pending Compose and do not also
 commit text. Ordinary key-plus-optional-commit queue admission is atomic.
 Arbitrary layout-shortcut parity and native key-repeat timing are not promised.
 
+### Bounded direct keyboard repeat
+
+Repeat is private to the opt-in direct keyboard-text route. The backend caps
+`wl_seat` binding at version 4 and uses the version-4 `repeat_info` policy.
+Seats below version 4, missing policy, and a zero rate produce no repeats.
+For an enabled policy, a fresh repeatable physical press within the existing
+portable logical-key subset, not consumed by Compose, caches its logical key
+and optional exact UTF-8 text commit. Physical
+presses carry `repeat=false`; synthesized presses carry `repeat=true` and are
+followed by their cached text, when present. There are no synthetic releases.
+Compose-consumed prefix/completion/cancel presses never arm repeat, and the
+timer never feeds Compose or produces an IME commit.
+
+After dispatching available native callbacks, a native dispatch cycle admits
+at most one atomic key-plus-optional-text group, only when the copied event
+queue is empty. The poll timeout is bounded by the next repeat deadline. An
+overdue deadline produces one group with no catch-up burst. Scheduling has
+1 ms resolution: the interval is `max(1, ceil(1000 / rate))` milliseconds, so
+rates above 1,000 Hz saturate at that resolution rather than creating a
+zero-interval loop. This is a bounded scheduler contract, not a promise of
+desktop repeat timing accuracy. Negative rate/delay values fail with typed
+`InvalidInput`; monotonic-clock failure or backwards time fails with
+`NativeFailure`, and checked time/sequence exhaustion fails with
+`ResourceExhausted`. These fatal paths revoke the direct target rather than
+replaying an old candidate.
+
+An unchanged `repeat_info` policy preserves the held candidate. A changed
+policy, modifier state, or layout/keymap cancels it until another physical
+press; a timer does not reinterpret the cached key or text. Matching release,
+focus loss, direct-mode/epoch changes, keyboard/seat loss, window close/release,
+host stop, and fatal display/dispatch failure also cancel pending repeat. These
+rules preserve current stale-generation filtering and queue admission bounds.
+
 Keyboard blur, keymap replacement, keyboard/seat loss, target re-arm, window
 release, and host stop reset pending Compose and invalidate the current
 logical epoch. Fatal native display/dispatch/pump failure also transitions the host
@@ -175,6 +225,10 @@ length in detail slot 8 (coordinates are zero); each payload is 1–128 bytes,
 copied exactly without a NUL or padding write. If a text payload cannot fit,
 the call returns `Resource` without changing either output or consuming the
 head record. Invalid ABI/buffer requests likewise leave outputs/head untouched.
+Slot 7 stores the key repeat flag: press tag 11 accepts
+exactly 0 or 1, release tag 12 requires 0, and committed-text tag 13 requires 0.
+NaN, infinity, fractional values, and other numbers are typed `InvalidInput`
+decoder failures. Pointer records retain slot 7 as their y coordinate.
 The strict decoder copies the bytes before the next native read; no native
 pointer escapes. v2 drops stale key/text events without disturbing the order
 of surviving non-text events. v1 `gpui_next` returns `Unsupported` without
@@ -218,18 +272,26 @@ Evidence is tiered and must not be conflated:
   including composed/decomposed accents and scrolling. Controller coverage
   also checks clipboard transaction guards, `Busy`/rollback behavior, focus
   routing, and the rule that `Character` keys do not insert.
+- Repeat-specific portable and real-font controller tests cover printable
+  repeated-key/text ordering, one content-history group per repeat, navigation
+  without history, repeated undo/redo and clipboard/submit actions, and paste
+  freshness and presentation rollback after repeated deletions. They inject
+  input records into the model/controller; they do not inject a compositor key.
 - Local headless native tests cover direct-mode callbacks, epoch/stale-record
   and queue behavior, Compose/release bookkeeping, decoder validation, exact
   byte copying, capacity/canary cases, and origin-aware Pango mask clipping.
+  Repeat tests use deterministic mocked Wayland callbacks and clock/queue
+  observations to check policy, cancellation, deadlines, saturation, no catch-up,
+  and atomic key/text delivery. Strict MoonBit decoding tests validate repeat
+  flags separately and preserve pointer-y decoding.
   These checks include history limits, restore/rollback and immutable branching.
-  New undo/redo encoder and GPU cases compile; their hosted execution is
-  pending. These headless tiers do not simulate compositor keyboard input or
+  These headless tiers do not simulate compositor keyboard input or
   prove a GPU presentation.
 - The control-to-renderer fixtures and `Host.present` checks are explicitly
   separated. `GPUI_FIELD_E2E` in
   [`examples/linux_text_field/host_present_wbtest.mbt`](../examples/linux_text_field/host_present_wbtest.mbt)
   is opt-in under a compositor. The test-only GPU harness retains start/scrolled
-  j/J and accent readbacks when executed; no such readback exists locally.
+  j/J and accent readbacks when executed; the hosted PR31/32 readbacks are retained.
   Replayed fixture frames are injected into the
   renderer and prove neither `wl_keyboard` delivery nor real typing. Its typed
   `Busy` assertion uses deterministic stale-viewport window state; it does not
@@ -239,15 +301,62 @@ Evidence is tiered and must not be conflated:
   at both scales with source tree `108cf4e9`; exact-head scene originals, encoded
   frames, font/config hashes and readbacks were retained and reviewed. The new
   undo/redo cases submit actual control scenes and extend real `Host.present`
-  serialization, but remain unrun under hosted GPU until qualified for this
-  change. Rejected newline/bidi scene identity is headless control evidence,
+  serialization. [PR32 run37402479619](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37402479619)
+  and [merged-main run37403927714](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37403927714)
+  passed on first attempts at both scales: `Host.present` field tests passed
+  16/16 per scale, with 11 accepted GPU scenes from 13 fixtures. The other two
+  fixtures are rejected-edit identity checks. All four undo/redo readbacks
+  were reviewed; merged-main decoded pixels match the PR readbacks.
+  Rejected newline/bidi scene identity is headless control evidence,
   not a distinct live GPU rejected-edit oracle.
-- Actual compositor-delivered typing into this control is **unrun**. The stock
-  Weston 13 headless job has no admitted keyboard-injection driver for this
-  qualification, and local AF_UNIX socket creation returns `EPERM`. Do not
-  describe the existing PR28 Weston/llvmpipe text-drawing run as field-input
-  evidence. Japanese IME, composition UI/candidate positioning, real desktop
-  typing, accessibility, reconnect, and release/support gates remain open.
+- The exact local integrated candidate passed real OS delivery through
+  XTest → authenticated owned Xvfb → Weston X11/Pixman/kiosk → `wl_keyboard`
+  → GPUI. Basic/Shift retained 14 physical protocol key records and matched
+  the unchanged reviewed RGBA golden; Ctrl+A replacement retained 10 and
+  reached presented text `abc`, UTF-16 selection 3→3. Each checked liveness,
+  native failures and retained pixels. The basic case used reviewed pixels,
+  rather than the optional state observer, as its semantic oracle.
+- Separate native held-key gates read actual `repeat_info` 40 Hz/400 ms,
+  disabled and verified upstream X11 autorepeat, and held one physical `a`.
+  Release and focus-loss runs observed 15 and 13 added characters at their
+  held checkpoints; their real Wayland `a` records were exactly press/release
+  and press-only respectively. After release or leave, text/revision/
+  presentation remained stable for 675 ms. Refocus preserved text/caret and
+  advanced revision exactly once, with no stale repeat. Each retained
+  independently completed Default Queue frames, unchanged-state pixel
+  captures, and clean owned-process cleanup with autorepeat restored.
+  This proves client-native repeat and cancellation for that frozen binary
+  and profile, not physical-device coverage or desktop timing accuracy.
+- The first held-gate attempt stopped before keyboard input because its
+  startup click never delivered a real pointer button. It remains retained
+  separately. R2 corrected readiness/press/release ordering without relaxing
+  repeat/state/timing oracles; both R2 scenarios passed. The restricted-shell
+  socket denial and earlier hosted compositor exit139 remain historical
+  evidence; the permitted native route does not erase or explain them.
+  A later independently qualified packaged R4 replay passed all seven runnable
+  keyboard cases against the same frozen app source. Held-repeat remains a
+  pending reusable catalog case and GPUI IME is explicitly unsupported; the
+  independent source-level repeat proof does not activate those cases.
+  GPUI IME, composition UI/candidate positioning, accessibility, reconnect,
+  broader desktop qualification, and release/support gates remain open.
+
+The original [qualification manifest](native-input-qualification.json) records
+source/binary identities, retained artifact hashes and coverage boundaries.
+Its test counts apply to the frozen integrated source, not to older individual
+feature checkouts. The earlier pre-native verification manifest and failed
+attempts are preserved rather than rewritten as passes. A docs-only publication
+commit has a new Git tree; it is not the exact native-executed commit. Rebuild
+and prepare fresh provenance when executing another source/runtime iteration.
+The [R4 successor qualification](native-input-qualification-r4.json) records
+the later locked-prefix build and seven-case native replay. It preserves the
+earlier manifest and failed 1,231-pixel font-mismatch evidence. The official
+missing DejaVu archive restored the unchanged historical golden; no pixels
+were promoted to a new baseline. Native execution remains attributed to frozen
+`eb6c164f` and the exact R4 binary, rather than a later publication rebuild.
+
+Any successful GTK/IBus/Mozc Japanese conversion is environment-baseline
+evidence only and does not establish GPUI composition, candidates, commit or
+cancel support.
 
 The field implementation is based on focused-input PR #29, merged at
 [`18e8fad`](https://github.com/gpui-mbt/gpui.mbt/commit/18e8fadf470823b389feff3b9d496213b4d3f67a)
@@ -260,7 +369,8 @@ are earlier foundation evidence only. See the repository's
 Ubuntu backend packet D or qualify gpui.mbt as a supported Linux desktop
 framework. The bounded field remains single-line LTR and rejects unsupported
 unknown-glyph, color-glyph, and reflow/resource-limit cases. Text masks remain
-logical-resolution and may soften under output scaling. IME, autorepeat,
-general bidi, drag selection and actual compositor-delivered typing remain
-open. Undo/redo is bounded as above; it does not establish a full editor history
+logical-resolution and may soften under output scaling. IME, qualified desktop
+repeat timing, general bidi and drag selection remain open. The isolated native
+input passes do not establish general desktop readiness. Undo/redo is bounded
+as above; it does not establish a full editor history
 system. See the [known hosted-compositor stability note](ubuntu.md#known-hosted-compositor-observation).

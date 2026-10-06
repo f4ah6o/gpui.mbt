@@ -406,3 +406,58 @@ test "focused tree routes actual committed text but Character key never inserts"
   ).unwrap()
   assert_true(same.document() == blurred.document())
 }
+
+///|
+fn controller_repeat_event(key : @primitives.Key) -> @primitives.InputEvent {
+  @primitives.KeyPressed(
+    key~,
+    modifiers=@primitives.Modifiers::none(),
+    repeat=true,
+  )
+}
+
+///|
+test "focused tree delivers repeated printable key then exactly one text edit" {
+  let field = controller_field()
+  let (key_only, action) = route_input(
+    field,
+    controller_repeat_event(@primitives.Character("Q")),
+    640.0,
+    240.0,
+  ).unwrap()
+  assert_true(key_only.document() == field.document())
+  assert_eq(key_only.revision(), field.revision())
+  assert_true(action is None)
+  assert_false(key_only.can_undo())
+  let (edited, _) = route_input(
+    key_only,
+    @primitives.TextInput(text="Q"),
+    640.0,
+    240.0,
+  ).unwrap()
+  assert_eq(edited.document().text(), "QHi 日本")
+  assert_eq(edited.revision(), field.revision() + 1)
+  let undone = edited.undo(measure, admit).unwrap()
+  assert_true(undone.document() == field.document())
+  assert_false(undone.can_undo())
+}
+
+///|
+test "repeated deletion invalidates an in-flight paste by current revision" {
+  let field = change(controller_field(), key_event(@primitives.End)).unwrap()
+  let paste_revision = field.revision()
+  let repeated = change(field, controller_repeat_event(@primitives.Backspace)).unwrap()
+  assert_eq(repeated.document().text(), "Hi 日")
+  assert_eq(repeated.revision(), paste_revision + 1)
+  let stale = paste_if_current(repeated, paste_revision, Ok(7), Ok(7), "stale").unwrap()
+  assert_true(stale.document() == repeated.document())
+  assert_eq(stale.revision(), repeated.revision())
+  let restored = stale.undo(measure, admit).unwrap()
+  assert_true(restored.document() == field.document())
+  assert_false(restored.can_undo())
+  let fresh = paste_if_current(repeated, repeated.revision(), Ok(7), Ok(7), "P").unwrap()
+  assert_eq(fresh.document().text(), "Hi 日P")
+  assert_true(
+    fresh.undo(measure, admit).unwrap().document() == repeated.document(),
+  )
+}

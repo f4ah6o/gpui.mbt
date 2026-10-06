@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "id": "ime-composition",
+  "description": "Real Japanese preedit, candidate conversion, commit and cancel.",
+  "platform": "linux-x11-weston",
+  "disposition": "unsupported",
+  "reason": "GPUI host IME adapter is unimplemented. Version 1 intentionally has no fabricated composition events; a future real-adapter case must cover preedit/candidates/commit/cancel. Japanese literals and paste do not establish IME.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [],
+  "oracle": {
+    "kind": "pending",
+    "reason": "Requires actual GPUI IME adapter/compositor integration and an extended reviewed observation contract."
+  },
+  "expected_failure": null,
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ],
+  "provenance": {
+    "source_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "source_tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "app_sha256": null,
+    "patch_sha256": null,
+    "fontconfig_sha256": null,
+    "notes": "Accepted text-field/undo source baseline. This planned case has not run through the packaged driver. Pin the actual reviewed observer/repeat build and source diff before activation."
+  }
+}

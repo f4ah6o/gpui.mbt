@@ -1,0 +1,38 @@
+{
+  "version": 2,
+  "id": "ime-composition",
+  "description": "Real Japanese preedit, candidate conversion, commit and cancel.",
+  "platform": "linux-x11-weston",
+  "disposition": "unsupported",
+  "reason": "GPUI host IME adapter is unimplemented. Version 1 intentionally has no fabricated composition events; a future real-adapter case must cover preedit/candidates/commit/cancel. Japanese literals and paste do not establish IME.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [],
+  "oracle": {
+    "kind": "pending",
+    "reason": "Requires actual GPUI IME adapter/compositor integration and an extended reviewed observation contract."
+  },
+  "expected_failure": null,
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ]
+}

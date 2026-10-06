@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "id": "basic-text-shift",
+  "description": "Six real key actions: a, b, c, Shift+d, Left, Backspace.",
+  "platform": "linux-x11-weston",
+  "disposition": "supported",
+  "reason": "Exact frozen standalone modifier-fix scenario has a reviewed final pixel golden and native protocol/liveness evidence.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [
+    {
+      "id": "six-keys",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "a",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "b",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "c",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "d",
+          "modifiers": [
+            "Shift_L"
+          ]
+        },
+        {
+          "type": "key",
+          "keysym": "Left",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "BackSpace",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "Hello 日本abD",
+        "selection": {
+          "anchor": 10,
+          "head": 10
+        },
+        "focused": true
+      }
+    }
+  ],
+  "oracle": {
+    "kind": "reviewed_pixels",
+    "fixture": "field-six-keys.png",
+    "rgba_sha256": "44f395449323e0e7581d04b6d012b4463819d65e0914aa53f0e662d534eb74d9",
+    "review": "Root-reviewed private-window capture from automated-e2e-2; repeated exact pixels in automated-e2e-3. Existing final golden only, never auto-bless new captures.",
+    "ocr_prefix": "Hello ",
+    "ocr_suffix": "abD"
+  },
+  "expected_failure": null,
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ],
+  "provenance": {
+    "source_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "source_tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "app_sha256": "5233bb38d0cc4098871870a5c5572d35f137fe7408134925b63dca997cee6715",
+    "patch_sha256": "741bf3020fbaf323d86d51892ef2c5ebb81a0001d0da50e2481d7f1763c9479e",
+    "fontconfig_sha256": "bf37fbeb29de454dfb687f98c594a172d882321d20b745d34f920bde5d76c7ba",
+    "notes": "Frozen accepted baseline plus standalone native-unmapped-key patch. Expected final text and UTF-16 caret were declared before this reusable run; source patch must match. Initial text derives from the accepted source literal with retained initial pixels, not an integrated state observer."
+  }
+}

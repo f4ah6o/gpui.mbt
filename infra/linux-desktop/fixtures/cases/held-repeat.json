@@ -1,0 +1,58 @@
+{
+  "version": 2,
+  "id": "held-repeat",
+  "description": "Hold a single real OS key after repeat integration.",
+  "platform": "linux-x11-weston",
+  "disposition": "pending",
+  "reason": "Native repeat integration passed an independent frozen-source release/focus-loss gate. This generic fixed-duration/five-character case remains pending because its reusable oracle must adapt to actual wl_keyboard.repeat_info, suppress upstream Xvfb autorepeat, bound growth and prove post-release/focus-loss stability; a fixed count cannot be promoted from observed timing.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [
+    {
+      "id": "hold",
+      "events": [
+        {
+          "type": "hold",
+          "keysym": "a",
+          "modifiers": [],
+          "duration_ms": 600
+        }
+      ],
+      "expect": {
+        "text": "Hello 日本aaaaa",
+        "selection": {
+          "anchor": 13,
+          "head": 13
+        },
+        "focused": true
+      }
+    }
+  ],
+  "oracle": {
+    "kind": "pending",
+    "reason": "Requires a reusable adaptive repeat-policy oracle and private X autorepeat isolation; the independent native proof is not counted as this catalog case."
+  },
+  "expected_failure": null,
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ]
+}

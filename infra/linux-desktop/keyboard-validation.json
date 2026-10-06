@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "milestone": "bounded-reproducible-keyboard-environment",
+  "verified_utc": "2026-10-06T03:33:33Z",
+  "platform": "Debian GNU/Linux 13 amd64",
+  "profile_lock_sha256": "225c86f9b90ec05ec8a4184a43b51d5240a2c7fe5d900910aed58f481ab213f7",
+  "setup": {
+    "debian_archives": 105,
+    "toolchain_archives": 2,
+    "all_archive_hashes_verified": true,
+    "fresh_prefix_bootstrap_passed": true,
+    "offline_idempotent_reapply_passed": true,
+    "native_field_build_passed": true,
+    "application_compiler": "MoonBit 0.10.14+7d59c7ec9",
+    "host_runtime_is_external": true
+  },
+  "static_validation": {
+    "unit_tests_passed": 46,
+    "python_compile_passed": true,
+    "shell_syntax_passed": true,
+    "staged_whitespace_check_passed": true,
+    "applicable_doctor_checks_passed": 38
+  },
+  "packaged_native_replay": {
+    "case_id": "basic-text-shift",
+    "case_sha256": "a62d9a402af289ba16507b1dd24d9da61dcb1efa7c54dfd4888b5d8c39201c7f",
+    "driver_sha256": "1d2860994fee8cd40cb40a5b16aa8a23b503e1dea319a551326a0db4c91714e1",
+    "status": "passed",
+    "prefix": "full locked profile; not the earlier minimal extraction",
+    "launch_route": "owned generated .desktop wrapper opened by the supported native File Manager",
+    "input_route": "XTest -> private Xvfb -> Weston X11 wl_keyboard -> GPUI",
+    "source_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "source_tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "app_sha256": "5233bb38d0cc4098871870a5c5572d35f137fe7408134925b63dca997cee6715",
+    "source_patch_sha256": "741bf3020fbaf323d86d51892ef2c5ebb81a0001d0da50e2481d7f1763c9479e",
+    "fontconfig_sha256": "bf37fbeb29de454dfb687f98c594a172d882321d20b745d34f920bde5d76c7ba",
+    "xkb_resource_sha256": {
+      "rules/evdev": "9f3b336cba1c79c5a548fa6821021030d3aae2bbc96b1d6537ae0c3139cf0f1b",
+      "keycodes/evdev": "6f52c4f4e0f599a3b57913ac0c74dae4bfff1866c903eaceda45cda51a14d231",
+      "symbols/pc": "4b2fe0b0f106bc6233c6626e9a0da2f25b1f5f56a05656bfde3b19bf4a11885c",
+      "symbols/us": "ef0b555f6fddb71699673c89f2390122db44751397fc07024c840d582983ee0c",
+      "types/complete": "038d66c8861dbc797b7d2226bc9135698e62adf3d6d9f99f1be60b768f591aee",
+      "compat/complete": "11d1fd1f5364ef778eb0edc36b4f1955ca165c1900703f163c1406aa8ae767cd"
+    },
+    "expected_final": {
+      "text": "Hello 日本abD",
+      "selection": {
+        "anchor": 10,
+        "head": 10
+      },
+      "focused": true
+    },
+    "wayland_key_events": 14,
+    "app_alive": true,
+    "native_failure": false,
+    "golden_pixel_match": true,
+    "actual_rgba_sha256": "44f395449323e0e7581d04b6d012b4463819d65e0914aa53f0e662d534eb74d9",
+    "ocr_ascii_prefix_suffix_match": true,
+    "including_cleanup_ms": 1343.584321992239,
+    "presented_state_observer_used": false,
+    "state_evidence": "predeclared expected text/caret, reviewed full RGBA golden, actual compositor events and liveness",
+    "artifact_directory_relative_to_profile": "results/packaged-basic-proof/basic-text-shift"
+  },
+  "boundaries": [
+    "Measured elapsed time is evidence from one replay, not a cross-host guarantee.",
+    "Default catalog activates only its exact reviewed basic binary/font/pixel profile.",
+    "Ctrl+A remains an explicit observer-only expected-failure pilot; a separate re-pinned external observer catalog was qualified, without silently activating other default cases.",
+    "Other named patterns remain pending or unsupported until their own reviewed native oracles/provenance exist.",
+    "Stock canonical Mozc availability is not established by this keyboard milestone. The optional official-source client recipe and Japanese conversion qualification are separate.",
+    "Original failed setup attempts, OCR history and earlier native evidence are preserved; no capture is auto-promoted to a golden."
+  ]
+}

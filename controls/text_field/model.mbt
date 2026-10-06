@@ -1088,6 +1088,11 @@ pub fn TextField::handle_input(
         if modifiers.alt() {
           return Ok((self, None))
         }
+        if is_field_shortcut(key, "a") {
+          return field_without_action(
+            field_selection_at(self, 0, self.document.utf16_length(), true),
+          )
+        }
         if is_field_shortcut(key, "z") {
           return field_without_action(
             if modifiers.shift() {

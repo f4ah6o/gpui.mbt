@@ -140,6 +140,7 @@ Subscriptions are explicitly canceled with `unsubscribe`. Deterministic timer te
 - [GPUI compatibility matrix](docs/compatibility.md)
 - [macOS native host](docs/macos-native.md)
 - [Ubuntu / Wayland host](docs/ubuntu.md)
+- [Reproducible Debian cloud desktop](infra/linux-desktop/README.md)
 - [Browser demos and interaction lab](docs/browser-demo.md)
 - [MCP adapter and stdio fixture](docs/mcp-adapter.md)
 - [Testing strategy and gates](docs/testing.md)

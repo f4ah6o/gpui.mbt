@@ -1,0 +1,90 @@
+{
+  "version": 2,
+  "id": "focus-loss-reentry",
+  "description": "Native private-window focus loss suppresses client delivery; refocus and real click rearm the field.",
+  "platform": "linux-x11-weston",
+  "disposition": "supported",
+  "reason": "Predeclared semantic checkpoints exercised through real private-display OS input. Requires the accepted read-only presented-state observer and matching completed compositor frame; current candidate build identity is verified externally. Native qualification is recorded separately.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [
+    {
+      "id": "blur-ignore",
+      "events": [
+        {
+          "type": "focus",
+          "target": "away"
+        },
+        {
+          "type": "key",
+          "keysym": "x",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "Hello 日本",
+        "selection": {
+          "anchor": 8,
+          "head": 8
+        },
+        "focused": false
+      }
+    },
+    {
+      "id": "reenter",
+      "events": [
+        {
+          "type": "focus",
+          "target": "app"
+        },
+        {
+          "type": "click",
+          "x": 500,
+          "y": 50
+        },
+        {
+          "type": "key",
+          "keysym": "b",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "Hello 日本b",
+        "selection": {
+          "anchor": 9,
+          "head": 9
+        },
+        "focused": true
+      }
+    }
+  ],
+  "oracle": {
+    "kind": "presented_state",
+    "version": 1,
+    "prefix": "GPUI_FIELD_STATE ",
+    "review": "Uses the accepted read-only observer contract from the frozen source integration: exact UTF-16 directional selection and text are emitted only after successful presentation. The runner independently requires the matching Default Queue compositor callback and retains pixels; no input/edit callback or auto-generated golden is used. Expected states were declared before this replay."
+  },
+  "expected_failure": null,
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ]
+}

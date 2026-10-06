@@ -1,0 +1,367 @@
+{
+  "schema_version": 1,
+  "milestone": "reusable-current-candidate-keyboard-environment",
+  "verified_utc": "2026-10-06T05:07:32Z",
+  "platform": "Debian GNU/Linux 13 amd64; host compiler/Mesa/loader are explicit external prerequisites",
+  "profile_lock_sha256": "81b05b4f473617d03c8b11980b7e884863fdd181f040f96482a1a6f915abf503",
+  "setup": {
+    "debian_archives": 106,
+    "toolchain_archives": 2,
+    "fresh_offline_bootstrap_passed": true,
+    "offline_idempotent_reapply_passed": true,
+    "all_archive_hashes_verified": true,
+    "applicable_build_only_doctor_checks_passed": 38
+  },
+  "static_validation": {
+    "unit_tests_passed": 80,
+    "python_compile_passed": true,
+    "shell_syntax_passed": true,
+    "whitespace_check_passed": true
+  },
+  "build": {
+    "mode": "built",
+    "source_claim": "compiled between matching source snapshots",
+    "source_commit": "eb6c164f0277a656125804154a3d8ad9a8abb78d",
+    "source_tree": "d1b53388fdb3d0113c1d208763b61b704d50eced",
+    "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_files": [],
+    "source_status": "",
+    "matching_pre_post_source_and_runtime_snapshots": true,
+    "command_normalized": [
+      "$PROFILE_ROOT/moon/bin/moon",
+      "build",
+      "examples/linux_text_field",
+      "--target",
+      "native",
+      "--target-dir",
+      "$PROFILE_ROOT/build-final-r4"
+    ],
+    "app_sha256": "b64df596ed76f6d9aedf1cfe2e584c724cc14de1404b6e06a4ac2c67e79e9e7c",
+    "build_manifest_sha256": "77e463364e8391d60204e5a80503401cd7675485da92b4116937f148aa18d34f",
+    "candidate_manifest_sha256": "316f5615d428efba48c834883ff0b8d8c19b55932d2630afee623a9ab244f1d8",
+    "fontconfig_sha256": "0735ff50834da2d1ec5f9e719eace9859f493c3eb6517e207d1c27f2198a9e11",
+    "configured_fonts": [
+      {
+        "file": "NotoSansCJK-Bold.ttc",
+        "sha256": "faa5f3656a78b2e2d450d27fe8382c778bc2b6bb5ea29c986664a6a435056ceb",
+        "size": 20050760
+      },
+      {
+        "file": "NotoSansCJK-Regular.ttc",
+        "sha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a",
+        "size": 19484784
+      },
+      {
+        "file": "NotoSerifCJK-Bold.ttc",
+        "sha256": "1505ee3b9c0890fae6302ee0e9c6fd74d690f4a55a6ace1d9944f3f6352d622d",
+        "size": 27397052
+      },
+      {
+        "file": "NotoSerifCJK-Regular.ttc",
+        "sha256": "5d9c31a059600193c9d7968a998bde886ccdc77e934006ad243b41794c496a7d",
+        "size": 26411360
+      },
+      {
+        "file": "DejaVuMathTeXGyre.ttf",
+        "sha256": "f7a5e6bcc7747e7488634c8b94684a71596b1b3bc1d39f3c4600fc7677458f9e",
+        "size": 577192
+      },
+      {
+        "file": "DejaVuSans-Bold.ttf",
+        "sha256": "a4c5bc453ca281d90ea079e596da7ae0dfeb5777497c29ec254e76d97ff6f890",
+        "size": 708920
+      },
+      {
+        "file": "DejaVuSans-BoldOblique.ttf",
+        "sha256": "c35383d5e56add5cc9cdc9f4e4a899f9e540f7c7e49f1901074c2d03af194eff",
+        "size": 645600
+      },
+      {
+        "file": "DejaVuSans-ExtraLight.ttf",
+        "sha256": "221efe6dfc06ba251a42b50ae4d4241155554f88d832ddb7617affc8f3119876",
+        "size": 355824
+      },
+      {
+        "file": "DejaVuSans-Oblique.ttf",
+        "sha256": "e2f09289f4276309a36b9a93e5a0ac64957ef3eb7158151b243d41f667151ee4",
+        "size": 637648
+      },
+      {
+        "file": "DejaVuSans.ttf",
+        "sha256": "57f73e11f51999432bf7ab22ce55b6f945d5eca1bf824404cfa9ec2e3718c84e",
+        "size": 759720
+      },
+      {
+        "file": "DejaVuSansCondensed-Bold.ttf",
+        "sha256": "21f02ebcea75529d3ed9d26e089cd1b9c59a4b784119ba3a96e9bc83cf755ec7",
+        "size": 667844
+      },
+      {
+        "file": "DejaVuSansCondensed-BoldOblique.ttf",
+        "sha256": "ba8db8a1aba41e53aa1401c1a7fe75d66bb027bf6cd66ecaf8d16af70f590358",
+        "size": 614068
+      },
+      {
+        "file": "DejaVuSansCondensed-Oblique.ttf",
+        "sha256": "2cc07734aa87334774ff8355eeb5f082baa164502457d8eab8fff66196cdd400",
+        "size": 601448
+      },
+      {
+        "file": "DejaVuSansCondensed.ttf",
+        "sha256": "6de96c09bf752e3774583eea6bc3fb0b60f1733c595f22a926c89219ba8ade43",
+        "size": 682828
+      },
+      {
+        "file": "DejaVuSerif-Bold.ttf",
+        "sha256": "aac3f559445d23f0f567a243f91f3f6ad6cb4b5cafa1521a3479fffe0637f0bd",
+        "size": 356668
+      },
+      {
+        "file": "DejaVuSerif-BoldItalic.ttf",
+        "sha256": "ed336a3d81f5a2d6a3d12c16dda400b28ba7304792254fc9e96c0d6835fbeab2",
+        "size": 348020
+      },
+      {
+        "file": "DejaVuSerif-Italic.ttf",
+        "sha256": "d843bf414381dd64b89e6c7c954075657b74168521f02b30e11d308558eda1d2",
+        "size": 346544
+      },
+      {
+        "file": "DejaVuSerif.ttf",
+        "sha256": "8cb29f7db250ebb2551a6ce2c1e0bfd5a0eb520e9e233370db0493e82e1f36f7",
+        "size": 380660
+      },
+      {
+        "file": "DejaVuSerifCondensed-Bold.ttf",
+        "sha256": "4793af5cf383f3d4a1b86ca8d030a29de0d2c73b3e0f2d6b0b13e7b5d846a06f",
+        "size": 331820
+      },
+      {
+        "file": "DejaVuSerifCondensed-BoldItalic.ttf",
+        "sha256": "5b378464d493b453f6e766f67f3f85c6cb52c5c3fa2c570a8ae2ffaa400abdc4",
+        "size": 347076
+      },
+      {
+        "file": "DejaVuSerifCondensed-Italic.ttf",
+        "sha256": "79313fd487f83c4285bc4c5b6e5b07422ecbab4cc6bf8c9587a0474bcb19e52f",
+        "size": 345868
+      },
+      {
+        "file": "DejaVuSerifCondensed.ttf",
+        "sha256": "bf99aac39e8863546b0e5f14829f9668708120f1a331457040d1e55d54203471",
+        "size": 347208
+      },
+      {
+        "file": "NotoColorEmoji.ttf",
+        "sha256": "dac5c27651082d6c53dab5081f50d2022ddf6877d730fa919cf6a4fc2af22de0",
+        "size": 11260748
+      }
+    ],
+    "actual_generic_sans_match": {
+      "family": "DejaVu Math TeX Gyre",
+      "file": "DejaVuMathTeXGyre.ttf",
+      "sha256": "f7a5e6bcc7747e7488634c8b94684a71596b1b3bc1d39f3c4600fc7677458f9e"
+    },
+    "runtime_tool_hashes": [
+      {
+        "role": "tool:moon",
+        "sha256": "6da4919f45f4abf7c6d7f3cf8d9a457de77dca430d6fb811d21b27ae1ac8e11d",
+        "size": 10736616
+      },
+      {
+        "role": "tool:moonc",
+        "sha256": "d163b2c4c878ca584870764b75e633d73e8b9c178dcc6b00c692f6b2a6b1b2dc",
+        "size": 39077536
+      },
+      {
+        "role": "tool:moonrun",
+        "sha256": "1b22f489621059b8c22ee4acdaddc5f5d1781f62529d3000a24c03d45032d0e2",
+        "size": 37325072
+      },
+      {
+        "role": "tool:cc",
+        "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f",
+        "size": 1162264
+      },
+      {
+        "role": "tool:pkg-config",
+        "sha256": "37fdaa317c00805da16bc9c4c8de2300ad1e34511c33bf5e5170bf52c0e3a48e",
+        "size": 45096
+      },
+      {
+        "role": "tool:wayland-scanner",
+        "sha256": "0f7477063779fe135b34219e38329da40a4a0b0710e139edfc531d1d61792439",
+        "size": 51864
+      },
+      {
+        "role": "tool:fc-list",
+        "sha256": "31e22eb2003fe43e5002789875ab84447b741e3f99a0ebcb1f1ecaae7bd6ee6e",
+        "size": 14648
+      },
+      {
+        "role": "tool:tcc",
+        "sha256": "1e5950e72d0c1623cc949769ac52c512442f84b9ebfd7b6ff509491dc8b2281a",
+        "size": 346304
+      }
+    ]
+  },
+  "prior_failed_proof": {
+    "artifact": "current-source-v2/summary.json (preserved outside repository)",
+    "summary_sha256": "2e134c82b7facb2c1063db5d26f77cdf056e8e2654e180c6b1f8fba147ef16ba",
+    "source_commit": "eb6c164f0277a656125804154a3d8ad9a8abb78d",
+    "app_sha256": "6a6a318ad8e82b6a3a161a100ea33e0378b4f0241149fe934821314d98885b34",
+    "actual_rgba_sha256": "f0e10b080d3fb964ad85580aafbf9759ba4e9aea9db3a9b0e6f9e428d326baf3",
+    "changed_pixels": 1231,
+    "difference_bbox": [
+      28,
+      36,
+      157,
+      57
+    ],
+    "cause": "105-package prefix omitted fonts-dejavu-extra; generic sans selected DejaVu Sans instead of historical DejaVu Math TeX Gyre",
+    "fix": "Add official Debian fonts-dejavu-extra 2.37-8 archive SHA-256 83128d00e5d7db412fe5a7a4e2ee32aebbf8d9ed560ad611202fb43078f80323; font file exactly matches historical host bytes",
+    "golden_unchanged": true
+  },
+  "native_replay": {
+    "artifact": "final-catalog-r4/summary.json (preserved outside repository)",
+    "summary_sha256": "13bd3325fd55573788f16a5466e074652c49a85075ad1a02a4d44eb082447b84",
+    "driver_sha256": "4209c4cf8bc00266608a8cd21f6e74b42958e120a2480511f3df3e8d1d9707c9",
+    "validator_sha256": "afa070bb4622e8c2df7776e6289fad7c7a6e8fafb6770daef5e0faadd540ce11",
+    "input_route": "XTest -> authenticated owned high-number Xvfb -> Weston X11/Pixman/kiosk -> wl_keyboard -> GPUI",
+    "launch_route": "owned generated .desktop via supported native File Manager on own cloud desktop",
+    "executed": 7,
+    "skipped": 2,
+    "all_cases_executed": false,
+    "results": [
+      {
+        "case_id": "basic-text-shift",
+        "status": "passed",
+        "case_sha256": "772607a88867e86f7b631baad1b1113e292351d867367a1ab59aa9b2b7f5a26c",
+        "wayland_key_events": 14,
+        "planned_os_key_events": 14,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 916.5484449913492,
+        "final_rgba_sha256": "44f395449323e0e7581d04b6d012b4463819d65e0914aa53f0e662d534eb74d9",
+        "checkpoint_count": 1,
+        "golden_pixel_match": true,
+        "ocr_match": true
+      },
+      {
+        "case_id": "ctrl-a-replacement",
+        "status": "passed",
+        "case_sha256": "3c76f6c2e453bef131032399fa33e010485900b2a2579ded7ebab54e432913af",
+        "wayland_key_events": 10,
+        "planned_os_key_events": 10,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 742.7158020000206,
+        "final_rgba_sha256": "c436f7911632af285ed9cf0ca58a61510266beaed1f8d10be77ee5cb40271ee2",
+        "checkpoint_count": 1,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
+      },
+      {
+        "case_id": "cursor-backspace-delete",
+        "status": "passed",
+        "case_sha256": "a5eda053c03b2462161270f0cc9a0b49cd9358ccb3108d61bbe0b1562f6c7997",
+        "wayland_key_events": 32,
+        "planned_os_key_events": 32,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 1541.0415320075117,
+        "final_rgba_sha256": "2fbb07c45a54a373e330282c68977d13621b236dfc7d784ba6025305a3e8e6ba",
+        "checkpoint_count": 4,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
+      },
+      {
+        "case_id": "focus-loss-reentry",
+        "status": "passed",
+        "case_sha256": "1c36a25fbc700843d1abf85c8c79e1f8af2a3862ac845a6753206a4cc21bac93",
+        "wayland_key_events": 2,
+        "planned_os_key_events": 4,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 1031.5595389984082,
+        "final_rgba_sha256": "aeb0b0b936d84d5d9b3f5c8de2b78ccfc826749d3399cc8871cf5150ba03735e",
+        "checkpoint_count": 2,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
+      },
+      {
+        "case_id": "held-repeat",
+        "status": "skipped-pending",
+        "reason": "Native repeat integration passed an independent frozen-source release/focus-loss gate. This generic fixed-duration/five-character case remains pending because its reusable oracle must adapt to actual wl_keyboard.repeat_info, suppress upstream Xvfb autorepeat, bound growth and prove post-release/focus-loss stability; a fixed count cannot be promoted from observed timing."
+      },
+      {
+        "case_id": "ime-composition",
+        "status": "skipped-unsupported",
+        "reason": "GPUI host IME adapter is unimplemented. Version 1 intentionally has no fabricated composition events; a future real-adapter case must cover preedit/candidates/commit/cancel. Japanese literals and paste do not establish IME."
+      },
+      {
+        "case_id": "standalone-modifiers",
+        "status": "passed",
+        "case_sha256": "b823e97b6bc7dfea2dd9d7a2445ff6540be8acc2a1677163c1429b4812fa1049",
+        "wayland_key_events": 6,
+        "planned_os_key_events": 6,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 719.361587005551,
+        "final_rgba_sha256": "2c0ec0ede4763bd07c50ba8033f0c902fd5ecc93a81822381431d381d8723792",
+        "checkpoint_count": 1,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
+      },
+      {
+        "case_id": "undo-branch-edit",
+        "status": "passed",
+        "case_sha256": "122ae0839a20614131119602c17fdaff902010b4e377838683b132c595d69a94",
+        "wayland_key_events": 22,
+        "planned_os_key_events": 22,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 1489.0215009945678,
+        "final_rgba_sha256": "e192672c552f66d04259c492c57d4aac89158d010652ec284114f5e348938713",
+        "checkpoint_count": 4,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": true,
+        "no_op_checkpoint_count": 1
+      },
+      {
+        "case_id": "undo-redo",
+        "status": "passed",
+        "case_sha256": "9c1c025d847602f9e6b863a09e1b662e26f5ebd60c5a0af6bc682d7363176eb5",
+        "wayland_key_events": 30,
+        "planned_os_key_events": 30,
+        "native_event_count_match": true,
+        "app_alive": true,
+        "native_failure": false,
+        "including_cleanup_ms": 1801.5483630006202,
+        "final_rgba_sha256": "c436f7911632af285ed9cf0ca58a61510266beaed1f8d10be77ee5cb40271ee2",
+        "checkpoint_count": 5,
+        "exact_state_checkpoints_passed": true,
+        "matching_completed_compositor_frames": true,
+        "no_op_record_unchanged": null,
+        "no_op_checkpoint_count": 0
+      }
+    ],
+    "owned_xvfb_cleanup_verified": true
+  },
+  "coverage_boundary": "Seven reusable keyboard cases passed; held-repeat remains pending until adaptive policy oracle is packaged, GPUI IME unsupported. Frozen-source native repeat release/focus-loss R2 proof is independent and not counted here. Historical v1 golden/provenance and failed current-source-v2 evidence retained."
+}

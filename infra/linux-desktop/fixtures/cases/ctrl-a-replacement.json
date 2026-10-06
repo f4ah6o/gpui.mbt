@@ -1,0 +1,76 @@
+{
+  "version": 2,
+  "id": "ctrl-a-replacement",
+  "description": "Ctrl+A should select all before ASCII replacement.",
+  "platform": "linux-x11-weston",
+  "disposition": "supported",
+  "reason": "Required select-all replacement regression. The preserved observer-only baseline reproduced an exact failure; the isolated select-all candidate subsequently reached the predeclared abc state at UTF-16 3→3. Candidate build identity belongs in an external manifest, not this semantic case.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [
+    {
+      "id": "replace-all",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "a",
+          "modifiers": [
+            "Control_L"
+          ]
+        },
+        {
+          "type": "key",
+          "keysym": "a",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "b",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "c",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "abc",
+        "selection": {
+          "anchor": 3,
+          "head": 3
+        },
+        "focused": true
+      }
+    }
+  ],
+  "oracle": {
+    "kind": "presented_state",
+    "version": 1,
+    "prefix": "GPUI_FIELD_STATE ",
+    "review": "Root-reviewed read-only observer after successful presentation. Preserved native source dbad647b transition reached abc with directional selection 3→3, actual OS delivery, retained pixels and liveness. Requires a candidate implementing the observer; missing behavior must fail this semantic target."
+  },
+  "expected_failure": null,
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ]
+}

@@ -1,0 +1,167 @@
+{
+  "version": 2,
+  "id": "cursor-backspace-delete",
+  "description": "Directional movement, deletion and Shift selection.",
+  "platform": "linux-x11-weston",
+  "disposition": "supported",
+  "reason": "Predeclared semantic checkpoints exercised through real private-display OS input. Requires the accepted read-only presented-state observer and matching completed compositor frame; current candidate build identity is verified externally. Native qualification is recorded separately.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [
+    {
+      "id": "replace",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "Home",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "End",
+          "modifiers": [
+            "Shift_L"
+          ]
+        },
+        {
+          "type": "key",
+          "keysym": "a",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "b",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "c",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "d",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "e",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "abcde",
+        "selection": {
+          "anchor": 5,
+          "head": 5
+        },
+        "focused": true
+      }
+    },
+    {
+      "id": "backspace",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "Left",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "Left",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "BackSpace",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "abde",
+        "selection": {
+          "anchor": 2,
+          "head": 2
+        },
+        "focused": true
+      }
+    },
+    {
+      "id": "delete",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "Delete",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "abe",
+        "selection": {
+          "anchor": 2,
+          "head": 2
+        },
+        "focused": true
+      }
+    },
+    {
+      "id": "select",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "Home",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "Right",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "Right",
+          "modifiers": [
+            "Shift_L"
+          ]
+        }
+      ],
+      "expect": {
+        "text": "abe",
+        "selection": {
+          "anchor": 1,
+          "head": 2
+        },
+        "focused": true
+      }
+    }
+  ],
+  "oracle": {
+    "kind": "presented_state",
+    "version": 1,
+    "prefix": "GPUI_FIELD_STATE ",
+    "review": "Uses the accepted read-only observer contract from the frozen source integration: exact UTF-16 directional selection and text are emitted only after successful presentation. The runner independently requires the matching Default Queue compositor callback and retains pixels; no input/edit callback or auto-generated golden is used. Expected states were declared before this replay."
+  },
+  "expected_failure": null,
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ]
+}

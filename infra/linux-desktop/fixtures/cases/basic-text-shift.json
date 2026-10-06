@@ -1,0 +1,88 @@
+{
+  "version": 2,
+  "id": "basic-text-shift",
+  "description": "Six real key actions: a, b, c, Shift+d, Left, Backspace.",
+  "platform": "linux-x11-weston",
+  "disposition": "supported",
+  "reason": "Required six-key semantic regression using the unchanged reviewed final pixel golden. Historical source/binary/font identities are recorded separately in field-six-keys.provenance.json; each current candidate is bound by its prepared manifest.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [
+    {
+      "id": "six-keys",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "a",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "b",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "c",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "d",
+          "modifiers": [
+            "Shift_L"
+          ]
+        },
+        {
+          "type": "key",
+          "keysym": "Left",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "BackSpace",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "Hello 日本abD",
+        "selection": {
+          "anchor": 10,
+          "head": 10
+        },
+        "focused": true
+      }
+    }
+  ],
+  "oracle": {
+    "kind": "reviewed_pixels",
+    "fixture": "field-six-keys.png",
+    "rgba_sha256": "44f395449323e0e7581d04b6d012b4463819d65e0914aa53f0e662d534eb74d9",
+    "review": "Root-reviewed private-window capture from automated-e2e-2; repeated exact pixels in automated-e2e-3. Existing final golden only, never auto-bless new captures.",
+    "ocr_prefix": "Hello ",
+    "ocr_suffix": "abD"
+  },
+  "expected_failure": null,
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ]
+}

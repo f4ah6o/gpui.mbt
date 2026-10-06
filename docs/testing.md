@@ -319,7 +319,12 @@ coverage uses three 256-operation ASCII histories with documents of at most
 coverage. Native real-sans tests separately cover mixed fallback and bearings.
 Undo/redo GPU fixtures replay actual-control scenes, while actual MoonBit
 Host.present tests exercise serialization; neither injects compositor keyboard
-input. Their new hosted gate remains pending for this change.
+input. PR32's [PR run37402479619](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37402479619)
+and [merged-main run37403927714](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37403927714)
+passed on first attempts at scales 1/2: 16/16 field `Host.present` tests per
+scale and 11 accepted GPU scenes from 13 fixtures. The other two fixtures are
+headless rejected-edit identity checks. Reviewed undo/redo decoded pixels
+match between the PR and exact merged main36bcb245/tree5441e254.
 
 The merged origin baseline's
 [main Ubuntu run37393518087](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37393518087)
@@ -328,3 +333,70 @@ failed-job retry in attempt2. First-failure and successful artifacts remain
 separate. Cause is unknown; a successful retry is not proof of production
 stability or live keyboard/IME qualification. See the
 [Ubuntu stability/recovery limits](ubuntu.md#known-hosted-compositor-observation).
+
+## Bounded direct keyboard repeat evidence
+
+Private Ubuntu direct-repeat checks are deterministic headless evidence.
+Mocked Wayland callbacks and controlled clock/queue observations cover the
+v4 `repeat_info` policy, lower-version/rate-zero/missing-policy suppression,
+repeatable key/text caching, empty-queue dispatch admission, one atomic group
+per dispatch, no overdue catch-up, 1 ms rate saturation, Compose isolation and
+focus/epoch/mode/modifier/layout/device/close/fatal cancellation. They are not
+compositor-delivered typing or a measurement of a desktop repeat timer.
+
+MoonBit ABI2 tests separately check physical/synthetic press flags and typed
+`InvalidInput` for NaN, infinity, fractional, negative or out-of-range flags,
+including repeat flags on release/text. Pointer slot 7 remains a y coordinate.
+Portable field tests and native real-font controller tests inject repeated
+`KeyPressed` and committed `TextInput` records. They check insertion exactly
+once, separate content history groups, navigation without history, current
+repeated undo/redo and clipboard/submit semantics, stale paste rejection after
+repeated editing, and pending/rollback history consistency.
+
+The existing Weston/llvmpipe rendering tier and replayed `Host.present` scenes
+do not exercise `wl_keyboard` delivery or qualify repeat timing. Separately,
+the frozen integrated source eb6c164f/tree d1b53388 passed isolated real
+basic/Shift and Ctrl+A input, plus held-repeat release/focus-loss/refocus
+through authenticated private Xvfb and Weston 14. The held gates disabled
+upstream X11 autorepeat, read actual 40 Hz/400 ms policy, observed one real
+physical press, and checked growth and post-release/leave stability with
+completed frames and retained pixels. The earlier startup click-delivery
+failure remains retained; R2 changed readiness ordering without relaxing
+acceptance predicates. See the [qualification manifest](native-input-qualification.json)
+and [field evidence tiers](linux-text-field.md#evidence-and-remaining-gates).
+The later [packaged R4 qualification](native-input-qualification-r4.json)
+records a fresh locked-prefix build of frozen `eb6c164f` and seven runnable
+native keyboard cases with exact case/driver/binary identities. Held-repeat
+and GPUI IME are two explicit skips; `all_cases_executed` remains false. The
+unchanged basic golden passed after the official missing font was restored;
+the earlier mismatch artifacts and pre-native snapshot stay preserved. A later
+publication assembly is built and checked separately, and inherits this native
+evidence only as byte-equivalent application source, not as the exact executed
+commit/binary.
+
+Those passes are exact-source/profile evidence, not general desktop timing
+accuracy or a pass for every catalog case. GPUI IME remains unimplemented;
+GTK Japanese conversion is environment-baseline evidence only. This bounded
+opt-in route adds no public `TextInput`/IME capability, typing coalescing, or
+one-shot shortcut filtering. See the
+[field contract and remaining gates](linux-text-field.md#evidence-and-remaining-gates).
+
+The earlier repeat-only Linux verification on 2026-10-06 passed native
+380/380, JavaScript/Wasm/Wasm-GC 318/318 each, Python 101/101, full MoonBit
+formatting and the contract-document checker. The C direct-input/repeat and
+clipboard fixtures pass with `-Wall -Wextra -Werror`; repeat also passes
+ASan+UBSan with leak detection disabled. Headless Pango raster, field-admission
+and origin-raster consumers pass. These results use MoonBit
+`0.10.14+7d59c7ec9`, Wayland 1.23.1, XKBCommon 1.7.0, PangoFT2 1.56.3 and
+Fontconfig 2.15.0. Generated native MoonBit C retains existing compiler warnings;
+MoonBit `--deny-warn` and the handwritten C strict-warning checks pass.
+The native `GPUI_FIELD_E2E` compositor gate was skipped, not passed.
+
+Final integrated source verification at eb6c164f0277a656125804154a3d8ad9a8abb78d
+passed 402/402 aggregate native and 100/100 focused native tests, 325/325
+JavaScript/Wasm/Wasm-GC tests each, 101/101 Python tests, formatting, contracts,
+strict handwritten C, and ASan+UBSan with leak detection disabled. The native
+aggregate still skipped `GPUI_FIELD_E2E`; the separately retained native input
+gates do not turn that skip into a pass. Generated native MoonBit C retains
+existing warnings. The earlier per-feature and pre-native evidence remains
+unchanged; new source/runtime iterations need their own build and provenance.

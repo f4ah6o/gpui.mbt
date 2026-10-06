@@ -7,7 +7,10 @@ fn owner_history_selected(
 }
 
 ///|
-fn owner_history_command(key : String) -> @primitives.InputEvent {
+fn owner_history_command(
+  key : String,
+  repeat? : Bool = false,
+) -> @primitives.InputEvent {
   @primitives.KeyPressed(
     key=@primitives.Character(key),
     modifiers=@primitives.Modifiers::new(
@@ -16,8 +19,71 @@ fn owner_history_command(key : String) -> @primitives.InputEvent {
       alt=false,
       meta=false,
     ),
-    repeat=false,
+    repeat~,
   )
+}
+
+///|
+test "repeated cut remains a transactional owner action" {
+  let selected = owner_history_selected(controller_field())
+  let (unchanged, action) = selected
+    .handle_input(owner_history_command("x", repeat=true), measure, admit, hit)
+    .unwrap()
+  assert_true(unchanged.document() == selected.document())
+  assert_false(unchanged.can_undo())
+  match action {
+    Some(@text_field.Cut(text~, candidate~)) => {
+      assert_eq(text, selected.document().text())
+      let failed = cut_after_write(
+        unchanged,
+        candidate,
+        Err(controller_error(@diagnostics.PermissionDenied)),
+      )
+      assert_true(failed.document() == selected.document())
+      assert_false(failed.can_undo())
+      let installed = cut_after_write(unchanged, candidate, Ok(()))
+      assert_eq(installed.document().text(), "")
+      let restored = installed.undo(measure, admit).unwrap()
+      assert_true(restored.document() == selected.document())
+      assert_false(restored.can_undo())
+    }
+    _ => abort("repeated cut must carry an admitted candidate")
+  }
+}
+
+///|
+test "Busy keeps repeated edits and rejection restores submitted history" {
+  let original = change(controller_field(), key_event(@primitives.End)).unwrap()
+  let submitted = change(original, @primitives.TextInput(text="A")).unwrap()
+  let first = change(submitted, controller_repeat_event(@primitives.Backspace)).unwrap()
+  let pending = change(first, controller_repeat_event(@primitives.Backspace)).unwrap()
+  assert_true(
+    classify_field_frame(Err(controller_error(@diagnostics.Busy)))
+    is BusyPending,
+  )
+  assert_eq(pending.document().text(), "Hi 日")
+  let undone_once = pending.undo(measure, admit).unwrap()
+  assert_true(undone_once.document() == first.document())
+  let undone_twice = undone_once.undo(measure, admit).unwrap()
+  assert_true(undone_twice.document() == submitted.document())
+  for
+    code in [
+      @diagnostics.InvalidInput,
+      @diagnostics.UnsupportedCapability,
+      @diagnostics.ResourceExhausted,
+    ] {
+    assert_true(
+      classify_field_frame(Err(controller_error(code))) is RejectPending,
+    )
+    let restored = restore_submitted_field(submitted, pending).unwrap()
+    assert_true(restored.document() == submitted.document())
+    assert_true(restored.can_undo())
+    assert_false(restored.can_redo())
+    let undone = restored.undo(measure, admit).unwrap()
+    assert_true(undone.document() == original.document())
+    assert_false(undone.can_undo())
+    assert_true(undone.can_redo())
+  }
 }
 
 ///|

@@ -1,0 +1,254 @@
+{
+  "version": 1,
+  "kind": "gpui-local-native-input-qualification",
+  "recorded_utc": "2026-10-06T05:03:00Z",
+  "scope": "Frozen local source and exact executable qualification; not a production release ledger or blanket desktop/catalog acceptance.",
+  "source": {
+    "commit": "eb6c164f0277a656125804154a3d8ad9a8abb78d",
+    "tree": "d1b53388fdb3d0113c1d208763b61b704d50eced",
+    "tracked_clean": true,
+    "source_hashes_verified": 23,
+    "binary_sha256": "656e8e6e68de738efb0f123e6d038c8c727efeb7dbe821d57cbb8ba276aab623",
+    "patch_sha256": "96d7010eecf8f4b739fe850145d2b760e821485382eb7d6c6d6c0b912a47dae2",
+    "pre_native_manifest": {
+      "retained_artifact": "gpui-linux-final-input-integration/_build/final-input/verification.json",
+      "sha256": "527c6036e2aedfd362e4cab37e8fa949101a510a13124b9c79934b1bce600139"
+    },
+    "preservation": "The pre-native manifest remains unchanged, including its then-pending native status. This later record does not rewrite it."
+  },
+  "accepted_baseline": {
+    "local_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "merged_main": "36bcb245845354b955a2f1bb2f07b527f4f39c4f",
+    "tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "pr": "https://github.com/gpui-mbt/gpui.mbt/pull/32",
+    "remote_rechecked_utc": "2026-10-06T05:01:40Z",
+    "remote_source": "https://api.github.com/repos/gpui-mbt/gpui.mbt/branches/main",
+    "evidence": [
+      {
+        "retained_artifact": "gpui-undo-publication-20261006/merge-verified.json",
+        "sha256": "f4b29719065e7863e08ff12001632bc0ecb336e2ef2d408c0171b7eeb9155a39"
+      },
+      {
+        "retained_artifact": "gpui-undo-publication-20261006/main-ci-final.json",
+        "sha256": "9afba74bba882bf79dd0f2a00bce3fb9faa2255031ed180c5e54417dea857af9"
+      },
+      {
+        "retained_artifact": "gpui-undo-publication-20261006/main-ubuntu-attempt1/provenance-verification.json",
+        "sha256": "40b143e42ef62b9d38bb15db363401339e978f0bd61bea8df5ddf469553e56b9"
+      }
+    ],
+    "boundary": "Remote HEAD/tree checked by the parent with f4ah6o. Recheck immediately before publication; the frozen candidate checkout does not contain the merged-main Git object."
+  },
+  "logical_commit_groups": [
+    {
+      "purpose": "bounded direct keyboard repeat",
+      "commit": "ab41e343b8a344acd811f7029d4d72297f80fe34"
+    },
+    {
+      "purpose": "valid unmapped-key incremental ingress",
+      "original": "86c983da8a99db5b9b4c787990b1ece8e0b92f9f",
+      "integrated": "5a3cdf3638ec8362fbafe543dae9eb92b3b0f784",
+      "relation": "Adapted to preserve integrated repeat press 0/1 and release/text 0 validation; one logical change."
+    },
+    {
+      "purpose": "repeat and modifier intersection tests",
+      "commit": "0851392f9f74737315184cf06c525dcd20652032"
+    },
+    {
+      "purpose": "opt-in read-only presented-state observer",
+      "original": "9ad90a04f9dec53d8cb9246385055fda81e8aaf4",
+      "integrated": "290fef340b6ca0a9183973325b5f05d6b0a61c9c",
+      "relation": "Copied logical work; count once."
+    },
+    {
+      "purpose": "focused Ctrl/Meta+A select-all",
+      "original": "dbad647bb63bdaf4e5bb368abd133f22db55b16d",
+      "integrated": "eb6c164f0277a656125804154a3d8ad9a8abb78d",
+      "relation": "Copied logical work; count once."
+    }
+  ],
+  "headless_verification": {
+    "passed": {
+      "native": 402,
+      "focused_native": 100,
+      "js": 325,
+      "wasm": 325,
+      "wasm-gc": 325,
+      "python": 101,
+      "c_strict_warnings": true,
+      "c_asan_ubsan_leak_detection_disabled": true,
+      "formatting": true,
+      "contracts": true
+    },
+    "aggregate_native_compositor_gate": "GPUI_FIELD_E2E skipped, not passed",
+    "logs": [
+      {
+        "retained_artifact": "gpui-linux-final-input-integration/_build/final-input/native-aggregate.log",
+        "sha256": "57803e14dbf26439cc06b506b9a63386f5e85c7efac4e263713af8b40f8b0be2"
+      },
+      {
+        "retained_artifact": "gpui-linux-final-input-integration/_build/final-input/native-focused.log",
+        "sha256": "49afba8dcfe79569a346920b3c4ca091c276920a8b6785c6ceadc2cd5167e408"
+      },
+      {
+        "retained_artifact": "gpui-linux-final-input-integration/_build/final-input/js-aggregate.log",
+        "sha256": "8fe6a15b2af39388f0c1c1f0cd75ddfc537337ed9212fa1f3db44895c12414f1"
+      },
+      {
+        "retained_artifact": "gpui-linux-final-input-integration/_build/final-input/wasm-aggregate.log",
+        "sha256": "8fe6a15b2af39388f0c1c1f0cd75ddfc537337ed9212fa1f3db44895c12414f1"
+      },
+      {
+        "retained_artifact": "gpui-linux-final-input-integration/_build/final-input/wasm-gc-aggregate.log",
+        "sha256": "8fe6a15b2af39388f0c1c1f0cd75ddfc537337ed9212fa1f3db44895c12414f1"
+      },
+      {
+        "retained_artifact": "gpui-linux-final-input-integration/_build/final-input/python-aggregate.log",
+        "sha256": "3e2ea535d6158e688bb6fa4e51c801892c2f445e428a14f69b78bc7cd2affe01"
+      },
+      {
+        "retained_artifact": "gpui-linux-final-input-integration/_build/final-input/c-test.log",
+        "sha256": "9b4c4042afb63cd8d12968d02de15e3bbe629bd8add5557613b45e9d781c8a62"
+      },
+      {
+        "retained_artifact": "gpui-linux-final-input-integration/_build/final-input/c-sanitized-test.log",
+        "sha256": "9b4c4042afb63cd8d12968d02de15e3bbe629bd8add5557613b45e9d781c8a62"
+      },
+      {
+        "retained_artifact": "gpui-linux-final-input-integration/_build/final-input/contracts.log",
+        "sha256": "48e57d15b062bc06d0779ffac6f890f380d1e6766419ac5f1eeee446f177002d"
+      },
+      {
+        "retained_artifact": "gpui-linux-final-input-integration/_build/final-input/fmt.log",
+        "sha256": "087d5a55dbdb72380e060946d1fb0e3bc6774c4643cb3fe55a305782ca1ec9ef"
+      }
+    ]
+  },
+  "native_basic_and_select_all": {
+    "summary": {
+      "retained_artifact": "gpui-final-input-native-validation/results/summary.json",
+      "sha256": "a0cdda68aed27b6ed19ff0cea84ff5c893546fb78d551f8bdf1b690d9b00b2bd"
+    },
+    "cases": [
+      {
+        "id": "basic-text-shift",
+        "status": "passed",
+        "key_records": 14,
+        "source_commit": "eb6c164f0277a656125804154a3d8ad9a8abb78d",
+        "binary_sha256": "656e8e6e68de738efb0f123e6d038c8c727efeb7dbe821d57cbb8ba276aab623",
+        "semantic_oracle": "unchanged reviewed RGBA golden and ASCII OCR",
+        "expected_final": {
+          "text": "Hello 日本abD",
+          "selection": {
+            "anchor": 10,
+            "head": 10
+          },
+          "focused": true
+        }
+      },
+      {
+        "id": "ctrl-a-replacement",
+        "status": "passed",
+        "key_records": 10,
+        "source_commit": "eb6c164f0277a656125804154a3d8ad9a8abb78d",
+        "binary_sha256": "656e8e6e68de738efb0f123e6d038c8c727efeb7dbe821d57cbb8ba276aab623",
+        "semantic_oracle": "exact Accepted-state observer with retained nonblank pixels",
+        "expected_final": {
+          "text": "abc",
+          "selection": {
+            "anchor": 3,
+            "head": 3
+          },
+          "focused": true
+        }
+      }
+    ],
+    "profile": "Debian 13 amd64; authenticated owned Xvfb; Weston 14.0.2 X11/Pixman/kiosk; XTest to real wl_keyboard; owned native launch."
+  },
+  "native_client_repeat": {
+    "summary": {
+      "retained_artifact": "gpui-repeat-native-gate/native-final-proof-r2/summary.json",
+      "sha256": "0f43c9930dfd9305baba04ddd55ae9de7563c4eff9fd3c12b0b243fd1c160a45"
+    },
+    "helper": {
+      "retained_artifact": "gpui-repeat-native-gate/held_repeat_gate.py",
+      "sha256": "e2c8b85f2eb4f00752f96072b0396bb8bd0d2e66536a8302ad8b4c1e92cc98d0"
+    },
+    "pins": {
+      "retained_artifact": "gpui-repeat-native-gate/pins.json",
+      "sha256": "32a811dd9d1e2951db9fe8e76ac7015b829bbf7552797e6fc7736cd9e7075c72"
+    },
+    "all_provenance_files_and_png_hashes_reverified": true,
+    "scenarios": [
+      {
+        "id": "release",
+        "status": "passed",
+        "held_growth": 15,
+        "actual_wayland_a_records": 2,
+        "actual_OS_a_records": 2,
+        "policy": {
+          "rate": 40,
+          "delay_ms": 400,
+          "interval_ms": 25,
+          "planned_hold_ms": 750
+        },
+        "stable_intervals_ms": [
+          675
+        ],
+        "refocus_revision_delta": null,
+        "completed_frame_for_every_snapshot": true,
+        "state_unchanged_during_every_pixel_capture": true,
+        "upstream_autorepeat_disabled": true,
+        "upstream_autorepeat_restored": true,
+        "cleanup_errors": []
+      },
+      {
+        "id": "focus-loss",
+        "status": "passed",
+        "held_growth": 13,
+        "actual_wayland_a_records": 1,
+        "actual_OS_a_records": 2,
+        "policy": {
+          "rate": 40,
+          "delay_ms": 400,
+          "interval_ms": 25,
+          "planned_hold_ms": 750
+        },
+        "stable_intervals_ms": [
+          675,
+          675
+        ],
+        "refocus_revision_delta": 1,
+        "completed_frame_for_every_snapshot": true,
+        "state_unchanged_during_every_pixel_capture": true,
+        "upstream_autorepeat_disabled": true,
+        "upstream_autorepeat_restored": true,
+        "cleanup_errors": []
+      }
+    ],
+    "first_attempt": {
+      "retained_artifact": "gpui-repeat-native-gate/native-final-proof/summary.json",
+      "sha256": "d4d85446e24129f28896c3c13e332be8901c463aff1474d46d3d1ca6f1bd11a7"
+    },
+    "startup_correction": {
+      "retained_artifact": "gpui-repeat-native-gate/CORRECTION-R2.md",
+      "sha256": "0325e38a9a29522a673d162660b218323aa9a0fe6e40276088c0ba0e4f16a33d"
+    },
+    "preservation": "First attempt stopped before keyboard input because no real pointer button reached GPUI. R2 corrected initial readiness and click delivery; repeat, state and timing acceptance predicates were not relaxed."
+  },
+  "publication_relation": {
+    "docs_parent_commit": "eb6c164f0277a656125804154a3d8ad9a8abb78d",
+    "native_execution_applies_to": "The frozen source commit/tree/binary above, not the later docs-only commit or another rebuild.",
+    "new_iterations": "Rebuild and prepare fresh candidate provenance after source/runtime/font changes.",
+    "infrastructure": "Independent infrastructure work starts at b9e45f78e17fc85de64f4eaa14b8cf2f3f93414d and has candidate/recovery changes in progress. Its static and native qualification is separate; integrate only the final reviewed infrastructure commit."
+  },
+  "limitations": [
+    "Exact-source isolated software-rendered input route only; no physical-device, real Ubuntu/Mutter desktop, broad timing, production or support-tier claim.",
+    "Packaged recovery replay remains separate, including a retained font-resolution/golden mismatch under investigation. No new output is automatically promoted to a golden.",
+    "Generic catalog held/focus cases remain pending until that driver implements and verifies their own oracles. Passing runnable cases does not mean all patterns passed.",
+    "GPUI IME integration remains unimplemented. GTK/IBus/Mozc conversion, if qualified separately, is environment-baseline evidence only.",
+    "ASan+UBSan ran with leak detection disabled; generated native MoonBit C retains existing warnings.",
+    "Earlier restricted-executor AF_UNIX EPERM and hosted-main Weston exit139/retry evidence remain retained with no causal explanation.",
+    "Publishing requires an explicit authorized action, immediate remote-base recheck and exact-published-head CI; this manifest records local qualification only."
+  ]
+}
