@@ -7,7 +7,6 @@ struct ImeOwner {
   seat : Int64
   proxy_generation : Int
   sequence : Int64
-  commits : Int
 }
 
 ///|
@@ -20,15 +19,8 @@ enum ImeOwnerError {
 } derive(Eq)
 
 ///|
-fn ime_owner(epoch : Int, commits? : Int = 0) -> ImeOwner {
-  {
-    epoch,
-    entered: false,
-    seat: 0L,
-    proxy_generation: 0,
-    sequence: 0L,
-    commits,
-  }
+fn ime_owner(epoch : Int) -> ImeOwner {
+  { epoch, entered: false, seat: 0L, proxy_generation: 0, sequence: 0L, }
 }
 
 ///|
@@ -216,8 +208,7 @@ fn ime_sync(
           caret,
           external_edit~,
         ) {
-        Ok(epoch) if epoch == owner.epoch => Ok(owner)
-        Ok(epoch) => Ok(ime_owner(epoch, commits=owner.commits))
+        Ok(epoch) => Ok(ime_owner_after_update(owner, epoch))
         Err(error) => Err(error)
       }
   }
@@ -292,5 +283,29 @@ fn ImeOwnerError::label(self : ImeOwnerError) -> String {
     UnsupportedStyle => "UnsupportedStyle"
     HiddenCursor => "HiddenCursor"
     Field(_) => "FieldAdmission"
+  }
+}
+
+///|
+// A replacement native epoch starts unentered with no old proxy/seat/sequence.
+// The native successful update contract guarantees a positive returned epoch.
+fn ime_owner_after_update(owner : ImeOwner, epoch : Int) -> ImeOwner {
+  if epoch == owner.epoch {
+    owner
+  } else {
+    ime_owner(epoch)
+  }
+}
+
+///|
+// Keep restoration and explicit resolution as one failure-atomic value step.
+// A reset engine never inherits an old displayed preview transaction.
+fn restore_rejected_ime_field(
+  submitted : @text_field.TextField,
+  pending : @text_field.TextField,
+) -> Result[@text_field.TextField, @text_field.TextFieldError] {
+  match restore_submitted_field(submitted, pending) {
+    Ok(value) => value.cancel_composition(measure, admit)
+    Err(error) => Err(error)
   }
 }

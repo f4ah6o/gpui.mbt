@@ -216,3 +216,100 @@ test "IME observer reads exact committed preview marked caret and history withou
   assert_eq(preview.revision(), revision)
   assert_false(preview.can_undo())
 }
+
+///|
+test "IME rejected presentation restores complete history then cancels and fences its target" {
+  let original = owner_history_selected(controller_field())
+  let redo_target = original.replace_selection("X", measure, admit).unwrap()
+  let original = redo_target.undo(measure, admit).unwrap()
+  let submitted = ime_preedit(original, "に", Some(1), []).unwrap()
+  let pending = ime_preedit(submitted, "にほん", Some(3), []).unwrap()
+  let pending = ime_commit(pending, "日本", None, None).unwrap()
+  assert_true(pending.can_undo())
+  assert_false(pending.can_redo())
+  let current = pending
+    .with_bounds(@primitives.Rect::new(24.0, 28.0, 300.0, 44.0).unwrap())
+    .unwrap()
+  let window = @platform.WindowId::new(1)
+  let old = {
+    ..ime_owner(5),
+    entered: true,
+    seat: 12L,
+    proxy_generation: 3,
+    sequence: 100L,
+  }
+  let old_left : @native.TextSessionTarget = {
+    window,
+    epoch: 5,
+    seat: 12L,
+    proxy_generation: 3,
+    sequence: 101L,
+    serial: 0,
+  }
+  for
+    code in [
+      @diagnostics.InvalidInput,
+      @diagnostics.UnsupportedCapability,
+      @diagnostics.ResourceExhausted,
+    ] {
+    assert_true(
+      classify_field_frame(Err(controller_error(code))) is RejectPending,
+    )
+    let restored = restore_rejected_ime_field(submitted, current).unwrap()
+    assert_true(restored.document() == original.document())
+    assert_true(restored.committed_document() == original.document())
+    assert_true(restored.selection() == original.selection())
+    assert_true(restored.bounds() == current.bounds())
+    assert_true(restored.is_focused())
+    assert_false(restored.is_composing())
+    assert_false(restored.can_undo())
+    assert_true(restored.can_redo())
+    assert_true(
+      restored.redo(measure, admit).unwrap().document() ==
+      redo_target.document(),
+    )
+    let new = ime_owner_after_update(old, 6)
+    assert_eq(new.epoch, 6)
+    assert_false(new.entered)
+    assert_eq(new.seat, 0L)
+    assert_eq(new.proxy_generation, 0)
+    assert_eq(new.sequence, 0L)
+    assert_false(ime_target_current(new, window, old_left, lifecycle=true))
+    let new_preedit = { ..old_left, epoch: 6, serial: 10, }
+    assert_false(ime_target_current(new, window, new_preedit))
+    let entered = {
+      ..new,
+      entered: true,
+      seat: 12L,
+      proxy_generation: 3,
+      sequence: 100L,
+    }
+    assert_true(ime_target_current(entered, window, new_preedit))
+    let retry = ime_preedit(restored, "日本", Some(2), []).unwrap()
+    let accepted = ime_commit(retry, "日本", None, None).unwrap()
+    let undone = accepted.undo(measure, admit).unwrap()
+    assert_true(undone.document() == original.document())
+    assert_false(undone.can_undo())
+    // Failed candidates and previews did not make their own undo records.
+    assert_true(
+      undone.redo(measure, admit).unwrap().document() == accepted.document(),
+    )
+  }
+  let ordinary_ack = ime_owner_after_update(old, 5)
+  assert_eq(ordinary_ack.sequence, old.sequence)
+  assert_true(ordinary_ack.entered)
+}
+
+///|
+test "IME caret rejects out of signed native range before integer conversion" {
+  for origin in [2147483647.0, -2147483657.0] {
+    let field = make_field(
+        "jJ",
+        @primitives.Rect::new(origin, 28.0, 180.0, 44.0).unwrap(),
+      )
+      .unwrap()
+      .with_focus(true)
+      .unwrap()
+    assert_true(ime_caret_rect(field) is Err(@text_field.InvalidBounds))
+  }
+}

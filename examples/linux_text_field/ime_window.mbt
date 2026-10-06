@@ -332,27 +332,22 @@ fn run_ime_window() -> Unit {
               if presented is Err(error) {
                 report(error)
               }
-              match restore_submitted_field(shown, field) {
-                Ok(value) =>
-                  match value.cancel_composition(measure, admit) {
-                    Ok(value) => {
-                      field = value
-                      commits = shown_commits
-                      if owner is Some(active) {
-                        match
-                          ime_sync(host, window, field, Some(active), true) {
-                          Ok(value) => owner = Some(value)
-                          Err(error) => {
-                            report(error)
-                            ignore(host.request_exit())
-                          }
-                        }
+              match restore_rejected_ime_field(shown, field) {
+                Ok(value) => {
+                  field = value
+                  commits = shown_commits
+                  if owner is Some(active) {
+                    match ime_sync(host, window, field, Some(active), true) {
+                      Ok(value) => owner = Some(value)
+                      Err(error) => {
+                        report(error)
+                        ignore(host.request_exit())
                       }
-                      external_edit = false
-                      dirty = true
                     }
-                    Err(_) => ignore(host.request_exit())
                   }
+                  external_edit = false
+                  dirty = true
+                }
                 Err(_) => ignore(host.request_exit())
               }
             }
