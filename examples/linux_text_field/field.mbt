@@ -96,6 +96,31 @@ fn field_scene(
   for item in painted {
     items.push(item)
   }
+  if field.marked_range() is Some(marked) {
+    let measurement = field.measurement()
+    let start = measurement.caret_at(marked.start()).unwrap().strong()
+    let end = measurement.caret_at(marked.end()).unwrap().strong()
+    let (origin, _) = @text_field.scene_text_run_geometry(measurement).unwrap()
+    let underline = @primitives.Rect::new(
+      field.content_bounds().left() -
+      field.scroll_offset() +
+      origin.x() +
+      start.left(),
+      field.content_bounds().top() + origin.y() + start.bottom() - 1.0,
+      end.left() - start.left(),
+      1.0,
+    ).unwrap()
+    items.push(
+      @scene.SceneItem::quad(
+        108,
+        underline,
+        @primitives.Color::rgba(20, 24, 30, 255).unwrap(),
+        @scene.AffineTransform::identity(),
+        1.0,
+        Some(7),
+      ).unwrap(),
+    )
+  }
   match @scene.SceneSnapshot::new(viewport, scale, [], [clip], items) {
     Ok(value) => Ok(value)
     Err(_) => Err(@text_field.UnsupportedLayout)

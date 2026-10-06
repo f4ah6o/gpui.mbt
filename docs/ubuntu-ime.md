@@ -1,8 +1,10 @@
 # Experimental Ubuntu Wayland text sessions
 
-This is an opt-in, Ubuntu-local **transport**, not a GPUI IME support or native
-acceptance claim. The field example does not use it yet. The portable platform
-API and the existing direct-keyboard path keep their current behavior.
+This is an opt-in, Ubuntu-local **experimental single-window text session**.
+Set `GPUI_FIELD_WAYLAND_IME=1` for the Linux text-field example owner. The
+portable platform API and default direct-keyboard path keep their current
+behavior. This flag alone is not a general GPUI IME capability or native
+acceptance claim.
 
 The bounded deployment target is Weston14 desktop-shell with text-input-v1,
 stock IBus1.5.32's Wayland adapter and Mozc. The adapter must be launched by the
@@ -95,3 +97,52 @@ These tests do not qualify GPUI native composition, undo integration, candidate
 popup placement/selection, keyboard-grab readiness or IME repeat. Those require
 the next owner integration and automated private-display E2E gates. Existing
 native direct-input and renderer cases remain their own acceptance scope.
+
+## Bounded field owner
+
+The example consumes only the ordered ABI3 editor stream. It waits for native
+keyboard focus and an accepted field presentation before beginning; Entered
+captures the owner seat/proxy generation. Window, epoch, FIFO sequence and
+seat/proxy checks keep old records from reaching a replacement target. Native
+code owns the issued serial floor and does not deduplicate shared serials.
+
+`TextField.committed_document()` reads the original directional document while
+composing. Surrounding state never includes preview bytes. The preview uses
+strict UTF-16 scalar and exact measured cursor stops. This first profile accepts
+whole-span underline style 5, paints the marked underline, and rejects hidden
+cursors and other style shapes explicitly. Preedit fallback never commits.
+Empty preedit restores the original directional selection and history without
+an edit; a subsequent commit replaces that restored selection. Empty commit is
+an actual replacement, including deletion of the original selected range.
+Signed surrounding deletion and postinsert cursor metadata are typed rejected,
+including on empty commits; reconversion is not qualified by this profile.
+
+A commit is one original-to-final undo group. Commands and pointer edits resolve
+a preview explicitly, then fence native state before consuming another event,
+even while presentation is Busy. Blur restores the original transaction and
+ends the session. Unsupported text semantics restore/fence, with a typed
+`GPUI_IME_REJECT` diagnostic. Rejected presentation restores the last submitted
+history, cancels its preview and fences the replacement epoch before retrying.
+
+`TextField.caret_rect()` shares the painted caret's surface-logical mapping,
+including inset, negative-bearing run origin and horizontal scroll. The owner
+rounds endpoints outward and validates signed Int32 endpoints and positive
+Int32 extents. Output scale is never multiplied into that rectangle.
+
+Raw keysyms map only named commands and an explicit Ctrl/Meta A/C/X/V/Z/Y
+shortcut allowlist. They never create character text; genuine forwarded releases
+remain releases. Show/hide input-panel requests accompany preview, commit and
+blur, but candidate popup placement/lifetime needs its own exact-GPUI evidence.
+
+With `GPUI_FIELD_E2E_STATE=1`, accepted IME presentations emit read-only
+`GPUI_FIELD_IME_STATE` version-1 JSON. It contains committed and preview text,
+both directional selections, marked range, composition/focus, native owner
+epoch/Entered, commit count, undo/redo availability and logical integer caret.
+It calls no input callbacks and never mutates the editor. Busy/rejected frames
+emit no checkpoint. Use only non-sensitive synthetic text in this opt-in log.
+
+Focused owner tests include real Pango admission, original surrounding/history,
+empty preview versus empty commit, typed metadata rejection, scalar and cursor
+stops, target fencing, command allowlist and fractional/scrolled caret geometry.
+Native GPUI acceptance is separately recorded by the GPUI-specific private
+runtime harness; the frozen stock-editor baseline is never substituted for it.

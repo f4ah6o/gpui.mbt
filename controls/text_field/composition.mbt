@@ -355,3 +355,13 @@ fn blur_field_composition(
     ),
   })
 }
+
+///|
+/// The committed surrounding document and its original directional selection.
+/// A provisional preview never becomes surrounding text until it commits.
+pub fn TextField::committed_document(self : TextField) -> @text.TextDocument {
+  match self.composition {
+    Some(state) => state.original
+    None => self.document
+  }
+}

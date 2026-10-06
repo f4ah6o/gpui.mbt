@@ -24,7 +24,9 @@ pub fn TextField::bounds(Self) -> @primitives.Rect
 pub fn TextField::can_redo(Self) -> Bool
 pub fn TextField::can_undo(Self) -> Bool
 pub fn TextField::cancel_composition(Self, (@text.TextDocument) -> Result[@text_layout.TextMeasurement, TextFieldError], (@text.TextDocument, @text_layout.TextMeasurement) -> Result[Unit, TextFieldError]) -> Result[Self, TextFieldError]
+pub fn TextField::caret_rect(Self) -> Result[@primitives.Rect, TextFieldPaintError]
 pub fn TextField::commit_composition(Self, String, (@text.TextDocument) -> Result[@text_layout.TextMeasurement, TextFieldError], (@text.TextDocument, @text_layout.TextMeasurement) -> Result[Unit, TextFieldError]) -> Result[Self, TextFieldError]
+pub fn TextField::committed_document(Self) -> @text.TextDocument
 pub fn TextField::content_bounds(Self) -> @primitives.Rect
 pub fn TextField::document(Self) -> @text.TextDocument
 pub fn TextField::element_node(Self, UInt64?) -> @element.ElementNode
