@@ -77,6 +77,10 @@ fn run_window() -> Unit {
   let mut shown = field
   let mut dirty = true
   let smoke = @env.get_env_var("GPUI_FIELD_SMOKE") == Some("1")
+  let observe_state = field_state_enabled(
+    @env.get_env_var("GPUI_FIELD_E2E_STATE"),
+  )
+  let mut presentation = 0
   if host.require_capability(@platform.DirectKeyboardText) is Err(_) {
     println(
       "Direct keyboard input is unavailable in this session; IME is unimplemented.",
@@ -264,6 +268,11 @@ fn run_window() -> Unit {
           match classify_field_frame(presented) {
             Accepted => {
               shown = field
+              if observe_state {
+                presentation += 1
+                println(field_state_line(presentation, shown))
+                field_state_flush_stdout()
+              }
               dirty = false
             }
             BusyPending => () // Later edits build on the admitted candidate.
