@@ -29,7 +29,9 @@ fn restore_submitted_field(
   submitted : @text_field.TextField,
   pending : @text_field.TextField,
 ) -> Result[@text_field.TextField, @text_field.TextFieldError] {
-  // Restore submitted document/selection while retaining current owner bounds.
+  // Restore the complete submitted editing value, including composition and
+  // history, while retaining current owner bounds/focus. Bounds validate both
+  // preview and original geometry; focus loss cancels the restored transaction.
   match submitted.with_bounds(pending.bounds()) {
     Ok(value) => value.with_focus(pending.is_focused())
     Err(error) => Err(error)

@@ -45,3 +45,15 @@ behavior. See the [Linux text guide](linux-text.md), the [codebase gap
 analysis](codebase-gap-analysis.md), and [issue 0004](../issues/open/0004-platform-rendering-and-native-boundaries.md)
 for the evidence boundary. The offset bridge itself does not provide shaping,
 caret geometry, hit testing, grapheme navigation, or runtime IME behavior.
+
+
+## Bounded field transaction integration
+
+The separate [single-line field](linux-text-field.md#portable-composition-transactions)
+uses `TextComposition` to prepare preview documents without recording history.
+It retains the original directional document, history and admitted geometry,
+checks exact layout cursor stops, records one original-to-final commit, and
+cancels on focus loss. Empty field preedit hides the preview while preserving
+its replacement transaction; this is a field lifecycle contract above the
+standalone value model's range-replacement behavior. Field state and rollback
+coverage do not establish native IME transport or Japanese input support.

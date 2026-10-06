@@ -21,6 +21,57 @@ left-to-right (LTR) entry field joining copied text geometry, portable editing
 state, Ubuntu grayscale drawing, focused dispatch, and a private native direct
 keyboard-text route. It does not establish ordinary application readiness.
 
+## Portable composition transactions
+
+The field now has a bounded, immutable composition transaction API. This is
+portable editing-state preparation only. The running Linux example still has
+no IME event transport connected to these methods, and Japanese GPUI IME
+remains unimplemented.
+
+- `update_composition(preedit, selection, measure, admit)` starts on the first
+  nonempty preedit over the original normalized selected range. Relative
+  directional selection endpoints use UTF-16 code units. Every later preview
+  replaces that same original range, remeasures and raster-admits the whole
+  candidate, and creates no undo entry.
+- `update_composition_utf8(preedit, anchor_bytes, head_bytes, measure, admit)`
+  strictly converts relative UTF-8 byte endpoints through `TextDocument`.
+  Scalar-interior, negative and out-of-bounds endpoints are rejected. A valid
+  scalar boundary must also be a reported cursor stop in the resulting
+  document; the field never silently snaps a composition cursor.
+- An empty preedit restores the original displayed document and directional
+  selection while retaining the transaction. `is_composing()` remains true,
+  and `marked_range()` returns `None`. A later preview or commit still replaces
+  the original range. An empty preedit without an active transaction is a no-op.
+- `commit_composition(text, measure, admit)` prepares one original-to-final
+  edit, clears composition, and records one bounded undo group. Empty committed
+  text deletes the original selected range. Equal committed/original text is
+  selection-only and retains redo.
+- `cancel_composition(measure, admit)` remeasures and readmits the exact original
+  document, restores its directional selection and both history stacks, and
+  clears composition. Any measurement, cursor, geometry, raster or revision
+  failure retains the complete preceding value and transaction.
+- `with_focus(false)` cancels using the originally admitted geometry. The font
+  style is immutable, ordinary editing and selection movement reject
+  `CompositionActive`, and `with_bounds` validates both the current preview and
+  saved original geometry before allowing a resize. Thus focus-loss restoration
+  cannot inherit a preview-only geometry assumption. The original scroll
+  position is restored within current bounds while keeping its head visible.
+
+`document()` and `measurement()` describe the current display candidate.
+`marked_range()` exposes only a visible preedit span, in document-relative
+UTF-16 code units. Hosts must explicitly resolve composition before ordinary
+editing, enforce native owner/epoch freshness, and retain the complete last
+submitted field value for presentation rollback. Busy keeps the complete
+pending value; rejection restores its submitted composition and history along
+with document/selection, preserving current validated bounds and focus.
+
+The portable field and real-font owner tests cover repeated previews, selected
+ranges, supplementary/mixed text, exact cancellation, one-group undo/redo,
+empty-preedit versus empty-commit behavior, strict endpoints and hidden cursor
+stops, limits, admission failures, resize/focus invariants and complete
+presentation-rollback state. They do not prove native IME input, candidate
+windows, protocol integration or an OS-level Japanese composition session.
+
 ## What the slice does
 
 - `controls/text_field/` supplies immutable document, selection, focus, scroll,

@@ -8,6 +8,7 @@ import {
 }
 
 import {
+  "moonbitlang/core/int",
   "moonbitlang/core/encoding/utf8",
   "f4ah6o/gpui/primitives",
   "f4ah6o/gpui/text",
