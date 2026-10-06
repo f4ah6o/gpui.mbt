@@ -1146,7 +1146,7 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
            initial_identity.get("text") != initial_state.get("text") or \
            not re.fullmatch(r"[0-9a-f]{64}", str(initial_identity.get("frame_sha256", ""))):
             raise AcceptanceError("initial state observer and accepted native frame identity disagree")
-        validate_initial_window(initial_ready, initial_state, initial_identity)
+        initial_geometry = validate_initial_window(initial_ready, initial_state, initial_identity)
         report["initial_state"] = initial_state
         report["app_pid"] = process.pid
         report["initial_checkpoint"] = initial_ready
@@ -1154,7 +1154,8 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
         initial_png = output / "initial-window.png"
         initial_capture = capture_own_window(process.pid, APP_TITLE, initial_png, helper)
         report["screenshots"]["initial"] = bind_capture(initial_capture, "initial", initial_identity,
-                                                            initial_state["field_bounds"], initial_state["caret"], initial_png)
+                                                            initial_state["field_bounds"], initial_state["caret"],
+                                                            initial_geometry, initial_png)
         process.stdin.write("begin\n")
         process.stdin.flush()
 
@@ -1192,7 +1193,8 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
         composition_png = output / "composition-window.png"
         composition_capture = capture_own_window(process.pid, APP_TITLE, composition_png, helper)
         report["screenshots"]["composition"] = bind_capture(composition_capture, "composition", identity,
-                                                               composing["field_bounds"], composing["caret"], composition_png)
+                                                               composing["field_bounds"], composing["caret"],
+                                                               initial_geometry, composition_png)
         process.stdin.write("preview\n")
         process.stdin.flush()
 
@@ -1206,7 +1208,7 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
         final_png = output / "final-window.png"
         final_capture = capture_own_window(process.pid, APP_TITLE, final_png, helper)
         report["screenshots"]["final"] = bind_capture(final_capture, "final", final["final_frame_identity"],
-                                                         final["field_bounds"], None, final_png)
+                                                         final["field_bounds"], None, initial_geometry, final_png)
         process.stdin.write("quit\n")
         process.stdin.flush()
         exit_code = process.wait(timeout=timeout)
