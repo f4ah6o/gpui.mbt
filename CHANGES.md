@@ -4,6 +4,13 @@
 
 ### Added
 
+- Added bounded immutable undo/redo to the experimental single-line text field,
+  with original directional selections, private copy-safe history, independent
+  entry/UTF-8 payload caps and current-style admission on restoration. Clipboard
+  and presentation transactions retain or roll back matching history. See the
+  [field guide](docs/linux-text-field.md); live keyboard/IME and broader editor
+  behavior remain open.
+
 - Added browser plain-text clipboard services, committed-text input through the
   shared event queue, and event-driven Canvas 2D restoration that preserves the
   live app state. The demo includes explicit clipboard/text controls and focused

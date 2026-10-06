@@ -167,6 +167,32 @@ def origin_source_records():
     return records
 
 
+def undo_redo_source_records():
+    """Independent expected JSONL for undo, selection navigation, and redo."""
+    records = origin_source_records()
+    short = "Hi 日本"
+    edited = "Edited 日本"
+    records.extend([
+        {
+            "label": "undo_selected",
+            "rejected": False,
+            "revision": 40,
+            "anchor": len(short.encode("utf-16-le")) // 2,
+            "head": 0,
+            "scene": origin_field_scene("undo_selected", short, selected=True),
+        },
+        {
+            "label": "redo_edited",
+            "rejected": False,
+            "revision": 42,
+            "anchor": len(edited.encode("utf-16-le")) // 2,
+            "head": len(edited.encode("utf-16-le")) // 2,
+            "scene": origin_field_scene("redo_edited", edited),
+        },
+    ])
+    return records
+
+
 def origin_reference_scene():
     # Mixed ABI3 frame: quad and legacy text preserve the old 23 fields with
     # zero origin slots, while text_run carries independent fractional origin.
@@ -307,7 +333,7 @@ class FieldFixtureEncoderTests(unittest.TestCase):
                 "sha256": hashlib.sha256(profile.encode()).hexdigest(),
             })
             self.assertEqual([entry["label"] for entry in manifest["fixtures"]],
-                             list(encoder.ORIGIN_LABELS))
+                             list(encoder.ORIGIN_BASE_LABELS))
             for entry, line in zip(manifest["fixtures"], lines):
                 self.assertEqual((output / entry["original"]).read_text(encoding="utf-8"),
                                  line + "\n")
@@ -317,6 +343,43 @@ class FieldFixtureEncoderTests(unittest.TestCase):
             edited = (output / "frames/edited.gpf").read_bytes()
             self.assertEqual((output / "frames/rejected_newline.gpf").read_bytes(), edited)
             self.assertEqual((output / "frames/rejected_bidi.gpf").read_bytes(), edited)
+
+    def test_undo_redo_scenes_match_independent_selected_and_edited_references(self):
+        records = undo_redo_source_records()
+        lines = [json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+                 for record in records]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "field.jsonl"
+            source.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            output = root / "fixtures"
+            encoder.build_fixture_set(source, output, "d" * 40)
+            manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["format"], "GPF2")
+            self.assertEqual(manifest["abi"], 3)
+            self.assertEqual([entry["label"] for entry in manifest["fixtures"]],
+                             list(encoder.ORIGIN_LABELS))
+            by_label = {record["label"]: record for record in records}
+            self.assertNotEqual(by_label["undo_selected"]["revision"],
+                                by_label["selected"]["revision"])
+            self.assertNotEqual(by_label["redo_edited"]["revision"],
+                                by_label["edited"]["revision"])
+            self.assertEqual(by_label["undo_selected"]["scene"],
+                             by_label["selected"]["scene"])
+            self.assertEqual(by_label["redo_edited"]["scene"],
+                             by_label["edited"]["scene"])
+            self.assertEqual((by_label["undo_selected"]["anchor"],
+                              by_label["undo_selected"]["head"]),
+                             (by_label["selected"]["anchor"],
+                              by_label["selected"]["head"]))
+            self.assertEqual((by_label["redo_edited"]["anchor"],
+                              by_label["redo_edited"]["head"]),
+                             (by_label["edited"]["anchor"],
+                              by_label["edited"]["head"]))
+            for entry, line in zip(manifest["fixtures"], lines):
+                self.assertEqual((output / entry["original"]).read_text(encoding="utf-8"),
+                                 line + "\n")
+                self.assertEqual((output / entry["frame"]).read_bytes()[:4], b"GPF2")
 
     def test_rejects_a_font_profile_from_a_different_source_head(self):
         records = origin_source_records()

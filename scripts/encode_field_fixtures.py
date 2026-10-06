@@ -29,12 +29,14 @@ LEGACY_LABELS = (
     "scroll_end",
     "blurred",
 )
-ORIGIN_LABELS = LEGACY_LABELS + (
+ORIGIN_BASE_LABELS = LEGACY_LABELS + (
     "j_start",
     "accent_start",
     "j_scroll",
     "accent_scroll",
 )
+UNDO_REDO_LABELS = ("undo_selected", "redo_edited")
+ORIGIN_LABELS = ORIGIN_BASE_LABELS + UNDO_REDO_LABELS
 # Keep LABELS as the original seven-label contract for downstream users and
 # tests that construct the pre-origin control fixtures.
 LABELS = LEGACY_LABELS
@@ -250,6 +252,8 @@ def _field_contract(record: dict[str, Any], label: str) -> None:
         "end": "Hi 日本",
         "selected": "Hi 日本",
         "edited": "Edited 日本",
+        "undo_selected": "Hi 日本",
+        "redo_edited": "Edited 日本",
         "rejected_newline": "Edited 日本",
         "rejected_bidi": "Edited 日本",
         "scroll_end": "Wide 日本 " * 8,
@@ -264,9 +268,9 @@ def _field_contract(record: dict[str, Any], label: str) -> None:
     utf16_length = len(expected_text.encode("utf-16-le")) // 2
     if anchor > utf16_length or head > utf16_length:
         raise FixtureError(f"{label}: selection offset exceeds UTF-16 text length")
-    if label == "selected":
+    if label in {"selected", "undo_selected"}:
         if (anchor, head) != (utf16_length, 0):
-            raise FixtureError("selected: expected Shift+Home selection from end to start")
+            raise FixtureError(f"{label}: expected Shift+Home selection from end to start")
     elif anchor != head:
         raise FixtureError(f"{label}: expected a collapsed selection")
     if label in {"end", "selected"} and anchor != utf16_length:
@@ -278,13 +282,13 @@ def _field_contract(record: dict[str, Any], label: str) -> None:
 
     by_id = {item["id"]: item for item in items}
     expected_ids = {1, 100, 101, 102, 103, 104, 106}
-    if label == "selected":
+    if label in {"selected", "undo_selected"}:
         expected_ids.add(105)
     if label != "blurred":
         expected_ids.add(107)
     if set(by_id) != expected_ids:
         raise FixtureError(f"{label}: item IDs/order do not match the bounded field paint contract")
-    if [item["id"] for item in items] != [1, 100, 101, 102, 103, 104] + ([105] if label == "selected" else []) + [106] + ([107] if label != "blurred" else []):
+    if [item["id"] for item in items] != [1, 100, 101, 102, 103, 104] + ([105] if label in {"selected", "undo_selected"} else []) + [106] + ([107] if label != "blurred" else []):
         raise FixtureError(f"{label}: field paint item order changed")
 
     def assert_rect(item_id: int, rect: tuple[float, float, float, float]) -> dict[str, Any]:
@@ -328,7 +332,7 @@ def _field_contract(record: dict[str, Any], label: str) -> None:
         raise FixtureError(f"{label}: unscrolled text origin must stay at content left")
     if text["clip_chain_id"] != 7:
         raise FixtureError(f"{label}: text must use content clip chain 7")
-    if label == "selected":
+    if label in {"selected", "undo_selected"}:
         sel = by_id[105]
         selection_bounds = _rect(sel["bounds"], f"{label}.selection.bounds")
         if (sel["clip_chain_id"] != 7 or _color(sel["color"], f"{label}.selection.color") != (65, 105, 225, 80) or
@@ -424,12 +428,16 @@ def encode_lines(lines: list[str], source_head: str) -> list[dict[str, Any]]:
     if len(lines) == len(LEGACY_LABELS):
         expected_labels = LEGACY_LABELS
         origin_fixture_set = False
+    elif len(lines) == len(ORIGIN_BASE_LABELS):
+        # Retain input compatibility for the pre-undo GPF2 field suite.
+        expected_labels = ORIGIN_BASE_LABELS
+        origin_fixture_set = True
     elif len(lines) == len(ORIGIN_LABELS):
         expected_labels = ORIGIN_LABELS
         origin_fixture_set = True
     else:
         raise FixtureError(
-            f"expected exactly {len(LEGACY_LABELS)} legacy or {len(ORIGIN_LABELS)} origin source lines, got {len(lines)}"
+            f"expected exactly {len(LEGACY_LABELS)} legacy, {len(ORIGIN_BASE_LABELS)} pre-undo origin, or {len(ORIGIN_LABELS)} undo/redo origin source lines, got {len(lines)}"
         )
     decoded: list[dict[str, Any]] = []
     for index, raw in enumerate(lines):
@@ -454,6 +462,19 @@ def encode_lines(lines: list[str], source_head: str) -> list[dict[str, Any]]:
         for field in ("revision", "anchor", "head", "scene"):
             if candidate[field] != edited[field]:
                 raise FixtureError(f"{label}: rejected edit must preserve exact edited {field}")
+    if len(decoded) == len(ORIGIN_LABELS):
+        selected = decoded[ORIGIN_BASE_LABELS.index("selected")]
+        edited = decoded[ORIGIN_BASE_LABELS.index("edited")]
+        undo_selected = decoded[ORIGIN_LABELS.index("undo_selected")]
+        redo_edited = decoded[ORIGIN_LABELS.index("redo_edited")]
+        if undo_selected["scene"] != selected["scene"]:
+            raise FixtureError("undo_selected: restored scene must exactly match original selected scene")
+        if (undo_selected["anchor"], undo_selected["head"]) != (selected["anchor"], selected["head"]):
+            raise FixtureError("undo_selected: restored directional selection differs from original selected scene")
+        if redo_edited["scene"] != edited["scene"]:
+            raise FixtureError("redo_edited: restored scene must exactly match original edited scene")
+        if (redo_edited["anchor"], redo_edited["head"]) != (edited["anchor"], edited["head"]):
+            raise FixtureError("redo_edited: restored postselection differs from original edited scene")
     scrolling = decoded[LABELS.index("scroll_end")]["scene"]
     blurred = decoded[LABELS.index("blurred")]["scene"]
     scroll_text = next(item for item in scrolling["items"] if item["id"] == 106)
@@ -478,9 +499,9 @@ def build_fixture_set(input_path: Path, output_dir: Path, source_head: str) -> P
     except UnicodeDecodeError as exc:
         raise FixtureError("JSONL must be UTF-8") from exc
     lines = raw_text.splitlines()
-    if len(lines) not in {len(LEGACY_LABELS), len(ORIGIN_LABELS)}:
+    if len(lines) not in {len(LEGACY_LABELS), len(ORIGIN_BASE_LABELS), len(ORIGIN_LABELS)}:
         raise FixtureError(
-            f"expected {len(LEGACY_LABELS)} legacy or {len(ORIGIN_LABELS)} origin JSONL records, got {len(lines)}"
+            f"expected {len(LEGACY_LABELS)} legacy, {len(ORIGIN_BASE_LABELS)} pre-undo origin, or {len(ORIGIN_LABELS)} undo/redo origin JSONL records, got {len(lines)}"
         )
     decoded = encode_lines(lines, source_head)
     if output_dir.exists() and (not output_dir.is_dir() or any(output_dir.iterdir())):

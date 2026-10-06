@@ -1,18 +1,15 @@
 # Experimental Linux single-line text field
 
-Status: experimental framework slice on Ubuntu/Wayland; not a general
-usable text-field API, an input-method implementation, or an Ubuntu support
-claim. The field builds on merged focused-input PR #29
-(`18e8fadf470823b389feff3b9d496213b4d3f67a`, reviewed base tree
-`7554a5f181724160e1be4a11ac0e47067ca79e3d`). Origin-aware run support is new
-unpublished local progress based on reviewed PR #30 tree `5ac17e9`; hosted GPU
-execution is not qualified for this origin-aware slice. PR #30 remains
-a draft: its Windows, macOS, documentation, and headless Pango jobs passed, but
-GPU, core, browser, and mutation jobs are not qualified. A bounded retry of an
-Ubuntu failed job was again cancelled before runner start; that establishes no
-source or billing cause. The renderer base is PR #28
-(`3cc72f548dc6138e17f949efad8eae92c70a1cb0`); its existing evidence is not
-field-input or origin-GPU evidence.
+Status: experimental reusable single-line LTR field on Ubuntu/Wayland.
+[PR30](https://github.com/gpui-mbt/gpui.mbt/pull/30) and
+[PR31](https://github.com/gpui-mbt/gpui.mbt/pull/31) are merged; the source baseline
+is `73e70822841024a7131c54fb4529cd40186d529c` (tree `108cf4e9`). Their declared
+Ubuntu/Weston/llvmpipe profile passed real `Host.present` and injected field
+text/caret/selection/scroll/overhang checks at 1x/2x. Native direct-keyboard
+callback/queue/decoder tests are a separate tier; actual compositor-delivered
+typing and Japanese IME remain unrun. The undo/redo addition described below
+has local model/provider coverage; its new hosted rendering cases remain
+pending for the current change.
 
 This is a deliberately narrow, opt-in demonstration of a bounded single-line,
 left-to-right (LTR) entry field joining copied text geometry, portable editing
@@ -22,7 +19,7 @@ keyboard-text route. It does not establish ordinary application readiness.
 ## What the slice does
 
 - `controls/text_field/` supplies immutable document, selection, focus, scroll,
-  and revision snapshots. `examples/linux_text_field/` owns its native target,
+  revision, and bounded undo/redo snapshots. `examples/linux_text_field/` owns its native target,
   connects it to the focused element dispatcher, and submits copied scene
   snapshots. Native measurement, hit testing, and grayscale admission remain in
   the Linux adapter.
@@ -45,7 +42,7 @@ keyboard-text route. It does not establish ordinary application readiness.
   selected logical-line rectangle remains shared across that run.
 - The field viewport clips selection, text, and caret locally. Horizontal
   scrolling keeps the active caret in view. This does not add general scroll
-  widgets, drag-selection, word navigation, undo, bidi editing, or wrapping.
+  widgets, drag-selection, word navigation, bidi editing, or wrapping.
 - The existing Ubuntu clipboard API is reused. Copy writes the selected text;
   cut prepares and raster-admits the edit first, writes clipboard data, and
   installs the candidate only after a successful write. Paste uses the
@@ -53,6 +50,39 @@ keyboard-text route. It does not establish ordinary application readiness.
   owner captures the field revision and direct-text epoch before the read and
   rechecks focus, revision, and epoch after any event pumping before admission.
   A stale or invalid paste is discarded whole.
+
+## Bounded undo/redo
+
+`can_undo()` and `can_redo()` report retained stack availability, independent of
+focus. `undo(measure, admit)` and `redo(measure, admit)` are unchanged-value
+no-ops when unfocused or empty. Ctrl/Meta+Z undoes; Shift+Ctrl/Meta+Z or Ctrl+Y
+redoes. Alt-modified shortcuts are ignored. Key labels identify shortcuts;
+only committed `TextInput` supplies inserted text.
+
+Each successful content-changing text commit, deletion, paste or installed cut
+is one group, without typing coalescing. An entry stores immutable pre-edit and
+original post-edit documents including directional selections. Undo restores
+the former; redo restores the latter even after selection-only navigation.
+Copy, focus/bounds/selection changes, failed input or clipboard writes and stale
+paste add no group. Identical-content replacement may change selection/revision
+under the existing policy, but preserves redo. New content clears redo.
+
+The combined stacks retain at most 64 entries and 65,536 logical UTF-8 payload
+bytes. Each entry counts both endpoint texts, including duplicate content
+across entries; selection metadata is excluded. New edits evict whole oldest
+undo entries until both limits fit. This is logical payload accounting, not an
+exact heap bound or a bound on immutable snapshots retained by callers. Arrays
+are private and transitions use detached copies.
+
+Restoration never reinstalls old focus, bounds, measurement or raster handles.
+It validates the stored document and cursor-stop selection, remeasures and
+re-admits with current style/bounds, advances the current revision and computes
+current caret scroll. Failure leaves the document and both stacks unchanged.
+Prepared cut history installs only after successful owner clipboard write.
+`Busy` keeps the pending admitted value/history; rejected presentation restores
+the submitted document/history using the existing current-bounds/focus policy.
+The owner re-arms input after rollback as before. Revision exhaustion is an
+explicit failure, not a history reset or counter rewind.
 
 ## Bounds and origin-aware run geometry
 
@@ -84,7 +114,8 @@ painting, hit-test coordinate mapping, and horizontal scrolling. This preserves
 negative left/above ink bearings without changing the legacy `TextItem`
 positioning contract. Actual-font headless control and negative-mask tests now
 pass for negative-bearing text, composed and decomposed accent cases, and
-scrolling; this is not compositor typing or GPU presentation evidence.
+scrolling. The merged origin-aware baseline also has hosted 1x/2x drawing
+evidence; these checks do not qualify compositor-delivered typing.
 
 The scene envelope remains schema v1. Existing `TextItem` meaning and canonical
 JSON are unchanged. The new `TextRunItem` is a plain system-sans variant
@@ -190,9 +221,10 @@ Evidence is tiered and must not be conflated:
 - Local headless native tests cover direct-mode callbacks, epoch/stale-record
   and queue behavior, Compose/release bookkeeping, decoder validation, exact
   byte copying, capacity/canary cases, and origin-aware Pango mask clipping.
-  New encoder and GPU acceptance cases compile; hosted execution is
-  pending. These tiers do not simulate compositor-delivered keyboard input or
-  prove an actual GPU presentation.
+  These checks include history limits, restore/rollback and immutable branching.
+  New undo/redo encoder and GPU cases compile; their hosted execution is
+  pending. These headless tiers do not simulate compositor keyboard input or
+  prove a GPU presentation.
 - The control-to-renderer fixtures and `Host.present` checks are explicitly
   separated. `GPUI_FIELD_E2E` in
   [`examples/linux_text_field/host_present_wbtest.mbt`](../examples/linux_text_field/host_present_wbtest.mbt)
@@ -202,9 +234,14 @@ Evidence is tiered and must not be conflated:
   renderer and prove neither `wl_keyboard` delivery nor real typing. Its typed
   `Busy` assertion uses deterministic stale-viewport window state; it does not
   guarantee that an unpumped frame callback always yields `Busy`. The
-  hosted field `Host.present`/injected-renderer result remains pending review;
-  no origin-specific hosted GPU pass is recorded here. PR #30 remains draft while selected hosted jobs are not qualified, as
-  summarized above.
+  merged field/origin baseline passed
+  [PR31 Ubuntu run37392223946](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37392223946)
+  at both scales with source tree `108cf4e9`; exact-head scene originals, encoded
+  frames, font/config hashes and readbacks were retained and reviewed. The new
+  undo/redo cases submit actual control scenes and extend real `Host.present`
+  serialization, but remain unrun under hosted GPU until qualified for this
+  change. Rejected newline/bidi scene identity is headless control evidence,
+  not a distinct live GPU rejected-edit oracle.
 - Actual compositor-delivered typing into this control is **unrun**. The stock
   Weston 13 headless job has no admitted keyboard-injection driver for this
   qualification, and local AF_UNIX socket creation returns `EPERM`. Do not
@@ -224,5 +261,6 @@ Ubuntu backend packet D or qualify gpui.mbt as a supported Linux desktop
 framework. The bounded field remains single-line LTR and rejects unsupported
 unknown-glyph, color-glyph, and reflow/resource-limit cases. Text masks remain
 logical-resolution and may soften under output scaling. IME, autorepeat,
-general bidi, drag selection, undo, and actual compositor-delivered typing are
-not qualified.
+general bidi, drag selection and actual compositor-delivered typing remain
+open. Undo/redo is bounded as above; it does not establish a full editor history
+system. See the [known hosted-compositor stability note](ubuntu.md#known-hosted-compositor-observation).

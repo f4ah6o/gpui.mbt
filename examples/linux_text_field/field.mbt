@@ -218,4 +218,14 @@ fn emit_fixtures() -> Unit {
     change(accent_scroll, key_event(@primitives.End)).unwrap(),
     false,
   )
+
+  // These are public immutable-control transitions, not fabricated paint
+  // snapshots. Undo returns the directional pre-edit selection; End then
+  // changes only the live selection before redo restores the edit's saved
+  // postselection.
+  let undo_selected = edited.undo(measure, admit).unwrap()
+  fixture_line("undo_selected", undo_selected, false)
+  let navigated = change(undo_selected, key_event(@primitives.End)).unwrap()
+  let redo_edited = navigated.redo(measure, admit).unwrap()
+  fixture_line("redo_edited", redo_edited, false)
 }

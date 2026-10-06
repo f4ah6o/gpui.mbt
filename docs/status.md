@@ -47,7 +47,7 @@ The shared scene path provides quads, rectangle clip chains, affine transforms, 
 
 ### Native services
 
-The macOS and Ubuntu backends implement native window/render/input slices. macOS also has clipboard, cursor, and renderer surface recovery/rebuild/rebind paths, but recovery is not advertised until a real Metal end-to-end run verifies it. Ubuntu now has bounded nonblocking clipboard and cursor services plus the grayscale text-frame implementation; its bounded grayscale mixed-scene checks passed at 1x/2x in the [PR28 Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37346110201). Local Wayland end-to-end verification remains blocked by AF_UNIX socket availability. Editable controls, visible caret/selection, Japanese IME coverage, semantic accessibility, sustained-resource evidence, and production performance gates remain incomplete.
+The macOS and Ubuntu backends implement native window/render/input slices. macOS also has clipboard, cursor, and renderer surface recovery/rebuild/rebind paths, but recovery is not advertised until a real Metal end-to-end run verifies it. Ubuntu now has bounded nonblocking clipboard and cursor services plus the grayscale text-frame implementation; its bounded grayscale mixed-scene checks passed at 1x/2x in the [PR28 Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37346110201). Local Wayland end-to-end verification remains blocked by AF_UNIX socket availability. PR30/31 add an experimental single-line LTR field with qualified 1x/2x caret/selection/scroll and negative-bearing drawing; actual compositor typing, Japanese IME, general editable controls, semantic accessibility and production/resource gates remain open. Bounded undo/redo is being added with separate local and hosted evidence; see the [field guide](linux-text-field.md).
 
 macOS currently has the broader service slice, including clipboard and cursors. Ubuntu's clipboard and cursor APIs have bounded buffers and typed failure paths; see [the Ubuntu guide](ubuntu.md) for the host boundary and validation status.
 
@@ -93,7 +93,7 @@ The project is independently implemented. Provenance rules and the pinned upstre
 | M2 | Element system, layout, hit testing, event dispatch and focus | Bounded recursive flex layout, headless Render/IntoElement lifecycle and pointer/focused input routing implemented; invalidation, reusable controls and broader style/text behavior remain open |
 | M3 | Stable scene data, primitives and renderer abstraction | In progress; quad/clip/transform/opacity snapshots and bounded plain-text items are implemented; Canvas 2D presents browser text and Ubuntu implements an experimental grayscale subset |
 | M4 | First native platform slices | macOS and Ubuntu/Wayland slices implemented; experimental Windows slice added; initial Ubuntu and Windows hosted checks pass, while broader service and production evidence remain incomplete |
-| M5 | Text and interaction completeness | In progress; portable text model, PR27 measured-text contract/adapter, and Ubuntu grayscale drawing are present; editable controls, caret/selection UI, IME and general accessibility remain open |
+| M5 | Text and interaction completeness | In progress; portable text model, PR27 measured-text contract/adapter, and Ubuntu grayscale drawing are present; an experimental Linux field with caret/selection is present; bounded undo/redo is added here, while live typing, IME, broader controls and general accessibility remain open |
 | M6 | Multi-platform support gates, including Windows | Planned |
 | M7 | Production-ready 1.0 gates and sustained non-demo use | Planned |
 
@@ -106,7 +106,9 @@ uses a Zed-derived application to qualify framework capabilities incrementally.
 The roadmap now orders the next Linux-facing work around a usable text field,
 then picker/collection controls, app execution and reference-consumer
 qualification. The grayscale text renderer and merged PR27 measurement are
-foundation capabilities only; they do not complete the first input control.
+foundation capabilities. The merged PR30/31 field joins them in a reusable
+single-line LTR control; bounded history follows here, while actual keyboard
+delivery/IME and broader input qualification remain open.
 The initial same-window interaction proof is now in [MZed PR3](https://github.com/gpui-mbt/MZed/pull/3),
 merged as `59a4a2b6daa48967c79de114a9de2ed119115c7b`; its [Linux run](https://github.com/gpui-mbt/MZed/actions/runs/37273659532)
 demonstrated bounded 1x/2x mouse interaction, teardown/remount, and saving the

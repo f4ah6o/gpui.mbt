@@ -3,7 +3,7 @@
 Status: open (planning only)
 Parent: [0001-product-charter-and-compatibility.md](0001-product-charter-and-compatibility.md)
 Related: [0011-electron-tauri-migration.md](0011-electron-tauri-migration.md), [0019-mzed-native-coexistence-proof.md](0019-mzed-native-coexistence-proof.md)
-Updated: 2026-10-05
+Updated: 2026-10-06
 Application repository: https://github.com/gpui-mbt/MZed
 
 ## Goal and decisions
@@ -135,7 +135,7 @@ accessibility, broad platform support, or release readiness. Pin and preserve
 the selected application baseline and keep Zed upstream read-only as the next
 component migration is planned.
 
-The inspected gpui.mbt revision is `35aae36e79588c47c030093bf64eaf54b15f715a`. Its native hosts use platform APIs directly and do not carry a Rust GPUI runtime. Rust source compatibility and binary compatibility are explicitly outside the current contract.
+The historical inspected gpui.mbt revision was `35aae36e79588c47c030093bf64eaf54b15f715a`. Its native hosts use platform APIs directly and do not carry a Rust GPUI runtime. Rust source compatibility and binary compatibility are explicitly outside the current contract.
 
 Packet 0011 supplies a browser DOM-island example and bounded host-service envelopes. Its fake Electron/Tauri adapters do not demonstrate a native Rust GPUI/MoonBit embedding boundary. Reuse its principles of explicit ownership, copied values, cancellation and versioning; do not call the new native work an already-supported 0011 integration.
 
@@ -166,11 +166,11 @@ milestones and platform admission gates remain unchanged. See the [portable
 text model](../../docs/text-model.md), [Linux text guide](../../docs/linux-text.md),
 and [experimental field status](../../docs/linux-text-field.md).
 
-### Framework capability status and application order — 2026-10-05
+### Framework capability status and application order — 2026-10-06
 
 This source-grounded status refresh separates building blocks from usable
-application behavior. The Linux renderer implementation is present in the
-current change. On Debian 13/PangoFT2 1.56.3/Fontconfig 2.15.0, the headless C
+application behavior. The merged Linux renderer implements the bounded
+text-frame path. On Debian 13/PangoFT2 1.56.3/Fontconfig 2.15.0, the headless C
 mask consumer passes normally and with ASan+UBSan when leak detection is
 disabled. The leak-enabled LeakSanitizer run reports that it does not work
 under ptrace in this environment; that is not a leak pass or product leak
@@ -182,61 +182,60 @@ merged as `3cc72f548dc6138e17f949efad8eae92c70a1cb0`, tree
 because AF_UNIX stream-socket creation returns `EPERM`. This does not qualify
 hardware/text performance, an editable control, IME or a support tier.
 
-### Bounded field prototype — 2026-10-05
+### Bounded field and history — 2026-10-06
 
-The field prototype builds on merged focused-input PR29
-(`18e8fadf470823b389feff3b9d496213b4d3f67a`, base tree
-`7554a5f181724160e1be4a11ac0e47067ca79e3d`). It joins the portable model,
-same-context real-sans Pango measurement/raster admission, a bounded LTR
-single-line control, visible selection/caret and horizontal scroll, focused
-element dispatch, clipboard guards, and opt-in private XKB/Compose committed
-text for one native window. The field remains a bounded experimental
-implementation, not a general reusable control. Its detailed bounds,
-epoch/revocation, ABI, evidence tiers, and remaining work are in the
-[field status guide](../../docs/linux-text-field.md).
+The field builds on merged focused-input [PR29](https://github.com/gpui-mbt/gpui.mbt/pull/29).
+[PR30](https://github.com/gpui-mbt/gpui.mbt/pull/30) and
+[PR31](https://github.com/gpui-mbt/gpui.mbt/pull/31) are merged into main
+`73e70822841024a7131c54fb4529cd40186d529c` (tree `108cf4e9`). The reusable
+experimental single-line LTR control joins same-context sans/Pango geometry
+and raster admission, visible caret/selection, horizontal scroll, focused
+routing, clipboard guards and opt-in private XKB/Compose committed text.
 
-Origin-aware support is new unpublished local progress based on reviewed
-[PR #30](https://github.com/gpui-mbt/gpui.mbt/pull/30) tree `5ac17e9`. The
-shared field geometry unions logical/ink extents, requires caret rectangles
-to remain inside the logical line, rounds
-minimum edges down and maximum edges up to whole logical pixels to include
-Pango pixel coverage, and applies the resulting mapping to admission,
-caret/selection paint, hit testing, and horizontal scroll. The v1 scene envelope
-adds a distinct plain `TextRunItem` with `kind: "text_run"`, independent
-`text_origin`, and exact local clip bounds; legacy `TextItem` meaning/JSON stay
-unchanged. Unknown consumers reject the new variant, and public exhaustive
-matches need an explicit arm. Ubuntu ABI3 retains ABI2's 23-field prefix and
-appends origin x/y in a 25-double record; kind 2 denotes the run, while legacy
-kinds require zero origin. Raster ABI v2 carries UV cropping separately while
-preserving the v1 mask struct and entry semantics.
+Origin-aware plain `TextRunItem` keeps glyph origin separate from exact local
+clip in the extensible scene-v1 envelope. The shared checked ink/logical union
+inset applies to admission, paint, hit/selection and scroll, preserving ordinary
+j/J and accent bearings. Legacy TextItem meaning/JSON remain unchanged;
+unsupported consumers reject the new kind and exhaustive source matches need
+an arm. Private raster/Ubuntu ABI details and limits are in the
+[field guide](../../docs/linux-text-field.md).
 
-Actual-font headless field and full negative-mask tests pass, including
-negative-bearing text, composed/decomposed accents, and scrolling. PR #30
-remains draft after pre-start runner cancellation: Windows, macOS, documentation,
-and headless Pango jobs passed, while GPU, core, browser, and mutation jobs are
-not qualified. A bounded Ubuntu failed-job retry was again cancelled before
-runner start; no source or billing cause is established. New encoder/GPU
-acceptance cases compile; hosted execution is pending, and the local
-origin slice has no publication or GPU execution. Control-to-renderer injected
-frames do not prove compositor keyboard delivery. Actual compositor typing is
-**unrun**: stock Weston 13 headless has no admitted keyboard-injection driver
-for this qualification, and local AF_UNIX socket creation returns `EPERM`.
-IME/Japanese input, accessibility, picker/reusable-control behavior, and
-desktop/support gates remain open. The field is single-line LTR and still
-rejects unknown/color glyphs and reflow/resource-limit cases; logical-resolution
-masks can soften under scaling. Autorepeat, general bidi, drag selection, undo,
-and IME remain unsupported.
+The [PR31 exact-head Ubuntu run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37392223946)
+passed actual Host.present and injected accepted field/origin frames at 1x/2x;
+source/scene/font hashes and readbacks were retained and reviewed. Native
+callback/queue/decoder evidence remains separate from compositor-delivered
+keyboard input. The latter is **unrun**: stock Weston13 CI has no admitted
+keyboard-injection driver and local AF_UNIX creation returns EPERM. Japanese
+IME, native repeat, general bidi, drag/word selection, accessibility and
+broader field/picker behavior remain open. Logical masks may soften when
+scaled; unknown/color glyphs and unsupported layout/resources reject whole edits.
+
+Bounded undo/redo is added in the current substantive change: immutable
+before/after documents preserve original directional selections; 64-entry and
+65,536-byte logical payload limits evict whole oldest groups. Current-bound
+remeasurement/admission, failed cut/stale paste, Busy/rollback and retained-value
+branching are tested locally. New undo/redo actual-control renderer fixtures
+and Host.present cases await their own hosted qualification; the earlier
+renderer pass is not substituted for that gate.
+
+The [merged-main run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37393518087)
+recorded compositor exit139/reset on attempt1 and passed an unchanged-source
+failed-job retry in attempt2. Both records are retained; cause remains unknown.
+See the [hosted stability note](../../docs/ubuntu.md#known-hosted-compositor-observation).
+Acceptance for this profile does not establish production stability, input/IME
+or hardware/text performance. MZed migration and broader platform gates are
+unchanged by this framework slice.
 
 | Capability | Available foundation | Remaining app behavior |
 | --- | --- | --- |
 | App/entity ownership | Headless lifetimes, updates, observers, and capability revocation | Mutable aliases remain caller-managed; no destructor guarantee |
 | Asynchronous execution | Deterministic foreground queue/manual clock | Background or suspending execution and complete native endpoint topology |
 | Layout/element lifecycle | Bounded flex and request-layout/prepaint/paint | Reconciliation, invalidation, reusable controls |
-| Pointer/focus/keyboard | Position-based pointer and focused key/text routes merged in PR29; local field adds an owner-managed private direct-text target | Actual compositor-delivered typing qualification, shared bindings, general input ownership and controls |
-| Rendering | Native quads, bounded browser text, Ubuntu grayscale text frames; origin-aware run is local progress | Other native hosts, richer resources, hosted GPU proof, and renderer qualification |
-| Text model | Immutable UTF-16 document/selection/composition; strict UTF-8 bridge | Editable widget, undo history, multi-cursor editing |
+| Pointer/focus/keyboard | Position-based pointer and focused key/text routes merged in PR29; merged bounded field adds an owner-managed private direct-text target | Actual compositor-delivered typing qualification, shared bindings, general input ownership and controls |
+| Rendering | Native quads, bounded browser text, Ubuntu grayscale text frames; merged origin-aware run has declared 1x/2x CI evidence | Other native hosts, richer resources, hardware/scaled-mask quality and production renderer qualification |
+| Text model | Immutable UTF-16 document/selection/composition; strict UTF-8 bridge | Bounded field/history exists; full editor history, multi-cursor and broader editable controls remain |
 | Measured text | Merged PR27 copied caret/hit values and Linux PangoFT2 geometry; Ubuntu draws supported grayscale subset | Other-host drawing, wrapping policy, selection geometry, caching, workload evidence |
-| Editable controls | A bounded single-line LTR field exists as an experimental implementation; origin-aware local headless tests pass; no general field API or picker | Compositor typing, broader layout/reflow, scaled-mask quality, IME/composition, accessibility, reusable field/picker behavior |
+| Editable controls | Experimental reusable single-line LTR field; origin drawing qualified at 1x/2x; bounded undo/redo added with local evidence | Compositor typing, broader layout/reflow, scaled-mask quality, IME/composition, accessibility, reusable field/picker behavior |
 | Large collections | No reusable virtualized list/picker | Visible-range realization, focus/selection preservation, bounded work |
 | Scroll/drag | Partial immutable scroll/gesture semantics and Weekboard lane behavior | General control integration and broader payload/reorder/navigation policy |
 | Clipboard/cursor | Native adapters exist on all three native hosts | Use through controls with host permission/lifetime rules |
@@ -254,9 +253,9 @@ The implementation order now follows application outcomes:
    already joins the focused dispatcher to opt-in native direct committed text,
    shows caret/selection, and defines clipboard/focus rollback guards; actual
    compositor-delivered typing and Japanese IME remain unrun. Keep scalar
-   offsets, measured cursor stops, and bidi affinity distinct. The field now
-   has a local origin-aware run/clip mapping, but its hosted GPU proof and
-   compositor input remain unqualified. For caret/hit geometry to match the
+   offsets, measured cursor stops, and bidi affinity distinct. Origin-aware run/clip drawing is qualified for the declared
+   hosted profile; bounded history is added here with a separate GPU gate.
+   Compositor input remains unqualified. For caret/hit geometry to match the
    renderer, request the same generic `sans` family, font size, and Pango
    context as drawing; measurements of another explicit family do not imply
    parity, and no public font-family field exists. Add accessibility alongside
