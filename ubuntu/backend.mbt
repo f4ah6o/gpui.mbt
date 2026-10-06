@@ -587,8 +587,47 @@ fn decode_v2_event(
       Err(error) => Err(error)
       Ok(kind) => Ok(Some(kind))
     }
-  } else {
+  } else if data[0] == 11.0 || data[0] == 12.0 {
+    // Modifier/function keysyms have no portable Key value. Only a valid
+    // native key record may be ignored; malformed records still fail closed.
+    if !exact_i32(data[1]) ||
+      data[1] < 1.0 ||
+      !exact_i32(data[2]) ||
+      data[2] < 1.0 ||
+      data[3].is_nan() ||
+      data[3].is_inf() ||
+      data[3] <= 0.0 ||
+      !exact_i32(data[6]) ||
+      data[6] < 0.0 ||
+      data[6] > 0x10ffff ||
+      (data[6] >= 0xd800 && data[6] <= 0xdfff) ||
+      !exact_i32(data[8]) ||
+      data[8] < 0.0 ||
+      data[8] > 0x1fffffff ||
+      !exact_i32(data[9]) ||
+      data[9] < 0.0 ||
+      data[9] > 15.0 {
+      return Err(
+        native_text_decode_error(
+          @diagnostics.InvalidInput,
+          operation,
+          "invalid native key event fields",
+        ),
+      )
+    }
     Ok(decode_event(data))
+  } else {
+    match decode_event(data) {
+      Some(kind) => Ok(Some(kind))
+      None =>
+        Err(
+          native_text_decode_error(
+            @diagnostics.InvalidInput,
+            operation,
+            "invalid or unknown native event record",
+          ),
+        )
+    }
   }
 }
 
@@ -628,47 +667,62 @@ fn direct_text_capability_outcome(
 }
 
 ///|
+fn next_event_from_native(
+  read : (FixedArray[Double], FixedArray[Byte]) -> Int,
+  dispatch : (Int) -> Int,
+  timeout_ms : Int,
+) -> Result[@platform.Event?, @diagnostics.FrameworkError] {
+  let buffer = FixedArray::make(10, 0.0)
+  let text_buffer = FixedArray::make(DIRECT_TEXT_MAX_BYTES, (0).to_byte())
+  let text = text_buffer.unsafe_reinterpret_as_bytes()
+  let mut dispatched = false
+  while true {
+    let status = read(buffer, text_buffer)
+    if status < 0 {
+      return Err(backend_error(-status, "next_event"))
+    } else if status == 0 {
+      if dispatched {
+        return Ok(None)
+      }
+      // One native dispatch budget per call, even after ignored key records.
+      dispatched = true
+      match outcome(dispatch(timeout_ms), "next_event") {
+        Err(error) => return Err(error)
+        Ok(_) => ()
+      }
+    } else if status != 1 {
+      return Err(backend_error(3, "next_event"))
+    } else {
+      match decode_v2_event(buffer, text, "next_event") {
+        Err(error) => return Err(error)
+        Ok(None) => continue
+        Ok(Some(kind)) => return Ok(Some(make_event(buffer, kind)))
+      }
+    }
+  } nobreak {
+    Ok(None)
+  }
+}
+
+///|
 pub fn Host::next_event(
   self : Host,
   timeout_ms? : Int = 16,
 ) -> Result[@platform.Event?, @diagnostics.FrameworkError] {
-  let buffer = FixedArray::make(10, 0.0)
-  let text = Bytes::makei(DIRECT_TEXT_MAX_BYTES, _ => (0).to_byte())
-  let mut status = native_next_v2(
-    DIRECT_TEXT_ABI,
-    self.token,
-    buffer,
-    buffer.length(),
-    text,
-    text.length(),
+  next_event_from_native(
+    (buffer, text) => {
+      native_next_v2(
+        DIRECT_TEXT_ABI,
+        self.token,
+        buffer,
+        buffer.length(),
+        text.unsafe_reinterpret_as_bytes(),
+        text.length(),
+      )
+    },
+    timeout => native_dispatch(self.token, timeout),
+    timeout_ms,
   )
-  if status == 0 {
-    match outcome(native_dispatch(self.token, timeout_ms), "next_event") {
-      Err(error) => return Err(error)
-      Ok(_) => ()
-    }
-    status = native_next_v2(
-      DIRECT_TEXT_ABI,
-      self.token,
-      buffer,
-      buffer.length(),
-      text,
-      text.length(),
-    )
-  }
-  if status < 0 {
-    Err(backend_error(-status, "next_event"))
-  } else if status == 0 {
-    Ok(None)
-  } else if status != 1 {
-    Err(backend_error(3, "next_event"))
-  } else {
-    match decode_v2_event(buffer, text, "next_event") {
-      Err(error) => Err(error)
-      Ok(None) => Err(backend_error(2, "next_event"))
-      Ok(Some(kind)) => Ok(Some(make_event(buffer, kind)))
-    }
-  }
 }
 
 ///|

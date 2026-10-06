@@ -987,15 +987,19 @@ static void test_repeated_press_and_modifier_compose_policy(void) {
   press(&f.h, shift_key); /* Modifier passes through; Compose stays pending. */
   assert(xkb_compose_state_get_status(f.h.compose) == XKB_COMPOSE_COMPOSING);
   next_kind(out, text, sizeof(text), 11);
+  assert(out[8] == XKB_KEY_Shift_L && out[6] == 0);
   assert(next_v2(out, text, sizeof(text)) == 0);
   release_key(&f.h, shift_key);
   next_kind(out, text, sizeof(text), 12);
+  assert(out[8] == XKB_KEY_Shift_L && out[6] == 0);
   press(&f.h, alt_key);
   assert(xkb_compose_state_get_status(f.h.compose) == XKB_COMPOSE_COMPOSING);
   next_kind(out, text, sizeof(text), 11);
+  assert(out[8] == XKB_KEY_Alt_L && out[6] == 0);
   assert(next_v2(out, text, sizeof(text)) == 0);
   release_key(&f.h, alt_key);
   next_kind(out, text, sizeof(text), 12);
+  assert(out[8] == XKB_KEY_Alt_L && out[6] == 0);
   press(&f.h, e);
   next_kind(out, text, sizeof(text), 13);
   assert(out[8] == 2 && text[0] == 0xc3 && text[1] == 0xa9);
