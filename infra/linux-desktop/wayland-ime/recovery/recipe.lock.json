@@ -1,0 +1,143 @@
+{
+  "build_tools": {
+    "cc": {
+      "location": "host",
+      "path": "/usr/bin/x86_64-linux-gnu-gcc-14",
+      "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f"
+    },
+    "fc-list": {
+      "location": "host",
+      "path": "/usr/bin/fc-list",
+      "sha256": "31e22eb2003fe43e5002789875ab84447b741e3f99a0ebcb1f1ecaae7bd6ee6e"
+    },
+    "moon": {
+      "location": "profile",
+      "relative_path": "moon/bin/moon",
+      "sha256": "6da4919f45f4abf7c6d7f3cf8d9a457de77dca430d6fb811d21b27ae1ac8e11d"
+    },
+    "moonc": {
+      "location": "profile",
+      "relative_path": "moon/bin/moonc",
+      "sha256": "d163b2c4c878ca584870764b75e633d73e8b9c178dcc6b00c692f6b2a6b1b2dc"
+    },
+    "moonrun": {
+      "location": "profile",
+      "relative_path": "moon/bin/moonrun",
+      "sha256": "1b22f489621059b8c22ee4acdaddc5f5d1781f62529d3000a24c03d45032d0e2"
+    },
+    "pkg-config": {
+      "location": "host",
+      "path": "/usr/bin/pkgconf",
+      "sha256": "37fdaa317c00805da16bc9c4c8de2300ad1e34511c33bf5e5170bf52c0e3a48e"
+    },
+    "tcc": {
+      "location": "profile",
+      "relative_path": "moon/bin/internal/tcc",
+      "sha256": "1e5950e72d0c1623cc949769ac52c512442f84b9ebfd7b6ff509491dc8b2281a"
+    },
+    "wayland-scanner": {
+      "location": "profile",
+      "relative_path": "prefix/usr/bin/wayland-scanner",
+      "sha256": "0f7477063779fe135b34219e38329da40a4a0b0710e139edfc531d1d61792439"
+    }
+  },
+  "bytecode_policy": "No generated Python bytecode in the official prefix; all recovery bootstrap/doctor/native/read-only child entry points disable writes. Complete prefix drift is never ignored.",
+  "fixed_config_files": {
+    "config/schemas/gschemas.compiled": "8940bad0004869d6f877feb605c5da385f7680d7f85bd796718e5bec15c9dd0b",
+    "config/schemas/org.freedesktop.ibus.gschema.xml": "d9ba6742625cd40dcf97556e4dd86aa41b963eae4c807f097d2cc738b12473c2",
+    "config/schemas/org.gtk.Settings.ColorChooser.gschema.xml": "e476913ef61e6719ff56c2e4c5b8b276af3020bfb0d007263c2a241835730882",
+    "config/schemas/org.gtk.Settings.Debug.gschema.xml": "de0685fdc2f6e890e32445a79aa938e5566b8dd406dd71d6c6a66c69e3f941e3",
+    "config/schemas/org.gtk.Settings.EmojiChooser.gschema.xml": "22aba28a5a78745d87eeded88f1b86f7ddea24b1b90771151ef494c660a1b591",
+    "config/schemas/org.gtk.Settings.FileChooser.gschema.xml": "c7089f41d22b3854c05fe4996ff271949b40148a40b9c6f0ae0349792dc94b77",
+    "config/schemas/org.xfce.mousepad.gschema.xml": "0dd0a59b84d965ad581cefe2a8205ea94a39d078f5015a086fee4d3eeb3effd5",
+    "config/schemas/org.xfce.mousepad.plugins.gspell.gschema.xml": "c62484102c664a83aeeb0b434152d25e2fd8488f2e9c514b7529ea42319c6b79"
+  },
+  "fixed_prefix_files": {
+    "usr/bin/Xvfb": "14e8ec7d8209bbaf105f9ade27a80b65f01709346690d18fbadb6116ada34912",
+    "usr/bin/ibus-daemon": "be3b0722f81b3175301c747298f8427ad90167ce8fde6fc1dd575fa07f346b1b",
+    "usr/bin/weston": "5e7b342da0d38508b3001c291f080fbe35c4101f32ade0babc8458915f87352a",
+    "usr/bin/weston-editor": "9bfb1da9cddb97b93092e10e049f01e87b934c370cba26fb50f507c63e3e54ff",
+    "usr/lib/mozc/mozc_server": "020f50a6cd53b3a0a5e6c66a30f698b05d5c68df4b5be73e663c1435bc8c432e",
+    "usr/lib/x86_64-linux-gnu/glib-2.0/glib-compile-schemas": "613c5b6ed8c95bb9d3b4055299a9e2a77422841b5e974711dd91562b6fb0d32e",
+    "usr/lib/x86_64-linux-gnu/libweston-14/x11-backend.so": "bb8a562dbf512ea5424f38f23b9c7dbf51b97ce2b34941bc12099f2fc4dc9bbf",
+    "usr/lib/x86_64-linux-gnu/weston/desktop-shell.so": "d45b6ded74379a7926a660497ee5b4a893caae72cb73e6c0683b99234862c738",
+    "usr/libexec/ibus-ui-gtk3": "14ba497c9d61f7b69d359d41be5d522c6cdfbf3c35af79f9c1d7d1827f3b1f30",
+    "usr/libexec/weston-desktop-shell": "b5e6deec505947e80ae4ec8c8c04093436d8cafe18f2b77b7b63e69c67e29056",
+    "usr/share/X11/xkb/compat/complete": "11d1fd1f5364ef778eb0edc36b4f1955ca165c1900703f163c1406aa8ae767cd",
+    "usr/share/X11/xkb/keycodes/evdev": "6f52c4f4e0f599a3b57913ac0c74dae4bfff1866c903eaceda45cda51a14d231",
+    "usr/share/X11/xkb/rules/evdev": "9f3b336cba1c79c5a548fa6821021030d3aae2bbc96b1d6537ae0c3139cf0f1b",
+    "usr/share/X11/xkb/symbols/pc": "4b2fe0b0f106bc6233c6626e9a0da2f25b1f5f56a05656bfde3b19bf4a11885c",
+    "usr/share/X11/xkb/symbols/us": "ef0b555f6fddb71699673c89f2390122db44751397fc07024c840d582983ee0c",
+    "usr/share/X11/xkb/types/complete": "038d66c8861dbc797b7d2226bc9135698e62adf3d6d9f99f1be60b768f591aee",
+    "usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc": "faa5f3656a78b2e2d450d27fe8382c778bc2b6bb5ea29c986664a6a435056ceb",
+    "usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a",
+    "usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc": "1505ee3b9c0890fae6302ee0e9c6fd74d690f4a55a6ace1d9944f3f6352d622d",
+    "usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc": "5d9c31a059600193c9d7968a998bde886ccdc77e934006ad243b41794c496a7d",
+    "usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf": "a4c5bc453ca281d90ea079e596da7ae0dfeb5777497c29ec254e76d97ff6f890",
+    "usr/share/fonts/truetype/dejavu/DejaVuSans.ttf": "57f73e11f51999432bf7ab22ce55b6f945d5eca1bf824404cfa9ec2e3718c84e",
+    "usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf": "aac3f559445d23f0f567a243f91f3f6ad6cb4b5cafa1521a3479fffe0637f0bd",
+    "usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf": "8cb29f7db250ebb2551a6ce2c1e0bfd5a0eb520e9e233370db0493e82e1f36f7",
+    "usr/share/fonts/truetype/noto/NotoColorEmoji.ttf": "dac5c27651082d6c53dab5081f50d2022ddf6877d730fa919cf6a4fc2af22de0",
+    "usr/share/ibus/component/dconf.xml": "6d2a84dd013317436b6dabb846fcab5d3206dad9cfde60789a0c72dc4a56ba05",
+    "usr/share/ibus/component/gtkextension.xml": "dec02b8e116f7b963814452098a30886bad48fe92948378f72cee2e705f83b50",
+    "usr/share/ibus/component/gtkpanel.xml": "64d3fbd89a3b00f58b13bd1351f92ae075f0d946daf22b8c5e19d5c77c38e123",
+    "usr/share/ibus/component/memconf.xml": "b8a718198f60b87154f34ce6ba535da2de75983310d0fce524ed751906e747e8",
+    "usr/share/ibus/component/mozc.xml": "38e6795df02ff8318618273a93b6851efbb55321713b42e382016e382e88f08b",
+    "usr/share/ibus/component/simple.xml": "5c25f26f37cf8a3a9f7379fc2541f9a29b48860f417783fa42a832393851a1d7"
+  },
+  "fixed_prefix_tree_sha256": "d394d3c8fdf7b384e991420de8908e8c7543b67407d9180d2c51c65bc3b65a55",
+  "generated_component_names": [
+    "dconf.xml",
+    "gtkextension.xml",
+    "simple.xml",
+    "memconf.xml",
+    "mozc.xml",
+    "gtkpanel.xml"
+  ],
+  "historical_deployment_sha256": "8146aebd274595090ac42054739c41db17e840f200e8c8be163bad8f27b57c9b",
+  "host_executables": {
+    "/usr/bin/convert": "3a2aef540af10c1bb1b7ec7204ccd8991a31b194451d93ac87d8c0fc9d36c233",
+    "/usr/bin/dbus-daemon": "32c90f7766d01081f0f052ef8a2879214a69fb8355d5034a07a8ce54c8e8e320",
+    "/usr/bin/python3": "889c603f0d17cb54060951bcf4c4f9b8c9ebd9e52b392c70209bbb9755d797d9"
+  },
+  "kind": "native-ime-recovery-recipe",
+  "mozc_recipe_lock_sha256": "b2bca3690e00de7cc25c37528570c027fbd8a58c8d0e93f37e8ef2322e7cad6f",
+  "native_qualified": false,
+  "profile_lock_sha256": "81b05b4f473617d03c8b11980b7e884863fdd181f040f96482a1a6f915abf503",
+  "schema_version": 1,
+  "scope": "New reviewed recovery recipe; fresh native qualification required; not a hermetic OS image.",
+  "source_files": {
+    "README.md": "a7f4688fa52db3fa34a5449eca7157a29c111ce3bb28a57dc4876986364ca8a5",
+    "build_manifest.py": "21dcc2b2e7ce74f00623bef63e55dfd43baacae8c67f50f80f8d1ff6b9ae6cbf",
+    "candidate_bundle.py": "08e609a5d40f4aa1b2051d257cb91e1bf3972c12e6f5035673474856c4596ad1",
+    "case_runner.py": "4209c4cf8bc00266608a8cd21f6e74b42958e120a2480511f3df3e8d1d9707c9",
+    "gpui-desktop.py": "cd343f989f89896f20646a3e2cc27d4198b41b08a16fb70529d2ff86c68fd3ef",
+    "input_cases.py": "afa070bb4622e8c2df7776e6289fad7c7a6e8fafb6770daef5e0faadd540ce11",
+    "mozc-prefix/0001-scope-gyp-to-ibus.patch": "244de56b92b78046caaacc0dbb64867c0198995a478a205f4588b9c293edc751",
+    "mozc-prefix/build.lock.json": "b2bca3690e00de7cc25c37528570c027fbd8a58c8d0e93f37e8ef2322e7cad6f",
+    "mozc-prefix/rebuild.py": "c8f4c4ffb9bb19fa1ee4064bdb79d44cdea2ea0426aaf8b200a113f4e3cae571",
+    "profile.lock.json": "81b05b4f473617d03c8b11980b7e884863fdd181f040f96482a1a6f915abf503",
+    "wayland-ime/evidence.py": "44cf4e30dc07decd996adae67049686d69ee9c10ec18cd9b72f2dce85556058e",
+    "wayland-ime/gpui_evidence.py": "a6276171956c78a19b6d2baae036f6c9705c043fb976f760323d8a83c7c79c37",
+    "wayland-ime/gpui_probe.py": "2c35335daf08f669e4d7ff9071c9a3d12206a4dacf12535ce5901f72bbc4f5a7",
+    "wayland-ime/palette_suite.py": "5e762b8de40e86db4633444464f859705cae670e2b13179063f0df2c68cbe10e",
+    "wayland-ime/prepare-gpui-deployment.py": "8872d0d532f3196cb9b99cdd426a058e4f975482a954d3fce974a4bf70cd748b",
+    "wayland-ime/prepare-gpui-launcher.py": "2318d1ada3ede3988854551eae9b09c58c0a2b99061a6bdb61e9e59d1fdfb34e",
+    "wayland-ime/prepare-launcher.py": "5322a3678f859d37b2fdfe9e5a1a65026e7ccbfb54b74b92e2cfe47891027701",
+    "wayland-ime/probe.py": "208c3921ed6e0ee953bb083fc371e7451bc51e11bcaa754edfa881d70abeed4d",
+    "wayland-ime/recovery/README.md": "464b781e39a741bab4a6cefd7634951676acefd28c7ff0a793a8bde7b27bfee2",
+    "wayland-ime/recovery/__init__.py": "64e64b1839fca8c7d46bdf30282dc5813e33c8b51a467039f32aadb6d3aa9501",
+    "wayland-ime/recovery/baseline-README.md": "7fcc84528389e0cdba6f2a51576cba69ece27d68fa2b651787ad5f04b1fb9cca",
+    "wayland-ime/recovery/baseline_utilities.py": "0a2602e11c4dcf7a321c927f52b296b40a515a50f38d6c275b2c8f0fea2971d2",
+    "wayland-ime/recovery/parser-README.md": "7dfb08272e075c9158219333f59704f3d699bd742984c1e81341787db099f93b",
+    "wayland-ime/recovery/prepare_deployment.py": "328349d3423b773213a5eacc27822b2eea3e4d0ba33e1e43e1ed709f586224ac",
+    "wayland-ime/recovery/test_baseline_utilities.py": "43c6dee61d8ef7e28a5b39649baebd83f00d1c4a963cc537a0aee83bc9f8efb8",
+    "wayland-ime/recovery/test_finalizer_receipt.py": "c5bb25283c410cc94eee1e5e20a11caf0c2e455d0aa37de990af187c730cd497",
+    "wayland-ime/recovery/test_prepare_deployment.py": "72548f1b5496944181a29bcf217d47f2818b03668d01785e26848dc914ab18bb",
+    "wayland-ime/recovery/test_task_owner_scope.py": "b1033854a5af4681196706315178f026d166054445772b693d203abd9067e69e",
+    "wayland-ime/recovery/test_transport_diagnostics.py": "913ea0a6f72e2dc3eef9c5bba3ad736d719f53711cbdf580a6049b3ac62076fd",
+    "wayland-ime/recovery/transport_diagnostics.py": "44f033612043e8af08e5dc19e2b2027103455c4b4ee3dad9e8b75f9008682e01",
+    "wayland-ime/test_cleanup_receipt.py": "96411ee6e6df441abbf71ec7c42b24f552e07098875bc0ad68a579cfa2cd6dcd",
+    "wayland-ime/test_task_owner_callers.py": "e2de6058084399b4095cb1ce0ceb70f0ed3b725f3376cf871a9afa1710402d8c"
+  }
+}

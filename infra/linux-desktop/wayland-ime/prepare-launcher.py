@@ -30,7 +30,7 @@ def prepare(deployment, run_name, bind_only=False):
         raise RuntimeError('refusing to reuse a launcher or existing native output')
     lib = Path(data['prefix']) / 'usr/lib/x86_64-linux-gnu'
     typelibs = Path(data['support']) / 'prefix/usr/lib/x86_64-linux-gnu/girepository-1.0'
-    command = ['/usr/bin/env', 'LD_LIBRARY_PATH=' + str(lib) + ':' + str(lib / 'weston'),
+    command = ['/usr/bin/env', 'PYTHONDONTWRITEBYTECODE=1', 'LD_LIBRARY_PATH=' + str(lib) + ':' + str(lib / 'weston'),
         'GI_TYPELIB_PATH=' + str(typelibs), '/usr/bin/python3', str(HERE / 'probe.py'),
         '--run-native', '--deployment', str(deployment.resolve()), '--output', str(output), '--timeout-seconds', '60']
     if bind_only:

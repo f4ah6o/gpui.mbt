@@ -1,0 +1,126 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/controls/command_palette"
+
+import {
+  "f4ah6o/gpui/capability",
+  "f4ah6o/gpui/controls/text_field",
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/element",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/scene",
+  "f4ah6o/gpui/text",
+  "f4ah6o/gpui/text_layout",
+  "moonbitlang/core/ref",
+}
+
+// Values
+pub const MAX_COMMANDS : Int = 128
+
+pub const MAX_COMMAND_ID_BYTES : Int = 64
+
+pub const MAX_COMMAND_LABEL_BYTES : Int = 128
+
+pub const MAX_QUERY_BYTES : Int = 256
+
+pub const VISIBLE_ROWS : Int = 8
+
+// Errors
+
+// Types and methods
+pub struct CommandMetadata {
+  // private fields
+}
+pub fn CommandMetadata::id(Self) -> String
+pub fn CommandMetadata::is_enabled(Self) -> Bool
+pub fn CommandMetadata::label(Self) -> String
+pub fn CommandMetadata::new(String, String, Bool) -> Result[Self, PaletteError]
+
+pub struct CommandPalette {
+  // private fields
+}
+pub fn CommandPalette::blur(Self) -> Result[PaletteEffect, PaletteError]
+pub fn CommandPalette::field(Self) -> @text_field.TextField
+pub fn CommandPalette::finish_close(Self, Int, @ref.Ref[@element.ElementTree]) -> Result[Unit, PaletteError]
+pub fn CommandPalette::handle_input(Self, @primitives.InputEvent, (@text.TextDocument) -> Result[@text_layout.TextMeasurement, @text_field.TextFieldError], (@text.TextDocument, @text_layout.TextMeasurement) -> Result[Unit, @text_field.TextFieldError], (@text.TextDocument, @primitives.Point) -> Result[@text_layout.TextHit, @text_field.TextFieldError]) -> Result[PaletteInput, PaletteError]
+pub fn CommandPalette::install_field(Self, @text_field.TextField) -> Result[Unit, PaletteError]
+pub fn CommandPalette::install_field_at(Self, Int, @text_field.TextField) -> Result[Unit, PaletteError]
+pub fn CommandPalette::is_open(Self) -> Bool
+pub fn CommandPalette::new(@text_field.TextField, Array[PaletteCommand]) -> Result[Self, PaletteError]
+pub fn CommandPalette::open(Self, @ref.Ref[@element.ElementTree]) -> Result[Unit, PaletteError]
+pub fn CommandPalette::open_epoch(Self) -> Int
+pub fn CommandPalette::picker(Self) -> Picker
+pub fn CommandPalette::retire_key_guard(Self, Int) -> Unit
+pub fn CommandPalette::semantics(Self) -> PaletteSemantics
+
+pub struct PaletteCommand {
+  // private fields
+}
+pub fn PaletteCommand::new(CommandMetadata, @capability.GuiBinding[Unit, Unit]) -> Self
+
+pub(all) enum PaletteEffect {
+  None
+  FieldAction(@text_field.TextFieldAction)
+  CompositionCancelled
+  Closed(epoch~ : Int, command_id~ : String?)
+}
+
+pub(all) enum PaletteError {
+  InvalidMetadata
+  TooManyCommands
+  DuplicateCommand
+  QueryTooLarge
+  InvalidField
+  AlreadyOpen
+  EpochExhausted
+  Field(@text_field.TextFieldError)
+  Focus(@element.ElementError)
+  Command(@diagnostics.FrameworkError)
+}
+
+pub struct PaletteInput {
+  consumed : Bool
+  effect : PaletteEffect
+}
+
+pub struct PaletteSemantics {
+  open : Bool
+  role : String
+  name : String
+  search_role : String
+  search_name : String
+  search_value : String
+  search_focused : Bool
+  composing : Bool
+  collection_role : String
+  total : Int
+  active_id : String?
+  options : Array[SemanticOption]
+}
+
+pub struct Picker {
+  // private fields
+}
+pub fn Picker::active_command(Self) -> CommandMetadata?
+pub fn Picker::active_index(Self) -> Int?
+pub fn Picker::command_at(Self, Int) -> CommandMetadata?
+pub fn Picker::filter(Self, String) -> Result[Self, PaletteError]
+pub fn Picker::match_count(Self) -> Int
+pub fn Picker::navigate(Self, Int) -> Self
+pub fn Picker::new(Array[CommandMetadata]) -> Result[Self, PaletteError]
+pub fn Picker::paint_items(Self, UInt64, Int, @primitives.Rect, Double, (UInt64, CommandMetadata, @primitives.Point, Int) -> Result[@scene.SceneItem, PaletteError]) -> Result[(@scene.ClipChain, Array[@scene.SceneItem]), PaletteError]
+pub fn Picker::query(Self) -> String
+pub fn Picker::visible_commands(Self) -> Array[CommandMetadata]
+pub fn Picker::visible_start(Self) -> Int
+
+pub struct SemanticOption {
+  id : String
+  name : String
+  role : String
+  selected : Bool
+  disabled : Bool
+  index : Int
+}
+
+// Type aliases
+
+// Traits

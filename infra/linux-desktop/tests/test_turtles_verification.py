@@ -25,7 +25,7 @@ class VerificationStageTests(unittest.TestCase):
     def test_lock_edits_block_before_import_or_execution(self):
         original = M.read_json(M.LOCK_PATH)
         fixture = self.root / "lock.json"
-        for key, value in (("adapter_sha256", "a"*64), ("turtles_commit", "a"*40), ("producer_sha256", "a"*64), ("maximum_stage_seconds", 99999), ("schema", True), ("extra", "arbitrary hook")):
+        for key, value in (("adapter_sha256", "a"*64), ("turtles_commit", "a"*40), ("producer_sha256", "a"*64), ("native_environment_provider_sha256", "a"*64), ("native_environment_dependency_sha256", "a"*64), ("maximum_stage_seconds", 99999), ("schema", True), ("extra", "arbitrary hook")):
             fixture.write_text(json.dumps({**original, key: value}))
             with self.subTest(key=key), patch.object(M, "LOCK_PATH", fixture), patch.object(M, "load_module", side_effect=AssertionError("must not import")), patch.object(M, "git_value", side_effect=AssertionError("must not execute")), self.assertRaisesRegex(RuntimeError, "integration lock differs"):
                 M.load_inputs(*([self.root]*7))
@@ -97,16 +97,14 @@ class VerificationStageTests(unittest.TestCase):
         flags = {"LDFLAGS": M.shlex.join(["-L" + str(prefix / "usr/lib/x86_64-linux-gnu")]) + " ",
                  "CPPFLAGS": M.shlex.join(["-I" + str(prefix / "usr/include"), "-I" + str(prefix / "usr/include/x86_64-linux-gnu")]) + " "}
         parent = {"GPUI_DESKTOP_ROOT": str(profile), "KEEP": "unchanged", **flags}
-        # The fixture may run on the preserved older base or composed main.
-        # Both dependency bytes were explicitly reviewed; this unit fixture
-        # never relaxes the production lock's current-main-only cc1e pin.
-        fixture_lock = M.integration_lock()
-        dependency_hash = M.digest(directory / "build_manifest.py")
-        self.assertIn(dependency_hash, {"ee76fca7b0e63870824f06f28679bd9d3b25ff7abff53ba28a6d7fcd0e1bc02a", "cc1e9976380a1b0d4ff7fc6d505387249124e910b46ea7c380134c8f6f9115fe"})
-        fixture_lock["native_environment_dependency_sha256"] = dependency_hash
+        # Exercise the exact independently reviewed recovery bytes against
+        # the production lock, without a fixture-specific pin or allowlist.
+        reviewed_lock = M.integration_lock()
+        for name, key in (("gpui-desktop.py", "native_environment_provider_sha256"),
+                          ("build_manifest.py", "native_environment_dependency_sha256")):
+            self.assertEqual(M.digest(directory / name), reviewed_lock[key])
         def derive(environment):
-            with patch.object(M, "integration_lock", return_value=fixture_lock):
-                return M.portable_environment(repo, environment)
+            return M.portable_environment(repo, environment)
         child, recorded = derive(parent)
         self.assertEqual(parent, {"GPUI_DESKTOP_ROOT": str(profile), "KEEP": "unchanged", **flags})
         self.assertNotIn("LDFLAGS", child)
@@ -114,12 +112,13 @@ class VerificationStageTests(unittest.TestCase):
         self.assertEqual(child["KEEP"], "unchanged")
         self.assertEqual(recorded["removed"], flags)
         self.assertEqual(derive(parent), (child, recorded))
-        dependency = directory / "build_manifest.py"
-        original_dependency = dependency.read_bytes()
-        dependency.write_text("raise RuntimeError('must not execute')")
-        with self.assertRaisesRegex(RuntimeError, "unreviewed"):
-            derive(parent)
-        dependency.write_bytes(original_dependency)
+        for name in ("build_manifest.py", "gpui-desktop.py", "profile.lock.json"):
+            artifact = directory / name
+            original = artifact.read_bytes()
+            artifact.write_bytes(original + b"\nraise RuntimeError('must not execute')\n")
+            with self.subTest(name=name), patch.object(M.subprocess, "run", side_effect=AssertionError("must not derive from unreviewed bytes")), self.assertRaisesRegex(RuntimeError, "unreviewed"):
+                derive(parent)
+            artifact.write_bytes(original)
         for variable in ("LDFLAGS", "CPPFLAGS", "CC", "CFLAGS", "MOON_CC"):
             bad = {**parent, variable: parent.get(variable, "") + " -unknown-user-override"}
             with self.subTest(variable=variable), self.assertRaises(RuntimeError):
