@@ -2,12 +2,17 @@
 
 Status: experimental framework slice on Ubuntu/Wayland; not a general
 usable text-field API, an input-method implementation, or an Ubuntu support
-claim. The experimental field implementation builds on merged focused-input
-PR #29 (`18e8fadf470823b389feff3b9d496213b4d3f67a`, reviewed base tree
-`7554a5f181724160e1be4a11ac0e47067ca79e3d`). Field-specific hosted
-qualification is pending review. The renderer base is
-PR #28 (`3cc72f548dc6138e17f949efad8eae92c70a1cb0`); its existing evidence is
-not field-input evidence.
+claim. The field builds on merged focused-input PR #29
+(`18e8fadf470823b389feff3b9d496213b4d3f67a`, reviewed base tree
+`7554a5f181724160e1be4a11ac0e47067ca79e3d`). Origin-aware run support is new
+unpublished local progress based on reviewed PR #30 tree `5ac17e9`; hosted GPU
+execution is not qualified for this origin-aware slice. PR #30 remains
+a draft: its Windows, macOS, documentation, and headless Pango jobs passed, but
+GPU, core, browser, and mutation jobs are not qualified. A bounded retry of an
+Ubuntu failed job was again cancelled before runner start; that establishes no
+source or billing cause. The renderer base is PR #28
+(`3cc72f548dc6138e17f949efad8eae92c70a1cb0`); its existing evidence is not
+field-input or origin-GPU evidence.
 
 This is a deliberately narrow, opt-in demonstration of a bounded single-line,
 left-to-right (LTR) entry field joining copied text geometry, portable editing
@@ -49,12 +54,13 @@ keyboard-text route. It does not establish ordinary application readiness.
   rechecks focus, revision, and epoch after any event pumping before admission.
   A stale or invalid paste is discarded whole.
 
-## Bounds and intentional overhang rejection
+## Bounds and origin-aware run geometry
 
 The current field limits document text to 4,096 UTF-8 bytes, font size to 32
 logical pixels, and measured logical/ink geometry to 2,048 by 128 pixels. It
 requires exactly one line, no unknown glyphs, valid monotonic strong caret
-positions with matching strong/weak geometry, and a single LTR caret order.
+positions contained in the logical line with matching strong/weak geometry,
+and a single LTR caret order.
 Committed/pasted U+0000–U+001F, U+007F–U+009F, U+2028, and U+2029 are forbidden;
 other text is neither normalized nor truncated. Unsupported layout is rejected
 as a whole edit. The owner supplies trusted measure, admit, and hit-test
@@ -65,18 +71,38 @@ identity and resolved cursor-stop status against the stored measurement before
 changing selection. See the exact validation in
 [`controls/text_field/model.mbt`](../controls/text_field/model.mbt).
 
-The example deliberately measures and paints with the same generic `sans`
-family, 18 px size, and PangoFT2 context. That is necessary for matching the
-current renderer's caret/hit geometry. Real installed sans fixtures have
-negative left/above ink bearings for `j`/`J` and accent cases. Since this first
-slice anchors a text mask at the logical origin, accepting those layouts could
-crop ink. The current fail-closed policy rejects the whole edit and retains the
-prior field/revision/frame. An origin-aware presentation/measurement follow-on that can preserve negative
-bearings is a separate design pending review; this slice does not claim those
-inputs work. The real-font rejection and geometry cases are in
-[`examples/linux_text_field/controller_wbtest.mbt`](../examples/linux_text_field/controller_wbtest.mbt)
-and provider admission tests in
-[`platform/linux_text/field_admission_wbtest.mbt`](../platform/linux_text/field_admission_wbtest.mbt).
+The example measures and paints with the same generic `sans` family, 18 px
+size, and PangoFT2 context so caret and hit geometry match drawing. The field
+now derives one checked run mapping from the union of Pango logical and ink
+extents; legal caret stops must stay inside the logical line. It rounds each minimum edge down and maximum
+edge up to whole logical pixels, including Pango's pixel coverage, then uses
+that inset as `text_origin` and a zero-based rectangle as the exact item-local
+clip. `TextRunItem` keeps this text origin independent of the clip bounds; the
+native rasterizer clips in local coordinates before the affine transform. The
+same calculated union/clip is used for field admission, caret and selection
+painting, hit-test coordinate mapping, and horizontal scrolling. This preserves
+negative left/above ink bearings without changing the legacy `TextItem`
+positioning contract. Actual-font headless control and negative-mask tests now
+pass for negative-bearing text, composed and decomposed accent cases, and
+scrolling; this is not compositor typing or GPU presentation evidence.
+
+The scene envelope remains schema v1. Existing `TextItem` meaning and canonical
+JSON are unchanged. The new `TextRunItem` is a plain system-sans variant
+serialized as `kind: "text_run"` with a separate `text_origin` and local clip
+bounds. The Ubuntu mixed-frame ABI3 uses a 25-double record: it preserves all
+23 ABI2 fields and appends origin x/y; kind 2 denotes the new run, while quad
+and legacy text kinds require zero origin fields. Linux raster_v2 returns the
+v1 mask plus UV crop coordinates in a separate v2 result, preserving the v1
+mask struct and entry semantics. V2 keeps a one-texel sampling halo at interior
+crop edges, bounded by full pixel ink and charged to all mask budgets before
+allocation; exact visible geometry and UV crop remain independent. V1 keeps its
+legacy no-halo storage and filtering. V2 also rejects clip/ink roundtrip error
+above a fixed 1/4096 logical pixel before allocation. Envelope v1 permits
+item-variant additions,
+so consumers must reject unknown variants, and public exhaustive matches must
+add an explicit `TextRunItem` case. The backend and native contracts are
+documented in the [Linux text guide](linux-text.md#ubuntu-grayscale-scene-text)
+and [platform boundary](platform.md#scene-and-renderer-boundary).
 
 ## Native focus, event generations, and ABI
 
@@ -156,24 +182,29 @@ is not keyboard input, IME, color text, or accessibility.
 Evidence is tiered and must not be conflated:
 
 - Local portable/model tests cover edit state, limits, cursor-stop navigation,
-  selection, rejection, and immutable snapshots. The controller suite uses
-  installed real sans/Pango measurements and tests negative-bearing rejection,
-  clipboard transaction guards, `Busy`/rollback behavior, focus routing, and
-  the rule that `Character` keys do not insert.
+  selection, rejection, and immutable snapshots. The headless real-font field
+  and negative-mask suites pass with installed sans/Pango measurements,
+  including composed/decomposed accents and scrolling. Controller coverage
+  also checks clipboard transaction guards, `Busy`/rollback behavior, focus
+  routing, and the rule that `Character` keys do not insert.
 - Local headless native tests cover direct-mode callbacks, epoch/stale-record
   and queue behavior, Compose/release bookkeeping, decoder validation, exact
-  byte copying, and capacity/canary cases. The fixture encoder and GPU test
-  source also have strict local compile/test evidence. These tiers do not
-  simulate compositor-delivered keyboard input.
+  byte copying, capacity/canary cases, and origin-aware Pango mask clipping.
+  New encoder and GPU acceptance cases compile; hosted execution is
+  pending. These tiers do not simulate compositor-delivered keyboard input or
+  prove an actual GPU presentation.
 - The control-to-renderer fixtures and `Host.present` checks are explicitly
   separated. `GPUI_FIELD_E2E` in
   [`examples/linux_text_field/host_present_wbtest.mbt`](../examples/linux_text_field/host_present_wbtest.mbt)
-  is opt-in under a compositor; replayed fixture frames are injected into the
+  is opt-in under a compositor. The test-only GPU harness retains start/scrolled
+  j/J and accent readbacks when executed; no such readback exists locally.
+  Replayed fixture frames are injected into the
   renderer and prove neither `wl_keyboard` delivery nor real typing. Its typed
   `Busy` assertion uses deterministic stale-viewport window state; it does not
   guarantee that an unpumped frame callback always yields `Busy`. The
   hosted field `Host.present`/injected-renderer result remains pending review;
-  no field-specific hosted pass or source SHA is recorded here.
+  no origin-specific hosted GPU pass is recorded here. PR #30 remains draft while selected hosted jobs are not qualified, as
+  summarized above.
 - Actual compositor-delivered typing into this control is **unrun**. The stock
   Weston 13 headless job has no admitted keyboard-injection driver for this
   qualification, and local AF_UNIX socket creation returns `EPERM`. Do not
@@ -190,4 +221,8 @@ are earlier foundation evidence only. See the repository's
 [Ubuntu native workflow](../.github/workflows/ubuntu-native.yml) and
 [testing evidence tiers](testing.md). This experimental field does not close
 Ubuntu backend packet D or qualify gpui.mbt as a supported Linux desktop
-framework.
+framework. The bounded field remains single-line LTR and rejects unsupported
+unknown-glyph, color-glyph, and reflow/resource-limit cases. Text masks remain
+logical-resolution and may soften under output scaling. IME, autorepeat,
+general bidi, drag selection, undo, and actual compositor-delivered typing are
+not qualified.

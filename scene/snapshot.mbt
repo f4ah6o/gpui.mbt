@@ -146,6 +146,17 @@ pub(all) enum SceneItem {
     opacity~ : Double,
     clip_chain_id~ : Int?
   )
+  TextRunItem(
+    id~ : UInt64,
+    bounds~ : @primitives.Rect,
+    text_origin~ : @primitives.Point,
+    text~ : String,
+    font_size~ : Double,
+    color~ : @primitives.Color,
+    transform~ : AffineTransform,
+    opacity~ : Double,
+    clip_chain_id~ : Int?
+  )
 }
 
 ///|
@@ -205,16 +216,59 @@ pub fn SceneItem::text(
 }
 
 ///|
+/// One plain system-sans text run with an independent item-local origin and
+/// exact item-local clip bounds. Font sizes are logical pixels in (0, 1024];
+/// text is at most 65,536 UTF-16 code units. Empty text is valid. Clip
+/// references are checked by the snapshot.
+pub fn SceneItem::text_run(
+  id : UInt64,
+  bounds : @primitives.Rect,
+  text_origin : @primitives.Point,
+  text : String,
+  font_size : Double,
+  color : @primitives.Color,
+  transform : AffineTransform,
+  opacity : Double,
+  clip_chain_id : Int?,
+) -> Result[SceneItem, SnapshotError] {
+  match snapshot_validate_text(text, font_size) {
+    Err(error) => Err(error)
+    Ok(_) =>
+      if !snapshot_finite(opacity) || opacity < 0.0 || opacity > 1.0 {
+        Err(InvalidOpacity)
+      } else if !snapshot_transform_finite(transform) {
+        Err(NonFiniteTransform)
+      } else {
+        Ok(
+          TextRunItem(
+            id~,
+            bounds~,
+            text_origin~,
+            text~,
+            font_size~,
+            color~,
+            transform~,
+            opacity~,
+            clip_chain_id~,
+          ),
+        )
+      }
+  }
+}
+
+///|
 pub fn SceneItem::id(self : SceneItem) -> UInt64 {
   match self {
-    QuadItem(id~, ..) | TextItem(id~, ..) => id
+    QuadItem(id~, ..) | TextItem(id~, ..) | TextRunItem(id~, ..) => id
   }
 }
 
 ///|
 pub fn SceneItem::clip_chain_id(self : SceneItem) -> Int? {
   match self {
-    QuadItem(clip_chain_id~, ..) | TextItem(clip_chain_id~, ..) => clip_chain_id
+    QuadItem(clip_chain_id~, ..)
+    | TextItem(clip_chain_id~, ..)
+    | TextRunItem(clip_chain_id~, ..) => clip_chain_id
   }
 }
 
@@ -266,15 +320,18 @@ fn snapshot_validate_items(
   let mut failure : SnapshotError? = None
   let mut item_index = 0
   while item_index < items.length() && failure is None {
-    if items[item_index] is TextItem(text~, font_size~, ..) {
-      match snapshot_validate_text(text, font_size) {
-        Err(error) => return Err(error)
-        Ok(_) => ()
-      }
+    match items[item_index] {
+      TextItem(text~, font_size~, ..) | TextRunItem(text~, font_size~, ..) =>
+        match snapshot_validate_text(text, font_size) {
+          Err(error) => return Err(error)
+          Ok(_) => ()
+        }
+      QuadItem(..) => ()
     }
     match items[item_index] {
       QuadItem(transform~, opacity~, clip_chain_id~, ..)
-      | TextItem(transform~, opacity~, clip_chain_id~, ..) =>
+      | TextItem(transform~, opacity~, clip_chain_id~, ..)
+      | TextRunItem(transform~, opacity~, clip_chain_id~, ..) =>
         if !snapshot_finite(opacity) || opacity < 0.0 || opacity > 1.0 {
           failure = Some(InvalidOpacity)
         } else if !snapshot_transform_finite(transform) {
@@ -566,6 +623,23 @@ fn snapshot_item_json(item : SceneItem) -> String {
         Some(value) => "\{value}"
       }
       "{\"kind\":\"text\",\"id\":\{id},\"bounds\":\{snapshot_rect_json(bounds)},\"text\":\{snapshot_text_json(text)},\"font_size\":\{snapshot_double(font_size)},\"color\":\{snapshot_color_json(color)},\"transform\":\{snapshot_transform_json(transform)},\"opacity\":\{snapshot_double(opacity)},\"clip_chain_id\":\{clip_json}}"
+    }
+    TextRunItem(
+      id~,
+      bounds~,
+      text_origin~,
+      text~,
+      font_size~,
+      color~,
+      transform~,
+      opacity~,
+      clip_chain_id~
+    ) => {
+      let clip_json = match clip_chain_id {
+        None => "null"
+        Some(value) => "\{value}"
+      }
+      "{\"kind\":\"text_run\",\"id\":\{id},\"bounds\":\{snapshot_rect_json(bounds)},\"text_origin\":{\"x\":\{snapshot_double(text_origin.x())},\"y\":\{snapshot_double(text_origin.y())}},\"text\":\{snapshot_text_json(text)},\"font_size\":\{snapshot_double(font_size)},\"color\":\{snapshot_color_json(color)},\"transform\":\{snapshot_transform_json(transform)},\"opacity\":\{snapshot_double(opacity)},\"clip_chain_id\":\{clip_json}}"
     }
   }
 }

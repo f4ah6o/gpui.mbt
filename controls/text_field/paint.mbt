@@ -91,6 +91,19 @@ pub fn scene_text_bounds(
 }
 
 ///|
+/// Return the bounded run-local origin and clip rectangle used by field
+/// admission and paint. The legacy `scene_text_bounds` API above intentionally
+/// keeps its original logical-origin behavior for existing callers.
+pub fn scene_text_run_geometry(
+  measurement : @text_layout.TextMeasurement,
+) -> Result[(@primitives.Point, @primitives.Rect), TextFieldPaintError] {
+  match field_run_geometry(measurement) {
+    Ok(value) => Ok(value)
+    Err(_) => Err(GeometryFailure)
+  }
+}
+
+///|
 /// Emit a reusable field component in paint order. The caller reserves eight
 /// item IDs from item_id_base and a unique clip-chain ID, then merges the
 /// returned copied values into its SceneSnapshot. Fonts stay system-sans.
@@ -142,6 +155,11 @@ pub fn TextField::paint_items(
   let anchor = self.measurement().caret_at(selection.anchor()).unwrap().strong()
   let head = self.measurement().caret_at(selection.head()).unwrap().strong()
   let origin_x = content.left() - self.scroll_offset()
+  let (text_origin, text_bounds) = match
+    scene_text_run_geometry(self.measurement()) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
   if !selection.is_collapsed() {
     let left = if anchor.left() < head.left() {
       anchor.left()
@@ -155,8 +173,10 @@ pub fn TextField::paint_items(
     }
     let rect = match
       paint_rect(
-        origin_x + left,
-        content.top() + self.measurement().logical_rect().top(),
+        origin_x + text_origin.x() + left,
+        content.top() +
+        text_origin.y() +
+        self.measurement().logical_rect().top(),
         right - left,
         self.measurement().logical_rect().size().height(),
       ) {
@@ -173,19 +193,16 @@ pub fn TextField::paint_items(
       Err(error) => return Err(error)
     }
   }
-  let text_bounds = match scene_text_bounds(self.measurement()) {
-    Ok(rect) => rect
-    Err(error) => return Err(error)
-  }
   let transform = match
     @scene.AffineTransform::new(1.0, 0.0, 0.0, 1.0, origin_x, content.top()) {
     Ok(value) => value
     Err(error) => return Err(SceneFailure(error))
   }
   match
-    @scene.SceneItem::text(
+    @scene.SceneItem::text_run(
       item_id_base + 6,
       text_bounds,
+      text_origin,
       self.document().text(),
       self.font_size(),
       black,
@@ -199,8 +216,8 @@ pub fn TextField::paint_items(
   if self.is_focused() {
     let rect = match
       paint_rect(
-        origin_x + head.left(),
-        content.top() + head.top(),
+        origin_x + text_origin.x() + head.left(),
+        content.top() + text_origin.y() + head.top(),
         1.0,
         head.size().height(),
       ) {

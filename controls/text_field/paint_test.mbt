@@ -14,6 +14,39 @@ fn field_test_paint(
 }
 
 ///|
+fn field_test_measure_ink(
+  document : @text.TextDocument,
+  ink : @primitives.Rect,
+) -> @text_layout.TextMeasurement {
+  let base = field_test_measure(document).unwrap()
+  @text_layout.TextMeasurement::new(
+    document,
+    base.logical_rect(),
+    ink,
+    base.first_line_baseline(),
+    base.line_count(),
+    base.unknown_glyph_count(),
+    base.carets(),
+  ).unwrap()
+}
+
+///|
+fn field_test_create_with_measurement(
+  document : @text.TextDocument,
+  bounds : @primitives.Rect,
+  measurement : @text_layout.TextMeasurement,
+) -> @text_field.TextField {
+  @text_field.TextField::new(
+    17UL,
+    bounds,
+    16.0,
+    document,
+    _ => Ok(measurement),
+    field_test_admit,
+  ).unwrap()
+}
+
+///|
 fn field_test_quad(
   items : Array[@scene.SceneItem],
   index : Int,
@@ -79,9 +112,10 @@ test "field scene order preserves style, copied text and clip geometry" {
   assert_true(selection_clip == Some(77))
 
   match items[6] {
-    @scene.TextItem(
+    @scene.TextRunItem(
       id=106,
       bounds~,
+      text_origin~,
       text="a😀b",
       font_size=16.0,
       color~,
@@ -90,6 +124,7 @@ test "field scene order preserves style, copied text and clip geometry" {
       clip_chain_id=Some(77)
     ) => {
       assert_true(bounds == field_test_rect(0.0, 0.0, 24.0, 20.0))
+      assert_true(text_origin == @primitives.Point::new(0.0, 0.0).unwrap())
       assert_true(field_test_color_is(color, 20, 24, 30, 255))
       assert_eq(transform.tx(), 14.0)
       assert_eq(transform.ty(), 24.0)
@@ -107,6 +142,47 @@ test "field scene order preserves style, copied text and clip geometry" {
 }
 
 ///|
+test "negative ink bearings are inset into a separate run clip and viewport" {
+  let bounds = field_test_rect(10.0, 20.0, 80.0, 40.0)
+  let document = field_test_document("abc")
+    .with_selection(@text.TextSelection::new(1, 3).unwrap())
+    .unwrap()
+  let measurement = field_test_measure_ink(
+    document,
+    field_test_rect(-2.0, -3.0, 28.0, 25.0),
+  )
+  let field = field_test_focused(
+    field_test_create_with_measurement(document, bounds, measurement),
+  )
+  assert_eq(field.scroll_offset(), 0.0)
+  let (clip, items) = field_test_paint(field, 150UL, 81)
+  assert_eq(items.length(), 8)
+  assert_true(clip.rects()[0] == field_test_rect(14.0, 24.0, 72.0, 32.0))
+  let (_, selection, _, _, _, selection_clip) = field_test_quad(items, 5)
+  assert_true(selection == field_test_rect(24.0, 27.0, 16.0, 20.0))
+  assert_true(selection_clip == Some(81))
+  match items[6] {
+    @scene.TextRunItem(
+      bounds~,
+      text_origin~,
+      text="abc",
+      transform~,
+      clip_chain_id=Some(81),
+      ..
+    ) => {
+      assert_true(bounds == field_test_rect(0.0, 0.0, 28.0, 25.0))
+      assert_true(text_origin == @primitives.Point::new(2.0, 3.0).unwrap())
+      assert_eq(transform.tx(), 14.0)
+      assert_eq(transform.ty(), 24.0)
+    }
+    _ => fail("negative ink should use the inset local-origin run variant")
+  }
+  let (_, caret, _, _, _, caret_clip) = field_test_quad(items, 7)
+  assert_true(caret == field_test_rect(40.0, 27.0, 1.0, 16.0))
+  assert_true(caret_clip == Some(81))
+}
+
+///|
 test "local text bounds translate with horizontal scroll and keep the end caret visible" {
   let bounds = field_test_rect(10.0, 20.0, 32.0, 28.0)
   let at_end = field_test_selection(field_test_create("abcd", bounds), 4, 4)
@@ -117,14 +193,16 @@ test "local text bounds translate with horizontal scroll and keep the end caret 
   assert_eq(items.length(), 7)
 
   match items[5] {
-    @scene.TextItem(
+    @scene.TextRunItem(
       bounds~,
+      text_origin~,
       text="abcd",
       transform~,
       clip_chain_id=Some(78),
       ..
     ) => {
       assert_true(bounds == field_test_rect(0.0, 0.0, 32.0, 20.0))
+      assert_true(text_origin == @primitives.Point::new(0.0, 0.0).unwrap())
       assert_eq(transform.tx(), 5.0)
       assert_eq(transform.ty(), 24.0)
     }
@@ -146,7 +224,7 @@ test "unfocused selection stays painted without an active caret" {
   let (_, items) = field_test_paint(field, 300UL, 79)
   assert_eq(items.length(), 7)
   assert_eq(items[5].id(), 305UL)
-  assert_true(items[6] is @scene.TextItem(text="abcd", ..))
+  assert_true(items[6] is @scene.TextRunItem(text="abcd", ..))
   let (_, _, inactive_border, _, _, border_clip) = field_test_quad(items, 1)
   assert_true(field_test_color_is(inactive_border, 130, 140, 150, 255))
   assert_true(border_clip is None)
@@ -170,13 +248,17 @@ test "empty text paints a bounded valid v1 scene and outputs are detached" {
   let (clip, items) = field_test_paint(field, 400UL, 80)
   assert_eq(items.length(), 7)
   match items[5] {
-    @scene.TextItem(
+    @scene.TextRunItem(
       bounds~,
+      text_origin~,
       text="",
       font_size=16.0,
       clip_chain_id=Some(80),
       ..
-    ) => assert_true(bounds == field_test_rect(0.0, 0.0, 1.0, 20.0))
+    ) => {
+      assert_true(bounds == field_test_rect(0.0, 0.0, 1.0, 20.0))
+      assert_true(text_origin == @primitives.Point::new(0.0, 0.0).unwrap())
+    }
     _ => fail("empty text must still form a valid bounded text item")
   }
   let (caret_id, caret_bounds, _, _, _, caret_clip) = field_test_quad(items, 6)
@@ -195,7 +277,7 @@ test "empty text paints a bounded valid v1 scene and outputs are detached" {
 
   let snapshot = match
     @scene.SceneSnapshot::new(
-      field_test_rect(0.0, 0.0, 24.0, 24.0),
+      field_test_rect(0.0, 0.0, 24.0, 28.0),
       1.0,
       [],
       [clip],
@@ -209,7 +291,7 @@ test "empty text paints a bounded valid v1 scene and outputs are detached" {
   assert_eq(snapshot.items().length(), 7)
   let canonical = snapshot.canonical_json()
   assert_true(canonical.contains("\"schema_version\":1"))
-  assert_true(canonical.contains("\"kind\":\"text\""))
+  assert_true(canonical.contains("\"kind\":\"text_run\""))
   assert_true(canonical.contains("\"text\":\"\""))
   assert_true(canonical.contains("\"clip_chain_id\":80"))
   let snapshot_items = snapshot.items()

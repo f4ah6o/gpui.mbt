@@ -160,9 +160,16 @@ surface, reuses identical active clip chains deterministically, and currently
 emits no renderer-facing resources. A bounded `TextItem` can also be added
 directly to the v1 item list: it carries a MoonBit string, bounds, font size,
 color, transform, opacity, and optional clip-chain ID. Canvas 2D draws one
-system-sans run clipped to those bounds; native renderers return
-`UnsupportedCapability`. It has no source ranges, shaping/measurement API, or
-editor state. See [the implementation](../scene/snapshot.mbt),
+system-sans run clipped to those bounds; other existing native renderers may
+return `UnsupportedCapability`. It has no source ranges, shaping/measurement
+API, or editor state. A separate plain `TextRunItem` variant carries the same
+bounded system-sans run data plus an independent item-local `text_origin`;
+its `bounds` are the exact item-local clip, applied before the affine
+transform. Existing `TextItem` positioning and canonical JSON are unchanged.
+The snapshot envelope remains schema v1: consumers must reject unknown item
+variants, and public exhaustive matches need to add a `TextRunItem` arm. This
+variant is not the full design-target text run with style tokens, source ranges,
+or portable shaping. See [the implementation](../scene/snapshot.mbt),
 [text validation tests](../scene/snapshot_text_test.mbt), and
 [browser scope](browser-demo.md#bounded-text-and-visible-card-semantics).
 The complete schema below still requires quad border/corner data, path clips,
@@ -191,8 +198,9 @@ decimal numbers; negative zero is normalized to zero, item/clip/resource order
 is preserved, and NaN/infinity are rejected before a snapshot is emitted.
 Breaking envelope changes increment `schema_version`; the current v1 envelope
 permits extending item variants, and consumers must reject unsupported variants
-explicitly. Bounded text is such an extension and preserves existing quad JSON
-bytes. Its canonical string encoding escapes quotes, controls, and non-ASCII
+explicitly. Bounded text and the later origin-aware run are item-variant
+extensions; existing `TextItem` meaning/JSON and quad JSON bytes are preserved.
+Canonical string encoding escapes quotes, controls, and non-ASCII
 UTF-16 code units, including surrogate pairs, without introducing text-range
 semantics. Snapshot equality is structural, not a pixel comparison. These rules
 make scene tests reproducible without a window server or GPU.

@@ -325,7 +325,7 @@ test "Linux field Host.present admission and serializer rejection E2E" {
       Ok(value) => value
       Err(_) => fail("live window geometry cannot admit the field bounds")
     }
-    let original = match make_field("Hello 日本", bounds) {
+    let original = match make_field("jJ", bounds) {
       Ok(value) => value.with_focus(true).unwrap()
       Err(_) => fail("real sans/Pango field admission failed")
     }
@@ -338,15 +338,25 @@ test "Linux field Host.present admission and serializer rejection E2E" {
     width = ready_width
     height = ready_height
     scale = ready_scale
+    let (first_origin, _) = @text_field.scene_text_run_geometry(
+      original.measurement(),
+    ).unwrap()
+    assert_true(first_origin.x() > 0.0)
 
     // Build a real admitted edit candidate. A one-pixel-stale viewport reaches
     // the real Host.present/native metrics preflight and deterministically
     // reports typed Busy without relying on frame-callback timing.
+    let end = change(original, key_event(@primitives.End)).unwrap()
+    let selected = change(end, key_event(@primitives.Home, shift=true)).unwrap()
     let candidate = match
-      change(original, @primitives.TextInput(text="Hello 日本!")) {
+      change(selected, @primitives.TextInput(text="ÁA\u{301}")) {
       Ok(value) => value
       Err(_) => fail("real field edit candidate was not admitted")
     }
+    let (candidate_origin, _) = @text_field.scene_text_run_geometry(
+      candidate.measurement(),
+    ).unwrap()
+    assert_true(candidate_origin.y() > 0.0)
     let stale_candidate_scene = match
       field_scene(candidate, width + 1.0, height, scale) {
       Ok(value) => value

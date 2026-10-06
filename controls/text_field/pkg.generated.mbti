@@ -12,6 +12,8 @@ import {
 // Values
 pub fn scene_text_bounds(@text_layout.TextMeasurement) -> Result[@primitives.Rect, TextFieldPaintError]
 
+pub fn scene_text_run_geometry(@text_layout.TextMeasurement) -> Result[(@primitives.Point, @primitives.Rect), TextFieldPaintError]
+
 // Errors
 
 // Types and methods

@@ -81,6 +81,23 @@ fn field_test_measure(
 }
 
 ///|
+fn field_test_measure_with_ink(
+  document : @text.TextDocument,
+  ink : @primitives.Rect,
+) -> @text_layout.TextMeasurement {
+  let base = field_test_measure(document).unwrap()
+  @text_layout.TextMeasurement::new(
+    document,
+    base.logical_rect(),
+    ink,
+    base.first_line_baseline(),
+    base.line_count(),
+    base.unknown_glyph_count(),
+    base.carets(),
+  ).unwrap()
+}
+
+///|
 fn field_test_admit(
   document : @text.TextDocument,
   measurement : @text_layout.TextMeasurement,
@@ -135,9 +152,14 @@ fn field_test_create(
   bounds : @primitives.Rect,
 ) -> @text_field.TextField raise {
   let document = field_test_document(text)
+  let test_bounds = if bounds.size().height() < 28.0 {
+    field_test_rect(bounds.left(), bounds.top(), bounds.size().width(), 28.0)
+  } else {
+    bounds
+  }
   match
     @text_field.TextField::new(
-      17UL, bounds, 16.0, document, field_test_measure, field_test_admit,
+      17UL, test_bounds, 16.0, document, field_test_measure, field_test_admit,
     ) {
     Ok(value) => value
     Err(_) => fail("valid test field should construct")
@@ -414,7 +436,7 @@ test "single-line LTR and strong-weak geometry admission fails closed" {
   let normal = field_test_measure(document).unwrap()
   let field = @text_field.TextField::new(
     1UL,
-    field_test_rect(0.0, 0.0, 80.0, 24.0),
+    field_test_rect(0.0, 0.0, 80.0, 28.0),
     16.0,
     document,
     _ => Ok(normal),
@@ -557,6 +579,51 @@ test "single-line LTR and strong-weak geometry admission fails closed" {
     )
     is Err(@text_field.UnsupportedLayout),
   )
+  let out_of_line_x = @text_layout.TextMeasurement::new(
+    document,
+    field_test_rect(0.0, 0.0, 16.0, 20.0),
+    field_test_rect(-2.0, -2.0, 64.0, 24.0),
+    14.0,
+    1,
+    0,
+    [
+      @text_layout.CaretGeometry::new(
+        0,
+        true,
+        field_test_rect(0.0, 0.0, 0.0, 16.0),
+        field_test_rect(0.0, 0.0, 0.0, 16.0),
+      ).unwrap(),
+      @text_layout.CaretGeometry::new(
+        1,
+        true,
+        field_test_rect(8.0, 0.0, 0.0, 16.0),
+        field_test_rect(8.0, 0.0, 0.0, 16.0),
+      ).unwrap(),
+      @text_layout.CaretGeometry::new(
+        2,
+        true,
+        field_test_rect(20.0, 0.0, 0.0, 16.0),
+        field_test_rect(20.0, 0.0, 0.0, 16.0),
+      ).unwrap(),
+    ],
+  ).unwrap()
+  assert_true(
+    @text_field.TextField::new(
+      13UL,
+      field.bounds(),
+      16.0,
+      document,
+      _ => Ok(out_of_line_x),
+      (_, _) => Ok(()),
+    )
+    is Err(@text_field.UnsupportedLayout),
+  )
+  // Negative ink may enlarge coverage, but an out-of-line caret cannot be
+  // admitted merely because that enlarged rectangle contains it.
+  assert_true(
+    @text_field.scene_text_run_geometry(out_of_line_x)
+    is Err(@text_field.GeometryFailure),
+  )
   let mixed_vertical_carets = [
     @text_layout.CaretGeometry::new(
       0,
@@ -588,7 +655,7 @@ test "single-line LTR and strong-weak geometry admission fails closed" {
   ).unwrap()
   let mixed_vertical_field = @text_field.TextField::new(
     9UL,
-    field_test_rect(0.0, 0.0, 80.0, 34.063),
+    field_test_rect(0.0, 0.0, 80.0, 35.0),
     16.0,
     document,
     _ => Ok(mixed_vertical_measurement),
@@ -636,11 +703,11 @@ test "single-line LTR and strong-weak geometry admission fails closed" {
     is Err(@text_field.UnsupportedLayout),
   )
 
-  // Ink overhang above or left of the local raster origin would be cropped.
+  // Negative bearings are accepted when the full union fits the field.
   let negative_left_ink = @text_layout.TextMeasurement::new(
     document,
     normal.logical_rect(),
-    field_test_rect(-1.0, 0.0, 17.0, 20.0),
+    field_test_rect(-1.0, -1.0, 18.0, 22.0),
     normal.first_line_baseline(),
     1,
     0,
@@ -655,9 +722,76 @@ test "single-line LTR and strong-weak geometry admission fails closed" {
     0,
     normal.carets(),
   ).unwrap()
+  let negative_left_field = @text_field.TextField::new(
+    11UL,
+    field_test_rect(0.0, 0.0, 80.0, 40.0),
+    16.0,
+    document,
+    _ => Ok(negative_left_ink),
+    (_, _) => Ok(()),
+  ).unwrap()
+  assert_true(
+    negative_left_field.with_bounds(field_test_rect(0.0, 0.0, 80.0, 29.0))
+    is Err(@text_field.InvalidBounds),
+  )
+  assert_true(
+    negative_left_field.with_bounds(field_test_rect(0.0, 0.0, 80.0, 30.0))
+    is Ok(_),
+  )
   assert_true(
     @text_field.TextField::new(
-      11UL,
+      12UL,
+      field_test_rect(0.0, 0.0, 80.0, 40.0),
+      16.0,
+      document,
+      _ => Ok(negative_top_ink),
+      (_, _) => Ok(()),
+    )
+    is Ok(_),
+  )
+  assert_true(
+    @text_field.scene_text_run_geometry(negative_left_ink) ==
+    Ok(
+      (
+        @primitives.Point::new(1.0, 1.0).unwrap(),
+        field_test_rect(0.0, 0.0, 18.0, 22.0),
+      ),
+    ),
+  )
+  assert_true(
+    @text_field.scene_text_run_geometry(negative_top_ink) ==
+    Ok(
+      (
+        @primitives.Point::new(0.0, 1.0).unwrap(),
+        field_test_rect(0.0, 0.0, 16.0, 21.0),
+      ),
+    ),
+  )
+  assert_true(
+    @text_field.scene_text_bounds(negative_left_ink) ==
+    Ok(field_test_rect(0.0, 0.0, 17.0, 21.0)),
+  )
+  let fractional_bearings = @text_layout.TextMeasurement::new(
+    document,
+    normal.logical_rect(),
+    field_test_rect(-1.7285, -0.25, 17.8, 20.5),
+    normal.first_line_baseline(),
+    1,
+    0,
+    normal.carets(),
+  ).unwrap()
+  assert_true(
+    @text_field.scene_text_run_geometry(fractional_bearings) ==
+    Ok(
+      (
+        @primitives.Point::new(2.0, 1.0).unwrap(),
+        field_test_rect(0.0, 0.0, 19.0, 22.0),
+      ),
+    ),
+  )
+  assert_true(
+    @text_field.TextField::new(
+      13UL,
       field.bounds(),
       16.0,
       document,
@@ -666,16 +800,32 @@ test "single-line LTR and strong-weak geometry admission fails closed" {
     )
     is Err(@text_field.UnsupportedLayout),
   )
+  // Bounds which individually fit the caps may still make an oversized union.
+  let too_wide_union = @text_layout.TextMeasurement::new(
+    document,
+    field_test_rect(0.0, 0.0, 2048.0, 20.0),
+    field_test_rect(-1.0, 0.0, 2048.0, 20.0),
+    normal.first_line_baseline(),
+    1,
+    0,
+    normal.carets(),
+  ).unwrap()
   assert_true(
-    @text_field.TextField::new(
-      12UL,
-      field.bounds(),
-      16.0,
-      document,
-      _ => Ok(negative_top_ink),
-      (_, _) => Ok(()),
-    )
-    is Err(@text_field.UnsupportedLayout),
+    @text_field.scene_text_run_geometry(too_wide_union)
+    is Err(@text_field.GeometryFailure),
+  )
+  let too_tall_union = @text_layout.TextMeasurement::new(
+    document,
+    field_test_rect(0.0, 0.0, 16.0, 128.0),
+    field_test_rect(0.0, -1.0, 16.0, 128.0),
+    normal.first_line_baseline(),
+    1,
+    0,
+    normal.carets(),
+  ).unwrap()
+  assert_true(
+    @text_field.scene_text_run_geometry(too_tall_union)
+    is Err(@text_field.GeometryFailure),
   )
   assert_true(
     @text_field.TextField::new(
@@ -803,6 +953,61 @@ test "selection changes scroll, clicks include scroll, and wheel remains bounded
     )
     .unwrap().0
   assert_eq(non_cursor_click.selection().head(), 0)
+}
+
+///|
+test "inset run origin is inverted for start hits selection and horizontal scroll" {
+  let bounds = field_test_rect(0.0, 0.0, 24.0, 32.0)
+  let document = field_test_document("abcdef")
+  let measurement = field_test_measure_with_ink(
+    document,
+    field_test_rect(-2.0, -2.0, 54.0, 24.0),
+  )
+  let initial = @text_field.TextField::new(
+    23UL,
+    bounds,
+    16.0,
+    document,
+    _ => Ok(measurement),
+    field_test_admit,
+  ).unwrap()
+  assert_eq(initial.scroll_offset(), 0.0)
+  let start = field_test_event(
+      initial,
+      @primitives.PointerButtonPressed(
+        position=@primitives.Point::new(4.0, 16.0).unwrap(),
+        button=@primitives.Primary,
+        modifiers=@primitives.Modifiers::none(),
+      ),
+    ).0
+  assert_true(start.is_focused())
+  assert_eq(start.selection().head(), 0)
+
+  let shift = @primitives.Modifiers::new(
+    shift=true,
+    control=false,
+    alt=false,
+    meta=false,
+  )
+  let selected = field_test_event(
+      start,
+      @primitives.PointerButtonPressed(
+        position=@primitives.Point::new(24.0, 16.0).unwrap(),
+        button=@primitives.Primary,
+        modifiers=shift,
+      ),
+    ).0
+  assert_true(selected.selection() == @text.TextSelection::new(0, 2).unwrap())
+  let (end, _) = field_test_key(
+    selected,
+    @primitives.End,
+    @primitives.Modifiers::none(),
+  )
+  assert_eq(end.selection().head(), 6)
+  // The union width is 54 px; reserve a one-pixel caret at the right edge.
+  assert_eq(end.scroll_offset(), 35.0)
+  let end_caret = end.measurement().caret_at(6).unwrap().strong()
+  assert_eq(end_caret.left() + 2.0 - end.scroll_offset(), 15.0)
 }
 
 ///|

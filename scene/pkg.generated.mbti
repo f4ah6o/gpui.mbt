@@ -93,11 +93,13 @@ pub fn SceneError::not_equal(Self, Self) -> Bool
 pub(all) enum SceneItem {
   QuadItem(id~ : UInt64, bounds~ : @primitives.Rect, color~ : @primitives.Color, transform~ : AffineTransform, opacity~ : Double, clip_chain_id~ : Int?)
   TextItem(id~ : UInt64, bounds~ : @primitives.Rect, text~ : String, font_size~ : Double, color~ : @primitives.Color, transform~ : AffineTransform, opacity~ : Double, clip_chain_id~ : Int?)
+  TextRunItem(id~ : UInt64, bounds~ : @primitives.Rect, text_origin~ : @primitives.Point, text~ : String, font_size~ : Double, color~ : @primitives.Color, transform~ : AffineTransform, opacity~ : Double, clip_chain_id~ : Int?)
 }
 pub fn SceneItem::clip_chain_id(Self) -> Int?
 pub fn SceneItem::id(Self) -> UInt64
 pub fn SceneItem::quad(UInt64, @primitives.Rect, @primitives.Color, AffineTransform, Double, Int?) -> Result[Self, SnapshotError]
 pub fn SceneItem::text(UInt64, @primitives.Rect, String, Double, @primitives.Color, AffineTransform, Double, Int?) -> Result[Self, SnapshotError]
+pub fn SceneItem::text_run(UInt64, @primitives.Rect, @primitives.Point, String, Double, @primitives.Color, AffineTransform, Double, Int?) -> Result[Self, SnapshotError]
 
 pub struct SceneResource {
   id : UInt64

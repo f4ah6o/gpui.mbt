@@ -477,6 +477,15 @@ fn frame_data(
   if items.length() > 100000 {
     return Err(backend_error(8, "present"))
   }
+  // Reject unsupported paint variants before writing any frame records. In
+  // particular, origin-aware text must never be coerced to the quad layout.
+  for item in items {
+    match item {
+      @scene.TextItem(..) | @scene.TextRunItem(..) =>
+        return Err(backend_error(1, "present"))
+      @scene.QuadItem(..) => ()
+    }
+  }
   let data = FixedArray::make(5 + items.length() * 19, 0.0)
   data[0] = viewport.left()
   data[1] = viewport.top()
@@ -486,7 +495,8 @@ fn frame_data(
   let chains = snapshot.clip_chains()
   for index = 0; index < items.length(); index = index + 1 {
     match items[index] {
-      @scene.TextItem(..) => return Err(backend_error(1, "present"))
+      @scene.TextItem(..) | @scene.TextRunItem(..) =>
+        return Err(backend_error(1, "present"))
       @scene.QuadItem(bounds~, color~, transform~, opacity~, clip_chain_id~, ..) => {
         let mut clip = Some(viewport)
         if clip_chain_id is Some(id) {

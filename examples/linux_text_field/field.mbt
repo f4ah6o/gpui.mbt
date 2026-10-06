@@ -18,16 +18,17 @@ fn admit(
   document : @text.TextDocument,
   measurement : @text_layout.TextMeasurement,
 ) -> Result[Unit, @text_field.TextFieldError] {
-  let bounds = match @text_field.scene_text_bounds(measurement) {
+  let (origin, bounds) = match
+    @text_field.scene_text_run_geometry(measurement) {
     Ok(value) => value
     Err(_) => return Err(@text_field.UnsupportedLayout)
   }
   match
-    @linux_text.admit_scene_text_run(
+    @linux_text.admit_scene_text_run_at(
       document,
       FIELD_FONT_SIZE,
-      bounds.size().width(),
-      bounds.size().height(),
+      origin,
+      bounds,
     ) {
     Ok(_) => Ok(())
     Err(_) => Err(@text_field.AdmissionFailed)
@@ -192,4 +193,29 @@ fn emit_fixtures() -> Unit {
   fixture_line("scroll_end", scrolling, false)
   let blurred = scrolling.with_focus(false).unwrap()
   fixture_line("blurred", blurred, false)
+  let j_start = make_field("jJ", bounds).unwrap().with_focus(true).unwrap()
+  fixture_line("j_start", j_start, false)
+  let accent_start = make_field("ÁA\u{301}", bounds)
+    .unwrap()
+    .with_focus(true)
+    .unwrap()
+  fixture_line("accent_start", accent_start, false)
+  let j_scroll = make_field("Wide 日本 ".repeat(8) + "jJ", bounds)
+    .unwrap()
+    .with_focus(true)
+    .unwrap()
+  fixture_line(
+    "j_scroll",
+    change(j_scroll, key_event(@primitives.End)).unwrap(),
+    false,
+  )
+  let accent_scroll = make_field("Wide ".repeat(20) + "ÁA\u{301}", bounds)
+    .unwrap()
+    .with_focus(true)
+    .unwrap()
+  fixture_line(
+    "accent_scroll",
+    change(accent_scroll, key_event(@primitives.End)).unwrap(),
+    false,
+  )
 }

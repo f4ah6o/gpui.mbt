@@ -1,6 +1,6 @@
 # Ubuntu native backend roadmap
 
-Status: in progress — grayscale drawing implemented; bounded experimental field/direct-keyboard work is active; compositor typing, IME, and support gates remain open
+Status: in progress — grayscale drawing implemented; bounded experimental field/direct-keyboard work is active, with unpublished origin-aware local progress; compositor typing, IME, origin GPU proof, and support gates remain open
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
 Updated: 2026-10-05
 
@@ -279,7 +279,8 @@ logical font pixels, 2,048 by 2,048 A8 tiles, 16 MiB aggregate masks, actual
 before the next allocation. No input is truncated. Invalid/unsupported/
 resource-limit failures discovered during preflight preserve the currently
 displayed frame; real device/surface loss retains existing typed recovery
-semantics. The public SceneSnapshot schema is unchanged.
+semantics. The `SceneSnapshot` envelope version remains v1 and permits
+additional item variants.
 
 The local headless C mask consumer passes normally and with ASan+UBSan using
 leak detection disabled on Debian 13 / PangoFT2 1.56.3 / Fontconfig 2.15.0
@@ -293,8 +294,8 @@ Latin/Japanese clipping/overlap readbacks. PR28 merged as
 `14b8ce67796bcb08e08b60d8fcdb495afb7257b4`. Local GPU tests remain unrun because
 AF_UNIX stream-socket creation returns `EPERM`. This bounded correctness proof
 is not a desktop, IME, text-performance or production-support qualification. Ubuntu checks `require_grayscale_raster()` to admit the
-linked ABI and Pango >= 1.50 before discovering the capability. A future
-editable control must use the same generic `sans` family, font size, and Pango
+linked ABI and Pango >= 1.50 before discovering the capability. The
+experimental field uses the same generic `sans` family, font size, and Pango
 context as drawing for caret/hit geometry; arbitrary-family measurement does
 not guarantee parity. Use [the Linux text guide](../../docs/linux-text.md#ubuntu-grayscale-scene-text)
 and [Ubuntu guide](../../docs/ubuntu.md#grayscale-text-frame-subset) for the
@@ -317,27 +318,49 @@ epochs; stale direct input is dropped, v1 reads refuse active/queued direct
 records, and epoch exhaustion fails closed until a fresh host. Blur, keymap or
 seat changes, re-arm, window release, and stop reset Compose and revoke the
 logical target. The public `TextInput`/IME route, Japanese IME, composition UI,
-and candidate positioning are still unsupported. Field bounds and
-fail-closed negative-ink-bearing behavior are documented in the
-[experimental field guide](../../docs/linux-text-field.md).
+and candidate positioning are still unsupported.
 
-Current evidence is local portable/model testing, real-font provider
-admission, headless native callback/queue/decoder tests, fixture encoding, and
-GPU-source strict compilation. Control-to-renderer fixtures are injected and
-do not show compositor keyboard delivery. Actual compositor-delivered typing
-is **unrun**: the stock Weston 13 headless setup lacks an admitted input
-injection driver for this qualification, and local AF_UNIX socket creation
-returns `EPERM`. The hosted field `Host.present`/injected-renderer result is
-pending review; no field-specific hosted pass or source SHA is claimed. Thus
-packet D's Japanese IME/text-input acceptance remains open, along with actual
-desktop typing, accessibility, recovery/reconnect, performance, resources,
-and all Ubuntu support gates. Do not treat this work as a support-tier change.
+Origin-aware local progress is based on reviewed PR #30 tree `5ac17e9` and is
+not published as a source commit. The scene remains a v1 envelope: legacy
+`TextItem` meaning and JSON are unchanged; new plain `TextRunItem` JSON uses
+`kind: "text_run"`, a separate `text_origin`, and exact local clip bounds
+applied before the transform. Consumers must reject unknown variants and
+public exhaustive matches must handle the new variant. Ubuntu mixed-frame
+ABI3 keeps ABI2's 23-field prefix and appends origin x/y for a 25-double record;
+kind 2 denotes the run and quad/legacy-text tags require zero origins. Linux
+raster ABI v2 returns UV crop data alongside the unchanged v1 mask struct and
+entry semantics.
+
+The field computes one shared logical/ink union with in-line carets, rounds minima down and
+maxima up to whole logical pixels to include Pango pixel coverage, and uses
+that mapping for admission, caret/selection paint, hit testing, and scroll.
+Actual-font headless field and full negative-mask tests pass, including
+negative-bearing text, composed/decomposed accents, and scroll. This closes the
+old negative-bearing rejection for the bounded local slice; it does not qualify
+GPU presentation. The field is still single-line LTR; unknown glyphs, color
+glyphs, and reflow/resource-limit cases reject the edit. Masks remain at logical
+resolution and may soften when scaled. No IME, autorepeat, general bidi, drag,
+undo, or actual compositor-delivered typing is qualified.
+
+PR #30 remains draft after pre-start runner cancellation. Its Windows, macOS,
+documentation, and headless Pango jobs passed; GPU, core, browser, and mutation
+jobs are not qualified. A bounded retry of an Ubuntu failed job was again
+cancelled before runner start; no source or billing cause is established. New
+encoder/GPU acceptance cases compile and hosted execution remains
+pending. No GPU execution or publication is claimed. Control-to-renderer
+fixtures are injected and do not show compositor keyboard delivery. Actual
+compositor-delivered typing is **unrun**: the stock Weston 13 headless setup
+lacks an admitted input injection driver for this qualification, and local
+AF_UNIX socket creation returns `EPERM`. Packet D's Japanese IME/text-input
+acceptance remains open, along with actual desktop typing, accessibility,
+recovery/reconnect, performance, resources, and all Ubuntu support gates. Do not
+treat this work as a support-tier change. See the [experimental field guide](../../docs/linux-text-field.md).
 
 Remaining packet D work is to qualify actual compositor-driven delivery through
 the direct-text target and implement a real text-input/IME path with
 composition start/update/commit/cancel, candidate/caret positioning, and
 Japanese IME qualification. The current XKB/Compose route does not satisfy
-those IME acceptance criteria. Also open are origin-aware negative-ink support,
-semantic accessibility, reusable field/picker behavior, and the backend
-recovery/resource/support gates. Text drawing or the local field prototype
-alone does not complete packet D.
+those IME acceptance criteria. Also open are compositor/GPU qualification,
+logical-resolution/scaled-mask quality, semantic accessibility, reusable
+field/picker behavior, and the backend recovery/resource/support gates. Text
+drawing or the local field prototype alone does not complete packet D.

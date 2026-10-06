@@ -157,10 +157,101 @@ fn rect_height(rect : @primitives.Rect) -> Double {
 }
 
 ///|
+/// Return the one checked layout-to-run mapping shared by validation, paint,
+/// hit testing and scroll math. Coordinates are bounded before subtracting so
+/// hostile but finite rectangles cannot overflow an intermediate extent.
+fn field_run_geometry(
+  measurement : @text_layout.TextMeasurement,
+) -> Result[(@primitives.Point, @primitives.Rect), Unit] {
+  let logical = measurement.logical_rect()
+  let ink = measurement.ink_rect()
+  let min_x = if logical.left() < 0.0 {
+    if ink.left() < logical.left() {
+      ink.left()
+    } else {
+      logical.left()
+    }
+  } else if ink.left() < 0.0 {
+    ink.left()
+  } else {
+    0.0
+  }
+  let min_y = if logical.top() < 0.0 {
+    if ink.top() < logical.top() {
+      ink.top()
+    } else {
+      logical.top()
+    }
+  } else if ink.top() < 0.0 {
+    ink.top()
+  } else {
+    0.0
+  }
+  let max_x = if logical.right() > ink.right() {
+    logical.right()
+  } else {
+    ink.right()
+  }
+  let max_y = if logical.bottom() > ink.bottom() {
+    logical.bottom()
+  } else {
+    ink.bottom()
+  }
+  for caret in measurement.carets() {
+    if caret.is_cursor_position() {
+      let strong = caret.strong()
+      // Only ink may expand the logical line's coverage union. Cursor-stop
+      // geometry outside that line is unsupported, even when a large ink
+      // rectangle would otherwise contain it.
+      if strong.left() < logical.left() ||
+        strong.right() > logical.right() ||
+        strong.top() < logical.top() ||
+        strong.bottom() > logical.bottom() {
+        return Err(())
+      }
+    }
+  }
+  // Round outward to full logical pixels. Pango ink such as -1.7 needs a
+  // two-pixel inset so the rasterized negative-bearing pixel remains inside
+  // the viewport even when the measured edge is fractional.
+  let rounded_min_x = min_x.floor()
+  let rounded_max_x = max_x.ceil()
+  let rounded_min_y = min_y.floor()
+  let rounded_max_y = max_y.ceil()
+  // Check endpoints before subtracting. The union has an origin no less than
+  // zero after inset, and these coordinate limits bound every intermediate.
+  if rounded_min_x < 0.0 - MAX_FIELD_WIDTH ||
+    rounded_max_x > MAX_FIELD_WIDTH ||
+    rounded_min_y < 0.0 - MAX_FIELD_HEIGHT ||
+    rounded_max_y > MAX_FIELD_HEIGHT {
+    return Err(())
+  }
+  let width = rounded_max_x - rounded_min_x
+  let height = rounded_max_y - rounded_min_y
+  if !finite_field_metric(width) ||
+    !finite_field_metric(height) ||
+    width > MAX_FIELD_WIDTH ||
+    height > MAX_FIELD_HEIGHT {
+    return Err(())
+  }
+  let paint_width = if width < 1.0 { 1.0 } else { width }
+  let paint_height = if height < 1.0 { 1.0 } else { height }
+  match
+    (
+      @primitives.Point::new(0.0 - rounded_min_x, 0.0 - rounded_min_y),
+      @primitives.Rect::new(0.0, 0.0, paint_width, paint_height),
+    ) {
+    (Ok(origin), Ok(bounds)) => Ok((origin, bounds))
+    _ => Err(())
+  }
+}
+
+///|
 fn validate_field_measurement(
   document : @text.TextDocument,
   measurement : @text_layout.TextMeasurement,
   validate_selection : Bool,
+  content_height : Double,
 ) -> Result[Unit, TextFieldError] {
   if measurement.document() != document ||
     measurement.line_count() != 1 ||
@@ -169,19 +260,15 @@ fn validate_field_measurement(
   }
   let logical = measurement.logical_rect()
   let ink = measurement.ink_rect()
+  let (_, run_bounds) = match field_run_geometry(measurement) {
+    Ok(value) => value
+    Err(_) => return Err(UnsupportedLayout)
+  }
   if rect_width(logical) > MAX_FIELD_WIDTH ||
     rect_height(logical) > MAX_FIELD_HEIGHT ||
     rect_width(ink) > MAX_FIELD_WIDTH ||
     rect_height(ink) > MAX_FIELD_HEIGHT ||
-    logical.left() != 0.0 ||
-    logical.top() != 0.0 ||
-    logical.right() > MAX_FIELD_WIDTH ||
-    // The shared raster path anchors runs at the logical origin, so ink that
-    // overhangs to the left or above it would be cropped in this first slice.
-    ink.left() < 0.0 ||
-    ink.right() > MAX_FIELD_WIDTH ||
-    ink.top() < 0.0 ||
-    ink.bottom() > MAX_FIELD_HEIGHT ||
+    rect_height(run_bounds) > content_height ||
     measurement.first_line_baseline() > MAX_FIELD_HEIGHT ||
     measurement.first_line_baseline() > logical.bottom() {
     return Err(UnsupportedLayout)
@@ -194,7 +281,7 @@ fn validate_field_measurement(
       let strong = caret.strong()
       let weak = caret.weak()
       if strong != weak ||
-        strong.left() < 0.0 ||
+        strong.left() < logical.left() ||
         strong.right() > logical.right() ||
         strong.top() < logical.top() ||
         strong.bottom() > logical.bottom() ||
@@ -269,27 +356,8 @@ fn field_content_bounds(bounds : @primitives.Rect) -> @primitives.Rect {
 
 ///|
 fn max_field_extent(field : TextField) -> Double {
-  let logical = field.measurement.logical_rect()
-  let ink = field.measurement.ink_rect()
-  let logical_extent = logical.right() - logical.left()
-  let ink_extent = ink.right() - logical.left()
-  let caret_extent = match
-    field.measurement.caret_at(field.document.utf16_length()) {
-    Ok(caret) => caret.strong().left() - logical.left()
-    Err(_) => logical_extent
-  }
-  let mut extent = logical_extent
-  if ink_extent > extent {
-    extent = ink_extent
-  }
-  if caret_extent > extent {
-    extent = caret_extent
-  }
-  if extent < 0.0 {
-    0.0
-  } else {
-    extent
-  }
+  let (_, bounds) = field_run_geometry(field.measurement).unwrap()
+  rect_width(bounds)
 }
 
 ///|
@@ -317,8 +385,8 @@ fn field_scroll_for_head(field : TextField, head : Int) -> Double {
     Ok(value) => value
     Err(_) => return field.scroll_offset
   }
-  let logical = field.measurement.logical_rect()
-  let x = caret.strong().left() - logical.left()
+  let (text_origin, _) = field_run_geometry(field.measurement).unwrap()
+  let x = text_origin.x() + caret.strong().left()
   let viewport_width = rect_width(field_content_bounds(field.bounds))
   let usable_width = if viewport_width > 1.0 {
     viewport_width - 1.0
@@ -421,7 +489,13 @@ pub fn TextField::new(
     Ok(value) => value
     Err(_) => return Err(MeasurementFailed)
   }
-  match validate_field_measurement(document, measurement, true) {
+  match
+    validate_field_measurement(
+      document,
+      measurement,
+      true,
+      rect_height(content),
+    ) {
     Ok(_) => ()
     Err(error) => return Err(error)
   }
@@ -512,7 +586,13 @@ fn prepare_field_replacement(
     Ok(value) => value
     Err(_) => return Err(MeasurementFailed)
   }
-  match validate_field_measurement(intermediate, measurement, false) {
+  match
+    validate_field_measurement(
+      intermediate,
+      measurement,
+      false,
+      rect_height(field_content_bounds(field.bounds)),
+    ) {
     Ok(_) => ()
     Err(error) => return Err(error)
   }
@@ -536,7 +616,13 @@ fn prepare_field_replacement(
       Err(error) => return Err(error)
     }
   }
-  match validate_field_measurement(final_document, final_measurement, true) {
+  match
+    validate_field_measurement(
+      final_document,
+      final_measurement,
+      true,
+      rect_height(field_content_bounds(field.bounds)),
+    ) {
     Ok(_) => ()
     Err(error) => return Err(error)
   }
@@ -608,7 +694,13 @@ pub fn TextField::with_bounds(
     return Ok(self)
   }
   let content = field_content_bounds(bounds)
-  if rect_width(content) < 1.0 || rect_height(content) < self.font_size {
+  let (_, run_bounds) = match field_run_geometry(self.measurement) {
+    Ok(value) => value
+    Err(_) => return Err(UnsupportedLayout)
+  }
+  if rect_width(content) < 1.0 ||
+    rect_height(content) < self.font_size ||
+    rect_height(run_bounds) > rect_height(content) {
     return Err(InvalidBounds)
   }
   let revision = match bump_field_revision(self.revision) {
@@ -645,7 +737,13 @@ fn field_selection_at(
       Err(error) => return Err(error)
     }
   }
-  match validate_field_measurement(document, measurement, true) {
+  match
+    validate_field_measurement(
+      document,
+      measurement,
+      true,
+      rect_height(field_content_bounds(field.bounds)),
+    ) {
     Ok(_) => ()
     Err(error) => return Err(error)
   }
@@ -790,11 +888,11 @@ fn handle_field_click(
   } else {
     position.y()
   }
-  let logical = field.measurement.logical_rect()
+  let (text_origin, _) = field_run_geometry(field.measurement).unwrap()
   let hit_point = match
     @primitives.Point::new(
-      x - content.left() + field.scroll_offset + logical.left(),
-      y - content.top() + logical.top(),
+      x - content.left() + field.scroll_offset - text_origin.x(),
+      y - content.top() - text_origin.y(),
     ) {
     Ok(value) => value
     Err(_) => return Err(InvalidHitResult)

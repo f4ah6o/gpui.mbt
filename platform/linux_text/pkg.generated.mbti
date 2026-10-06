@@ -10,6 +10,8 @@ import {
 // Values
 pub fn admit_scene_text_run(@text.TextDocument, Double, Double, Double) -> Result[Unit, LinuxTextError]
 
+pub fn admit_scene_text_run_at(@text.TextDocument, Double, @primitives.Point, @primitives.Rect) -> Result[Unit, LinuxTextError]
+
 pub fn hit_test(@text.TextDocument, String, Double, @primitives.Point) -> Result[@text_layout.TextHit, LinuxTextError]
 
 pub let max_font_family_bytes : Int

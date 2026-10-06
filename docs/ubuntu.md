@@ -119,8 +119,8 @@ metadata. An unavailable ABI/runtime returns `UnsupportedRaster` at the
 adapter boundary and maps to typed `UnsupportedCapability` for the host.
 macOS and Windows keep their existing text rejection behavior.
 
-The v1 text item uses the generic `sans` font at its supplied size; its public
-schema has no font-family field. Caret/hit measurements used by a future
+The legacy `TextItem` uses the generic `sans` font at its supplied size; its
+public schema has no font-family field. Caret/hit measurements used by an
 editable control must request the same `sans` family, size, and context to
 match this drawing path. Measurements of another explicit family do not imply
 geometry parity. Text is shaped and rasterized into grayscale A8 masks at
@@ -130,8 +130,25 @@ filtering to apply existing scene transforms/scaling to those masks and blends
 the premultiplied text color using the existing `ONE,
 ONE_MINUS_SRC_ALPHA` mode. Enlarged text can be softer than device-resolution
 rasterization because this slice does not use device-resolution hinting.
-Text-item bounds clip in item-local coordinates, while viewport clip chains
-continue to use viewport-space scissors.
+Legacy `TextItem` bounds clip in item-local coordinates, while viewport clip
+chains continue to use viewport-space scissors. The separate plain
+`TextRunItem` adds an item-local `text_origin` independent of its exact local
+`bounds` clip; clipping is performed before the affine transform. The scene
+envelope remains schema v1, and legacy `TextItem` meaning/JSON remain
+unchanged. ABI3 is the 25-double origin-aware frame record: it retains ABI2's
+23-field prefix, appends origin x/y, and uses kind 2 for `TextRunItem`; quad and
+legacy text records must use zero origin values. Raster ABI v2 returns the
+legacy mask plus UV crop coordinates in a separate v2 result, preserving the
+v1 mask struct and entry semantics. The v2 tile includes one sampling texel at
+interior crop edges, clipped to full pixel ink; exact visible geometry and UV
+crop stay independent of that halo. All tile and A8 budgets include it before
+allocation. The v1/legacy renderer explicitly keeps no-halo storage and
+filtering. V2 rejects clip/ink endpoint or extent roundtrip error above a fixed
+1/4096 logical pixel before allocating, including huge origins later cancelled
+by a transform. Consumers that do not understand the new
+item must reject it, and public exhaustive matches need an explicit
+`TextRunItem` arm. This remains a narrow plain run, not portable shaping or a
+richer general text contract.
 
 The per-frame bounds are at most 256 text runs, 16,384 UTF-8 bytes per run,
 1 MiB total UTF-8 bytes per frame, 512 logical pixels per font size, 2,048 by
@@ -147,7 +164,8 @@ is checked before each next mask allocation. Unsupported, invalid, and
 resource-limit failures preserve the previously displayed frame. Staged masks
 are released on all exit paths. Actual surface/device loss still follows the
 backend's typed recovery path; preflight preservation does not guarantee a
-prior image across device loss. The public `SceneSnapshot` schema is unchanged. See
+prior image across device loss. The `SceneSnapshot` envelope version remains
+v1 and permits this item-variant extension. See
 [the full Linux text boundary](linux-text.md#ubuntu-grayscale-scene-text).
 
 This renderer slice merged in [PR28](https://github.com/gpui-mbt/gpui.mbt/pull/28) as
@@ -165,9 +183,26 @@ Local GPU execution remains unrun because AF_UNIX stream socket creation
 returns `EPERM`. This software-rendered proof does not establish broader
 platform support or text performance qualification.
 
-Text-input/IME, text-field controls, visible caret/selection, semantic
-accessibility, menus, background enqueue, timers, fractional scaling, and
-broader service capability negotiation remain roadmap work. Native clipboard
+The origin-aware field path is separate local, unpublished progress based on
+reviewed PR #30 tree `5ac17e9`. [PR #30](https://github.com/gpui-mbt/gpui.mbt/pull/30)
+remains draft after pre-start runner cancellation. Windows, macOS, documentation,
+and headless Pango jobs passed; GPU, core, browser, and mutation jobs remain
+unqualified. A bounded Ubuntu failed-job retry was again cancelled before
+runner start, with no source or billing cause established. Actual-font headless
+field and negative-mask tests pass, including composed/decomposed accents and
+scrolling; new encoder/GPU acceptance cases compile; hosted execution is
+pending, and no GPU execution or publication is claimed. The local geometry
+uses one outward-rounded logical/ink union with carets contained in the logical line for admission, paint, hit test,
+and scroll. The field remains single-line LTR, rejects unknown/color glyphs
+and reflow/resource-limit cases, and uses logical-resolution masks that may
+soften under scaling. IME, autorepeat, general bidi, drag, undo, and actual
+compositor-delivered typing remain unqualified. See the
+[field guide](linux-text-field.md) for full limits and evidence tiers.
+
+The bounded experimental field now paints visible caret/selection and scrolls,
+but it is not a general control. Text-input/IME, semantic accessibility, menus,
+background enqueue, timers, fractional scaling, and broader service capability
+negotiation remain roadmap work. Native clipboard
 and cursor protocols are implemented, while a
 cross-client clipboard roundtrip and visible cursor smoke under an input-capable
 desktop remain unverified. Native handles and borrowed buffers do not escape

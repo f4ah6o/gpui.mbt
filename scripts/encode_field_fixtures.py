@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Encode retained Linux TextField scene JSONL as bounded test-only GPF1 frames.
+"""Encode retained Linux TextField scenes as bounded test-only GPF1/GPF2 frames.
 
 The input scene is kept byte-for-byte in ``originals/``. The binary frame is a
-private replay aid for the Ubuntu GLES test, not a wire/input protocol.
+private replay aid for the Ubuntu GLES test, not a wire/input protocol. Legacy
+text-only scenes retain GPF1/ABI2 bytes; scenes with ``text_run`` use GPF2/ABI3.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import sys
 from typing import Any
 
 
-LABELS = (
+LEGACY_LABELS = (
     "end",
     "selected",
     "edited",
@@ -28,8 +29,18 @@ LABELS = (
     "scroll_end",
     "blurred",
 )
+ORIGIN_LABELS = LEGACY_LABELS + (
+    "j_start",
+    "accent_start",
+    "j_scroll",
+    "accent_scroll",
+)
+# Keep LABELS as the original seven-label contract for downstream users and
+# tests that construct the pre-origin control fixtures.
+LABELS = LEGACY_LABELS
 REJECTED_LABELS = {"rejected_newline", "rejected_bidi"}
-MAGIC = b"GPF1"
+MAGIC_V1 = b"GPF1"
+MAGIC_V2 = b"GPF2"
 HEADER = struct.Struct("<4sII")
 DOUBLE = struct.Struct("<d")
 MAX_JSONL_BYTES = 2 * 1024 * 1024
@@ -94,6 +105,14 @@ def _rect(value: Any, where: str) -> tuple[float, float, float, float]:
         _number(rect["y"], f"{where}.y", minimum=-1e7, maximum=1e7),
         _number(rect["width"], f"{where}.width", minimum=0, maximum=1e7),
         _number(rect["height"], f"{where}.height", minimum=0, maximum=1e7),
+    )
+
+
+def _point(value: Any, where: str) -> tuple[float, float]:
+    point = _object(value, where, {"x", "y"})
+    return (
+        _number(point["x"], f"{where}.x", minimum=-1e7, maximum=1e7),
+        _number(point["y"], f"{where}.y", minimum=-1e7, maximum=1e7),
     )
 
 
@@ -174,6 +193,11 @@ def _validate_scene(
             text_count += 1
             if text_count > MAX_TEXT_ITEMS:
                 raise FixtureError(f"{label}: too many text items")
+        elif kind == "text_run":
+            expected = {"kind", "id", "bounds", "text_origin", "text", "font_size", "color", "transform", "opacity", "clip_chain_id"}
+            text_count += 1
+            if text_count > MAX_TEXT_ITEMS:
+                raise FixtureError(f"{label}: too many text items")
         else:
             raise FixtureError(f"{label}.items[{index}].kind must be quad or text")
         _object(item, f"{label}.items[{index}]", expected)
@@ -188,7 +212,7 @@ def _validate_scene(
         clip_id = item["clip_chain_id"]
         if clip_id is not None and _integer(clip_id, f"{label}.items[{index}].clip_chain_id") not in chains:
             raise FixtureError(f"{label}.items[{index}] refers to an unknown clip chain")
-        if kind == "text":
+        if kind in {"text", "text_run"}:
             if not isinstance(item["text"], str):
                 raise FixtureError(f"{label}.items[{index}].text must be a string")
             try:
@@ -200,6 +224,8 @@ def _validate_scene(
             if bounds[2] > 2048 or bounds[3] > 128:
                 raise FixtureError(f"{label}.items[{index}].bounds exceeds the native text mask limits")
             _number(item["font_size"], f"{label}.items[{index}].font_size", minimum=0.000001, maximum=32)
+            if kind == "text_run":
+                _point(item["text_origin"], f"{label}.items[{index}].text_origin")
         items.append(item)
     return scene, items
 
@@ -216,7 +242,7 @@ def _field_contract(record: dict[str, Any], label: str) -> None:
     scene, items = _validate_scene(record["scene"], label, field_fixture=True)
     del scene
 
-    text_items = [item for item in items if item["kind"] == "text"]
+    text_items = [item for item in items if item["kind"] in {"text", "text_run"}]
     if len(text_items) != 1 or text_items[0]["id"] != 106:
         raise FixtureError(f"{label}: expected one text item with ID 106")
     text = text_items[0]
@@ -228,6 +254,10 @@ def _field_contract(record: dict[str, Any], label: str) -> None:
         "rejected_bidi": "Edited 日本",
         "scroll_end": "Wide 日本 " * 8,
         "blurred": "Wide 日本 " * 8,
+        "j_start": "jJ",
+        "accent_start": "ÁA\u0301",
+        "j_scroll": "Wide 日本 " * 8 + "jJ",
+        "accent_scroll": "Wide " * 20 + "ÁA\u0301",
     }[label]
     if text["text"] != expected_text or text["font_size"] != 18:
         raise FixtureError(f"{label}: text/font identity does not match the admitted sans 18px case")
@@ -241,8 +271,10 @@ def _field_contract(record: dict[str, Any], label: str) -> None:
         raise FixtureError(f"{label}: expected a collapsed selection")
     if label in {"end", "selected"} and anchor != utf16_length:
         raise FixtureError(f"{label}: expected end caret/anchor")
-    if label == "scroll_end" and anchor != utf16_length:
-        raise FixtureError("scroll_end: expected caret at the UTF-16 end")
+    if label in {"j_start", "accent_start"} and anchor != 0:
+        raise FixtureError(f"{label}: expected start caret/anchor")
+    if label in {"scroll_end", "j_scroll", "accent_scroll"} and anchor != utf16_length:
+        raise FixtureError(f"{label}: expected caret at the UTF-16 end")
 
     by_id = {item["id"]: item for item in items}
     expected_ids = {1, 100, 101, 102, 103, 104, 106}
@@ -289,7 +321,7 @@ def _field_contract(record: dict[str, Any], label: str) -> None:
             text["opacity"] != 1 or text_bounds[0:2] != (0.0, 0.0) or
             text_transform[:4] != identity[:4] or text_transform[5] != 32.0):
         raise FixtureError(f"{label}: text ink color changed")
-    if label in {"scroll_end", "blurred"}:
+    if label in {"scroll_end", "blurred", "j_scroll", "accent_scroll"}:
         if text_transform[4] >= 36:
             raise FixtureError(f"{label}: expected horizontal scroll to keep text origin left")
     elif text_transform[4] != 36:
@@ -313,9 +345,9 @@ def _field_contract(record: dict[str, Any], label: str) -> None:
         caret_rect = _rect(caret["bounds"], f"{label}.caret.bounds")
         if abs(caret_rect[2] - 1.0) > 1e-9 or not (32 <= caret_rect[0] < 208):
             raise FixtureError(f"{label}: caret must be one logical pixel inside content bounds")
-    if label == "scroll_end":
+    if label in {"scroll_end", "j_scroll", "accent_scroll"}:
         if abs(_rect(by_id[107]["bounds"], f"{label}.caret.bounds")[0] - 207.0) > 1e-8:
-            raise FixtureError("scroll_end: one-pixel caret must sit just inside the content clip's right edge")
+            raise FixtureError(f"{label}: one-pixel caret must sit just inside the content clip's right edge")
 
 
 def _intersect(
@@ -331,7 +363,7 @@ def _intersect(
 
 
 def encode_scene(scene_value: Any) -> tuple[bytes, list[float], bytes]:
-    """Encode a validated v1 scene to the private v2 GPF1 frame format."""
+    """Encode a scene as legacy GPF1/ABI2 or origin GPF2/ABI3 binary data."""
     scene, items = _validate_scene(scene_value, "scene")
     viewport = _rect(scene["viewport"], "scene.viewport")
     chains: dict[int, list[tuple[float, float, float, float]]] = {
@@ -341,12 +373,15 @@ def encode_scene(scene_value: Any) -> tuple[bytes, list[float], bytes]:
         for chain in scene["clip_chains"]
     }
 
+    origin_enabled = any(item["kind"] == "text_run" for item in items)
+    stride = 25 if origin_enabled else 23
+    magic = MAGIC_V2 if origin_enabled else MAGIC_V1
     doubles: list[float] = [viewport[0], viewport[1], viewport[2], viewport[3],
                             _number(scene["scale"], "scene.scale", minimum=0.000001, maximum=1024)]
     blob = bytearray()
     for item in items:
         item_kind = item["kind"]
-        kind = 0 if item_kind == "quad" else 1
+        kind = 0 if item_kind == "quad" else (2 if item_kind == "text_run" else 1)
         bounds = _rect(item["bounds"], "item.bounds")
         color = _color(item["color"], "item.color")
         transform = _transform(item["transform"], "item.transform")
@@ -362,7 +397,7 @@ def encode_scene(scene_value: Any) -> tuple[bytes, list[float], bytes]:
         offset = 0
         text_length = 0
         font_size = 0.0
-        if kind == 1:
+        if kind in {1, 2}:
             offset = len(blob)
             text_bytes = item["text"].encode("utf-8", errors="strict")
             if b"\x00" in text_bytes or len(text_bytes) > MAX_TEXT_BYTES - len(blob):
@@ -370,32 +405,48 @@ def encode_scene(scene_value: Any) -> tuple[bytes, list[float], bytes]:
             blob.extend(text_bytes)
             text_length = len(text_bytes)
             font_size = _number(item["font_size"], "item.font_size", minimum=0.000001, maximum=32)
+        origin = _point(item["text_origin"], "item.text_origin") if kind == 2 else (0.0, 0.0)
         doubles.extend((float(kind), *bounds, *(float(channel) for channel in color),
-                        *transform, opacity, *clip, float(offset), float(text_length), font_size))
-    if len(doubles) != 5 + 23 * len(items):
+                        *transform, opacity, *clip, float(offset), float(text_length), font_size,
+                        *(origin if origin_enabled else ())))
+    if len(doubles) != 5 + stride * len(items):
         raise FixtureError("internal error: mixed-frame stride mismatch")
-    if len(doubles) > 5 + 23 * MAX_ITEMS:
+    if len(doubles) > 5 + stride * MAX_ITEMS:
         raise FixtureError("frame exceeds native item limit")
     data = b"".join(DOUBLE.pack(0.0 if number == 0.0 else number) for number in doubles)
-    frame = HEADER.pack(MAGIC, len(doubles), len(blob)) + data + bytes(blob)
+    frame = HEADER.pack(magic, len(doubles), len(blob)) + data + bytes(blob)
     return frame, doubles, bytes(blob)
 
 
 def encode_lines(lines: list[str], source_head: str) -> list[dict[str, Any]]:
     if not SOURCE_HEAD_RE.fullmatch(source_head):
         raise FixtureError("--source-head must be a full 40-64 digit git object ID")
-    if len(lines) != len(LABELS):
-        raise FixtureError(f"expected exactly {len(LABELS)} source lines, got {len(lines)}")
+    if len(lines) == len(LEGACY_LABELS):
+        expected_labels = LEGACY_LABELS
+        origin_fixture_set = False
+    elif len(lines) == len(ORIGIN_LABELS):
+        expected_labels = ORIGIN_LABELS
+        origin_fixture_set = True
+    else:
+        raise FixtureError(
+            f"expected exactly {len(LEGACY_LABELS)} legacy or {len(ORIGIN_LABELS)} origin source lines, got {len(lines)}"
+        )
     decoded: list[dict[str, Any]] = []
     for index, raw in enumerate(lines):
         if not raw.strip():
             raise FixtureError(f"line {index + 1}: blank records are not allowed")
         record = _json_line(raw, index + 1)
         label = record.get("label")
-        expected_label = LABELS[index]
+        expected_label = expected_labels[index]
         if label != expected_label:
             raise FixtureError(f"line {index + 1}: expected fixture label {expected_label!r}, got {label!r}")
         _field_contract(record, expected_label)
+        run_item = next(item for item in record["scene"]["items"]
+                        if item["id"] == 106)
+        if origin_fixture_set and run_item["kind"] != "text_run":
+            raise FixtureError(f"{expected_label}: origin fixture sets require text_run items")
+        if not origin_fixture_set and run_item["kind"] != "text":
+            raise FixtureError(f"{expected_label}: legacy fixture sets require text items")
         decoded.append(record)
     edited = decoded[2]
     for label in ("rejected_newline", "rejected_bidi"):
@@ -427,8 +478,10 @@ def build_fixture_set(input_path: Path, output_dir: Path, source_head: str) -> P
     except UnicodeDecodeError as exc:
         raise FixtureError("JSONL must be UTF-8") from exc
     lines = raw_text.splitlines()
-    if len(lines) != len(LABELS):
-        raise FixtureError(f"expected {len(LABELS)} JSONL records, got {len(lines)}")
+    if len(lines) not in {len(LEGACY_LABELS), len(ORIGIN_LABELS)}:
+        raise FixtureError(
+            f"expected {len(LEGACY_LABELS)} legacy or {len(ORIGIN_LABELS)} origin JSONL records, got {len(lines)}"
+        )
     decoded = encode_lines(lines, source_head)
     if output_dir.exists() and (not output_dir.is_dir() or any(output_dir.iterdir())):
         raise FixtureError("--output-dir must be absent or an empty directory")
@@ -460,18 +513,36 @@ def build_fixture_set(input_path: Path, output_dir: Path, source_head: str) -> P
             "original": f"originals/{original_name}",
             "original_line_sha256": hashlib.sha256(source_line).hexdigest(),
         })
+    origin_enabled = any(item["kind"] == "text_run"
+                         for record in decoded for item in record["scene"]["items"])
+    abi = 3 if origin_enabled else 2
+    stride = 25 if origin_enabled else 23
+    format_magic = "GPF2" if origin_enabled else "GPF1"
     manifest = {
-        "format": "GPF1",
+        "format": format_magic,
         "format_header": "little-endian <4sII> magic,double_count,utf8_byte_count",
-        "record": "little-endian float64 v2 mixed frame followed by exact UTF-8 blob",
-        "abi": 2,
-        "stride_doubles": 23,
+        "record": f"little-endian float64 ABI{abi} mixed frame followed by exact UTF-8 blob",
+        "abi": abi,
+        "stride_doubles": stride,
         "source_head": source_head.lower(),
         "scene_identity": {"viewport": [0, 0, 640, 240], "field_bounds": [32, 28, 180, 44],
                            "content_clip": [36, 32, 172, 36], "font_family": "sans", "font_size": 18},
         "replay_scope": "test-only injected control-to-renderer evidence; not wire typing or a keyboard/IME claim",
         "fixtures": manifest_records,
     }
+    profile_path = input_path.parent / "font-profile.txt"
+    if profile_path.is_file():
+        profile_bytes = profile_path.read_bytes()
+        try:
+            profile_text = profile_bytes.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise FixtureError("font-profile.txt must be UTF-8") from exc
+        if f"source_head={source_head.lower()}" not in profile_text:
+            raise FixtureError("font-profile.txt source_head does not match --source-head")
+        manifest["font_profile"] = {
+            "path": "../font-profile.txt",
+            "sha256": hashlib.sha256(profile_bytes).hexdigest(),
+        }
     manifest_bytes = (json.dumps(manifest, ensure_ascii=False, sort_keys=True,
                                  separators=(",", ":")) + "\n").encode("utf-8")
     _write_private(output_dir / "manifest.json", manifest_bytes)
@@ -491,7 +562,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     # Keep stdout machine-quiet: the source CLI's JSONL stays the only fixture
     # stream; this diagnostic is limited to stderr for test orchestration.
-    print(f"GPF1 manifest={manifest} fixtures={len(LABELS)} source_head={args.source_head}", file=sys.stderr)
+    manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+    print(f"{manifest_data['format']} manifest={manifest} fixtures={len(manifest_data['fixtures'])} source_head={args.source_head}", file=sys.stderr)
     return 0
 
 

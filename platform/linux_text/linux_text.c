@@ -502,21 +502,65 @@ void gpui_linux_text_mask_release_v1(struct gpui_linux_text_mask *mask) {
   memset(mask, 0, sizeof(*mask));
 }
 
-static int32_t raster_layout_v1(
-    int32_t abi, const uint8_t *text, int32_t text_length,
+enum raster_tile_mode { RASTER_LEGACY_TILE, RASTER_FILTER_HALO };
+
+static int32_t raster_layout_core(
+    const uint8_t *text, int32_t text_length,
     const uint8_t *family, int32_t family_length, double font_size_px,
-    double bounds_width, double bounds_height, int32_t pixel_budget,
-    struct gpui_linux_text_mask *output, gpui_lifecycle_counts *counts) {
+    double text_origin_x, double text_origin_y,
+    double clip_x, double clip_y, double bounds_width, double bounds_height,
+    int32_t pixel_budget, enum raster_tile_mode tile_mode,
+    struct gpui_linux_text_mask_v2 *output, gpui_lifecycle_counts *counts) {
   if (!output || pixel_budget < 0 || !isfinite(bounds_width) || !isfinite(bounds_height) ||
       bounds_width < 0 || bounds_height < 0 || bounds_width > 1e20 ||
       bounds_height > 1e20)
     return GPUI_LINUX_TEXT_INVALID_ARGUMENT;
-  int32_t admission = gpui_linux_text_require_raster_v1(abi);
+  if (!isfinite(text_origin_x) || !isfinite(text_origin_y) ||
+      !isfinite(clip_x) || !isfinite(clip_y) ||
+      fabs(text_origin_x) > 1e20 || fabs(text_origin_y) > 1e20 ||
+      fabs(clip_x) > 1e20 || fabs(clip_y) > 1e20)
+    return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+  double clip_right = clip_x + bounds_width;
+  double clip_bottom = clip_y + bounds_height;
+  double layout_left = clip_x - text_origin_x;
+  double layout_top = clip_y - text_origin_y;
+  double layout_right = clip_right - text_origin_x;
+  double layout_bottom = clip_bottom - text_origin_y;
+  /* Inputs are <=1e20; addition/subtraction is bounded by3e20. Reject
+   * unrepresentable input rectangles before shaping. Far translated empty
+   * clips with representable extents exit before any tile/int conversion,
+   * after text/color preflight. Precision-lost translated extents reject. */
+  if (!isfinite(clip_right) || !isfinite(clip_bottom) ||
+      (bounds_width > 0 && clip_right <= clip_x) ||
+      (bounds_height > 0 && clip_bottom <= clip_y) ||
+      !isfinite(layout_left) || !isfinite(layout_top) ||
+      !isfinite(layout_right) || !isfinite(layout_bottom) ||
+      (bounds_width > 0 && layout_right <= layout_left) ||
+      (bounds_height > 0 && layout_bottom <= layout_top) ||
+      fabs(layout_left) > 3e20 || fabs(layout_top) > 3e20 ||
+      fabs(layout_right) > 3e20 || fabs(layout_bottom) > 3e20)
+    return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+  if (tile_mode == RASTER_FILTER_HALO) {
+    /* Positive extents alone do not admit catastrophic cancellation: even a
+     * representable huge origin can distort a small clip/ink rectangle by
+     * whole pixels. Permit only a fixed sub-Pango-quantum logical error. */
+    const double tolerance = GPUI_LINUX_TEXT_COORDINATE_TOLERANCE;
+    if (fabs((clip_right - clip_x) - bounds_width) > tolerance ||
+        fabs((clip_bottom - clip_y) - bounds_height) > tolerance ||
+        fabs((layout_right - layout_left) - bounds_width) > tolerance ||
+        fabs((layout_bottom - layout_top) - bounds_height) > tolerance ||
+        fabs((layout_left + text_origin_x) - clip_x) > tolerance ||
+        fabs((layout_top + text_origin_y) - clip_y) > tolerance ||
+        fabs((layout_right + text_origin_x) - clip_right) > tolerance ||
+        fabs((layout_bottom + text_origin_y) - clip_bottom) > tolerance)
+      return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+  }
+  int32_t admission = gpui_linux_text_require_raster_v1(GPUI_LINUX_TEXT_ABI);
   if (admission != GPUI_LINUX_TEXT_OK)
     return admission;
   gpui_layout objects;
   int32_t scalars = 0;
-  int32_t status = create_layout(abi, text, text_length, family, family_length,
+  int32_t status = create_layout(GPUI_LINUX_TEXT_ABI, text, text_length, family, family_length,
                                 font_size_px, &objects, &scalars);
   if (status != GPUI_LINUX_TEXT_OK)
     return status;
@@ -563,11 +607,11 @@ static int32_t raster_layout_v1(
     free_layout(&objects);
     return GPUI_LINUX_TEXT_INVALID_NATIVE_RESULT;
   }
-  struct gpui_linux_text_mask result = {0};
-  result.unknown_glyph_count = unknown;
-  double left = fmax(0.0, ink.x), top = fmax(0.0, ink.y);
-  double right = fmin(bounds_width, (double)ink.x + ink.width);
-  double bottom = fmin(bounds_height, (double)ink.y + ink.height);
+  struct gpui_linux_text_mask_v2 result = {0};
+  result.mask.unknown_glyph_count = unknown;
+  double left = fmax(layout_left, ink.x), top = fmax(layout_top, ink.y);
+  double right = fmin(layout_right, (double)ink.x + ink.width);
+  double bottom = fmin(layout_bottom, (double)ink.y + ink.height);
   /* PANGO_GLYPH_EMPTY (e.g. tabs) can contribute a synthetic layout ink box
    * although the FT2 renderer draws nothing. Inspect actual nonempty glyph
    * ink before allocating, so whitespace needs neither budget nor texture. */
@@ -578,6 +622,16 @@ static int32_t raster_layout_v1(
   }
   double tile_left = floor(left), tile_top = floor(top);
   double tile_right = ceil(right), tile_bottom = ceil(bottom);
+  if (tile_mode == RASTER_FILTER_HALO) {
+    /* Linear filtering needs the adjacent layout-grid texel even when its
+     * center lies beyond the exact visible clip. Keep one checked texel of
+     * halo at interior crop edges, bounded by the full pixel ink tile.
+     * Geometry stays exact; UVs below crop into this larger allocation. */
+    if (tile_left > ink.x) tile_left -= 1.0;
+    if (tile_top > ink.y) tile_top -= 1.0;
+    if (tile_right < (double)ink.x + ink.width) tile_right += 1.0;
+    if (tile_bottom < (double)ink.y + ink.height) tile_bottom += 1.0;
+  }
   double width = tile_right - tile_left, height = tile_bottom - tile_top;
   if (!isfinite(width) || !isfinite(height) || width <= 0 || height <= 0 ||
       width > GPUI_LINUX_TEXT_MAX_MASK_DIMENSION ||
@@ -593,24 +647,57 @@ static int32_t raster_layout_v1(
     free_layout(&objects);
     return GPUI_LINUX_TEXT_INVALID_COORDINATES;
   }
-  result.width = (int32_t)width;
-  result.height = (int32_t)height;
-  size_t bytes = (size_t)result.width * (size_t)result.height;
-  if (bytes / (size_t)result.width != (size_t)result.height ||
+  result.mask.left = text_origin_x + left;
+  result.mask.top = text_origin_y + top;
+  result.mask.right = text_origin_x + right;
+  result.mask.bottom = text_origin_y + bottom;
+  result.u0 = (left - tile_left) / width;
+  result.v0 = (top - tile_top) / height;
+  result.u1 = (right - tile_left) / width;
+  result.v1 = (bottom - tile_top) / height;
+  if (!isfinite(result.mask.left) || !isfinite(result.mask.top) ||
+      !isfinite(result.mask.right) || !isfinite(result.mask.bottom) ||
+      fabs(result.mask.left) > 3e20 || fabs(result.mask.top) > 3e20 ||
+      fabs(result.mask.right) > 3e20 || fabs(result.mask.bottom) > 3e20 ||
+      result.mask.right <= result.mask.left ||
+      result.mask.bottom <= result.mask.top ||
+      !isfinite(result.u0) || !isfinite(result.v0) ||
+      !isfinite(result.u1) || !isfinite(result.v1) ||
+      result.u0 < 0 || result.v0 < 0 || result.u1 > 1 || result.v1 > 1 ||
+      result.u1 <= result.u0 || result.v1 <= result.v0) {
+    free_layout(&objects);
+    return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+  }
+  if (tile_mode == RASTER_FILTER_HALO) {
+    const double tolerance = GPUI_LINUX_TEXT_COORDINATE_TOLERANCE;
+    if (fabs((result.mask.left - text_origin_x) - left) > tolerance ||
+        fabs((result.mask.top - text_origin_y) - top) > tolerance ||
+        fabs((result.mask.right - text_origin_x) - right) > tolerance ||
+        fabs((result.mask.bottom - text_origin_y) - bottom) > tolerance ||
+        fabs((result.mask.right - result.mask.left) - (right - left)) > tolerance ||
+        fabs((result.mask.bottom - result.mask.top) - (bottom - top)) > tolerance) {
+      free_layout(&objects);
+      return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+    }
+  }
+  result.mask.width = (int32_t)width;
+  result.mask.height = (int32_t)height;
+  size_t bytes = (size_t)result.mask.width * (size_t)result.mask.height;
+  if (bytes / (size_t)result.mask.width != (size_t)result.mask.height ||
       bytes > (size_t)pixel_budget) {
     free_layout(&objects);
     return GPUI_LINUX_TEXT_RESOURCE_LIMIT;
   }
-  result.pixels = g_try_malloc0(bytes);
-  if (!result.pixels) {
+  result.mask.pixels = g_try_malloc0(bytes);
+  if (!result.mask.pixels) {
     free_layout(&objects);
     return GPUI_LINUX_TEXT_RESOURCE_LIMIT;
   }
   FT_Bitmap bitmap = {0};
-  bitmap.width = (unsigned int)result.width;
-  bitmap.rows = (unsigned int)result.height;
-  bitmap.pitch = result.width;
-  bitmap.buffer = result.pixels;
+  bitmap.width = (unsigned int)result.mask.width;
+  bitmap.rows = (unsigned int)result.mask.height;
+  bitmap.pitch = result.mask.width;
+  bitmap.buffer = result.mask.pixels;
   bitmap.num_grays = 256;
   bitmap.pixel_mode = FT_PIXEL_MODE_GRAY;
   /* No context matrix: layout and masks remain at logical resolution. */
@@ -618,21 +705,59 @@ static int32_t raster_layout_v1(
                                   (int)origin_y);
   gboolean covered = FALSE;
   for (size_t i = 0; i < bytes && !covered; ++i)
-    covered = result.pixels[i] != 0;
+    covered = result.mask.pixels[i] != 0;
   if (!covered) {
-    gpui_linux_text_mask_release_v1(&result);
-    result.unknown_glyph_count = unknown;
+    gpui_linux_text_mask_release_v2(&result);
+    result.mask.unknown_glyph_count = unknown;
     free_layout(&objects);
     *output = result;
     return GPUI_LINUX_TEXT_OK;
   }
-  result.left = left;
-  result.top = top;
-  result.right = right;
-  result.bottom = bottom;
   free_layout(&objects);
   *output = result;
   return GPUI_LINUX_TEXT_OK;
+}
+
+void gpui_linux_text_mask_release_v2(struct gpui_linux_text_mask_v2 *mask) {
+  if (!mask)
+    return;
+  gpui_linux_text_mask_release_v1(&mask->mask);
+  memset(mask, 0, sizeof(*mask));
+}
+
+static int32_t raster_layout_v1(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    const uint8_t *family, int32_t family_length, double font_size_px,
+    double bounds_width, double bounds_height, int32_t pixel_budget,
+    struct gpui_linux_text_mask *output, gpui_lifecycle_counts *counts) {
+  /* Preserve old buffer layout, failure priority and origin-zero clipping. */
+  if (!output || pixel_budget < 0 || !isfinite(bounds_width) ||
+      !isfinite(bounds_height) || bounds_width < 0 || bounds_height < 0 ||
+      bounds_width > 1e20 || bounds_height > 1e20)
+    return GPUI_LINUX_TEXT_INVALID_ARGUMENT;
+  int32_t status = gpui_linux_text_require_raster_v1(abi);
+  if (status != GPUI_LINUX_TEXT_OK)
+    return status;
+  struct gpui_linux_text_mask_v2 result = {0};
+  status = raster_layout_core(text, text_length, family, family_length,
+      font_size_px, 0, 0, 0, 0, bounds_width, bounds_height, pixel_budget,
+      RASTER_LEGACY_TILE, &result, counts);
+  if (status == GPUI_LINUX_TEXT_OK)
+    *output = result.mask;
+  return status;
+}
+
+int32_t gpui_linux_text_raster_v2(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    const uint8_t *family, int32_t family_length, double font_size_px,
+    double origin_x, double origin_y, double clip_x, double clip_y,
+    double clip_width, double clip_height, int32_t pixel_budget,
+    struct gpui_linux_text_mask_v2 *output) {
+  if (abi != GPUI_LINUX_TEXT_RASTER_ABI)
+    return GPUI_LINUX_TEXT_INVALID_ARGUMENT;
+  return raster_layout_core(text, text_length, family, family_length,
+      font_size_px, origin_x, origin_y, clip_x, clip_y, clip_width, clip_height,
+      pixel_budget, RASTER_FILTER_HALO, output, NULL);
 }
 
 int32_t gpui_linux_text_raster_v1(
@@ -703,6 +828,67 @@ int32_t gpui_linux_text_test_admit_scene_text_run_v1(
     return GPUI_LINUX_TEXT_INVALID_ARGUMENT;
   return admit_scene_text_run_impl(
       abi, text, text_length, font_size_px, bounds_width, bounds_height,
+      pixel_budget, released_output);
+}
+
+static int32_t admit_scene_text_run_at_impl(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    double font_size_px, double origin_x, double origin_y,
+    double clip_x, double clip_y, double clip_width, double clip_height,
+    int32_t pixel_budget, int32_t *released_output) {
+  static const uint8_t sans[] = "sans";
+  if (abi != GPUI_LINUX_TEXT_RASTER_ABI || text_length < 0 ||
+      (text_length > 0 && !text) || !isfinite(font_size_px) ||
+      font_size_px <= 0 || pixel_budget < 0 ||
+      pixel_budget > GPUI_LINUX_TEXT_MAX_SCENE_MASK_PIXELS)
+    return GPUI_LINUX_TEXT_INVALID_ARGUMENT;
+  if (!isfinite(origin_x) || !isfinite(origin_y) ||
+      !isfinite(clip_x) || !isfinite(clip_y) ||
+      !isfinite(clip_width) || !isfinite(clip_height) ||
+      clip_width < 0 || clip_height < 0)
+    return GPUI_LINUX_TEXT_INVALID_COORDINATES;
+  if (text_length > GPUI_LINUX_TEXT_MAX_SCENE_TEXT_BYTES ||
+      font_size_px > GPUI_LINUX_TEXT_MAX_SCENE_FONT_SIZE_PX ||
+      clip_width > GPUI_LINUX_TEXT_MAX_SCENE_BOUNDS_WIDTH ||
+      clip_height > GPUI_LINUX_TEXT_MAX_SCENE_BOUNDS_HEIGHT)
+    return GPUI_LINUX_TEXT_RESOURCE_LIMIT;
+  if (released_output)
+    *released_output = 0;
+  struct gpui_linux_text_mask_v2 mask = {0};
+  int32_t status = gpui_linux_text_raster_v2(
+      abi, text, text_length, sans, 4, font_size_px,
+      origin_x, origin_y, clip_x, clip_y, clip_width, clip_height,
+      pixel_budget, &mask);
+  if (status == GPUI_LINUX_TEXT_OK && mask.mask.unknown_glyph_count != 0)
+    status = GPUI_LINUX_TEXT_UNSUPPORTED_INPUT;
+  gpui_linux_text_mask_release_v2(&mask);
+  if (released_output)
+    *released_output = !mask.mask.pixels && !mask.mask.width &&
+        !mask.mask.height && !mask.mask.unknown_glyph_count &&
+        mask.mask.left == 0 && mask.mask.top == 0 &&
+        mask.mask.right == 0 && mask.mask.bottom == 0 &&
+        mask.u0 == 0 && mask.v0 == 0 && mask.u1 == 0 && mask.v1 == 0;
+  return status;
+}
+
+int32_t gpui_linux_text_admit_scene_text_run_v2(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    double font_size_px, double origin_x, double origin_y,
+    double clip_x, double clip_y, double clip_width, double clip_height) {
+  return admit_scene_text_run_at_impl(abi, text, text_length, font_size_px,
+      origin_x, origin_y, clip_x, clip_y, clip_width, clip_height,
+      GPUI_LINUX_TEXT_MAX_SCENE_MASK_PIXELS, NULL);
+}
+
+int32_t gpui_linux_text_test_admit_scene_text_run_v2(
+    int32_t abi, const uint8_t *text, int32_t text_length,
+    double font_size_px, double origin_x, double origin_y,
+    double clip_x, double clip_y, double clip_width, double clip_height,
+    int32_t pixel_budget, int32_t *released_output) {
+  if (!released_output)
+    return GPUI_LINUX_TEXT_INVALID_ARGUMENT;
+  return admit_scene_text_run_at_impl(abi, text, text_length, font_size_px,
+      origin_x, origin_y, clip_x, clip_y, clip_width, clip_height,
       pixel_budget, released_output);
 }
 

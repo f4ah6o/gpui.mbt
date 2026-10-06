@@ -191,23 +191,41 @@ same-context real-sans Pango measurement/raster admission, a bounded LTR
 single-line control, visible selection/caret and horizontal scroll, focused
 element dispatch, clipboard guards, and opt-in private XKB/Compose committed
 text for one native window. The field remains a bounded experimental
-implementation, not a general reusable control. Its detailed bounds, epoch/revocation,
-ABI, evidence tiers, negative-bearing rejection, and remaining work are in the
+implementation, not a general reusable control. Its detailed bounds,
+epoch/revocation, ABI, evidence tiers, and remaining work are in the
 [field status guide](../../docs/linux-text-field.md).
 
-The field explicitly rejects any edit whose `sans` ink extends left/above its
-logical origin; real 18 px fixture text including `j`/`J` and accent cases can
-have negative bearings, so this avoids clipping. That fail-closed policy is
-intentional. An origin-aware geometry/presentation follow-on is a separate
-design pending review. Model and controller tests, installed-font admission,
-native callback/queue/decoder checks, fixture encoding, and GPU-source strict
-compilation are local evidence tiers; injected-frame checks are not native
-keyboard input. Actual compositor-delivered typing is **unrun**: stock Weston
-13 headless has no admitted keyboard-injection driver for this qualification,
-and local AF_UNIX socket creation returns `EPERM`. The field `Host.present` /
-injected-renderer hosted result remains pending review; no field-specific
-hosted pass or source SHA is recorded. IME/Japanese input, accessibility,
-picker/reusable-control behavior, and desktop/support gates remain open.
+Origin-aware support is new unpublished local progress based on reviewed
+[PR #30](https://github.com/gpui-mbt/gpui.mbt/pull/30) tree `5ac17e9`. The
+shared field geometry unions logical/ink extents, requires caret rectangles
+to remain inside the logical line, rounds
+minimum edges down and maximum edges up to whole logical pixels to include
+Pango pixel coverage, and applies the resulting mapping to admission,
+caret/selection paint, hit testing, and horizontal scroll. The v1 scene envelope
+adds a distinct plain `TextRunItem` with `kind: "text_run"`, independent
+`text_origin`, and exact local clip bounds; legacy `TextItem` meaning/JSON stay
+unchanged. Unknown consumers reject the new variant, and public exhaustive
+matches need an explicit arm. Ubuntu ABI3 retains ABI2's 23-field prefix and
+appends origin x/y in a 25-double record; kind 2 denotes the run, while legacy
+kinds require zero origin. Raster ABI v2 carries UV cropping separately while
+preserving the v1 mask struct and entry semantics.
+
+Actual-font headless field and full negative-mask tests pass, including
+negative-bearing text, composed/decomposed accents, and scrolling. PR #30
+remains draft after pre-start runner cancellation: Windows, macOS, documentation,
+and headless Pango jobs passed, while GPU, core, browser, and mutation jobs are
+not qualified. A bounded Ubuntu failed-job retry was again cancelled before
+runner start; no source or billing cause is established. New encoder/GPU
+acceptance cases compile; hosted execution is pending, and the local
+origin slice has no publication or GPU execution. Control-to-renderer injected
+frames do not prove compositor keyboard delivery. Actual compositor typing is
+**unrun**: stock Weston 13 headless has no admitted keyboard-injection driver
+for this qualification, and local AF_UNIX socket creation returns `EPERM`.
+IME/Japanese input, accessibility, picker/reusable-control behavior, and
+desktop/support gates remain open. The field is single-line LTR and still
+rejects unknown/color glyphs and reflow/resource-limit cases; logical-resolution
+masks can soften under scaling. Autorepeat, general bidi, drag selection, undo,
+and IME remain unsupported.
 
 | Capability | Available foundation | Remaining app behavior |
 | --- | --- | --- |
@@ -215,10 +233,10 @@ picker/reusable-control behavior, and desktop/support gates remain open.
 | Asynchronous execution | Deterministic foreground queue/manual clock | Background or suspending execution and complete native endpoint topology |
 | Layout/element lifecycle | Bounded flex and request-layout/prepaint/paint | Reconciliation, invalidation, reusable controls |
 | Pointer/focus/keyboard | Position-based pointer and focused key/text routes merged in PR29; local field adds an owner-managed private direct-text target | Actual compositor-delivered typing qualification, shared bindings, general input ownership and controls |
-| Rendering | Native quads, bounded browser text, Ubuntu grayscale text frames | Other native hosts, richer resources, and renderer qualification |
+| Rendering | Native quads, bounded browser text, Ubuntu grayscale text frames; origin-aware run is local progress | Other native hosts, richer resources, hosted GPU proof, and renderer qualification |
 | Text model | Immutable UTF-16 document/selection/composition; strict UTF-8 bridge | Editable widget, undo history, multi-cursor editing |
 | Measured text | Merged PR27 copied caret/hit values and Linux PangoFT2 geometry; Ubuntu draws supported grayscale subset | Other-host drawing, wrapping policy, selection geometry, caching, workload evidence |
-| Editable controls | A bounded single-line LTR field exists as an experimental implementation; no general field API or picker | Compositor typing, broader layout/ink support, IME/composition, accessibility, reusable field/picker behavior |
+| Editable controls | A bounded single-line LTR field exists as an experimental implementation; origin-aware local headless tests pass; no general field API or picker | Compositor typing, broader layout/reflow, scaled-mask quality, IME/composition, accessibility, reusable field/picker behavior |
 | Large collections | No reusable virtualized list/picker | Visible-range realization, focus/selection preservation, bounded work |
 | Scroll/drag | Partial immutable scroll/gesture semantics and Weekboard lane behavior | General control integration and broader payload/reorder/navigation policy |
 | Clipboard/cursor | Native adapters exist on all three native hosts | Use through controls with host permission/lifetime rules |
@@ -236,13 +254,13 @@ The implementation order now follows application outcomes:
    already joins the focused dispatcher to opt-in native direct committed text,
    shows caret/selection, and defines clipboard/focus rollback guards; actual
    compositor-delivered typing and Japanese IME remain unrun. Keep scalar
-   offsets, measured cursor stops, and bidi affinity distinct. The bounded
-   field rejects negative ink bearings at the logical origin; origin-aware
-   geometry support needs separate review. For caret/hit geometry to match the
-   current v1 renderer, request the same generic `sans` family, font size, and
-   Pango context as drawing; measurements of another explicit family do not
-   imply parity, and no public font-family field exists. Add accessibility
-   alongside the next behavior expansion.
+   offsets, measured cursor stops, and bidi affinity distinct. The field now
+   has a local origin-aware run/clip mapping, but its hosted GPU proof and
+   compositor input remain unqualified. For caret/hit geometry to match the
+   renderer, request the same generic `sans` family, font size, and Pango
+   context as drawing; measurements of another explicit family do not imply
+   parity, and no public font-family field exists. Add accessibility alongside
+   the next behavior expansion.
 3. Build a picker/command palette and scalable collection controls from input,
    action/focus routing, selection/navigation, virtualized visible-range work,
    and scroll/drag. Verify bounded work and keyboard operation.
@@ -257,10 +275,11 @@ The implementation order now follows application outcomes:
 
 The local field prototype joins rendering, focused dispatch, owner-controlled
 native focus, and a private direct-keyboard committed-text route, and paints
-caret/selection. It is still experimental: actual compositor typing has not
-been demonstrated, overhanging ink is rejected, and IME, accessibility, and a
-general reusable field remain open. The renderer's `GrayscaleTextFrames`
-capability still means drawing only, not any of those behaviors. See the
+caret/selection. Its origin-aware run preserves negative-bearing ink in
+headless tests, but actual GPU presentation and compositor typing have not
+been demonstrated; IME, accessibility, and a general reusable field remain
+open. The renderer's `GrayscaleTextFrames` capability still means drawing
+only, not any of those behaviors. See the
 [Linux text guide](../../docs/linux-text.md), [field status](../../docs/linux-text-field.md),
 and [Ubuntu guide](../../docs/ubuntu.md) for their separate boundaries.
 

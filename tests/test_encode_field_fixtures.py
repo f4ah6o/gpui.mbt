@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 from pathlib import Path
 import struct
 import subprocess
@@ -21,7 +22,7 @@ def rect(x, y, width, height):
 
 
 def item(kind, item_id, bounds, color, *, text=None, font_size=None, clip=None,
-         transform=None):
+         transform=None, text_origin=None):
     value = {
         "kind": kind,
         "id": item_id,
@@ -32,6 +33,10 @@ def item(kind, item_id, bounds, color, *, text=None, font_size=None, clip=None,
         "clip_chain_id": clip,
     }
     if kind == "text":
+        value["text"] = text
+        value["font_size"] = font_size
+    if kind == "text_run":
+        value["text_origin"] = text_origin
         value["text"] = text
         value["font_size"] = font_size
     return value
@@ -120,34 +125,100 @@ def seven_source_records():
     ]
 
 
+def origin_field_scene(label, text, *, focused=True, selected=False, scrolled=False,
+                       origin=(1.25, 2.5)):
+    scene = field_scene(label, text, focused=focused, selected=selected,
+                        scrolled=scrolled)
+    for scene_item in scene["items"]:
+        if scene_item["kind"] == "text":
+            scene_item["kind"] = "text_run"
+            scene_item["text_origin"] = {"x": origin[0], "y": origin[1]}
+            break
+    return scene
+
+
+def origin_source_records():
+    # Preserve all original controls/rejection fixtures while promoting their
+    # scene leaves to TextRunItem. The four bearing controls are appended in
+    # the same order as the control generator contract.
+    records = seven_source_records()
+    for record in records:
+        text = next(scene_item for scene_item in record["scene"]["items"]
+                    if scene_item["kind"] == "text")
+        text["kind"] = "text_run"
+        text["text_origin"] = {"x": 1.25, "y": 2.5}
+    additions = [
+        ("j_start", "jJ", False),
+        ("accent_start", "ÁA\u0301", False),
+        ("j_scroll", "Wide 日本 " * 8 + "jJ", True),
+        ("accent_scroll", "Wide " * 20 + "ÁA\u0301", True),
+    ]
+    for index, (label, text, scrolled) in enumerate(additions, start=8):
+        records.append({
+            "label": label,
+            "rejected": False,
+            "revision": index,
+            "anchor": (0 if label in {"j_start", "accent_start"}
+                       else len(text.encode("utf-16-le")) // 2),
+            "head": (0 if label in {"j_start", "accent_start"}
+                     else len(text.encode("utf-16-le")) // 2),
+            "scene": origin_field_scene(label, text, scrolled=scrolled),
+        })
+    return records
+
+
+def origin_reference_scene():
+    # Mixed ABI3 frame: quad and legacy text preserve the old 23 fields with
+    # zero origin slots, while text_run carries independent fractional origin.
+    return {
+        "schema_version": 1,
+        "viewport": rect(0, 0, 640, 240),
+        "scale": 1,
+        "resources": [],
+        "clip_chains": [
+            {"id": 7, "rects": [rect(36, 32, 172, 36), rect(40, 30, 80, 50)]}
+        ],
+        "items": [
+            item("quad", 1, rect(0, 0, 640, 240), (24, 28, 36, 255)),
+            item("text", 106, rect(0, 0, 12, 18), (20, 24, 30, 255),
+                 text="π", font_size=18, clip=7),
+            item("text_run", 108, rect(1, 2, 12, 18), (20, 24, 30, 255),
+                 text="é", font_size=18, clip=7,
+                 text_origin={"x": 2.5, "y": -1.25}),
+        ],
+    }
+
+
 class FieldFixtureEncoderTests(unittest.TestCase):
     def test_repeated_run_allocation_retains_previous_encoded_evidence(self):
-        lines = [json.dumps(record, ensure_ascii=False, separators=(",", ":"))
-                 for record in seven_source_records()]
+        fixture_sets = [seven_source_records(), origin_source_records()]
         with tempfile.TemporaryDirectory(prefix="field rerun ") as temp:
             root = Path(temp) / "evidence with spaces"
             runs = []
-            for _ in range(2):
-                result = subprocess.run(
-                    ["sh", str(ROOT / "scripts/create_field_fixture_run.sh"), str(root)],
-                    text=True, capture_output=True, check=False,
-                )
-                self.assertEqual(result.returncode, 0, result.stderr)
-                run = Path(result.stdout.strip())
-                self.assertTrue(run.is_absolute())
-                self.assertEqual(run.parent, root)
-                self.assertEqual(list(run.iterdir()), [])
-                self.assertEqual(run.stat().st_mode & 0o777, 0o700)
-                source = run / "fixtures.jsonl"
-                source.write_text("\n".join(lines) + "\n", encoding="utf-8")
-                encoder.build_fixture_set(source, run / "encoded", "a" * 40)
-                runs.append(run)
-            self.assertNotEqual(runs[0], runs[1])
-            self.assertEqual(len(list(root.iterdir())), 2)
-            for run in runs:
+            for records in fixture_sets:
+                lines = [json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+                         for record in records]
+                for _ in range(2):
+                    result = subprocess.run(
+                        ["sh", str(ROOT / "scripts/create_field_fixture_run.sh"), str(root)],
+                        text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    run = Path(result.stdout.strip())
+                    self.assertTrue(run.is_absolute())
+                    self.assertEqual(run.parent, root)
+                    self.assertEqual(list(run.iterdir()), [])
+                    self.assertEqual(run.stat().st_mode & 0o777, 0o700)
+                    source = run / "fixtures.jsonl"
+                    source.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                    encoder.build_fixture_set(source, run / "encoded", "a" * 40)
+                    runs.append((run, lines))
+            self.assertEqual(len({run for run, _ in runs}), 4)
+            self.assertEqual(len(list(root.iterdir())), 4)
+            for run, lines in runs:
                 self.assertEqual((run / "fixtures.jsonl").read_text(encoding="utf-8"),
                                  "\n".join(lines) + "\n")
-                self.assertEqual(len(list((run / "encoded/frames").iterdir())), 7)
+                self.assertEqual(len(list((run / "encoded/frames").iterdir())), len(lines))
                 self.assertTrue((run / "encoded/manifest.json").is_file())
 
     def test_independent_binary_reference_includes_exact_utf8_and_clip_intersection(self):
@@ -164,6 +235,21 @@ class FieldFixtureEncoderTests(unittest.TestCase):
         self.assertEqual(struct.unpack("<74d", frame[12:12 + 74 * 8]), tuple(expected))
         self.assertEqual(frame[:12], struct.pack("<4sII", b"GPF1", 74, 2))
         self.assertEqual(frame[-2:], b"\xc3\xa9")
+
+    def test_independent_abi3_reference_encodes_kind_origin_and_zero_legacy_slots(self):
+        frame, doubles, blob = encoder.encode_scene(origin_reference_scene())
+        self.assertEqual(len(doubles), 5 + 3 * 25)
+        self.assertEqual(blob, b"\xcf\x80\xc3\xa9")
+        expected = [
+            0, 0, 640, 240, 1,
+            0, 0, 0, 640, 240, 24, 28, 36, 255, 1, 0, 0, 1, 0, 0, 1, 0, 0, 640, 240, 0, 0, 0, 0, 0,
+            1, 0, 0, 12, 18, 20, 24, 30, 255, 1, 0, 0, 1, 0, 0, 1, 40, 32, 80, 36, 0, 2, 18, 0, 0,
+            2, 1, 2, 12, 18, 20, 24, 30, 255, 1, 0, 0, 1, 0, 0, 1, 40, 32, 80, 36, 2, 2, 18, 2.5, -1.25,
+        ]
+        self.assertEqual(doubles, expected)
+        self.assertEqual(frame[:12], struct.pack("<4sII", b"GPF2", 80, 4))
+        self.assertEqual(struct.unpack("<80d", frame[12:12 + 80 * 8]), tuple(expected))
+        self.assertEqual(frame[-4:], blob)
 
     def test_cli_keeps_each_source_line_and_emits_rejected_frames_identical_to_edit(self):
         records = seven_source_records()
@@ -193,6 +279,70 @@ class FieldFixtureEncoderTests(unittest.TestCase):
             self.assertEqual((output / "frames/rejected_newline.gpf").read_bytes(), edited)
             self.assertEqual((output / "frames/rejected_bidi.gpf").read_bytes(), edited)
             self.assertEqual(result.stdout, "")
+
+    def test_origin_cli_preserves_eleven_sources_and_rejection_identity(self):
+        records = origin_source_records()
+        lines = [json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+                 for record in records]
+        source_head = "b" * 40
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "field.jsonl"
+            source.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            profile = ("source_head=" + source_head + "\n" +
+                       "fontconfig=/tmp/profile.conf\n" +
+                       "fc_match_request=sans\n" +
+                       "fc_match_request=sans:charset=65e5\n" +
+                       "font content hash fixture\n")
+            (root / "font-profile.txt").write_text(profile, encoding="utf-8")
+            output = root / "fixtures"
+            encoder.build_fixture_set(source, output, source_head)
+            manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["format"], "GPF2")
+            self.assertEqual(manifest["abi"], 3)
+            self.assertEqual(manifest["stride_doubles"], 25)
+            self.assertEqual(manifest["source_head"], source_head)
+            self.assertEqual(manifest["font_profile"], {
+                "path": "../font-profile.txt",
+                "sha256": hashlib.sha256(profile.encode()).hexdigest(),
+            })
+            self.assertEqual([entry["label"] for entry in manifest["fixtures"]],
+                             list(encoder.ORIGIN_LABELS))
+            for entry, line in zip(manifest["fixtures"], lines):
+                self.assertEqual((output / entry["original"]).read_text(encoding="utf-8"),
+                                 line + "\n")
+                frame = (output / entry["frame"]).read_bytes()
+                self.assertEqual(frame[:4], b"GPF2")
+                self.assertEqual(entry["double_count"] % 25, 5)
+            edited = (output / "frames/edited.gpf").read_bytes()
+            self.assertEqual((output / "frames/rejected_newline.gpf").read_bytes(), edited)
+            self.assertEqual((output / "frames/rejected_bidi.gpf").read_bytes(), edited)
+
+    def test_rejects_a_font_profile_from_a_different_source_head(self):
+        records = origin_source_records()
+        lines = [json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+                 for record in records]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "field.jsonl"
+            source.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            (root / "font-profile.txt").write_text("source_head=" + "c" * 40 + "\n",
+                                                   encoding="utf-8")
+            with self.assertRaisesRegex(encoder.FixtureError, "source_head does not match"):
+                encoder.build_fixture_set(source, root / "fixtures", "b" * 40)
+
+    def test_rejects_unknown_kind_and_malformed_origin_point(self):
+        scene = origin_reference_scene()
+        scene["items"][2]["text_origin"] = {"x": 0.5, "y": math.inf}
+        with self.assertRaisesRegex(encoder.FixtureError, "text_origin.y must be finite"):
+            encoder.encode_scene(scene)
+        scene["items"][2]["text_origin"] = {"x": 0.5, "y": 0.25, "z": 3}
+        with self.assertRaisesRegex(encoder.FixtureError, "text_origin fields differ"):
+            encoder.encode_scene(scene)
+        scene["items"][2]["text_origin"] = {"x": 0.5, "y": 0.25}
+        scene["items"][2]["kind"] = "glyphs"
+        with self.assertRaisesRegex(encoder.FixtureError, "kind must be quad or text"):
+            encoder.encode_scene(scene)
 
     def test_rejects_bad_field_identity_duplicate_keys_bad_numbers_and_clip_refs(self):
         lines = [json.dumps(record, ensure_ascii=False, separators=(",", ":"))

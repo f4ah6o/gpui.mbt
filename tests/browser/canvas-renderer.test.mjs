@@ -123,6 +123,20 @@ test("unsupported variants/resources and invalid later items fail before canvas 
   }
 });
 
+test("origin-aware text runs are deliberately unsupported before canvas mutation", () => {
+  const context = recordingContext();
+  const originText = {
+    ...text(7),
+    kind: "text_run",
+    text_origin: { x: 13.5, y: 17.25 },
+  };
+  assert.throws(
+    () => drawSceneSnapshot(context, scene([quad(1), originText]), dimensions),
+    (error) => error instanceof CanvasSceneError && error.code === "unsupported_capability",
+  );
+  assert.deepEqual(context.calls, []);
+});
+
 test("unused malformed clips and duplicate IDs are rejected, with zero extents allowed", () => {
   for (const chains of [
     [{ id: 1, rects: [] }, { id: 1, rects: [] }],
