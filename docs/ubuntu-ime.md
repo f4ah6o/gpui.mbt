@@ -146,3 +146,27 @@ empty preview versus empty commit, typed metadata rejection, scalar and cursor
 stops, target fencing, command allowlist and fractional/scrolled caret geometry.
 Native GPUI acceptance is separately recorded by the GPUI-specific private
 runtime harness; the frozen stock-editor baseline is never substituted for it.
+
+
+### Held-modifier external fences
+
+The owner command changes the admitted value immediately. The native target
+also fences immediately: old Left, replacement epoch, zero serial floor and
+cleared staging. If a shortcut modifier is genuinely held, physical
+`deactivate` waits in a private drain phase. The old IBus grab is retained only
+for its actual modifier release and a fresh current-keyboard depressed/latched
+clear. No old text or drain key enters the replacement target. The real clear
+then triggers `deactivate -> leave -> activate` with the latest coalesced
+committed document. There is no timer or synthetic release/modifier event.
+
+A stalled drain remains logically fenced. Focus/seat/proxy loss, keymap
+replacement, close and destroy supersede it and notify the current pending
+owner. Locks and layout group are not mistaken for held depressed/latched
+modifiers. This fixes the observed held Ctrl+A/undo/redo reentry case in the
+bounded synchronous adapter profile; broader IME repeat and hardware profiles
+remain separately unqualified.
+
+IME clipboard operations are not part of this native Japanese qualification.
+Paste's cached owner guard is followed by a native epoch-validating external
+update before any pending paste presentation. Stale native ownership fails
+closed before presentation rather than claiming fresh clipboard focus.

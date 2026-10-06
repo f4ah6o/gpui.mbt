@@ -79,8 +79,14 @@ fn ime_preedit(
   match field.update_composition(text, selection, measure, admit) {
     Ok(value) => {
       let range = value.marked_range().unwrap()
-      let start = value.measurement().caret_at(range.start()).unwrap()
-      let end = value.measurement().caret_at(range.end()).unwrap()
+      let start = match value.measurement().caret_at(range.start()) {
+        Ok(value) => value
+        Err(_) => return Err(Field(@text_field.InvalidSelection))
+      }
+      let end = match value.measurement().caret_at(range.end()) {
+        Ok(value) => value
+        Err(_) => return Err(Field(@text_field.InvalidSelection))
+      }
       if !start.is_cursor_position() ||
         !end.is_cursor_position() ||
         end.strong().left() < start.strong().left() {
