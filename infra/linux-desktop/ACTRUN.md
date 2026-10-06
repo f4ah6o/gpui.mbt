@@ -1,9 +1,29 @@
-# Fast local Linux text feedback
+# Local Linux acceptance with actrun
 
-Use pinned `@mizchi/actrun` **0.32.0** for repeated Linux text checks on the
-already-prepared cloud computer. This is a bounded feedback loop, not a full
-GitHub Actions replacement. Existing hosted Ubuntu, macOS, Windows, browser,
-contract and mutation gates are unchanged.
+Use pinned `@mizchi/actrun` **0.32.0** on the already-prepared Linux computer.
+For current Linux development, a passing declared local mode is **Green for
+that mode's scope**; hosted GitHub Actions are not a prerequisite or a wait gate.
+Hosted workflow files/settings are unchanged. This policy does not promote
+untested platforms, pending IME/repeat cases, or production release evidence.
+
+- Default `fast`: contracts/Python tests, Linux infrastructure and Mozc safety
+  guards, formatting, three C text harnesses, the 19-test Linux text package,
+  and warning-denied native checks/tests for `text`, `controls/text_field`,
+  `platform`, `ubuntu`, and the field example's owner/controller tests.
+- `--mode acceptance`: the same common checks, all Linux-runnable MoonBit
+  targets, then a freshly built manifest-bound candidate and every ready native
+  private-display keyboard case. IPC/oracle prerequisites are required. A denied
+  IPC probe fails this mode; it is never converted into a skipped Green.
+- `--mode headless`: the original three C harnesses plus Linux text package
+  only, for the shortest geometry loop. Its pass is explicitly subset-scoped.
+
+Fast mode is the repeated-development gate for these affected Linux packages.
+Choose acceptance when qualifying a current native input/render candidate or
+when wider portable coverage is needed. Changes outside the named affected
+packages need their relevant additional checks. The wider mode does not run
+macOS/Windows native, browser proof, mutation, MCP stdio interoperability, or
+the separate Ubuntu scale/readback/lifecycle GPU suite;
+these are explicit separate scopes rather than silently passing checks.
 
 ## Prepare once
 
@@ -38,27 +58,55 @@ is disabled or replaced with a blanket no-op.
 
 ## Workload, records and safety
 
-The local template runs exactly `sh scripts/test_linux_text.sh`: the three
-private C raster/admission harnesses and the native Linux text MoonBit package.
-It reuses the pinned toolchain, real PangoFT2/Fontconfig libraries and declared
-font fixtures. Tests, assertions and warning policy are not weakened.
+Each mode composes existing repository checks through ordinary local actrun
+shell steps; no remote setup actions are mocked. The pinned toolchain, real
+PangoFT2/Fontconfig libraries and declared fonts are reused. Tests, assertions
+and warning policy are not weakened.
 
-The template is stored here, outside hosted workflow discovery. Published
+```sh
+# Default: repeated affected-Linux acceptance
+python3 infra/linux-desktop/actrun-feedback.py --root "$GPUI_DESKTOP_ROOT"
+# Wider qualification, in the supported native process-launch context
+python3 infra/linux-desktop/actrun-feedback.py --root "$GPUI_DESKTOP_ROOT" --mode acceptance
+# Historical narrow geometry workload
+python3 infra/linux-desktop/actrun-feedback.py --root "$GPUI_DESKTOP_ROOT" --mode headless
+```
+
+Acceptance reuses the profile and external build cache, writes its own fresh
+build manifest/bundle under the run directory, and preserves the profile's
+previous `field-build.json` and `field-binary.txt`. The native runner uses only
+an authenticated fresh private Xvfb/Weston display. It does not inject input into
+the live desktop. If this shell denies IPC, stop; the same entrypoint can run
+from the already-supported authorized native desktop launcher. No sandbox or
+permission changes are a fallback.
+
+The current native catalog has seven ready cases and explicit skips for the
+adaptive held-repeat oracle and unsupported GPUI IME composition. The separate
+historical held-repeat proof remains historical; it is not counted as this
+catalog case or as a replay of a new binary.
+
+The historical headless template is stored here, outside hosted workflow discovery;
+fast/acceptance templates are generated from fixed steps in the entrypoint. Published
 actrun 0.32.0 has workspace-inference quirks, so the entrypoint briefly creates a
 uniquely named workflow in the checkout's `.github/workflows`, runs in explicit
 local mode, and removes only that file in a `finally` block. The existing hosted
-workflow files are never changed. Do not push the checkout while this temporary
-workflow exists. Normal success/failure/interruption removes it; an uncatchable
+workflow files are never changed. The narrow gitignore rule for this generated
+filename keeps it outside candidate source manifests, so the persisted native
+bundle remains verifiable after cleanup. The exact workflow bytes/hash are kept
+in the run record. Do not force-add or push this temporary workflow. Normal success/failure/interruption removes it; an uncatchable
 process kill can leave the uniquely named file for manual inspection/removal.
 
 Each invocation creates new external records under
 `$GPUI_DESKTOP_ROOT/results/actrun-feedback/`, including doctor output, actrun
 output, full task stdout/stderr, raw runner task durations and `summary.json`.
 Use `--run-dir /absolute/new/external/directory` to choose the result destination.
-The report distinguishes preflight, actrun and total wall time, verifies that
-actrun used the candidate checkout, and fails if source state changed during the
-run. Existing build caches are reused. No artificial sleeps or cache purges
-are introduced. No desktop, global input, daemon or sandbox setting is touched.
+The report distinguishes preflight, actrun and total wall time, required steps
+that passed/failed/were not run, and explicit skipped scopes/native cases.
+`ok` and `green_scope` describe only the selected mode. A required missing or
+skipped step revokes Green. The report verifies the candidate checkout and fails
+if source state changed during the run. Existing build caches are reused. No artificial sleeps or cache purges
+are introduced. No live-desktop/global-input, daemon or sandbox setting is changed; acceptance
+starts and cleans up only its owned private native-test processes.
 
 ## Measured choice
 
@@ -85,14 +133,16 @@ same pinned MoonBit/core 0.10.14+7d59c7ec9. The same source/tests are compared,
 but the distribution/native library stack differs. The original benchmark
 timings include the actrun process but exclude this new entrypoint's doctor;
 each current invocation records the additional preflight and total time.
-The tested entrypoint's warm replay took **3.24 s** including doctor and source
+The original headless entrypoint's warm replay took **3.24 s** including doctor and source
 snapshot checks; its clean replay took **10.54 s**. These are separate wrapper
 measurements, not a relabeling of the original 2.11 s raw-runner median.
 
 The complete hosted Ubuntu workflow took about 100 s in the historical run.
 It includes a separate Wayland/GLES E2E job and is not comparable to this
-headless subset. Keep hosted full CI and separate native-input evidence as final
-gates. Published npm 0.32.0 also warned that the workflow's remote setup-moonbit
+headless subset. These historical timings do not measure the expanded fast or
+acceptance modes. Current Linux acceptance uses the declared local mode and
+does not wait for hosted CI. Native claims still require actual native replay
+of that candidate. Published npm 0.32.0 also warned that the workflow's remote setup-moonbit
 action was unsupported in its dry-run; the dedicated local workflow avoids
 assuming that every hosted action is faithfully emulated.
 

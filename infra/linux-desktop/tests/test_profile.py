@@ -163,6 +163,36 @@ class ProfileTests(unittest.TestCase):
             self.assertFalse((root / "field-build.json").exists())
             self.assertFalse((root / "field-binary.txt").exists())
 
+    def test_explicit_build_manifest_preserves_prior_profile_readiness(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root, repo = base / "profile", base / "repo"
+            root.mkdir()
+            repo.mkdir()
+            for name in ["field-build.json", "field-binary.txt"]:
+                (root / name).write_text("preserved readiness")
+            manifest = base / "results/new-build.json"
+            binary = base / "candidate-build/native/debug/build/examples/linux_text_field/field.exe"
+            def fake_run(command, **kwargs):
+                if command[0] != "sh":
+                    binary.parent.mkdir(parents=True)
+                    binary.write_bytes(b"new executable")
+            with patch.object(desktop, "run", side_effect=fake_run), \
+                 patch.object(desktop.build_manifest, "capture_source", return_value={"repo": str(repo)}), \
+                 patch.object(desktop.build_manifest, "capture_runtime", return_value={"identity": "stable"}), \
+                 patch("sys.stdout", new=io.StringIO()):
+                args = SimpleNamespace(repo=repo, output_dir=base / "candidate-build", manifest_output=manifest)
+                desktop.build(args, root)
+                self.assertTrue(manifest.is_file())
+                self.assertEqual(json.loads(manifest.read_text())["binary"]["sha256"], desktop.digest(binary))
+                for name in ["field-build.json", "field-binary.txt"]:
+                    self.assertEqual((root / name).read_text(), "preserved readiness")
+                with self.assertRaisesRegex(RuntimeError, "new file"):
+                    desktop.build(args, root)
+                args.manifest_output = repo / "manifest.json"
+                with self.assertRaisesRegex(RuntimeError, "outside"):
+                    desktop.build(args, root)
+
     def test_graphical_session_has_isolated_ibus_registry(self):
         env = desktop.graphical_environment(Path("/tmp/profile"))
         self.assertEqual(env["IBUS_COMPONENT_PATH"], "/tmp/profile/config/ibus/component")

@@ -1,8 +1,10 @@
 # Capability and MCP mutation contract
 
-Status: reviewed semantic baselines and CI ratchet implementation. Final-head
-hosted stability and required CI are merge gates; semantic closure takes effect
-only on verified merge.
+Status: reviewed semantic baselines and CI ratchet implementation. The original
+PR #17 required final-head hosted stability/CI and verified merge for semantic
+closure. Those requirements below record historical provenance. Current Linux
+development instead uses the scoped [local actrun acceptance](../infra/linux-desktop/ACTRUN.md)
+without a hosted wait; that gate does not rerun or promote these mutation scopes.
 
 ## Scope and provenance
 
@@ -24,10 +26,10 @@ merge is not evidence that the PR merged to main. The run produced complete
 reports and failed only when enforcing baseline files that intentionally did
 not yet exist. Independent review checked the source artifacts and all report
 fingerprints and classified every remaining survivor before creating the
-baselines. A final hosted rerun must demonstrate stable baseline enforcement,
-and the final candidate must pass required CI and be verified merged before
-semantic closure takes effect. Exact successful final-head run links must be
-recorded in [PR #17's merge evidence](https://github.com/gpui-mbt/gpui.mbt/pull/17).
+baselines. For that original acceptance, a final hosted rerun had to demonstrate stable
+baseline enforcement, and the final candidate had to pass required CI and be
+verified merged before semantic closure. Exact successful final-head run links
+belong in [PR #17's merge evidence](https://github.com/gpui-mbt/gpui.mbt/pull/17).
 This source observation does not establish that final-head gate or assert its
 result in advance.
 

@@ -376,6 +376,16 @@ is currently unimplemented. Weston 14 exposes text-input-v1 rather than
 text-input-v3, so a future v3 implementation needs a suitable compositor and
 its own native GPUI composition/commit acceptance test.
 
+## Local acceptance policy
+
+Use the pinned [actrun local gate](ACTRUN.md) for current Linux development.
+Default fast mode covers the affected Linux packages plus required local
+contracts and infrastructure checks; explicit acceptance mode adds wider
+Linux-runnable targets and a fresh native keyboard candidate replay. Green is
+scoped to the selected mode, with unrun/skipped coverage retained. Hosted
+GitHub Actions are not a prerequisite or wait gate. Historical evidence and
+pending production/IME qualification are unchanged.
+
 ## Validation and maintenance
 
 ```sh
