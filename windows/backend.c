@@ -219,6 +219,8 @@ typedef struct gpui_windows_host {
   int64_t test_clear_count;
   int64_t test_draw_count;
   int64_t test_present_count;
+  int32_t test_text_mask_width;
+  int32_t test_text_mask_height;
   double readback_rgba[12];
 } gpui_windows_host;
 
@@ -789,6 +791,7 @@ static int32_t map_text_status(int32_t status) {
   case GPUI_WINDOWS_TEXT_INVALID_FONT_SIZE:
   case GPUI_WINDOWS_TEXT_INVALID_COORDINATES:
   case GPUI_WINDOWS_TEXT_INVALID_FONT_FAMILY:
+  case GPUI_WINDOWS_TEXT_INVALID_SCALE:
     return GPUI_WINDOWS_INVALID;
   case GPUI_WINDOWS_TEXT_BUFFER_TOO_SMALL:
   case GPUI_WINDOWS_TEXT_INVALID_NATIVE_OUTPUT:
@@ -1014,6 +1017,8 @@ static int32_t present_frame_internal(gpui_windows_host *host,
                                       const double *data, int32_t length,
                                       const uint8_t *text,
                                       int32_t text_length) {
+  host->test_text_mask_width = 0;
+  host->test_text_mask_height = 0;
   if (host->state != 0)
     return GPUI_WINDOWS_STOPPING;
   if (host->error)
@@ -1120,10 +1125,10 @@ static int32_t present_frame_internal(gpui_windows_host *host,
       return GPUI_WINDOWS_RESOURCE;
     }
     int32_t budget = GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS - total_mask_pixels;
-    int32_t text_status = gpui_windows_text_raster_v1(
-        GPUI_WINDOWS_TEXT_ABI, run, payload_length, family,
-        (int32_t)sizeof(family) - 1, q[21], origin_x, origin_y, clip_left,
-        clip_top, clip_width, clip_height, budget,
+    int32_t text_status = gpui_windows_text_raster_v2(
+        GPUI_WINDOWS_TEXT_RASTER_ABI, run, payload_length, family,
+        (int32_t)sizeof(family) - 1, host->scale, q[21], origin_x, origin_y,
+        clip_left, clip_top, clip_width, clip_height, budget,
         &staged->mask);
     int32_t status = map_text_status(text_status);
     if (status != GPUI_WINDOWS_OK) {
@@ -1151,6 +1156,10 @@ static int32_t present_frame_internal(gpui_windows_host *host,
       return GPUI_WINDOWS_RESOURCE;
     }
     total_mask_pixels += (int32_t)mask_pixels;
+    if (staged->mask.pixels) {
+      host->test_text_mask_width = staged->mask.width;
+      host->test_text_mask_height = staged->mask.height;
+    }
   }
 
   int32_t status = ensure_vertex_capacity(host, (UINT)item_count * 6);
@@ -2628,6 +2637,111 @@ int32_t gpui_windows_test_readback_region(int32_t token, int32_t window,
   return GPUI_WINDOWS_OK;
 }
 
+/* Test the complete production text-raster/presentation path at a fixed 2x
+ * density, independent of the monitor used by the Windows runner. The
+ * returned staged dimensions must match an adapter raster at the same scale;
+ * the readback region is still sampled from the real D3D11 staging texture. */
+int32_t gpui_windows_test_text_density2(int32_t token, int32_t window,
+                                        double *output) {
+  int32_t status = check_window(token, window);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  if (!output)
+    return GPUI_WINDOWS_INVALID;
+  if (!g_host.readback_enabled || !g_host.staging_texture)
+    return GPUI_WINDOWS_UNSUPPORTED;
+  if (g_host.frame_pending || g_host.pixel_width < 128 ||
+      g_host.pixel_height < 64)
+    return GPUI_WINDOWS_BUSY;
+
+  static const uint8_t sample[] = {'j'};
+  static const uint8_t family[] = "Segoe UI";
+  GpuiWindowsTextMask one = {0};
+  GpuiWindowsTextMask two = {0};
+  int32_t text_status = gpui_windows_text_raster_v2(
+      GPUI_WINDOWS_TEXT_RASTER_ABI, sample, 1, family,
+      (int32_t)sizeof(family) - 1, 1.0, 18.0, 0.0, 0.0, 0.0, 0.0,
+      64.0, 32.0, GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &one);
+  if (text_status == GPUI_WINDOWS_TEXT_OK)
+    text_status = gpui_windows_text_raster_v2(
+        GPUI_WINDOWS_TEXT_RASTER_ABI, sample, 1, family,
+        (int32_t)sizeof(family) - 1, 2.0, 18.0, 0.0, 0.0, 0.0, 0.0,
+        64.0, 32.0, GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &two);
+  if (text_status != GPUI_WINDOWS_TEXT_OK) {
+    gpui_windows_text_mask_release_v1(&one);
+    gpui_windows_text_mask_release_v1(&two);
+    return map_text_status(text_status);
+  }
+
+  double old_scale = g_host.scale;
+  double old_logical_width = g_host.logical_width;
+  double old_logical_height = g_host.logical_height;
+  g_host.scale = 2.0;
+  g_host.logical_width = (double)g_host.pixel_width / 2.0;
+  g_host.logical_height = (double)g_host.pixel_height / 2.0;
+
+  double frame[30] = {0.0};
+  frame[0] = 0.0;
+  frame[1] = 0.0;
+  frame[2] = g_host.logical_width;
+  frame[3] = g_host.logical_height;
+  frame[4] = 2.0;
+  frame[5] = 2.0; /* one TextRun item */
+  double *q = &frame[6];
+  q[0] = 0.0;
+  q[1] = 0.0;
+  q[2] = 64.0;
+  q[3] = 32.0;
+  q[4] = 255.0;
+  q[5] = 255.0;
+  q[6] = 255.0;
+  q[7] = 255.0;
+  q[8] = 1.0;
+  q[11] = 1.0;
+  q[14] = 1.0;
+  q[15] = 0.0;
+  q[16] = 0.0;
+  q[17] = 64.0;
+  q[18] = 32.0;
+  q[19] = 0.0;
+  q[20] = 1.0;
+  q[21] = 18.0;
+  q[22] = 0.0;
+  q[23] = 0.0;
+  status = present_text_frame(&g_host, GPUI_MIXED_FRAME_ABI, frame, 30,
+                              sample, 1);
+  if (status == GPUI_WINDOWS_OK) {
+    double transparent[4] = {0.0, 0.0, 0.0, 0.0};
+    double readback[4] = {0.0, 0.0, 0.0, 0.0};
+    status = gpui_windows_test_readback_region(
+        token, window, 0.0, 0.0, 64.0, 32.0, transparent, readback);
+    if (status == GPUI_WINDOWS_OK) {
+      output[0] = (double)one.width;
+      output[1] = (double)one.height;
+      output[2] = (double)two.width;
+      output[3] = (double)two.height;
+      output[4] = (double)g_host.test_text_mask_width;
+      output[5] = (double)g_host.test_text_mask_height;
+      for (int32_t i = 0; i < 4; ++i)
+        output[6 + i] = readback[i];
+      output[10] = one.left;
+      output[11] = one.top;
+      output[12] = one.right;
+      output[13] = one.bottom;
+      output[14] = two.left;
+      output[15] = two.top;
+      output[16] = two.right;
+      output[17] = two.bottom;
+    }
+  }
+  g_host.scale = old_scale;
+  g_host.logical_width = old_logical_width;
+  g_host.logical_height = old_logical_height;
+  gpui_windows_text_mask_release_v1(&one);
+  gpui_windows_text_mask_release_v1(&two);
+  return status;
+}
+
 int32_t gpui_windows_test_renderer_counts(int32_t token, int32_t window,
                                           int64_t *counts) {
   int32_t status = check_window(token, window);
@@ -2898,6 +3012,13 @@ int32_t gpui_windows_test_readback_region(int32_t host, int32_t window,
   (void)width;
   (void)height;
   (void)expected_rgba;
+  (void)output;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_text_density2(int32_t host, int32_t window,
+                                        double *output) {
+  (void)host;
+  (void)window;
   (void)output;
   return GPUI_WINDOWS_UNSUPPORTED;
 }

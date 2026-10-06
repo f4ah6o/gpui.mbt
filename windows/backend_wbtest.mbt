@@ -28,6 +28,14 @@ extern "C" fn native_test_renderer_counts(
 ) -> Int = "gpui_windows_test_renderer_counts"
 
 ///|
+#borrow(output)
+extern "C" fn native_test_text_density2(
+  host : Int,
+  window : Int,
+  output : FixedArray[Double],
+) -> Int = "gpui_windows_test_text_density2"
+
+///|
 extern "C" fn native_wrong_thread(host : Int, window : Int) -> Int = "gpui_windows_test_wrong_thread"
 
 ///|
@@ -476,6 +484,30 @@ test "Windows D3D11 HWND renders and reads back first frame" {
       completion_polls += 1
     }
     assert_true(frame_completed)
+
+    // Force only the private test fixture's raster density to 2.0. The staged
+    // production mask must match a separately rasterized 2x reference, and
+    // the GPU readback must contain real coverage at that physical resolution.
+    let density = FixedArray::make(18, -1.0)
+    required(
+      outcome(
+        native_test_text_density2(host.token, window.value().to_int(), density),
+        "text_density_2x_readback",
+      ),
+    )
+    assert_true(density[0] > 0.0 && density[1] > 0.0)
+    assert_true(density[2] >= density[0] * 1.4)
+    assert_true(density[3] >= density[1] * 1.8)
+    assert_true(density[2] * density[3] > density[0] * density[1] * 2.0)
+    assert_eq(density[4].to_int(), density[2].to_int())
+    assert_eq(density[5].to_int(), density[3].to_int())
+    for index in 0..<4 {
+      assert_eq(density[10 + index], density[14 + index])
+    }
+    assert_eq(density[6], 8192.0)
+    assert_true(density[7] > 0.0)
+    assert_true(density[8] > 0.0)
+    last_sequence = await_frame_completed(host, last_sequence)
 
     // Core DirectWrite masks are copied and clipped before touching the
     // backbuffer; the staging readback scans actual D3D11 output, not a model.

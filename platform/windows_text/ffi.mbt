@@ -34,6 +34,7 @@ extern "C" fn native_text_admit_scene_run(
   text_length : Int,
   family : Bytes,
   family_length : Int,
+  pixels_per_dip : Double,
   font_size_px : Double,
   origin_x : Double,
   origin_y : Double,
@@ -41,7 +42,7 @@ extern "C" fn native_text_admit_scene_run(
   clip_y : Double,
   clip_width : Double,
   clip_height : Double,
-) -> Int = "gpui_windows_text_admit_scene_run_v1"
+) -> Int = "gpui_windows_text_admit_scene_run_v2"
 
 ///|
 /// Measure one bounded, single-line DirectWrite layout and copy all scalar
@@ -242,14 +243,21 @@ pub fn hit_test(
 }
 
 ///|
-/// Qualify the same bounded, plain grayscale text mask used by the D3D11
-/// renderer. This synchronously allocates and releases a temporary A8 mask.
-pub fn admit_scene_text_run_at(
+/// Qualify a bounded grayscale mask at the requested physical density. This
+/// synchronously allocates and releases a temporary A8 mask; bounds stay DIPs.
+pub fn admit_scene_text_run_at_scale(
   document : @text.TextDocument,
   font_size_px : Double,
   text_origin : @primitives.Point,
   clip_rect : @primitives.Rect,
+  pixels_per_dip : Double,
 ) -> Result[Unit, WindowsTextError] {
+  if pixels_per_dip.is_nan() ||
+    pixels_per_dip.is_inf() ||
+    pixels_per_dip < 0.25 ||
+    pixels_per_dip > 8.0 {
+    return Err(InvalidScale)
+  }
   if font_size_px.is_nan() ||
     font_size_px.is_inf() ||
     font_size_px <= 0.0 ||
@@ -263,8 +271,7 @@ pub fn admit_scene_text_run_at(
   if text.length() > 4096 {
     return Err(InputTooLarge)
   }
-  // Scene text uses the renderer's fixed family so admission measures the
-  // same glyph run that D3D11 will paint.
+  // Scene text uses the renderer's fixed family.
   let family = match windows_text_family("Segoe UI") {
     Ok(value) => value
     Err(error) => return Err(error)
@@ -275,11 +282,12 @@ pub fn admit_scene_text_run_at(
     return Err(ResourceLimit)
   }
   let status = native_text_admit_scene_run(
-    1,
+    2,
     text,
     text.length(),
     family,
     family.length(),
+    pixels_per_dip,
     font_size_px,
     text_origin.x(),
     text_origin.y(),
@@ -293,4 +301,18 @@ pub fn admit_scene_text_run_at(
   } else {
     Err(windows_text_status_error(status))
   }
+}
+
+///|
+/// Qualify a mask at the adapter's base density of 1 physical pixel per DIP.
+/// Presentation rechecks the actual window density and physical mask budget.
+pub fn admit_scene_text_run_at(
+  document : @text.TextDocument,
+  font_size_px : Double,
+  text_origin : @primitives.Point,
+  clip_rect : @primitives.Rect,
+) -> Result[Unit, WindowsTextError] {
+  admit_scene_text_run_at_scale(
+    document, font_size_px, text_origin, clip_rect, 1.0,
+  )
 }

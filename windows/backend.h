@@ -85,6 +85,11 @@ int32_t gpui_windows_test_readback_region(int32_t host, int32_t window,
                                           double height,
                                           const double *expected_rgba,
                                           double *output);
+/* CI-only deterministic 2x text presentation. Output contains 1x/2x adapter
+ * mask dimensions, the production-staged 2x dimensions, and GPU readback
+ * coverage counts. */
+int32_t gpui_windows_test_text_density2(int32_t host, int32_t window,
+                                        double *output);
 /* Counts actual GPU clear/draw/present calls; used to qualify atomic reject. */
 int32_t gpui_windows_test_renderer_counts(int32_t host, int32_t window,
                                           int64_t *counts);

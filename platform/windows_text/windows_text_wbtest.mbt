@@ -12,6 +12,13 @@ extern "C" fn native_text_test_supported() -> Int = "gpui_windows_text_test_supp
 extern "C" fn native_text_test_color_policy() -> Int = "gpui_windows_text_test_color_policy_v1"
 
 ///|
+#borrow(output)
+extern "C" fn native_text_test_density(
+  output : FixedArray[Double],
+  capacity : Int,
+) -> Int = "gpui_windows_text_test_density_v2"
+
+///|
 fn windows_text_test_document(value : String) -> @text.TextDocument {
   match @text.TextDocument::new(value) {
     Ok(document) => document
@@ -163,5 +170,74 @@ test "DirectWrite grayscale qualification has copied top-down partial coverage" 
       windows_text_test_rect(0.0, 0.0, 64.0, 32.0),
     )
     is Err(InvalidFontSize),
+  )
+}
+
+///|
+test "DirectWrite raster density follows physical pixels per DIP" {
+  if native_text_test_supported() == 0 {
+    let output = FixedArray::make(33, -1.0)
+    assert_eq(native_text_test_density(output, 32), 14)
+    return
+  }
+  let output = FixedArray::make(33, -1.0)
+  output[32] = 123456789.125
+  assert_eq(native_text_test_density(output, 32), 0)
+  assert_eq(output[32], 123456789.125)
+  assert_true(output[0] > 0.0 && output[1] > 0.0)
+  assert_true(output[2] > output[0])
+  assert_true(output[3] >= output[1] * 1.4)
+  assert_true(output[4] >= output[0] * 1.4)
+  assert_true(output[5] >= output[1] * 1.8)
+  assert_true(output[4] - output[0] * 2.0 >= -4.0)
+  assert_true(output[4] - output[0] * 2.0 <= 4.0)
+  assert_true(output[5] - output[1] * 2.0 >= -4.0)
+  assert_true(output[5] - output[1] * 2.0 <= 4.0)
+  assert_true(output[4] * output[5] > output[0] * output[1] * 2.0)
+  for index in 0..<4 {
+    assert_eq(output[6 + index], output[10 + index])
+  }
+  assert_true(output[14] > 0.0)
+  assert_true(output[15] > 0.0)
+  assert_true(output[16] > output[14] * 2.0)
+  assert_true(output[17] > 0.0)
+  assert_true(output[18] > 0.0)
+  for index in 19..<23 {
+    assert_eq(output[index].to_int(), 15)
+  }
+  assert_true(output[25] > output[23])
+  assert_eq(output[24].to_int(), 7)
+  assert_eq(output[26].to_int(), 0)
+  // Ink bounds scale with generous hinting tolerance; unlike the padded tile
+  // dimensions, these bounds also reveal glyphs clipped by a doubled matrix.
+  assert_true(output[29] >= output[27] * 1.4)
+  assert_true(output[29] <= output[27] * 3.0)
+  assert_true(output[30] >= output[28] * 1.4)
+  assert_true(output[30] <= output[28] * 3.0)
+  assert_true(output[31] <= 8.0)
+}
+
+///|
+test "DirectWrite density-aware admission rejects invalid scale" {
+  let document = windows_text_test_document("j")
+  let origin = windows_text_test_point(0.0, 0.0)
+  let clip = windows_text_test_rect(0.0, 0.0, 64.0, 32.0)
+  if native_text_test_supported() == 0 {
+    assert_true(
+      admit_scene_text_run_at_scale(document, 18.0, origin, clip, 2.0)
+      is Err(UnsupportedPlatform),
+    )
+    return
+  }
+  assert_true(
+    admit_scene_text_run_at_scale(document, 18.0, origin, clip, 2.0) is Ok(_),
+  )
+  assert_true(
+    admit_scene_text_run_at_scale(document, 18.0, origin, clip, 0.0)
+    is Err(InvalidScale),
+  )
+  assert_true(
+    admit_scene_text_run_at_scale(document, 18.0, origin, clip, 8.1)
+    is Err(InvalidScale),
   )
 }

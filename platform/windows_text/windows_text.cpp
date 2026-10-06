@@ -66,6 +66,7 @@ struct RasterContext {
   bool has_color_glyphs;
   bool has_color_metadata;
   bool rasterize;
+  FLOAT pixels_per_dip = 1.0f;
 };
 
 static const UINT32 GPUI_UNSUPPORTED_COLOR_GLYPH_FORMATS =
@@ -403,8 +404,13 @@ static int32_t inspect_glyph_run(const DWRITE_GLYPH_RUN *glyph_run,
     return context->rasterize ? GPUI_WINDOWS_TEXT_UNSUPPORTED_RASTER
                               : GPUI_WINDOWS_TEXT_OK;
   }
-  const UINT32 pixels_per_em = static_cast<UINT32>(std::max(
-      1.0f, std::ceil(glyph_run->fontEmSize)));
+  double physical_em_size =
+      static_cast<double>(glyph_run->fontEmSize) * context->pixels_per_dip;
+  if (!std::isfinite(physical_em_size) || physical_em_size <= 0.0 ||
+      physical_em_size > static_cast<double>(UINT32_MAX))
+    return GPUI_WINDOWS_TEXT_RESOURCE_LIMIT;
+  const UINT32 pixels_per_em = static_cast<UINT32>(
+      std::max(1.0, std::ceil(physical_em_size)));
   for (UINT32 i = 0; i < glyph_run->glyphCount; ++i) {
     DWRITE_GLYPH_IMAGE_FORMATS formats = DWRITE_GLYPH_IMAGE_FORMATS_NONE;
     hr = face4->GetGlyphImageFormats(glyph_run->glyphIndices[i], pixels_per_em,
@@ -425,8 +431,14 @@ static int32_t inspect_glyph_run(const DWRITE_GLYPH_RUN *glyph_run,
     return GPUI_WINDOWS_TEXT_UNSUPPORTED_COLOR;
 
   ComPtr<IDWriteGlyphRunAnalysis> analysis;
+  // Layout and baseline coordinates are DIPs. The Factory2 transform is
+  // applied after DirectWrite's em-size scaling, so this single matrix maps
+  // the copied glyph run into the physical-pixel mask without changing the
+  // logical geometry consumed by hit testing or the scene renderer.
+  const DWRITE_MATRIX physical_transform = {
+      context->pixels_per_dip, 0.0f, 0.0f, context->pixels_per_dip, 0.0f, 0.0f};
   hr = context->factory->CreateGlyphRunAnalysis(
-      glyph_run, nullptr, DWRITE_RENDERING_MODE_NATURAL_SYMMETRIC,
+      glyph_run, &physical_transform, DWRITE_RENDERING_MODE_NATURAL_SYMMETRIC,
       DWRITE_MEASURING_MODE_NATURAL, DWRITE_GRID_FIT_MODE_ENABLED,
       DWRITE_TEXT_ANTIALIAS_MODE_GRAYSCALE, baseline_x, baseline_y, &analysis);
   if (FAILED(hr))
@@ -521,7 +533,7 @@ class TextRenderer final : public IDWriteTextRenderer {
   HRESULT STDMETHODCALLTYPE GetPixelsPerDip(void *, FLOAT *pixels_per_dip) override {
     if (!pixels_per_dip)
       return E_POINTER;
-    *pixels_per_dip = 1.0f;
+    *pixels_per_dip = context_ ? context_->pixels_per_dip : 1.0f;
     return S_OK;
   }
 
@@ -572,6 +584,7 @@ static int32_t inspect_layout(Layout *layout) {
   context.status = GPUI_WINDOWS_TEXT_OK;
   context.has_color_metadata = true;
   context.rasterize = false;
+  context.pixels_per_dip = 1.0f;
   TextRenderer *renderer = new (std::nothrow) TextRenderer(&context);
   if (!renderer)
     return GPUI_WINDOWS_TEXT_RESOURCE_LIMIT;
@@ -715,11 +728,14 @@ static int32_t native_hit_test(int32_t abi, const uint8_t *text,
 
 static int32_t native_raster(int32_t abi, const uint8_t *text,
                              int32_t text_length, const uint8_t *family,
-                             int32_t family_length, double font_size,
+                             int32_t family_length, double pixels_per_dip,
+                             double font_size,
                              double origin_x, double origin_y, double clip_x,
                              double clip_y, double clip_width,
                              double clip_height, int32_t pixel_budget,
                              GpuiWindowsTextMask *output) {
+  if (abi != GPUI_WINDOWS_TEXT_RASTER_ABI)
+    return GPUI_WINDOWS_TEXT_INVALID_ARGUMENT;
   if (!output || pixel_budget < 0 || !finite_bounded(origin_x) ||
       !finite_bounded(origin_y) || !finite_bounded(clip_x) ||
       !finite_bounded(clip_y) || !finite_bounded(clip_width) ||
@@ -727,6 +743,10 @@ static int32_t native_raster(int32_t abi, const uint8_t *text,
       clip_width > GPUI_WINDOWS_TEXT_MAX_SCENE_WIDTH ||
       clip_height > GPUI_WINDOWS_TEXT_MAX_SCENE_HEIGHT)
     return GPUI_WINDOWS_TEXT_INVALID_COORDINATES;
+  if (!std::isfinite(pixels_per_dip) ||
+      pixels_per_dip < GPUI_WINDOWS_TEXT_MIN_PIXELS_PER_DIP ||
+      pixels_per_dip > GPUI_WINDOWS_TEXT_MAX_PIXELS_PER_DIP)
+    return GPUI_WINDOWS_TEXT_INVALID_SCALE;
   if (text_length > GPUI_WINDOWS_TEXT_MAX_SCENE_BYTES)
     return GPUI_WINDOWS_TEXT_INPUT_TOO_LARGE;
   if (!std::isfinite(font_size) || font_size <= 0.0 ||
@@ -743,14 +763,15 @@ static int32_t native_raster(int32_t abi, const uint8_t *text,
       !finite_bounded(local_clip_right) || !finite_bounded(local_clip_bottom))
     return GPUI_WINDOWS_TEXT_INVALID_COORDINATES;
   Layout layout;
-  int32_t status = create_layout(abi, text, text_length, family, family_length,
-                                 font_size, &layout);
+  int32_t status = create_layout(GPUI_WINDOWS_TEXT_ABI, text, text_length,
+                                 family, family_length, font_size, &layout);
   if (status != GPUI_WINDOWS_TEXT_OK)
     return status;
   RasterContext inspect{};
   inspect.status = GPUI_WINDOWS_TEXT_OK;
   inspect.has_color_metadata = true;
   inspect.rasterize = false;
+  inspect.pixels_per_dip = static_cast<FLOAT>(pixels_per_dip);
   TextRenderer *scanner = new (std::nothrow) TextRenderer(&inspect);
   if (!scanner)
     return GPUI_WINDOWS_TEXT_RESOURCE_LIMIT;
@@ -779,11 +800,22 @@ static int32_t native_raster(int32_t abi, const uint8_t *text,
   if (std::abs(left) > 1.0e7 || std::abs(top) > 1.0e7 ||
       std::abs(right) > 1.0e7 || std::abs(bottom) > 1.0e7)
     return GPUI_WINDOWS_TEXT_RESOURCE_LIMIT;
+  double physical_left = left * pixels_per_dip;
+  double physical_top = top * pixels_per_dip;
+  double physical_right = right * pixels_per_dip;
+  double physical_bottom = bottom * pixels_per_dip;
+  if (!finite_bounded(physical_left) || !finite_bounded(physical_top) ||
+      !finite_bounded(physical_right) || !finite_bounded(physical_bottom) ||
+      std::abs(physical_left) > 1.0e7 ||
+      std::abs(physical_top) > 1.0e7 ||
+      std::abs(physical_right) > 1.0e7 ||
+      std::abs(physical_bottom) > 1.0e7)
+    return GPUI_WINDOWS_TEXT_RESOURCE_LIMIT;
   int32_t tile_left = 0, tile_top = 0, tile_right = 0, tile_bottom = 0;
-  if (!int32_from_double(std::floor(left) - 1.0, &tile_left) ||
-      !int32_from_double(std::floor(top) - 1.0, &tile_top) ||
-      !int32_from_double(std::ceil(right) + 1.0, &tile_right) ||
-      !int32_from_double(std::ceil(bottom) + 1.0, &tile_bottom))
+  if (!int32_from_double(std::floor(physical_left) - 1.0, &tile_left) ||
+      !int32_from_double(std::floor(physical_top) - 1.0, &tile_top) ||
+      !int32_from_double(std::ceil(physical_right) + 1.0, &tile_right) ||
+      !int32_from_double(std::ceil(physical_bottom) + 1.0, &tile_bottom))
     return GPUI_WINDOWS_TEXT_INVALID_COORDINATES;
   int64_t width64 = static_cast<int64_t>(tile_right) - tile_left;
   int64_t height64 = static_cast<int64_t>(tile_bottom) - tile_top;
@@ -807,6 +839,7 @@ static int32_t native_raster(int32_t abi, const uint8_t *text,
   raster.status = GPUI_WINDOWS_TEXT_OK;
   raster.has_color_metadata = true;
   raster.rasterize = true;
+  raster.pixels_per_dip = static_cast<FLOAT>(pixels_per_dip);
   TextRenderer *renderer = new (std::nothrow) TextRenderer(&raster);
   if (!renderer) {
     std::free(pixels);
@@ -839,10 +872,10 @@ static int32_t native_raster(int32_t abi, const uint8_t *text,
   result.top = origin_y + top;
   result.right = origin_x + right;
   result.bottom = origin_y + bottom;
-  result.u0 = (left - tile_left) / static_cast<double>(width64);
-  result.v0 = (top - tile_top) / static_cast<double>(height64);
-  result.u1 = (right - tile_left) / static_cast<double>(width64);
-  result.v1 = (bottom - tile_top) / static_cast<double>(height64);
+  result.u0 = (physical_left - tile_left) / static_cast<double>(width64);
+  result.v0 = (physical_top - tile_top) / static_cast<double>(height64);
+  result.u1 = (physical_right - tile_left) / static_cast<double>(width64);
+  result.v1 = (physical_bottom - tile_top) / static_cast<double>(height64);
   if (!finite_bounded(result.left) || !finite_bounded(result.top) ||
       !finite_bounded(result.right) || !finite_bounded(result.bottom) ||
       result.right <= result.left || result.bottom <= result.top ||
@@ -875,15 +908,17 @@ extern "C" int32_t gpui_windows_text_hit_test_v1(
                         font_size_px, x_px, y_px, output, output_capacity);
 }
 
-extern "C" int32_t gpui_windows_text_raster_v1(
+extern "C" int32_t gpui_windows_text_raster_v2(
     int32_t abi, const uint8_t *text, int32_t text_length,
-    const uint8_t *family, int32_t family_length, double font_size_px,
+    const uint8_t *family, int32_t family_length, double pixels_per_dip,
+    double font_size_px,
     double text_origin_x, double text_origin_y, double clip_x, double clip_y,
     double clip_width, double clip_height, int32_t pixel_budget,
     GpuiWindowsTextMask *output) {
   return native_raster(abi, text, text_length, family, family_length,
-                       font_size_px, text_origin_x, text_origin_y, clip_x,
-                       clip_y, clip_width, clip_height, pixel_budget, output);
+                       pixels_per_dip, font_size_px, text_origin_x,
+                       text_origin_y, clip_x, clip_y, clip_width, clip_height,
+                       pixel_budget, output);
 }
 
 extern "C" void gpui_windows_text_mask_release_v1(
@@ -894,15 +929,16 @@ extern "C" void gpui_windows_text_mask_release_v1(
   std::memset(mask, 0, sizeof(*mask));
 }
 
-extern "C" int32_t gpui_windows_text_admit_scene_run_v1(
+extern "C" int32_t gpui_windows_text_admit_scene_run_v2(
     int32_t abi, const uint8_t *text, int32_t text_length,
-    const uint8_t *family, int32_t family_length, double font_size_px,
+    const uint8_t *family, int32_t family_length, double pixels_per_dip,
+    double font_size_px,
     double origin_x, double origin_y, double clip_x, double clip_y,
     double clip_width, double clip_height) {
   GpuiWindowsTextMask mask{};
-  int32_t status = gpui_windows_text_raster_v1(
-      abi, text, text_length, family, family_length, font_size_px, origin_x,
-      origin_y, clip_x, clip_y, clip_width, clip_height,
+  int32_t status = gpui_windows_text_raster_v2(
+      abi, text, text_length, family, family_length, pixels_per_dip,
+      font_size_px, origin_x, origin_y, clip_x, clip_y, clip_width, clip_height,
       GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &mask);
   gpui_windows_text_mask_release_v1(&mask);
   return status;
@@ -936,7 +972,7 @@ extern "C" int32_t gpui_windows_text_test_raster_v1(double *output,
   static const uint8_t family[] = {'S', 'e', 'g', 'o', 'e', ' ', 'U', 'I'};
   GpuiWindowsTextMask mask{};
   int32_t status = native_raster(
-      GPUI_WINDOWS_TEXT_ABI, text, 1, family, sizeof(family), 18.0,
+      GPUI_WINDOWS_TEXT_RASTER_ABI, text, 1, family, sizeof(family), 1.0, 18.0,
       0.0, 0.0, 0.0, 0.0, 128.0, 64.0,
       GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &mask);
   if (status != GPUI_WINDOWS_TEXT_OK)
@@ -978,10 +1014,168 @@ extern "C" int32_t gpui_windows_text_test_raster_v1(double *output,
   return GPUI_WINDOWS_TEXT_OK;
 }
 
+extern "C" int32_t gpui_windows_text_test_density_v2(double *output,
+                                                      int32_t capacity) {
+  if (!output || capacity < 32)
+    return GPUI_WINDOWS_TEXT_BUFFER_TOO_SMALL;
+  static const uint8_t text[] = {'j'};
+  static const uint8_t family[] = {'S', 'e', 'g', 'o', 'e', ' ', 'U', 'I'};
+  GpuiWindowsTextMask one{}, one_half{}, two{};
+  const int32_t one_status = native_raster(
+      GPUI_WINDOWS_TEXT_RASTER_ABI, text, 1, family, sizeof(family), 1.0, 18.0,
+      0.0, 0.0, 0.0, 0.0, 64.0, 32.0,
+      GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &one);
+  const int32_t one_half_status = native_raster(
+      GPUI_WINDOWS_TEXT_RASTER_ABI, text, 1, family, sizeof(family), 1.5, 18.0,
+      0.0, 0.0, 0.0, 0.0, 64.0, 32.0,
+      GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &one_half);
+  const int32_t two_status = native_raster(
+      GPUI_WINDOWS_TEXT_RASTER_ABI, text, 1, family, sizeof(family), 2.0, 18.0,
+      0.0, 0.0, 0.0, 0.0, 64.0, 32.0,
+      GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &two);
+  if (one_status != GPUI_WINDOWS_TEXT_OK ||
+      one_half_status != GPUI_WINDOWS_TEXT_OK ||
+      two_status != GPUI_WINDOWS_TEXT_OK) {
+    gpui_windows_text_mask_release_v1(&one);
+    gpui_windows_text_mask_release_v1(&one_half);
+    gpui_windows_text_mask_release_v1(&two);
+    return one_status != GPUI_WINDOWS_TEXT_OK
+               ? one_status
+               : one_half_status != GPUI_WINDOWS_TEXT_OK ? one_half_status
+                                                         : two_status;
+  }
+
+  size_t one_nonzero = 0, one_partial = 0;
+  size_t two_nonzero = 0, two_partial = 0;
+  int32_t one_ink_left = one.width, one_ink_top = one.height;
+  int32_t one_ink_right = -1, one_ink_bottom = -1;
+  for (int32_t y = 0; y < one.height; ++y) {
+    for (int32_t x = 0; x < one.width; ++x) {
+      uint8_t alpha = one.pixels[(size_t)y * one.width + x];
+      if (alpha) {
+        ++one_nonzero;
+        if (alpha != 255)
+          ++one_partial;
+        one_ink_left = std::min(one_ink_left, x);
+        one_ink_top = std::min(one_ink_top, y);
+        one_ink_right = std::max(one_ink_right, x);
+        one_ink_bottom = std::max(one_ink_bottom, y);
+      }
+    }
+  }
+  int32_t two_ink_left = two.width, two_ink_top = two.height;
+  int32_t two_ink_right = -1, two_ink_bottom = -1;
+  size_t two_edge_coverage = 0;
+  for (int32_t y = 0; y < two.height; ++y) {
+    for (int32_t x = 0; x < two.width; ++x) {
+      uint8_t alpha = two.pixels[(size_t)y * two.width + x];
+      if (alpha) {
+        ++two_nonzero;
+        if (alpha != 255)
+          ++two_partial;
+        two_ink_left = std::min(two_ink_left, x);
+        two_ink_top = std::min(two_ink_top, y);
+        two_ink_right = std::max(two_ink_right, x);
+        two_ink_bottom = std::max(two_ink_bottom, y);
+        if (x == 0 || y == 0 || x == two.width - 1 || y == two.height - 1)
+          ++two_edge_coverage;
+      }
+    }
+  }
+
+  // A 2x mask must contain coverage newly sampled at physical resolution,
+  // rather than only a larger allocation containing the original 1x pixels.
+  double tile_two_left = two.left * 2.0 - two.u0 * two.width;
+  double tile_two_top = two.top * 2.0 - two.v0 * two.height;
+  double tile_one_left = one.left - one.u0 * one.width;
+  double tile_one_top = one.top - one.v0 * one.height;
+  size_t differs_from_nearest_1x = 0;
+  for (int32_t y = 0; y < two.height; ++y) {
+    int32_t source_y = static_cast<int32_t>(std::floor(
+        (tile_two_top + y + 0.5) / 2.0 - tile_one_top));
+    if (source_y < 0 || source_y >= one.height)
+      continue;
+    for (int32_t x = 0; x < two.width; ++x) {
+      int32_t source_x = static_cast<int32_t>(std::floor(
+          (tile_two_left + x + 0.5) / 2.0 - tile_one_left));
+      if (source_x < 0 || source_x >= one.width)
+        continue;
+      uint8_t one_alpha = one.pixels[(size_t)source_y * one.width + source_x];
+      uint8_t two_alpha = two.pixels[(size_t)y * two.width + x];
+      if (one_alpha != two_alpha)
+        ++differs_from_nearest_1x;
+    }
+  }
+
+  GpuiWindowsTextMask invalid{};
+  const int32_t invalid_zero = native_raster(
+      GPUI_WINDOWS_TEXT_RASTER_ABI, text, 1, family, sizeof(family), 0.0, 18.0,
+      0.0, 0.0, 0.0, 0.0, 64.0, 32.0,
+      GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &invalid);
+  const int32_t invalid_negative = native_raster(
+      GPUI_WINDOWS_TEXT_RASTER_ABI, text, 1, family, sizeof(family), -1.0, 18.0,
+      0.0, 0.0, 0.0, 0.0, 64.0, 32.0,
+      GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &invalid);
+  const int32_t invalid_nan = native_raster(
+      GPUI_WINDOWS_TEXT_RASTER_ABI, text, 1, family, sizeof(family),
+      std::numeric_limits<double>::quiet_NaN(), 18.0, 0.0, 0.0, 0.0, 0.0,
+      64.0, 32.0, GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &invalid);
+  const int32_t invalid_high = native_raster(
+      GPUI_WINDOWS_TEXT_RASTER_ABI, text, 1, family, sizeof(family), 8.01, 18.0,
+      0.0, 0.0, 0.0, 0.0, 64.0, 32.0,
+      GPUI_WINDOWS_TEXT_MAX_MASK_PIXELS, &invalid);
+  int32_t one_area = one.width * one.height;
+  int32_t two_area = two.width * two.height;
+  const int32_t one_density_budget = native_raster(
+      GPUI_WINDOWS_TEXT_RASTER_ABI, text, 1, family, sizeof(family), 2.0, 18.0,
+      0.0, 0.0, 0.0, 0.0, 64.0, 32.0, one_area, &invalid);
+  const int32_t exact_two_density_budget = native_raster(
+      GPUI_WINDOWS_TEXT_RASTER_ABI, text, 1, family, sizeof(family), 2.0, 18.0,
+      0.0, 0.0, 0.0, 0.0, 64.0, 32.0, two_area, &invalid);
+
+  const double result[32] = {
+      static_cast<double>(one.width),
+      static_cast<double>(one.height),
+      static_cast<double>(one_half.width),
+      static_cast<double>(one_half.height),
+      static_cast<double>(two.width),
+      static_cast<double>(two.height),
+      one.left, one.top, one.right, one.bottom,
+      two.left, two.top, two.right, two.bottom,
+      static_cast<double>(one_nonzero),
+      static_cast<double>(one_partial),
+      static_cast<double>(two_nonzero),
+      static_cast<double>(two_partial),
+      static_cast<double>(differs_from_nearest_1x),
+      static_cast<double>(invalid_zero),
+      static_cast<double>(invalid_negative),
+      static_cast<double>(invalid_nan),
+      static_cast<double>(invalid_high),
+      static_cast<double>(one_area),
+      static_cast<double>(one_density_budget),
+      static_cast<double>(two_area),
+      static_cast<double>(exact_two_density_budget),
+      static_cast<double>(one_ink_right - one_ink_left + 1),
+      static_cast<double>(one_ink_bottom - one_ink_top + 1),
+      static_cast<double>(two_ink_right - two_ink_left + 1),
+      static_cast<double>(two_ink_bottom - two_ink_top + 1),
+      static_cast<double>(two_edge_coverage),
+  };
+  gpui_windows_text_mask_release_v1(&one);
+  gpui_windows_text_mask_release_v1(&one_half);
+  gpui_windows_text_mask_release_v1(&two);
+  gpui_windows_text_mask_release_v1(&invalid);
+  std::memcpy(output, result, sizeof(result));
+  return GPUI_WINDOWS_TEXT_OK;
+}
+
 #else
 extern "C" int32_t gpui_windows_text_test_supported_v1(void) { return 0; }
 extern "C" int32_t gpui_windows_text_test_color_policy_v1(void) { return 0; }
 extern "C" int32_t gpui_windows_text_test_raster_v1(double *, int32_t) {
+  return GPUI_WINDOWS_TEXT_UNSUPPORTED_PLATFORM;
+}
+extern "C" int32_t gpui_windows_text_test_density_v2(double *, int32_t) {
   return GPUI_WINDOWS_TEXT_UNSUPPORTED_PLATFORM;
 }
 extern "C" int32_t gpui_windows_text_measure_v1(
@@ -994,15 +1188,15 @@ extern "C" int32_t gpui_windows_text_hit_test_v1(
     double, double, double *, int32_t) {
   return GPUI_WINDOWS_TEXT_UNSUPPORTED_PLATFORM;
 }
-extern "C" int32_t gpui_windows_text_raster_v1(
+extern "C" int32_t gpui_windows_text_raster_v2(
     int32_t, const uint8_t *, int32_t, const uint8_t *, int32_t, double,
-    double, double, double, double, double, double, int32_t,
+    double, double, double, double, double, double, double, int32_t,
     GpuiWindowsTextMask *) {
   return GPUI_WINDOWS_TEXT_UNSUPPORTED_PLATFORM;
 }
-extern "C" int32_t gpui_windows_text_admit_scene_run_v1(
+extern "C" int32_t gpui_windows_text_admit_scene_run_v2(
     int32_t, const uint8_t *, int32_t, const uint8_t *, int32_t, double,
-    double, double, double, double, double, double) {
+    double, double, double, double, double, double, double) {
   return GPUI_WINDOWS_TEXT_UNSUPPORTED_PLATFORM;
 }
 #endif

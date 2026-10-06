@@ -4,6 +4,7 @@ pub(all) enum WindowsTextError {
   InvalidFontSize
   InvalidCoordinates
   InvalidFontFamily
+  InvalidScale
   UnsupportedInput
   UnsupportedColor
   UnsupportedGlyph
@@ -68,6 +69,7 @@ fn windows_text_status_error(status : Int) -> WindowsTextError {
     12 => UnsupportedGlyph
     13 => InvalidFontFamily
     14 => UnsupportedPlatform
+    15 => InvalidScale
     _ => InvalidNativeOutput
   }
 }

@@ -139,13 +139,23 @@ metadata), and a borrowed UTF-8 sidecar. Record order is scene order. Bounds,
 text origins, clips, and viewport use logical coordinates; the backend applies
 the window scale when creating D3D11 geometry and scissors. Glyph masks are
 item-local and transformed with the item. D3D11 uploads them as `R8_UNORM`
-grayscale coverage textures. The DirectWrite shim has its own private ABI v1;
-none of these private wire formats changes the portable scene schema.
+grayscale coverage textures. The DirectWrite shim has private measurement/hit
+ABI v1 and raster ABI v2; none of these private wire formats changes the
+portable scene schema. Raster calls carry the window's physical-pixels-per-DIP
+scale. DirectWrite creates the glyph mask at that density, while run bounds
+and scene geometry remain in DIPs; mask dimensions, tile clipping, and
+aggregate pixel budgets use physical pixels, while normalized UVs derive from
+those physical tile bounds. Measurement and hit testing continue to use
+logical coordinates. The public `admit_scene_text_run_at` helper checks at 1x;
+callers that need scale-specific preflight can use
+`admit_scene_text_run_at_scale`, and presentation always rechecks limits at
+the actual window density.
 
 The renderer rejects frames above 64 text items, 4 KiB of UTF-8 per run,
 256 KiB of copied UTF-8 per frame, 32 logical pixels per font, and a 2048 by
-128 logical-pixel item clip. The aggregate glyph-mask budget is 262,144
-grayscale pixels per frame, with each mask dimension at most 2048 pixels.
+128 logical-pixel item clip. Raster density is bounded to 0.25–8 physical
+pixels per DIP. The aggregate glyph-mask budget is 262,144 physical grayscale
+pixels per frame, with each mask dimension at most 2048 physical pixels.
 The adapter's standalone measurement input is capped at 16 KiB and 512 pixels
 font size. These limits bound allocation and raster work; they are not a claim
 that arbitrary text is supported. DirectWrite comes from the Windows SDK and
