@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "kind": "reviewed-synthetic-ui-golden",
+  "image": "field-six-keys.png",
+  "png_sha256": "e5e96986f45f53499cfe9ea54a34c441b6506afcdf2b43cadd18a23428307291",
+  "rgba_pixel_sha256": "44f395449323e0e7581d04b6d012b4463819d65e0914aa53f0e662d534eb74d9",
+  "dimensions": [
+    960,
+    480
+  ],
+  "expected_text": "Hello 日本abD",
+  "expected_selection_utf16": {
+    "anchor": 10,
+    "focus": 10
+  },
+  "expected_caret": "between b and D",
+  "initial_text": "Hello 日本",
+  "case": "click field; a,b,c,Shift+d,Left,Backspace",
+  "wayland_key_events": 14,
+  "source_base_head": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+  "source_base_tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+  "candidate_binary_sha256": "5233bb38d0cc4098871870a5c5572d35f137fe7408134925b63dca997cee6715",
+  "candidate_patch_sha256": "741bf3020fbaf323d86d51892ef2c5ebb81a0001d0da50e2481d7f1763c9479e",
+  "original_runner_sha256": "ae029f89e3389d328433cbab5895a0f5958b75241a386ad03c43010be49105f1",
+  "original_fontconfig_sha256": "bf37fbeb29de454dfb687f98c594a172d882321d20b745d34f920bde5d76c7ba",
+  "reviewed_utc": "2026-10-06",
+  "review": "Explicit visual review of the predeclared expected text and caret; a subsequent independent native run matched every RGBA pixel. OCR only established ASCII prefix/suffix, not Japanese correctness.",
+  "boundary": "Synthetic test content only. This qualifies compositor-delivered native keys and rendered output; Japanese IME preedit/conversion is not tested. Cross-host font/renderer drift is not automatically accepted."
+}

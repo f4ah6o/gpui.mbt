@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "id": "ctrl-a-replacement",
+  "description": "Ctrl+A should select all before ASCII replacement.",
+  "platform": "linux-x11-weston",
+  "disposition": "expected-failure",
+  "reason": "Accepted source handles Ctrl+Z/Y/C/X/V but lacks Ctrl+A; intended replacement is an expected failure until implemented. Exact observed mismatch needs the reviewed state observer.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [
+    {
+      "id": "replace-all",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "a",
+          "modifiers": [
+            "Control_L"
+          ]
+        },
+        {
+          "type": "key",
+          "keysym": "a",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "b",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "c",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "abc",
+        "selection": {
+          "anchor": 3,
+          "head": 3
+        },
+        "focused": true
+      }
+    }
+  ],
+  "oracle": {
+    "kind": "pending",
+    "reason": "Exact presented-state observer is proposed but not integrated/reviewed; do not treat OCR or a fresh screenshot as a golden."
+  },
+  "expected_failure": {
+    "kind": "state_mismatch",
+    "observed": {
+      "text": "Hello 日本abc",
+      "selection": {
+        "anchor": 11,
+        "head": 11
+      },
+      "focused": true
+    }
+  },
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ],
+  "provenance": {
+    "source_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "source_tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "app_sha256": null,
+    "patch_sha256": null,
+    "fontconfig_sha256": null,
+    "notes": "Accepted text-field/undo source baseline. This planned case has not run through the packaged driver. Pin the actual reviewed observer/repeat build and source diff before activation."
+  }
+}

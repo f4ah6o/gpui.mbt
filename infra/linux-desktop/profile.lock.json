@@ -1,0 +1,997 @@
+{
+  "schema_version": 1,
+  "profile": "debian13-amd64-nested-x11-weston-ibus",
+  "created_utc": "2026-10-06",
+  "source_checkout": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+  "debian_index": {
+    "url": "https://deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.xz",
+    "sha256": "7778d3e3f303b7ddb8ce0fe7c8d57473a076c6bf2e8f241f75421d2396352498",
+    "note": "Metadata capture used to construct this reviewed lock; the live index can change. The committed package SHA-256 values are the recovery authority. No archive signature verification is claimed by the prefix extractor."
+  },
+  "host_contract": {
+    "distribution": "Debian GNU/Linux 13 (trixie)",
+    "architecture": "amd64",
+    "libc_minimum": "2.38",
+    "python_abi": "3.13 (for distribution python3-gi)",
+    "external_prerequisites": [
+      "C compiler and libc development files",
+      "pkg-config",
+      "curl",
+      "dpkg-deb",
+      "D-Bus session launcher",
+      "X11 desktop and DISPLAY",
+      "Mesa EGL/GLES software driver and host runtime libraries checked by doctor",
+      "permitted AF_UNIX sockets in actual desktop execution context",
+      "Optional host hicolor/cursor assets; mandatory archive omitted because access was denied in validation"
+    ],
+    "is_hermetic_os_image": false
+  },
+  "toolchain": {
+    "version": "0.10.14+7d59c7ec9",
+    "moon_version": "0.1.20260920 (914d7da)",
+    "archives": [
+      {
+        "archive": "moonbit-linux-x86_64.tar.gz",
+        "url": "https://cli.moonbitlang.com/binaries/0.10.14%2B7d59c7ec9/moonbit-linux-x86_64.tar.gz",
+        "sha256": "9226694de9ff978db1ecf820b7710c4224e84ec7a76b19a222d96f0cd4e31b6a"
+      },
+      {
+        "archive": "core-0.10.14+7d59c7ec9.tar.gz",
+        "url": "https://cli.moonbitlang.com/cores/core-0.10.14%2B7d59c7ec9.tar.gz",
+        "sha256": "6f18b8fdea18f85e628a75e4a1bd3977c5a5c9c6a836fd8824192b0e6bd91b14"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "name": "adwaita-icon-theme",
+      "version": "48.1-1",
+      "archive": "adwaita-icon-theme_48.1-1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/a/adwaita-icon-theme/adwaita-icon-theme_48.1-1_all.deb",
+      "sha256": "f60b0577aee314d43d6908ca7f0b8f07dc48e2bb766e7e25035330817e0e827c",
+      "depends": "gtk-update-icon-cache, hicolor-icon-theme",
+      "size": 504356
+    },
+    {
+      "name": "dbus-bin",
+      "version": "1.16.2-2",
+      "archive": "dbus-bin_1.16.2-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/d/dbus/dbus-bin_1.16.2-2_amd64.deb",
+      "sha256": "a7c0785f89d3763bb83e2912237135a7d1c610e06f487c39b1d6408e88d46fb5",
+      "depends": "libc6 (>= 2.38), libdbus-1-3 (= 1.16.2-2)",
+      "size": 80004
+    },
+    {
+      "name": "dbus-daemon",
+      "version": "1.16.2-2",
+      "archive": "dbus-daemon_1.16.2-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/d/dbus/dbus-daemon_1.16.2-2_amd64.deb",
+      "sha256": "c91558cbd019bd5ec3e9fde0084976d5f61977f4ef0a9ed1ff48fe3a129b91d4",
+      "depends": "dbus-bin (= 1.16.2-2), dbus-session-bus-common (>= 1.16.2-2), libapparmor1 (>= 2.8.94), libaudit1 (>= 1:2.2.1), libc6 (>= 2.34), libcap-ng0 (>= 0.7.9), libdbus-1-3 (= 1.16.2-2), libexpat1 (>= 2.1~beta3), libselinux1 (>= 3.1~), libsystemd0",
+      "size": 158660
+    },
+    {
+      "name": "dbus-x11",
+      "version": "1.16.2-2",
+      "archive": "dbus-x11_1.16.2-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/d/dbus/dbus-x11_1.16.2-2_amd64.deb",
+      "sha256": "7d06cc4b3f0c9e4761cdd64772cd86a845b11ab1fcd073caaf4c34b459dc7cd3",
+      "depends": "dbus-bin (= 1.16.2-2), dbus-daemon (= 1.16.2-2), dbus-session-bus-common (>= 1.16.2-2), libc6 (>= 2.38), libdbus-1-3 (= 1.16.2-2), libx11-6",
+      "size": 65144
+    },
+    {
+      "name": "dconf-cli",
+      "version": "0.40.0-5",
+      "archive": "dconf-cli_0.40.0-5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/d/dconf/dconf-cli_0.40.0-5_amd64.deb",
+      "sha256": "48ab212731bb0ffe9d8b623af0878e5881085dab2bcb789b67b983c946ebe108",
+      "depends": "libdconf1 (= 0.40.0-5), libc6 (>= 2.34), libglib2.0-0t64 (>= 2.44.0)",
+      "size": 28332
+    },
+    {
+      "name": "fonts-dejavu-core",
+      "version": "2.37-8",
+      "archive": "fonts-dejavu-core_2.37-8_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/f/fonts-dejavu/fonts-dejavu-core_2.37-8_all.deb",
+      "sha256": "86635b3d25b3655fc11cb3ecc3af59f0bf19643b02b94f2de48bd10253cdba12",
+      "depends": "fonts-dejavu-mono",
+      "size": 840460
+    },
+    {
+      "name": "fonts-noto-cjk",
+      "version": "1:20240730+repack1-1",
+      "archive": "fonts-noto-cjk_20240730+repack1-1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/f/fonts-noto-cjk/fonts-noto-cjk_20240730+repack1-1_all.deb",
+      "sha256": "f5dc28a754e17327d99f0a612134d92c8dd6187314ae967cb77f25df60860139",
+      "depends": "",
+      "size": 56674044
+    },
+    {
+      "name": "fonts-noto-color-emoji",
+      "version": "2.051-0+deb13u1",
+      "archive": "fonts-noto-color-emoji_2.051-0+deb13u1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/f/fonts-noto-color-emoji/fonts-noto-color-emoji_2.051-0+deb13u1_all.deb",
+      "sha256": "03141cd51c0e9ff8ad858fcf2d8234f8a00ae4d7a0872df43a71519359c54e8c",
+      "depends": "",
+      "size": 10110428
+    },
+    {
+      "name": "gir1.2-girepository-2.0",
+      "version": "1.84.0-1",
+      "archive": "gir1.2-girepository-2.0_1.84.0-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gobject-introspection/gir1.2-girepository-2.0_1.84.0-1_amd64.deb",
+      "sha256": "1e9f0336c0e547740880fa2e183f7ea075cf0f54bd842ae5df9010c403271db7",
+      "depends": "gir1.2-gobject-2.0 (>= 2.82.0), libgirepository-1.0-1 (>= 1.75.6)",
+      "size": 39724
+    },
+    {
+      "name": "gir1.2-glib-2.0",
+      "version": "2.84.4-3~deb13u5",
+      "archive": "gir1.2-glib-2.0_2.84.4-3~deb13u5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/glib2.0/gir1.2-glib-2.0_2.84.4-3~deb13u5_amd64.deb",
+      "sha256": "90f674a980f28f0062cf7bf74a77a8dce728aa57d0915eb12c9cf6ea85ed774e",
+      "depends": "libglib2.0-0t64 (= 2.84.4-3~deb13u5)",
+      "size": 200680
+    },
+    {
+      "name": "gir1.2-gtk-3.0",
+      "version": "3.24.49-3",
+      "archive": "gir1.2-gtk-3.0_3.24.49-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gtk+3.0/gir1.2-gtk-3.0_3.24.49-3_amd64.deb",
+      "sha256": "782cadd4f2448349cf563fb522797388c9667330756c2662d83f1bf3a0099e20",
+      "depends": "gir1.2-atk-1.0 (>= 2.35.1), gir1.2-cairo-1.0, gir1.2-gdkpixbuf-2.0 (>= 2.40.0), gir1.2-gio-2.0, gir1.2-pango-1.0 (>= 1.44.0), gir1.2-xlib-2.0, libgtk-3-0t64 (>= 3.24.30), libgtk-3-common",
+      "size": 223664
+    },
+    {
+      "name": "gir1.2-ibus-1.0",
+      "version": "1.5.32-2",
+      "archive": "gir1.2-ibus-1.0_1.5.32-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/i/ibus/gir1.2-ibus-1.0_1.5.32-2_amd64.deb",
+      "sha256": "880e87fe5b399d8a7c770dd6ee79dfb97399dda2837fcbd0af237f6ac2967d40",
+      "depends": "gir1.2-gio-2.0, gir1.2-glib-2.0, gir1.2-gobject-2.0, libibus-1.0-5 (>= 1.5.32~beta1)",
+      "size": 371732
+    },
+    {
+      "name": "ibus",
+      "version": "1.5.32-2",
+      "archive": "ibus_1.5.32-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/i/ibus/ibus_1.5.32-2_amd64.deb",
+      "sha256": "70a3525daee61b6bf4676922726e96062befb54031225f34e9af33d7f2a7a0f6",
+      "depends": "init-system-helpers (>= 1.52), python3:any, libatk1.0-0t64 (>= 1.12.4), libc6 (>= 2.38), libcairo2 (>= 1.2.4), libdbusmenu-glib4 (>= 0.4.2), libdbusmenu-gtk3-4 (>= 0.4.2), libdconf1 (>= 0.14.0), libgdk-pixbuf-2.0-0 (>= 2.22.0), libglib2.0-0t64 (>= 2.83.0), libgtk-3-0t64 (>= 3.21.5), libibus-1.0-5 (>= 1.5.32~beta1), libnotify4 (>= 0.7.0), libpango-1.0-0 (>= 1.14.0), libpangocairo-1.0-0 (>= 1.14.0), libwayland-client0 (>= 1.20.0), libx11-6, libxfixes3 (>= 1:6.0.0), libxi6 (>= 2:1.2.99.4), libxkbcommon0 (>= 0.5.0), adwaita-icon-theme, dconf-cli, ibus-data (= 1.5.32-2), gir1.2-gtk-3.0 (>= 3.8.5), gir1.2-ibus-1.0 (= 1.5.32-2), python3-gi, python3-ibus-1.0 (= 1.5.32-2)",
+      "size": 652488
+    },
+    {
+      "name": "ibus-data",
+      "version": "1.5.32-2",
+      "archive": "ibus-data_1.5.32-2_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/i/ibus/ibus-data_1.5.32-2_all.deb",
+      "sha256": "6b4e9f013941488d3b299326079f6ce470bf34b5b59a75dd007c89d77048f587",
+      "depends": "dconf-gsettings-backend | gsettings-backend, librsvg2-common",
+      "size": 13238692
+    },
+    {
+      "name": "ibus-gtk",
+      "version": "1.5.32-2",
+      "archive": "ibus-gtk_1.5.32-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/i/ibus/ibus-gtk_1.5.32-2_amd64.deb",
+      "sha256": "b5e6c823eb848da99607a1f7cf5bee3568f5b32b6af06d5b78f07df3da310e21",
+      "depends": "libc6 (>= 2.4), libglib2.0-0t64 (>= 2.68.0), libibus-1.0-5 (>= 1.5.28), libpango-1.0-0 (>= 1.14.0)",
+      "size": 318352
+    },
+    {
+      "name": "ibus-gtk3",
+      "version": "1.5.32-2",
+      "archive": "ibus-gtk3_1.5.32-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/i/ibus/ibus-gtk3_1.5.32-2_amd64.deb",
+      "sha256": "08adad9d5e92ccc230ba702d91df0af92a855d85643b927d1a83ebc1ee41a2b9",
+      "depends": "libc6 (>= 2.4), libglib2.0-0t64 (>= 2.68.0), libibus-1.0-5 (>= 1.5.28), libpango-1.0-0 (>= 1.14.0)",
+      "size": 318800
+    },
+    {
+      "name": "ibus-mozc",
+      "version": "2.29.5160.102+dfsg-1.4",
+      "archive": "ibus-mozc_2.29.5160.102+dfsg-1.4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/m/mozc/ibus-mozc_2.29.5160.102+dfsg-1.4_amd64.deb",
+      "sha256": "0f8040adf8955128f0c28b0c9645dd62ab9781f21d766e05f6b6eee9459852d0",
+      "depends": "libabsl20240722 (>= 20240722.0-1), libc6 (>= 2.34), libgcc-s1 (>= 3.4), libglib2.0-0t64 (>= 2.32.0), libibus-1.0-5 (>= 1.5.4), libprotobuf32t64 (>= 3.21.12), libstdc++6 (>= 13.1), libxcb-xfixes0, libxcb1, mozc-data, mozc-server (= 2.29.5160.102+dfsg-1.4), ibus (>= 1.2)",
+      "size": 240068
+    },
+    {
+      "name": "libabsl20240722",
+      "version": "20240722.0-4",
+      "archive": "libabsl20240722_20240722.0-4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/a/abseil/libabsl20240722_20240722.0-4_amd64.deb",
+      "sha256": "78c6d7692890990a27cb1d5bbd95b7bfe47a4183ffafec5b30f689f9b58ec6f7",
+      "depends": "libc6 (>= 2.38), libgcc-s1 (>= 3.4), libstdc++6 (>= 13.1)",
+      "size": 491548
+    },
+    {
+      "name": "libaml0t64",
+      "version": "0.3.0-3",
+      "archive": "libaml0t64_0.3.0-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/a/aml/libaml0t64_0.3.0-3_amd64.deb",
+      "sha256": "06c7b1107490f4809e721f1d1acd9850c1e363ccc15c41fc66ca1068ca730e7e",
+      "depends": "libc6 (>= 2.34)",
+      "size": 11096
+    },
+    {
+      "name": "libblkid-dev",
+      "version": "2.41.5-0+deb13u1",
+      "archive": "libblkid-dev_2.41.5-0+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/u/util-linux/libblkid-dev_2.41.5-0+deb13u1_amd64.deb",
+      "sha256": "775bc91f7a265d21cdfc6b710813017b2366e5c5bb665cd2e6979af5dd8a03a8",
+      "depends": "libblkid1 (= 2.41.5-0+deb13u1), libc6-dev | libc-dev, uuid-dev",
+      "size": 208756
+    },
+    {
+      "name": "libbrotli-dev",
+      "version": "1.1.0-2+b7",
+      "archive": "libbrotli-dev_1.1.0-2+b7_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/b/brotli/libbrotli-dev_1.1.0-2+b7_amd64.deb",
+      "sha256": "7149124783ccc38764f8b869ea2e4bde319c3d0872b248b7ab472b47d41c5176",
+      "depends": "libbrotli1 (= 1.1.0-2+b7)",
+      "size": 315872
+    },
+    {
+      "name": "libbz2-dev",
+      "version": "1.0.8-6",
+      "archive": "libbz2-dev_1.0.8-6_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/b/bzip2/libbz2-dev_1.0.8-6_amd64.deb",
+      "sha256": "b395471bf69087a18a6baa04d68a9d50497b20f8a2602d9729c7069f820bbe6b",
+      "depends": "libbz2-1.0 (= 1.0.8-6), libc6-dev | libc-dev",
+      "size": 31368
+    },
+    {
+      "name": "libcairo2-dev",
+      "version": "1.18.4-1+b1",
+      "archive": "libcairo2-dev_1.18.4-1+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/c/cairo/libcairo2-dev_1.18.4-1+b1_amd64.deb",
+      "sha256": "50bb7f5dbe565caf754dc65c5b9de3d63b2458b4388544ea30b328eae5290d8d",
+      "depends": "libcairo-gobject2 (= 1.18.4-1+b1), libcairo-script-interpreter2 (= 1.18.4-1+b1), libcairo2 (= 1.18.4-1+b1), libfontconfig-dev, libfreetype-dev (>= 2.13), libglib2.0-dev, libpixman-1-dev, libpng-dev, libsm-dev, libx11-dev, libxcb-render0-dev, libxcb-shm0-dev, libxcb1-dev, libxext-dev, libxrender-dev",
+      "size": 43404
+    },
+    {
+      "name": "libdatrie-dev",
+      "version": "0.2.13-3+b1",
+      "archive": "libdatrie-dev_0.2.13-3+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libd/libdatrie/libdatrie-dev_0.2.13-3+b1_amd64.deb",
+      "sha256": "ddab87e29612672cfb7d44425529e331388224ced3700bffb83e7772cd1a804f",
+      "depends": "libdatrie1 (= 0.2.13-3+b1), pkgconf",
+      "size": 18420
+    },
+    {
+      "name": "libdbusmenu-glib4",
+      "version": "18.10.20180917~bzr492+repack1-4",
+      "archive": "libdbusmenu-glib4_18.10.20180917~bzr492+repack1-4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libd/libdbusmenu/libdbusmenu-glib4_18.10.20180917~bzr492+repack1-4_amd64.deb",
+      "sha256": "497128ea59ad99d26379bf1cff5a0897f6f0520e9cc0b5a44707676c6cf3f589",
+      "depends": "libc6 (>= 2.4), libglib2.0-0t64 (>= 2.80.0)",
+      "size": 40616
+    },
+    {
+      "name": "libdbusmenu-gtk3-4",
+      "version": "18.10.20180917~bzr492+repack1-4",
+      "archive": "libdbusmenu-gtk3-4_18.10.20180917~bzr492+repack1-4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libd/libdbusmenu/libdbusmenu-gtk3-4_18.10.20180917~bzr492+repack1-4_amd64.deb",
+      "sha256": "04b73c2590bd8a99e9ee5ae51bf6b66229edf896278bcb0b450f88e32fb51c73",
+      "depends": "libatk1.0-0t64 (>= 1.12.4), libc6 (>= 2.4), libdbusmenu-glib4 (>= 0.5.90), libgdk-pixbuf-2.0-0 (>= 2.22.0), libglib2.0-0t64 (>= 2.80.0), libgtk-3-0t64 (>= 3.16.2), libpango-1.0-0 (>= 1.14.0)",
+      "size": 27184
+    },
+    {
+      "name": "libdconf1",
+      "version": "0.40.0-5",
+      "archive": "libdconf1_0.40.0-5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/d/dconf/libdconf1_0.40.0-5_amd64.deb",
+      "sha256": "6e7f670e1cf493ae8f60dea52f5a4aef56605d5b06d921113d7c2a2800ff5af1",
+      "depends": "libc6 (>= 2.14), libglib2.0-0t64 (>= 2.80.0)",
+      "size": 41796
+    },
+    {
+      "name": "libdisplay-info2",
+      "version": "0.2.0-2",
+      "archive": "libdisplay-info2_0.2.0-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libd/libdisplay-info/libdisplay-info2_0.2.0-2_amd64.deb",
+      "sha256": "961924d484d4c14b6decb76cf0e860a1e7b6c89bfc85e527d873a89faf24b846",
+      "depends": "libc6 (>= 2.27)",
+      "size": 73868
+    },
+    {
+      "name": "libegl-dev",
+      "version": "1.7.0-1+b2",
+      "archive": "libegl-dev_1.7.0-1+b2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libg/libglvnd/libegl-dev_1.7.0-1+b2_amd64.deb",
+      "sha256": "97fcfff08a5de0a510066d55260a30fbd3ccbd87da6c2f317e6efe17566b9f5a",
+      "depends": "libegl1 (= 1.7.0-1+b2), libgl-dev, libx11-dev",
+      "size": 19520
+    },
+    {
+      "name": "libexpat1",
+      "version": "2.8.3-1~deb13u1",
+      "archive": "libexpat1_2.8.3-1~deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/e/expat/libexpat1_2.8.3-1~deb13u1_amd64.deb",
+      "sha256": "38abe0e710a07688e9c149d74536e67cfee0364bdb64dd6d644c32a1cfad389f",
+      "depends": "",
+      "size": 122672
+    },
+    {
+      "name": "libexpat1-dev",
+      "version": "2.8.3-1~deb13u1",
+      "archive": "libexpat1-dev_2.8.3-1~deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/e/expat/libexpat1-dev_2.8.3-1~deb13u1_amd64.deb",
+      "sha256": "13f69f5290374c8403d2114b91cc8d0e6bb7b74e9e2512b7e04557546c922749",
+      "depends": "libexpat1 (= 2.8.3-1~deb13u1), libc6-dev | libc-dev",
+      "size": 178864
+    },
+    {
+      "name": "libffi-dev",
+      "version": "3.4.8-2",
+      "archive": "libffi-dev_3.4.8-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libf/libffi/libffi-dev_3.4.8-2_amd64.deb",
+      "sha256": "76b2b80193a656733e1408ebec5371334be5fd48eb5f50ab99d6baf6081d0f1b",
+      "depends": "libffi8 (= 3.4.8-2)",
+      "size": 61136
+    },
+    {
+      "name": "libfontconfig-dev",
+      "version": "2.15.0-2.3",
+      "archive": "libfontconfig-dev_2.15.0-2.3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/f/fontconfig/libfontconfig-dev_2.15.0-2.3_amd64.deb",
+      "sha256": "e7c533d87da316da3b127d136c0d1f0238a936c4b0797cb5ab67ebac3cf7151e",
+      "depends": "libfontconfig1 (= 2.15.0-2.3), libexpat1-dev, libfreetype-dev (>= 2.8.1), uuid-dev, pkgconf",
+      "size": 414252
+    },
+    {
+      "name": "libfontenc1",
+      "version": "1:1.1.8-1+b2",
+      "archive": "libfontenc1_1.1.8-1+b2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libf/libfontenc/libfontenc1_1.1.8-1+b2_amd64.deb",
+      "sha256": "49f7330e1bbe3f48946fee5c07870df660374f9f77b378840d6edf1a3b3444cd",
+      "depends": "libc6 (>= 2.38), zlib1g (>= 1:1.1.4)",
+      "size": 23328
+    },
+    {
+      "name": "libfreetype-dev",
+      "version": "2.13.3+dfsg-1+deb13u1",
+      "archive": "libfreetype-dev_2.13.3+dfsg-1+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/f/freetype/libfreetype-dev_2.13.3+dfsg-1+deb13u1_amd64.deb",
+      "sha256": "f58107859d9fa44206e64cf35bdbd4febdec66a33e456ce2e5e3712f01b6c895",
+      "depends": "libfreetype6 (= 2.13.3+dfsg-1+deb13u1), libbrotli-dev, libbz2-dev, libc6-dev | libc-dev, libpng-dev, zlib1g-dev | libz-dev",
+      "size": 622868
+    },
+    {
+      "name": "libfribidi-dev",
+      "version": "1.0.16-1",
+      "archive": "libfribidi-dev_1.0.16-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/f/fribidi/libfribidi-dev_1.0.16-1_amd64.deb",
+      "sha256": "a5056c7e5e88afbd63b5350990fb450086df0f3af9c2616c52d8b6bf4cf234a7",
+      "depends": "libfribidi0 (= 1.0.16-1)",
+      "size": 65948
+    },
+    {
+      "name": "libgdk-pixbuf2.0-common",
+      "version": "2.42.12+dfsg-4+deb13u1",
+      "archive": "libgdk-pixbuf2.0-common_2.42.12+dfsg-4+deb13u1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gdk-pixbuf/libgdk-pixbuf2.0-common_2.42.12+dfsg-4+deb13u1_all.deb",
+      "sha256": "9f0c64e33cf5bb3226a5a6ddf630dd76530596e476e6b47a8b27da444ff43a03",
+      "depends": "",
+      "size": 311852
+    },
+    {
+      "name": "libgio-2.0-dev",
+      "version": "2.84.4-3~deb13u5",
+      "archive": "libgio-2.0-dev_2.84.4-3~deb13u5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/glib2.0/libgio-2.0-dev_2.84.4-3~deb13u5_amd64.deb",
+      "sha256": "a9bbd748ddd40a08b336e8d6b1755e698957ac640d081ddc4c330b716c6b89c3",
+      "depends": "libffi-dev, libglib2.0-0t64 (= 2.84.4-3~deb13u5), libmount-dev, libpcre2-dev, libselinux1-dev, libsysprof-capture-4-dev (>= 3.38.0), pkgconf, zlib1g-dev",
+      "size": 1691796
+    },
+    {
+      "name": "libgirepository-1.0-1",
+      "version": "1.84.0-1",
+      "archive": "libgirepository-1.0-1_1.84.0-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gobject-introspection/libgirepository-1.0-1_1.84.0-1_amd64.deb",
+      "sha256": "2168c5d833295d7cb298ce0161529932dc1cba5330c0d02e48bd0ae776fd2f79",
+      "depends": "libc6 (>= 2.29), libffi8 (>= 3.4), libglib2.0-0t64 (>= 2.82.0)",
+      "size": 115648
+    },
+    {
+      "name": "libgl-dev",
+      "version": "1.7.0-1+b2",
+      "archive": "libgl-dev_1.7.0-1+b2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libg/libglvnd/libgl-dev_1.7.0-1+b2_amd64.deb",
+      "sha256": "2c5044a44bc7cd7a196d554ca6ff78ae0358fbb98b7d2cce49176bdc6a816fe4",
+      "depends": "libgl1 (= 1.7.0-1+b2), libglx-dev",
+      "size": 100680
+    },
+    {
+      "name": "libgles-dev",
+      "version": "1.7.0-1+b2",
+      "archive": "libgles-dev_1.7.0-1+b2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libg/libglvnd/libgles-dev_1.7.0-1+b2_amd64.deb",
+      "sha256": "87af52464cb40d54e78ecf2046db019bf1ab19a8bed7511ab282be623d1216de",
+      "depends": "libegl-dev, libgl-dev, libgles1 (= 1.7.0-1+b2), libgles2 (= 1.7.0-1+b2)",
+      "size": 50776
+    },
+    {
+      "name": "libgles2",
+      "version": "1.7.0-1+b2",
+      "archive": "libgles2_1.7.0-1+b2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libg/libglvnd/libgles2_1.7.0-1+b2_amd64.deb",
+      "sha256": "e12c18aa77939d122ee1dea520ba0440b97dc19200b7396e03dff03a3ece74c1",
+      "depends": "libc6 (>= 2.34), libglvnd0 (= 1.7.0-1+b2)",
+      "size": 17256
+    },
+    {
+      "name": "libglib2.0-0t64",
+      "version": "2.84.4-3~deb13u5",
+      "archive": "libglib2.0-0t64_2.84.4-3~deb13u5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/glib2.0/libglib2.0-0t64_2.84.4-3~deb13u5_amd64.deb",
+      "sha256": "e2baf92c57d1db1753e5781a61450d9a01e7833c7bd2dfe87776a6811c11ecc2",
+      "depends": "libatomic1 (>= 4.8), libc6 (>= 2.38), libffi8 (>= 3.4), libmount1 (>= 2.40~rc2), libpcre2-8-0 (>= 10.22), libselinux1 (>= 3.1~), zlib1g (>= 1:1.2.2)",
+      "size": 1521120
+    },
+    {
+      "name": "libglib2.0-bin",
+      "version": "2.84.4-3~deb13u5",
+      "archive": "libglib2.0-bin_2.84.4-3~deb13u5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/glib2.0/libglib2.0-bin_2.84.4-3~deb13u5_amd64.deb",
+      "sha256": "733e0bbb4aaa7846a23a02cc3f6af71b41cdfcc833538aae0c35eb2c1160c15a",
+      "depends": "libglib2.0-data, libc6 (>= 2.38), libelf1t64 (>= 0.142), libglib2.0-0t64 (= 2.84.4-3~deb13u5)",
+      "size": 132488
+    },
+    {
+      "name": "libglib2.0-dev",
+      "version": "2.84.4-3~deb13u5",
+      "archive": "libglib2.0-dev_2.84.4-3~deb13u5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/glib2.0/libglib2.0-dev_2.84.4-3~deb13u5_amd64.deb",
+      "sha256": "ad98b1a769da55a8007ea9953306b0deb6092205d4fac8d915e2bd83d4ecc8a5",
+      "depends": "girepository-tools (= 2.84.4-3~deb13u5), libgio-2.0-dev (= 2.84.4-3~deb13u5), libglib2.0-bin (= 2.84.4-3~deb13u5), libglib2.0-dev-bin (= 2.84.4-3~deb13u5)",
+      "size": 57744
+    },
+    {
+      "name": "libglib2.0-dev-bin",
+      "version": "2.84.4-3~deb13u5",
+      "archive": "libglib2.0-dev-bin_2.84.4-3~deb13u5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/glib2.0/libglib2.0-dev-bin_2.84.4-3~deb13u5_amd64.deb",
+      "sha256": "d35ef75a4b04ea10081d484e025b0a4fecd0232ffc0e76403bcd249b3b47e643",
+      "depends": "girepository-tools (= 2.84.4-3~deb13u5), libgio-2.0-dev-bin (= 2.84.4-3~deb13u5)",
+      "size": 56944
+    },
+    {
+      "name": "libglvnd-dev",
+      "version": "1.7.0-1+b2",
+      "archive": "libglvnd-dev_1.7.0-1+b2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libg/libglvnd/libglvnd-dev_1.7.0-1+b2_amd64.deb",
+      "sha256": "3076d220a658adc9f4a505bac97d1ca7a896957c2ea641e058a85a2b384a4367",
+      "depends": "libglvnd0 (= 1.7.0-1+b2), libglvnd-core-dev (= 1.7.0-1+b2), libegl-dev (>= 1.3.0-1), libgl-dev (>= 1.3.0-1), libgles-dev (>= 1.3.0-1), libglx-dev (>= 1.3.0-1), libopengl-dev (>= 1.3.0-1)",
+      "size": 5148
+    },
+    {
+      "name": "libglx-dev",
+      "version": "1.7.0-1+b2",
+      "archive": "libglx-dev_1.7.0-1+b2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libg/libglvnd/libglx-dev_1.7.0-1+b2_amd64.deb",
+      "sha256": "93d456321c07009491b942783db8c57065b616db713ef5f6a0c629ca078c4ea0",
+      "depends": "libglx0 (= 1.7.0-1+b2), libx11-dev",
+      "size": 15804
+    },
+    {
+      "name": "libgraphite2-dev",
+      "version": "1.3.14-2+deb13u1",
+      "archive": "libgraphite2-dev_1.3.14-2+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/graphite2/libgraphite2-dev_1.3.14-2+deb13u1_amd64.deb",
+      "sha256": "95285830ac3b4d672cdf05651de1c47884ca135a7601a365b9e5060ed18dee26",
+      "depends": "libgraphite2-3 (= 1.3.14-2+deb13u1)",
+      "size": 20140
+    },
+    {
+      "name": "libgspell-1-3",
+      "version": "1.14.0-2+b1",
+      "archive": "libgspell-1-3_1.14.0-2+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gspell/libgspell-1-3_1.14.0-2+b1_amd64.deb",
+      "sha256": "1a37eaf89f3f8ba0645f975df5548534add6c49248e3b796f6859e2cbf20f39b",
+      "depends": "libgspell-1-common (>= 1.14.0-2), libc6 (>= 2.4), libenchant-2-2 (>= 2.2.3), libglib2.0-0t64 (>= 2.80.0), libgtk-3-0t64 (>= 3.20), libicu76 (>= 76.1-1~), libpango-1.0-0 (>= 1.18.0)",
+      "size": 51508
+    },
+    {
+      "name": "libgspell-1-common",
+      "version": "1.14.0-2",
+      "archive": "libgspell-1-common_1.14.0-2_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gspell/libgspell-1-common_1.14.0-2_all.deb",
+      "sha256": "d0a10ca850f6f2532541719eed90797742d1891a272490c219c7729996a3b4db",
+      "depends": "",
+      "size": 36516
+    },
+    {
+      "name": "libgtk-3-0t64",
+      "version": "3.24.49-3",
+      "archive": "libgtk-3-0t64_3.24.49-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gtk+3.0/libgtk-3-0t64_3.24.49-3_amd64.deb",
+      "sha256": "4aa8828f01365f937f3bf69f812c8107ee4c8a2b208ffdd7656e8de5de81d98f",
+      "depends": "adwaita-icon-theme, hicolor-icon-theme, shared-mime-info, libatk-bridge2.0-0t64 (>= 2.15.1), libatk1.0-0t64 (>= 2.35.1), libc6 (>= 2.38), libcairo-gobject2 (>= 1.14.0), libcairo2 (>= 1.14.0), libcloudproviders0 (>= 0.3.2), libcolord2 (>= 0.1.10), libcups2t64 (>= 1.7.0), libepoxy0 (>= 1.4.3), libfontconfig1 (>= 2.12.6), libfribidi0 (>= 0.19.7), libgdk-pixbuf-2.0-0 (>= 2.40.0), libglib2.0-0t64 (>= 2.78.0), libharfbuzz0b (>= 2.2.0), libpango-1.0-0 (>= 1.45.5), libpangocairo-1.0-0 (>= 1.44.0), libpangoft2-1.0-0 (>= 1.44.0), libwayland-client0 (>= 1.23), libwayland-cursor0 (>= 1.23), libwayland-egl1 (>= 1.23), libx11-6 (>= 2:1.4.99.1), libxcomposite1 (>= 1:0.4.6), libxcursor1 (>> 1.1.2), libxdamage1 (>= 1:1.1), libxext6, libxfixes3, libxi6 (>= 2:1.2.99.4), libxinerama1 (>= 2:1.1.4), libxkbcommon0 (>= 0.5.0), libxrandr2 (>= 2:1.5.0), libgtk-3-common (>= 3.24.49-3)",
+      "size": 2768812
+    },
+    {
+      "name": "libgtk-3-bin",
+      "version": "3.24.49-3",
+      "archive": "libgtk-3-bin_3.24.49-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gtk+3.0/libgtk-3-bin_3.24.49-3_amd64.deb",
+      "sha256": "702f8d607e92b58ca0bed6985b6c83d246deaba61df3182884c5b8701c551b98",
+      "depends": "gtk-update-icon-cache, libc6 (>= 2.38), libcairo2 (>= 1.14.0), libgdk-pixbuf-2.0-0 (>= 2.40.0), libglib2.0-0t64 (>= 2.57.2), libgtk-3-0t64 (>= 3.24.49-3), libgtk-3-common (>= 3.24.49-3)",
+      "size": 86540
+    },
+    {
+      "name": "libgtk-3-common",
+      "version": "3.24.49-3",
+      "archive": "libgtk-3-common_3.24.49-3_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gtk+3.0/libgtk-3-common_3.24.49-3_all.deb",
+      "sha256": "9161bd6b9933384073ac5bacd6a3bb1e2998877a605411d73041fb0b7fadd605",
+      "depends": "dconf-gsettings-backend | gsettings-backend",
+      "size": 4908188
+    },
+    {
+      "name": "libgtk2.0-0t64",
+      "version": "2.24.33-7",
+      "archive": "libgtk2.0-0t64_2.24.33-7_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gtk+2.0/libgtk2.0-0t64_2.24.33-7_amd64.deb",
+      "sha256": "d32dbd0327a9132ec895d350a70852688a9f481f1733a2cf4ef40642181dae8b",
+      "depends": "libgtk2.0-common, libatk1.0-0t64 (>= 1.12.4), libc6 (>= 2.38), libcairo2 (>= 1.6.0), libcups2t64 (>= 1.6.0), libfontconfig1 (>= 2.12.6), libgdk-pixbuf-2.0-0 (>= 2.22.0), libglib2.0-0t64 (>= 2.80.0), libpango-1.0-0 (>= 1.22.0), libpangocairo-1.0-0 (>= 1.22.0), libpangoft2-1.0-0 (>= 1.14.0), libx11-6 (>= 2:1.4.99.1), libxcomposite1 (>= 1:0.4.6), libxcursor1 (>> 1.1.2), libxdamage1 (>= 1:1.1), libxext6, libxfixes3, libxi6, libxinerama1 (>= 2:1.1.4), libxrandr2 (>= 2:1.5.0), libxrender1, adwaita-icon-theme | gnome-icon-theme, hicolor-icon-theme, shared-mime-info",
+      "size": 1828416
+    },
+    {
+      "name": "libgtksourceview-4-0",
+      "version": "4.8.4-6",
+      "archive": "libgtksourceview-4-0_4.8.4-6_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gtksourceview4/libgtksourceview-4-0_4.8.4-6_amd64.deb",
+      "sha256": "37ed8c408c3d06756aa49bf3e49440b6ddaf9bcff8829723c857951b69c230ea",
+      "depends": "libgtksourceview-4-common (>= 4.8.4-6), libatk1.0-0t64 (>= 1.32), libc6 (>= 2.14), libcairo2 (>= 1.4.10), libfribidi0 (>= 0.19.2), libgdk-pixbuf-2.0-0 (>= 2.22.0), libglib2.0-0t64 (>= 2.48.0), libgtk-3-0t64 (>= 3.24), libpango-1.0-0 (>= 1.18.0), libpangocairo-1.0-0 (>= 1.14.0), libxml2 (>= 2.7.4)",
+      "size": 218612
+    },
+    {
+      "name": "libgtksourceview-4-common",
+      "version": "4.8.4-6",
+      "archive": "libgtksourceview-4-common_4.8.4-6_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/g/gtksourceview4/libgtksourceview-4-common_4.8.4-6_all.deb",
+      "sha256": "affcc851a156ce8f2da91e4b83ebf23ba578153b1c1f037992da1992b57a0b45",
+      "depends": "",
+      "size": 532924
+    },
+    {
+      "name": "libharfbuzz-dev",
+      "version": "10.2.0-1+deb13u1",
+      "archive": "libharfbuzz-dev_10.2.0-1+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/h/harfbuzz/libharfbuzz-dev_10.2.0-1+deb13u1_amd64.deb",
+      "sha256": "2588a9535b4b08193418d076605ca0878545e5b06a1a86a1f952f88f33ce79f9",
+      "depends": "gir1.2-freetype2-2.0-dev, gir1.2-gobject-2.0-dev, gir1.2-harfbuzz-0.0 (= 10.2.0-1+deb13u1), libharfbuzz0b (= 10.2.0-1+deb13u1), libharfbuzz-icu0 (= 10.2.0-1+deb13u1), libharfbuzz-gobject0 (= 10.2.0-1+deb13u1), libharfbuzz-subset0 (= 10.2.0-1+deb13u1), libharfbuzz-cairo0 (= 10.2.0-1+deb13u1), libglib2.0-dev, libgraphite2-dev, libicu-dev, libfreetype-dev",
+      "size": 145172
+    },
+    {
+      "name": "libibus-1.0-5",
+      "version": "1.5.32-2",
+      "archive": "libibus-1.0-5_1.5.32-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/i/ibus/libibus-1.0-5_1.5.32-2_amd64.deb",
+      "sha256": "68bdb1d1f4ef76b865025754c4205dd8dd1e759606f1eda1859a3aa9c0271ad0",
+      "depends": "libc6 (>= 2.38), libglib2.0-0t64 (>= 2.80.0)",
+      "size": 464272
+    },
+    {
+      "name": "libmount-dev",
+      "version": "2.41.5-0+deb13u1",
+      "archive": "libmount-dev_2.41.5-0+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/u/util-linux/libmount-dev_2.41.5-0+deb13u1_amd64.deb",
+      "sha256": "2bef03b918e927648c6552143e17e82aa7ed2a4ce180fabd07a7d1cac7ff8686",
+      "depends": "libblkid-dev, libc6-dev | libc-dev, libmount1 (= 2.41.5-0+deb13u1), libselinux1-dev",
+      "size": 30740
+    },
+    {
+      "name": "libmousepad0",
+      "version": "0.6.3-1",
+      "archive": "libmousepad0_0.6.3-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/m/mousepad/libmousepad0_0.6.3-1_amd64.deb",
+      "sha256": "3246c402025996d922737a967368dcd9d4dd346983fa508c9ae2ef7cc454dd80",
+      "depends": "libc6 (>= 2.38), libglib2.0-0t64 (>= 2.56.0), libgtk-3-0t64 (>= 3.21.5), libgtksourceview-4-0 (>= 3.23.90), libpango-1.0-0 (>= 1.14.0)",
+      "size": 128696
+    },
+    {
+      "name": "libneatvnc0",
+      "version": "0.9.1+dfsg-1",
+      "archive": "libneatvnc0_0.9.1+dfsg-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/n/neatvnc/libneatvnc0_0.9.1+dfsg-1_amd64.deb",
+      "sha256": "ac2c8f3f8f44a31d65e19afc7e1a092ec6f32255dbe763c52f7f2b44f0db42d7",
+      "depends": "libaml0t64 (>= 0.3.0), libavcodec61 (>= 7:7.0), libavfilter10 (>= 7:7.0), libavutil59 (>= 7:7.0), libc6 (>= 2.38), libdrm2 (>= 2.4.75), libgbm1 (>= 21.1.0), libgmp10 (>= 2:6.3.0+dfsg), libgnutls30t64 (>= 3.8.1), libhogweed6t64, libnettle8t64, libpixman-1-0 (>= 0.27.4), libturbojpeg0 (>= 1.2.90), zlib1g (>= 1:1.2.0)",
+      "size": 70964
+    },
+    {
+      "name": "libopengl-dev",
+      "version": "1.7.0-1+b2",
+      "archive": "libopengl-dev_1.7.0-1+b2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libg/libglvnd/libopengl-dev_1.7.0-1+b2_amd64.deb",
+      "sha256": "fe63853277e05a3b02f9339fff85ab68af1c7ef63c4663b716930b8c88b29d52",
+      "depends": "libopengl0 (= 1.7.0-1+b2)",
+      "size": 5388
+    },
+    {
+      "name": "libpango1.0-dev",
+      "version": "1.56.3-1",
+      "archive": "libpango1.0-dev_1.56.3-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/p/pango1.0/libpango1.0-dev_1.56.3-1_amd64.deb",
+      "sha256": "adc7b3e1629c2393ee8066bab52dad32aa99156790aa5fc984b5e364f4244ecc",
+      "depends": "gir1.2-pango-1.0 (= 1.56.3-1), libcairo2-dev (>= 1.18.0), libfontconfig-dev (>= 2.15.0), libfreetype-dev, libfribidi-dev, libglib2.0-dev (>= 2.80), libharfbuzz-dev (>= 8.4.0), libpango-1.0-0 (= 1.56.3-1), libpangocairo-1.0-0 (= 1.56.3-1), libpangoft2-1.0-0 (= 1.56.3-1), libpangoxft-1.0-0 (= 1.56.3-1), libsysprof-capture-4-dev (>= 3.38.0), libthai-dev, libx11-dev, libxft-dev, libxrender-dev, pango1.0-tools (= 1.56.3-1), pkgconf",
+      "size": 155520
+    },
+    {
+      "name": "libpcre2-dev",
+      "version": "10.46-1~deb13u2",
+      "archive": "libpcre2-dev_10.46-1~deb13u2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/p/pcre2/libpcre2-dev_10.46-1~deb13u2_amd64.deb",
+      "sha256": "f031c53b8f77c2825d9d6c71c0d8bd6106d6599af1655074b62074a10f7f7c6c",
+      "depends": "libc-dev, libpcre2-8-0 (= 10.46-1~deb13u2), libpcre2-16-0 (= 10.46-1~deb13u2), libpcre2-32-0 (= 10.46-1~deb13u2), libpcre2-posix3 (= 10.46-1~deb13u2)",
+      "size": 852376
+    },
+    {
+      "name": "libpixman-1-dev",
+      "version": "0.44.0-3",
+      "archive": "libpixman-1-dev_0.44.0-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/p/pixman/libpixman-1-dev_0.44.0-3_amd64.deb",
+      "sha256": "091478a78864d25257788473a36b9545ae2e0bc3f621bad3c229090b54b67e1e",
+      "depends": "libpixman-1-0 (= 0.44.0-3)",
+      "size": 11380
+    },
+    {
+      "name": "libpng-dev",
+      "version": "1.6.48-1+deb13u5",
+      "archive": "libpng-dev_1.6.48-1+deb13u5_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libp/libpng1.6/libpng-dev_1.6.48-1+deb13u5_amd64.deb",
+      "sha256": "9027d5ace59ce266124c87054302805f49f9cb1ec4a6c8264a64596c7916fbff",
+      "depends": "libpng16-16t64 (= 1.6.48-1+deb13u5), zlib1g-dev",
+      "size": 367368
+    },
+    {
+      "name": "libprotobuf32t64",
+      "version": "3.21.12-11+deb13u1",
+      "archive": "libprotobuf32t64_3.21.12-11+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/p/protobuf/libprotobuf32t64_3.21.12-11+deb13u1_amd64.deb",
+      "sha256": "38c43ec79a043d2b2659fed321725049a7e457096a66691cf6eb0d3a1a8f0e85",
+      "depends": "libc6 (>= 2.38), libgcc-s1 (>= 3.0), libstdc++6 (>= 14), zlib1g (>= 1:1.1.4)",
+      "size": 981280
+    },
+    {
+      "name": "libseat1",
+      "version": "0.9.1-1",
+      "archive": "libseat1_0.9.1-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/s/seatd/libseat1_0.9.1-1_amd64.deb",
+      "sha256": "20c08d9460b87f98f36ffe200ef9ac074c3ca23961cb5fd47399f20946f5b185",
+      "depends": "seatd | logind, libc6 (>= 2.33), libsystemd0 (>= 238)",
+      "size": 28036
+    },
+    {
+      "name": "libselinux1-dev",
+      "version": "3.8.1-1",
+      "archive": "libselinux1-dev_3.8.1-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libs/libselinux/libselinux1-dev_3.8.1-1_amd64.deb",
+      "sha256": "0107595c65dd5cfe7ce3643d400e7b2be2c2528bcd110ad5af8605711a858921",
+      "depends": "libselinux1 (= 3.8.1-1), libsepol-dev (>= 3.8.1), libpcre2-dev",
+      "size": 169104
+    },
+    {
+      "name": "libsepol-dev",
+      "version": "3.8.1-1",
+      "archive": "libsepol-dev_3.8.1-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libs/libsepol/libsepol-dev_3.8.1-1_amd64.deb",
+      "sha256": "c085881d0546f6d539909f5710d7a3243aeb24338f6dc455b0ef6199f45bd753",
+      "depends": "libsepol2 (= 3.8.1-1)",
+      "size": 372908
+    },
+    {
+      "name": "libsysprof-capture-4-dev",
+      "version": "48.0-2",
+      "archive": "libsysprof-capture-4-dev_48.0-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/s/sysprof/libsysprof-capture-4-dev_48.0-2_amd64.deb",
+      "sha256": "3cb76e124187700f5977a0acb914b3f82b2bd28105fce6f1cf2a34497b234af2",
+      "depends": "",
+      "size": 49864
+    },
+    {
+      "name": "libthai-dev",
+      "version": "0.1.29-2+b1",
+      "archive": "libthai-dev_0.1.29-2+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libt/libthai/libthai-dev_0.1.29-2+b1_amd64.deb",
+      "sha256": "84cae81afcfef851854f9fdaae8c2e0b85fedb2e560be33f0ae63b1187b44c2b",
+      "depends": "libdatrie-dev, pkgconf, libthai0 (= 0.1.29-2+b1)",
+      "size": 24468
+    },
+    {
+      "name": "libwayland-bin",
+      "version": "1.23.1-3",
+      "archive": "libwayland-bin_1.23.1-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/w/wayland/libwayland-bin_1.23.1-3_amd64.deb",
+      "sha256": "9360776a0e973ae3cfb601aa6baa72b855f69109532ec06d5acb727ccc4e003b",
+      "depends": "libc6 (>= 2.34), libexpat1 (>= 2.0.1), libxml2 (>= 2.7.4)",
+      "size": 21748
+    },
+    {
+      "name": "libwayland-dev",
+      "version": "1.23.1-3",
+      "archive": "libwayland-dev_1.23.1-3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/w/wayland/libwayland-dev_1.23.1-3_amd64.deb",
+      "sha256": "66055b7df9a6c4b15fe0b52a42a76680bb4d0f4d1083800e7cd7ba26e59e68ed",
+      "depends": "libwayland-client0 (= 1.23.1-3), libwayland-server0 (= 1.23.1-3), libwayland-cursor0 (= 1.23.1-3), libwayland-egl1 (= 1.23.1-3), libwayland-bin (= 1.23.1-3), libffi-dev",
+      "size": 73892
+    },
+    {
+      "name": "libweston-14-0",
+      "version": "14.0.2-1",
+      "archive": "libweston-14-0_14.0.2-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/w/weston/libweston-14-0_14.0.2-1_amd64.deb",
+      "sha256": "882469912622c4ef2b0cf85d9cba56906250a6da7e935580feca868bb7dfe942",
+      "depends": "libaml0t64 (>= 0.3.0), libc6 (>= 2.38), libcairo2 (>= 1.10.0), libdisplay-info2 (>= 0.2.0), libdrm2 (>= 2.4.108), libegl1, libfontconfig1 (>= 2.12.6), libfreerdp-server3-3 (>= 3.0.0), libfreerdp3-3 (>= 3.0.0), libgbm1 (>= 21.3.0~rc1), libgles2, libglib2.0-0t64 (>= 2.12.0), libgstreamer-plugins-base1.0-0 (>= 1.2.0), libgstreamer1.0-0 (>= 1.4.0), libinput10 (>= 1.2.0), libjpeg62-turbo (>= 1:2.0.2), liblcms2-2 (>= 2.16), libneatvnc0 (>= 0.9.1+dfsg), libpam0g (>= 0.99.7.1), libpango-1.0-0 (>= 1.22.0), libpangocairo-1.0-0 (>= 1.22.0), libpipewire-0.3-0t64 (>= 0.3.1), libpixman-1-0 (>= 0.30.0), libpng16-16t64 (>= 1.6.46), libseat1 (>= 0.5.0), libudev1 (>= 183), libva-drm2 (>= 1.1.0), libva2 (>= 1.7.3), libwayland-client0 (>= 1.22.0), libwayland-cursor0 (>= 1.22.0), libwayland-egl1 (>= 1.22.0), libwayland-server0 (>= 1.22.0), libwebp7 (>= 1.5.0), libwinpr3-3 (>= 3.0.0), libx11-6, libx11-xcb1, libxcb-composite0, libxcb-render0, libxcb-shm0, libxcb-xfixes0, libxcb-xkb1, libxcb1 (>= 1.8), libxcursor1 (>> 1.1.2), libxkbcommon0 (>= 0.5.0)",
+      "size": 416384
+    },
+    {
+      "name": "libx11-dev",
+      "version": "2:1.8.12-1",
+      "archive": "libx11-dev_1.8.12-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libx11/libx11-dev_1.8.12-1_amd64.deb",
+      "sha256": "530de60c9c6dadd997ae7d74eca2a41b25e849373a5ad5dcdb619aa05713d6e0",
+      "depends": "libx11-6 (= 2:1.8.12-1), libxau-dev, libxdmcp-dev, x11proto-dev (>= 2019.2-1), xtrans-dev, libxcb1-dev",
+      "size": 894476
+    },
+    {
+      "name": "libxau-dev",
+      "version": "1:1.0.11-1",
+      "archive": "libxau-dev_1.0.11-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxau/libxau-dev_1.0.11-1_amd64.deb",
+      "sha256": "1e29410af794a3d3790aab9fa0c1b0ec9324697502e982fce4dcdd4610ce3e8a",
+      "depends": "libxau6 (= 1:1.0.11-1), x11proto-dev",
+      "size": 23580
+    },
+    {
+      "name": "libxcb-render0-dev",
+      "version": "1.17.0-2+b1",
+      "archive": "libxcb-render0-dev_1.17.0-2+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxcb/libxcb-render0-dev_1.17.0-2+b1_amd64.deb",
+      "sha256": "cf76ecebf0dc0adc5f24bcd024e6eda69afe0c89fd38953c5ad363416fe03add",
+      "depends": "libxcb-render0 (= 1.17.0-2+b1), libxcb1-dev",
+      "size": 118472
+    },
+    {
+      "name": "libxcb-shm0-dev",
+      "version": "1.17.0-2+b1",
+      "archive": "libxcb-shm0-dev_1.17.0-2+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxcb/libxcb-shm0-dev_1.17.0-2+b1_amd64.deb",
+      "sha256": "f8f9d2817695fdc74e3a2582c0c2d7d571e44f379ac30926438fae6b9760736d",
+      "depends": "libxcb-shm0 (= 1.17.0-2+b1), libxcb1-dev",
+      "size": 107808
+    },
+    {
+      "name": "libxcb-xfixes0",
+      "version": "1.17.0-2+b1",
+      "archive": "libxcb-xfixes0_1.17.0-2+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxcb/libxcb-xfixes0_1.17.0-2+b1_amd64.deb",
+      "sha256": "f9c1aafc18bf9e4662e34bbaf3bb00f1f4e8c2fc1dd786fdfb6cb9cb6c64fae7",
+      "depends": "libc6 (>= 2.4), libxcb1",
+      "size": 109288
+    },
+    {
+      "name": "libxcb1-dev",
+      "version": "1.17.0-2+b1",
+      "archive": "libxcb1-dev_1.17.0-2+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxcb/libxcb1-dev_1.17.0-2+b1_amd64.deb",
+      "sha256": "669949f8d5dff76616630d839b9047b76af553c62c376458094bd759f8fdb903",
+      "depends": "libxcb1 (= 1.17.0-2+b1), libxau-dev, libxdmcp-dev",
+      "size": 181152
+    },
+    {
+      "name": "libxdmcp-dev",
+      "version": "1:1.1.5-1",
+      "archive": "libxdmcp-dev_1.1.5-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxdmcp/libxdmcp-dev_1.1.5-1_amd64.deb",
+      "sha256": "bc845297d20cf63388c6b248d9ee169a3890347cb1c29bcd9f771684bf17b528",
+      "depends": "libxdmcp6 (= 1:1.1.5-1), x11proto-dev",
+      "size": 44336
+    },
+    {
+      "name": "libxext-dev",
+      "version": "2:1.3.4-1+b3",
+      "archive": "libxext-dev_1.3.4-1+b3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxext/libxext-dev_1.3.4-1+b3_amd64.deb",
+      "sha256": "e6bd898976d762a6955ec465870e7f12a3b149f4c5b231b0687e293ed5726532",
+      "depends": "libxext6 (= 2:1.3.4-1+b3), x11proto-dev, libx11-dev",
+      "size": 104436
+    },
+    {
+      "name": "libxfont2",
+      "version": "1:2.0.6-1+deb13u1",
+      "archive": "libxfont2_2.0.6-1+deb13u1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxfont/libxfont2_2.0.6-1+deb13u1_amd64.deb",
+      "sha256": "79a7f56e4a0c7b1defa706c7b1f3076f7d80aaeea9de253b2a87406253319681",
+      "depends": "libbz2-1.0, libc6 (>= 2.38), libfontenc1 (>= 1:1.1.8), libfreetype6 (>= 2.2.1), zlib1g (>= 1:1.1.4)",
+      "size": 132904
+    },
+    {
+      "name": "libxft-dev",
+      "version": "2.3.6-1+b4",
+      "archive": "libxft-dev_2.3.6-1+b4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/x/xft/libxft-dev_2.3.6-1+b4_amd64.deb",
+      "sha256": "98bdb10d271fa005b4f4b75721b1c57800353811157af036aed3e4501494ba66",
+      "depends": "libxft2 (= 2.3.6-1+b4), libc6-dev | libc-dev, libfontconfig1-dev, libfreetype6-dev, libx11-dev (>= 2:1.0.0), libxrender-dev, zlib1g-dev | libz-dev",
+      "size": 73168
+    },
+    {
+      "name": "libxkbcommon-dev",
+      "version": "1.7.0-2",
+      "archive": "libxkbcommon-dev_1.7.0-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxkbcommon/libxkbcommon-dev_1.7.0-2_amd64.deb",
+      "sha256": "b62327152ae59bec442c0d7ae893520a3a3a2381100c83332e4a3497157ce5ec",
+      "depends": "libxkbcommon0 (= 1.7.0-2)",
+      "size": 53644
+    },
+    {
+      "name": "libxrender-dev",
+      "version": "1:0.9.12-1",
+      "archive": "libxrender-dev_0.9.12-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxrender/libxrender-dev_0.9.12-1_amd64.deb",
+      "sha256": "55121741c44e03cbeb03dabb5721ded1341c987f055d7cae991de7431c9edfa6",
+      "depends": "libxrender1 (= 1:0.9.12-1), libx11-dev, x11proto-dev",
+      "size": 38956
+    },
+    {
+      "name": "libxtst6",
+      "version": "2:1.2.5-1",
+      "archive": "libxtst6_1.2.5-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/libx/libxtst/libxtst6_1.2.5-1_amd64.deb",
+      "sha256": "4f254f80b8984203474745d6428e8c2de2148f19b37aa01a601dbe9ac03196eb",
+      "depends": "libc6 (>= 2.4), libx11-6 (>= 2:1.6.0), libxext6, x11-common",
+      "size": 25756
+    },
+    {
+      "name": "mousepad",
+      "version": "0.6.3-1",
+      "archive": "mousepad_0.6.3-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/m/mousepad/mousepad_0.6.3-1_amd64.deb",
+      "sha256": "62a2cece44b23e69240cea6c9bb2f36550faf978633b53bf78ae8ef69241ddf2",
+      "depends": "dconf-gsettings-backend | gsettings-backend, libc6 (>= 2.34), libglib2.0-0t64 (>= 2.38.0), libgspell-1-3 (>= 1.8.2), libgtk-3-0t64 (>= 3.13.7), libmousepad0 (>= 0.5.9), libxfce4ui-2-0 (>= 4.11.0)",
+      "size": 315748
+    },
+    {
+      "name": "mozc-data",
+      "version": "2.29.5160.102+dfsg-1.4",
+      "archive": "mozc-data_2.29.5160.102+dfsg-1.4_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/m/mozc/mozc-data_2.29.5160.102+dfsg-1.4_all.deb",
+      "sha256": "cc0237d221d6118196705e0bb527af60918e39fc8190aa0c2b1e2eb298d05686",
+      "depends": "",
+      "size": 17384
+    },
+    {
+      "name": "mozc-server",
+      "version": "2.29.5160.102+dfsg-1.4",
+      "archive": "mozc-server_2.29.5160.102+dfsg-1.4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/m/mozc/mozc-server_2.29.5160.102+dfsg-1.4_amd64.deb",
+      "sha256": "c0d4af07d105bfc13dc35af42ece183f6c78b5ab0238139192fce589e4badf9b",
+      "depends": "libabsl20240722 (>= 20240722.0-1), libc6 (>= 2.38), libcairo2 (>= 1.2.4), libgcc-s1 (>= 3.4), libglib2.0-0t64 (>= 2.12.0), libgtk2.0-0t64 (>= 2.8.0), libpango-1.0-0 (>= 1.20.0), libprotobuf32t64 (>= 3.21.12), libstdc++6 (>= 13.1)",
+      "size": 12555968
+    },
+    {
+      "name": "mozc-utils-gui",
+      "version": "2.29.5160.102+dfsg-1.4",
+      "archive": "mozc-utils-gui_2.29.5160.102+dfsg-1.4_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/m/mozc/mozc-utils-gui_2.29.5160.102+dfsg-1.4_amd64.deb",
+      "sha256": "cda5c29cf774eca92a70345a9c67399b59f1cbdc53bd9db6afae1d63bf1a351d",
+      "depends": "libabsl20240722 (>= 20240722.0-1), libc6 (>= 2.38), libgcc-s1 (>= 3.4), libqt5core5t64 (>= 5.15.1), libqt5gui5t64 (>= 5.0.2) | libqt5gui5-gles (>= 5.0.2), libqt5widgets5t64 (>= 5.15.1), libstdc++6 (>= 14), mozc-data",
+      "size": 881672
+    },
+    {
+      "name": "python3-gi",
+      "version": "3.50.0-4+b1",
+      "archive": "python3-gi_3.50.0-4+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/p/pygobject/python3-gi_3.50.0-4+b1_amd64.deb",
+      "sha256": "c1a63f7fd1ca15f5ae7483136a7ee736d97955133ec11796a744cedfa7b3aca5",
+      "depends": "gir1.2-glib-2.0 (>= 1.64.0), gir1.2-girepository-2.0, python3 (<< 3.14), python3 (>= 3.13~), python3:any, libc6 (>= 2.14), libffi8 (>= 3.4), libgirepository-1.0-1 (>= 1.71.0), libgirepository-1.0-1-with-libffi8 (>= 1.62.0-4~), libglib2.0-0t64 (>= 2.78.0)",
+      "size": 235504
+    },
+    {
+      "name": "python3-ibus-1.0",
+      "version": "1.5.32-2",
+      "archive": "python3-ibus-1.0_1.5.32-2_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/i/ibus/python3-ibus-1.0_1.5.32-2_all.deb",
+      "sha256": "917b0767db80066c46ffce676f8d6136272db7ea1878b4384f589698632b58d4",
+      "depends": "python3:any, gir1.2-ibus-1.0, python3-gi",
+      "size": 309208
+    },
+    {
+      "name": "wayland-protocols",
+      "version": "1.44-1",
+      "archive": "wayland-protocols_1.44-1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/w/wayland-protocols/wayland-protocols_1.44-1_all.deb",
+      "sha256": "3bbe8044f92fbf6822039064764d1d4b3a1dbb931083ab40ea189c9fd1d7a04f",
+      "depends": "",
+      "size": 125132
+    },
+    {
+      "name": "wayland-utils",
+      "version": "1.2.0-2",
+      "archive": "wayland-utils_1.2.0-2_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/w/wayland-utils/wayland-utils_1.2.0-2_amd64.deb",
+      "sha256": "cea7102753e9c070b17061f288e2ae00b80c951a8ccd6c281afef53fe9357fc8",
+      "depends": "libc6 (>= 2.34), libdrm2 (>= 2.4.109), libwayland-client0 (>= 1.20.0)",
+      "size": 16776
+    },
+    {
+      "name": "weston",
+      "version": "14.0.2-1",
+      "archive": "weston_14.0.2-1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/w/weston/weston_14.0.2-1_amd64.deb",
+      "sha256": "cb2cddfc082a6f14d15e4682cdbb9778439f9b89123ed41356f108ccb3ebb48e",
+      "depends": "libc6 (>= 2.38), libcairo2 (>= 1.10.0), libdrm2 (>= 2.4.108), libegl1, libevdev2 (>= 0.9.1), libfontconfig1 (>= 2.12.6), libgbm1 (>= 21.3.0~rc1), libgles2, libglib2.0-0t64 (>= 2.12.0), libinput10 (>= 1.4.0), libjpeg62-turbo (>= 1:2.0.2), libpango-1.0-0 (>= 1.22.0), libpangocairo-1.0-0 (>= 1.22.0), libpixman-1-0 (>= 0.30.0), libpng16-16t64 (>= 1.6.46), libsystemd0, libudev1 (>= 183), libwayland-client0 (>= 1.22.0), libwayland-cursor0 (>= 1.22.0), libwayland-egl1 (>= 1.22.0), libwayland-server0 (>= 1.22.0), libwebp7 (>= 1.5.0), libweston-14-0 (>= 14.0.0), libxkbcommon0 (>= 0.5.0)",
+      "size": 934724
+    },
+    {
+      "name": "x11-xkb-utils",
+      "version": "7.7+9",
+      "archive": "x11-xkb-utils_7.7+9_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/x/x11-xkb-utils/x11-xkb-utils_7.7+9_amd64.deb",
+      "sha256": "745e29c79bb435d057cdbf8bb59a35fa33e818e566cb754674f44d381ccd4317",
+      "depends": "libc6 (>= 2.38), libx11-6, libxaw7 (>= 2:1.0.14), libxkbfile1 (>= 1:1.1.0), libxrandr2 (>= 2:1.2.99.2), libxt6t64",
+      "size": 158552
+    },
+    {
+      "name": "x11proto-dev",
+      "version": "2024.1-1",
+      "archive": "x11proto-dev_2024.1-1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/x/xorgproto/x11proto-dev_2024.1-1_all.deb",
+      "sha256": "6a6764500eb8171d3cd6d793c09902974f8ea87bd20c68d9eac5f1eeaf3fc407",
+      "depends": "xorg-sgml-doctools (>= 1:1.5)",
+      "size": 602628
+    },
+    {
+      "name": "xauth",
+      "version": "1:1.1.2-1.1",
+      "archive": "xauth_1.1.2-1.1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/x/xauth/xauth_1.1.2-1.1_amd64.deb",
+      "sha256": "14687bc8e3af350738f61e5a872bcdd83725694cb09d448d75077abd6249679a",
+      "depends": "libc6 (>= 2.38), libx11-6, libxau6 (>= 1:1.0.11), libxext6, libxmuu1 (>= 2:1.1.3)",
+      "size": 35856
+    },
+    {
+      "name": "xkb-data",
+      "version": "2.42-1",
+      "archive": "xkb-data_2.42-1_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/x/xkeyboard-config/xkb-data_2.42-1_all.deb",
+      "sha256": "196ff18533382f64e057ea49df2bb486bd4275a4cc0917361edb560b8756dada",
+      "depends": "",
+      "size": 789736
+    },
+    {
+      "name": "xserver-common",
+      "version": "2:21.1.16-1.3+deb13u3",
+      "archive": "xserver-common_21.1.16-1.3+deb13u3_all.deb",
+      "url": "https://deb.debian.org/debian/pool/main/x/xorg-server/xserver-common_21.1.16-1.3+deb13u3_all.deb",
+      "sha256": "dc1d37303c103b23c40cd1ea694c5c6561e0e8dc1734a73c7a0ae0ef080e7fcc",
+      "depends": "x11-common, xkb-data, x11-xkb-utils",
+      "size": 2410088
+    },
+    {
+      "name": "xvfb",
+      "version": "2:21.1.16-1.3+deb13u3",
+      "archive": "xvfb_21.1.16-1.3+deb13u3_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/x/xorg-server/xvfb_21.1.16-1.3+deb13u3_amd64.deb",
+      "sha256": "365da2b6c93339f34337c434a9489bb6411a240fa47b9f49693d3091745f28c2",
+      "depends": "xserver-common (>= 2:21.1.16-1.3+deb13u3), libaudit1 (>= 1:2.2.1), libc6 (>= 2.38), libgl1, libnettle8t64, libpixman-1-0 (>= 0.30.0), libselinux1 (>= 3.1~), libsystemd0, libunwind8, libxau6 (>= 1:1.0.11), libxdmcp6, libxfont2 (>= 1:2.0.1)",
+      "size": 3198040
+    },
+    {
+      "name": "zlib1g-dev",
+      "version": "1:1.3.dfsg+really1.3.1-1+b1",
+      "archive": "zlib1g-dev_1.3.dfsg+really1.3.1-1+b1_amd64.deb",
+      "url": "https://deb.debian.org/debian/pool/main/z/zlib/zlib1g-dev_1.3.dfsg+really1.3.1-1+b1_amd64.deb",
+      "sha256": "76ed5c858e1aef38b7be93acce5910e457e77bd6271471b9d05fb42e78826224",
+      "depends": "zlib1g (= 1:1.3.dfsg+really1.3.1-1+b1), libc6-dev | libc-dev",
+      "size": 919744
+    }
+  ],
+  "mozc_prefix_contract": {
+    "server_executable_required": "/usr/lib/mozc/mozc_server",
+    "standalone_prefix_server_supported": false,
+    "reason": "The packaged client validates the server executable against the compile-time server directory. Use the optional official system package helper when a real root/apt context exists; otherwise baseline conversion remains blocked."
+  }
+}

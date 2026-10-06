@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "id": "undo-redo",
+  "description": "Undo and both documented redo shortcuts.",
+  "platform": "linux-x11-weston",
+  "disposition": "pending",
+  "reason": "Accepted owner/control has undo/redo; protocol-driven state checkpoints remain unverified by this packaged runner.",
+  "timeout_ms": 15000,
+  "initial": {
+    "text": "Hello 日本",
+    "selection": {
+      "anchor": 8,
+      "head": 8
+    },
+    "focused": true
+  },
+  "focus_click": {
+    "type": "click",
+    "x": 500,
+    "y": 50
+  },
+  "steps": [
+    {
+      "id": "replace",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "Home",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "End",
+          "modifiers": [
+            "Shift_L"
+          ]
+        },
+        {
+          "type": "key",
+          "keysym": "a",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "b",
+          "modifiers": []
+        },
+        {
+          "type": "key",
+          "keysym": "c",
+          "modifiers": []
+        }
+      ],
+      "expect": {
+        "text": "abc",
+        "selection": {
+          "anchor": 3,
+          "head": 3
+        },
+        "focused": true
+      }
+    },
+    {
+      "id": "undo",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "z",
+          "modifiers": [
+            "Control_L"
+          ]
+        }
+      ],
+      "expect": {
+        "text": "ab",
+        "selection": {
+          "anchor": 2,
+          "head": 2
+        },
+        "focused": true
+      }
+    },
+    {
+      "id": "redo-y",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "y",
+          "modifiers": [
+            "Control_L"
+          ]
+        }
+      ],
+      "expect": {
+        "text": "abc",
+        "selection": {
+          "anchor": 3,
+          "head": 3
+        },
+        "focused": true
+      }
+    },
+    {
+      "id": "undo-again",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "z",
+          "modifiers": [
+            "Control_L"
+          ]
+        }
+      ],
+      "expect": {
+        "text": "ab",
+        "selection": {
+          "anchor": 2,
+          "head": 2
+        },
+        "focused": true
+      }
+    },
+    {
+      "id": "redo-shift-z",
+      "events": [
+        {
+          "type": "key",
+          "keysym": "z",
+          "modifiers": [
+            "Control_L",
+            "Shift_L"
+          ]
+        }
+      ],
+      "expect": {
+        "text": "abc",
+        "selection": {
+          "anchor": 3,
+          "head": 3
+        },
+        "focused": true
+      }
+    }
+  ],
+  "oracle": {
+    "kind": "pending",
+    "reason": "Exact presented-state observer is proposed but not integrated/reviewed; do not treat OCR or a fresh screenshot as a golden."
+  },
+  "expected_failure": null,
+  "artifacts": [
+    "case.json",
+    "result.json",
+    "focused.png",
+    "final.png",
+    "app.log",
+    "weston.log",
+    "xvfb.log",
+    "events.jsonl"
+  ],
+  "provenance": {
+    "source_commit": "bf8a332595aad7fb69928719cc4b25464269a4d5",
+    "source_tree": "5441e254b2c7760e9b7184e87725f7ed2a43085c",
+    "app_sha256": null,
+    "patch_sha256": null,
+    "fontconfig_sha256": null,
+    "notes": "Accepted text-field/undo source baseline. This planned case has not run through the packaged driver. Pin the actual reviewed observer/repeat build and source diff before activation."
+  }
+}

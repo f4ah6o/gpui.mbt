@@ -8,6 +8,13 @@ element, scene, and primitives do not import native code.
 
 ## Run a native MoonBit app
 
+For a Debian 13 amd64 cloud desktop with an X11 outer session, the
+[reproducible desktop profile](../infra/linux-desktop/README.md) records pinned
+official packages, the matching MoonBit/core, reset recovery, diagnostics,
+nested Weston launch, and separate native-key/GTK Japanese smoke procedures.
+Its prefix-only Mozc relocation limit is explicit; a GTK baseline does not
+implement or qualify GPUI host IME support.
+
 On Ubuntu 24.04 x86-64, install the system toolchain:
 
 ```sh
