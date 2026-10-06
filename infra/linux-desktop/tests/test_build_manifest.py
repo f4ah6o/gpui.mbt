@@ -110,9 +110,14 @@ class BuildManifestTests(unittest.TestCase):
             path = profile / "prefix/usr/share/X11/xkb" / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("fixture xkb")
-        for name in ["xdg-shell-client-protocol.h", "xdg-shell-protocol.c"]:
+        for name in build.GENERATED_PROTOCOLS:
             (repo / "ubuntu" / name).write_text("fixture generated protocol")
         return profile, repo, {"PATH": str(tools)}
+
+    def test_experimental_v1_generated_protocols_are_captured(self):
+        self.assertEqual(set(build.GENERATED_PROTOCOLS), {
+            "xdg-shell-client-protocol.h", "xdg-shell-protocol.c",
+            "text-input-v1-client-protocol.h", "text-input-v1-protocol.c"})
 
     def test_pkg_config_override_records_and_probes_actual_shell_command(self):
         with tempfile.TemporaryDirectory() as temporary:

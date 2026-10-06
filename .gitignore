@@ -7,3 +7,5 @@ __pycache__/
 ubuntu/xdg-shell-client-protocol.h
 ubuntu/xdg-shell-protocol.c
 .github/workflows/_local-actrun-feedback-*.yml
+ubuntu/text-input-v1-client-protocol.h
+ubuntu/text-input-v1-protocol.c

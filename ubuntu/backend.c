@@ -2,6 +2,8 @@
 #include "backend.h"
 #include "../platform/linux_text/linux_text.h"
 #include "xdg-shell-client-protocol.h"
+#include "text-input-v1-client-protocol.h"
+#include "ime_transport.h"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
@@ -127,6 +129,9 @@ struct host {
   struct direct_event_meta direct_queue[QUEUE_CAPACITY];
   struct direct_key_state direct_keys[GPUI_DIRECT_KEY_CAPACITY];
   int read, count;
+  struct ime_state ime;
+  struct ime_payload *ime_queue[QUEUE_CAPACITY];
+  size_t ime_queue_bytes;
 };
 static struct host *active;
 static pthread_mutex_t registry_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -134,6 +139,11 @@ static int next_host = 1;
 static int next_window = 1;
 static void flush_transfers(struct host *h);
 static void collect_source(struct clipboard_source *source);
+static void ime_invalidate(struct host *h, int emit_leave, int deactivate);
+static void ime_drop_proxy(struct host *h);
+static void ime_free_slot(struct host *h, int slot);
+static void ime_raw_keyboard_key(struct host *h, uint32_t state,
+                                  xkb_keysym_t symbol);
 static void remember_input_serial(struct host *h, uint32_t serial,
                                   enum input_serial_origin origin) {
   int focused = origin == INPUT_SERIAL_POINTER
@@ -214,6 +224,7 @@ static void event(struct host *h, int kind, double detail, double x, double y) {
   }
   int slot = (h->read + h->count++) % QUEUE_CAPACITY;
   double *e = h->queue[slot];
+  ime_free_slot(h, slot);
   memset(&h->direct_queue[slot], 0, sizeof(h->direct_queue[slot]));
   e[0] = kind;
   e[1] = h->window;
@@ -252,6 +263,7 @@ static void reset_direct_text(struct host *h, int disable, int clear_device) {
   (void)advance_direct_epoch(h);
 }
 static void quiesce_host(struct host *h) {
+  ime_invalidate(h, 1, 1);
   cancel_key_repeat(h);
   /* All transitions out of Running revoke the editor target exactly once.
    * Repeated exit/error handling must not consume more generations. */
@@ -423,6 +435,7 @@ static int key_repeat_current(struct host *h) {
       h->seat_version < 4 || !h->keyboard || !h->direct_keymap_valid ||
       !h->keymap || !h->keys ||
       !h->keyboard_focus_current || !h->direct_enabled ||
+      h->ime.requested || h->ime.phase != IME_INACTIVE ||
       h->direct_exhausted || h->repeat_rate <= 0 ||
       repeat->epoch != h->direct_epoch ||
       repeat->modifiers != h->modifiers ||
@@ -490,6 +503,18 @@ static int service_key_repeat(struct host *h) {
 }
 static void direct_keyboard_key(struct host *h, uint32_t key, uint32_t state,
                                  xkb_keysym_t sym) {
+  if (h->ime.exhausted && h->ime.ever_enabled) {
+    (void)input_failure(h, GPUI_RESOURCE);
+    return;
+  }
+  /* IME owns text exclusively. Preserve raw command keysyms when the
+   * compositor sends wl_keyboard events (e.g. before an IME keyboard grab).
+   * A leave fence excludes old-target keys; no scalar/text is derived. */
+  if (h->ime.requested || h->ime.phase != IME_INACTIVE) {
+    cancel_key_repeat(h);
+    ime_raw_keyboard_key(h, state, sym);
+    return;
+  }
   struct direct_key_state *pressed = key < GPUI_DIRECT_KEY_CAPACITY
                                          ? &h->direct_keys[key]
                                          : NULL;
@@ -498,7 +523,7 @@ static void direct_keyboard_key(struct host *h, uint32_t key, uint32_t state,
       (state == WL_KEYBOARD_KEY_STATE_RELEASED && h->repeat.armed &&
        h->repeat.key == key))
     cancel_key_repeat(h);
-  if (h->state != 0 && h->direct_ever_enabled) {
+  if (h->state != 0 && (h->direct_ever_enabled || h->ime.ever_enabled)) {
     if (pressed && state == WL_KEYBOARD_KEY_STATE_RELEASED)
       memset(pressed, 0, sizeof(*pressed));
     return;
@@ -586,6 +611,9 @@ static void direct_keyboard_key(struct host *h, uint32_t key, uint32_t state,
   if (emit_key && !pressed->swallowed)
     arm_key_repeat(h, key, sym, scalar, text, length);
 }
+/* Same owner thread and ordered queue as direct input. */
+#include "ime_transport.inc.c"
+
 static ssize_t write_without_sigpipe(int fd, const void *bytes, size_t length) {
   sigset_t blocked, old_mask, pending;
   sigemptyset(&blocked);
@@ -1002,6 +1030,7 @@ static void toplevel_configure(void *d, struct xdg_toplevel *t, int32_t w,
 static void toplevel_close(void *d, struct xdg_toplevel *t) {
   UNUSED(t);
   cancel_key_repeat(d);
+  ime_invalidate(d, 1, 1);
   event(d, 3, 0, 0, 0);
 }
 static const struct xdg_toplevel_listener toplevel_listener = {
@@ -1139,6 +1168,7 @@ static void keyboard_leave(void *d, struct wl_keyboard *k, uint32_t serial,
   struct host *h = d;
   if (k != h->keyboard)
     return;
+  ime_invalidate(h, 1, 1);
   reset_direct_text(h, 1, 0);
   h->modifiers = 0;
   h->keyboard_focus_current = 0;
@@ -1248,6 +1278,7 @@ static void seat_caps(void *d, struct wl_seat *s, uint32_t caps) {
     h->keyboard = wl_seat_get_keyboard(s);
     wl_keyboard_add_listener(h->keyboard, &keyboard_listener, h);
   } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD)) {
+    ime_drop_proxy(h);
     invalidate_input_serial(h, INPUT_SERIAL_KEYBOARD);
     h->keyboard_focus_current = 0;
     if (h->keyboard) {
@@ -1283,6 +1314,10 @@ static void global(void *d, struct wl_registry *r, uint32_t name,
     h->seat_name = name;
     wl_seat_add_listener(h->seat, &seat_listener, h);
     maybe_create_data_device(h);
+  } else if (!strcmp(interface, "zwp_text_input_manager_v1") && !h->ime.manager) {
+    h->ime.manager = wl_registry_bind(r, name,
+        &zwp_text_input_manager_v1_interface, 1);
+    h->ime.manager_name = name;
   } else if (!strcmp(interface, "wl_shm") && !h->shm) {
     h->shm = wl_registry_bind(r, name, &wl_shm_interface, 1);
     h->shm_name = name;
@@ -1314,6 +1349,12 @@ static void global_remove(void *d, struct wl_registry *r, uint32_t name) {
   }
   if (name == h->data_manager_name) {
     h->data_manager_name = 0;
+  }
+  if (h->ime.manager_name && name == h->ime.manager_name) {
+    ime_drop_proxy(h);
+    zwp_text_input_manager_v1_destroy(h->ime.manager);
+    h->ime.manager = NULL;
+    h->ime.manager_name = 0;
   }
   if (h->seat_name && name == h->seat_name) {
     detach_seat_data_device(h);
@@ -1365,6 +1406,7 @@ static void release_renderer(struct host *h, int terminate_display) {
  * to the externally owned wl_display alive for the host lifetime. */
 static void release_gpu(struct host *h) { release_renderer(h, 0); }
 static void release_window(struct host *h) {
+  ime_invalidate(h, 1, 1);
   cancel_key_repeat(h);
   if (h->state == 0)
     reset_direct_text(h, 1, 0);
@@ -1397,6 +1439,11 @@ static void release_window(struct host *h) {
 static void release_host(struct host *h) {
   release_window(h);
   release_renderer(h, 1);
+  ime_drop_proxy(h);
+  if (h->ime.manager)
+    zwp_text_input_manager_v1_destroy(h->ime.manager);
+  for (int i = 0; i < QUEUE_CAPACITY; ++i)
+    ime_free_slot(h, i);
   for (int i = 0; i < SOURCE_TRANSFER_CAPACITY; ++i) {
     if (h->transfers[i].fd >= 0)
       close(h->transfers[i].fd);
@@ -1856,6 +1903,7 @@ int32_t gpui_close(int32_t token, int32_t window) {
   int s = window_check(token, window, &h);
   if (s)
     return s;
+  ime_invalidate(h, 1, 1);
   cancel_key_repeat(h);
   event(h, 3, 0, 0, 0);
   return h->error;
@@ -1875,16 +1923,27 @@ int32_t gpui_destroy(int32_t token, int32_t window) {
   s = settle_frame(h);
   if (s)
     return s;
-  /* Drop queued old callbacks, then publish one terminal notification. */
+  /* Drop old callbacks with their owned payloads before terminal records. */
   int count = h->count, kept = 0;
   for (int i = 0; i < count; ++i) {
-    double *e = h->queue[(h->read + i) % QUEUE_CAPACITY];
-    if ((int)e[1] != window) {
-      memcpy(h->queue[(h->read + kept++) % QUEUE_CAPACITY], e,
-             sizeof(h->queue[0]));
+    int source = (h->read + i) % QUEUE_CAPACITY;
+    int target = (h->read + kept) % QUEUE_CAPACITY;
+    if ((int)h->queue[source][1] == window) {
+      ime_free_slot(h, source);
+      memset(&h->direct_queue[source], 0, sizeof(h->direct_queue[source]));
+    } else {
+      if (source != target) {
+        memcpy(h->queue[target], h->queue[source], sizeof(h->queue[0]));
+        h->direct_queue[target] = h->direct_queue[source];
+        h->ime_queue[target] = h->ime_queue[source];
+        h->ime_queue[source] = NULL;
+        memset(&h->direct_queue[source], 0, sizeof(h->direct_queue[source]));
+      }
+      ++kept;
     }
   }
   h->count = kept;
+  ime_invalidate(h, 1, 1);
   event(h, 4, 0, 0, 0);
   release_window(h);
   return GPUI_OK;
@@ -1952,13 +2011,15 @@ int32_t gpui_next(int32_t token, double *out) {
     return -s;
   if (!out)
     return -GPUI_INVALID;
-  if (h->direct_exhausted && h->direct_ever_enabled)
+  if ((h->ime.exhausted && h->ime.ever_enabled) ||
+      (h->direct_exhausted && h->direct_ever_enabled))
     return -GPUI_RESOURCE;
   if (h->direct_enabled)
     return -GPUI_UNSUPPORTED;
   for (int i = 0; i < h->count; ++i) {
     int slot = (h->read + i) % QUEUE_CAPACITY;
-    if (h->queue[slot][0] == 13 || h->direct_queue[slot].direct_origin)
+    if (h->ime_queue[slot] || h->queue[slot][0] >= 20 ||
+        h->queue[slot][0] == 13 || h->direct_queue[slot].direct_origin)
       return -GPUI_UNSUPPORTED;
   }
   if (!h->count)
@@ -1973,7 +2034,7 @@ static int stale_direct_record(const struct host *h, int slot) {
   if (kind != 11 && kind != 12 && kind != 13)
     return 0;
   const struct direct_event_meta *meta = &h->direct_queue[slot];
-  if (h->state != 0 && meta->direct_origin)
+  if (h->state != 0 && (meta->direct_origin || h->ime.ever_enabled))
     return 1;
   if (meta->direct_origin && h->direct_exhausted)
     return 1;
@@ -1984,6 +2045,7 @@ static int stale_direct_record(const struct host *h, int slot) {
          (!h->direct_enabled || !h->keyboard_focus_current);
 }
 static void consume_event(struct host *h) {
+  ime_free_slot(h, h->read);
   memset(&h->direct_queue[h->read], 0, sizeof(h->direct_queue[h->read]));
   h->read = (h->read + 1) % QUEUE_CAPACITY;
   --h->count;
@@ -2002,8 +2064,11 @@ int32_t gpui_next_v2(int32_t abi, int32_t token, double *out,
   int status = check(token, &h);
   if (status)
     return -status;
-  if (h->direct_exhausted && h->direct_ever_enabled)
+  if ((h->ime.exhausted && h->ime.ever_enabled) ||
+      (h->direct_exhausted && h->direct_ever_enabled))
     return -GPUI_RESOURCE;
+  if (h->count && (h->ime_queue[h->read] || h->queue[h->read][0] >= 20))
+    return -GPUI_UNSUPPORTED;
   int skipped = 0;
   while (skipped < h->count &&
          stale_direct_record(h, (h->read + skipped) % QUEUE_CAPACITY))
@@ -2014,6 +2079,8 @@ int32_t gpui_next_v2(int32_t abi, int32_t token, double *out,
     return 0;
   }
   int slot = (h->read + skipped) % QUEUE_CAPACITY;
+  if (h->ime_queue[slot] || h->queue[slot][0] >= 20)
+    return -GPUI_UNSUPPORTED;
   const struct direct_event_meta *meta = &h->direct_queue[slot];
   if (h->queue[slot][0] == 13) {
     if (meta->text_length <= 0 ||
@@ -2031,6 +2098,8 @@ int32_t gpui_next_v2(int32_t abi, int32_t token, double *out,
     consume_event(h);
   return 1;
 }
+#include "ime_reader.inc.c"
+
 int32_t gpui_direct_keyboard_text_mode(int32_t token, int32_t window,
                                       int32_t enabled) {
   struct host *h;
@@ -2041,9 +2110,11 @@ int32_t gpui_direct_keyboard_text_mode(int32_t token, int32_t window,
     return GPUI_STALE;
   if (enabled != 0 && enabled != 1)
     return GPUI_INVALID;
-  if (h->direct_exhausted)
+  if (h->direct_exhausted || (h->ime.exhausted && h->ime.ever_enabled))
     return GPUI_RESOURCE;
   if (enabled) {
+    if (h->ime.requested || h->ime.phase != IME_INACTIVE)
+      return GPUI_BUSY;
     if (h->state != 0)
       return GPUI_STOPPING;
     if (!h->keyboard_focus_current)

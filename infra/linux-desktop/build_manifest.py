@@ -10,6 +10,8 @@ import subprocess
 import xml.etree.ElementTree as ET
 
 HERE = Path(__file__).resolve().parent
+GENERATED_PROTOCOLS = ("xdg-shell-client-protocol.h", "xdg-shell-protocol.c",
+                       "text-input-v1-client-protocol.h", "text-input-v1-protocol.c")
 XKB = ("rules/evdev", "keycodes/evdev", "symbols/pc", "symbols/us", "types/complete", "compat/complete")
 
 
@@ -148,8 +150,7 @@ def capture_runtime(profile_root, fontconfig, env, repo):
         files.append(file_identity(prefix / "usr/share/X11/xkb" / name, "xkb:" + name))
     fc_list = next(row["path"] for row in files if row.get("role") == "tool:fc-list")
     files.extend(configured_fonts(fonts, prefix, fc_list, env))
-    generated = [file_identity(repo / "ubuntu" / name) for name in
-                 ["xdg-shell-client-protocol.h", "xdg-shell-protocol.c"]]
+    generated = [file_identity(repo / "ubuntu" / name) for name in GENERATED_PROTOCOLS]
     trees = [{"role": "moon-core", "path": str(moon / "lib/core"), "sha256": tree_digest(moon / "lib/core")},
              {"role": "native-profile", "path": str(prefix), "sha256": tree_digest(prefix)}]
     build_environment = {key: env.get(key, "") for key in ["GPUI_LINUX_TEXT_CC", "CC", "CPPFLAGS", "CFLAGS", "LDFLAGS", "PKG_CONFIG", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR"]}

@@ -70,6 +70,46 @@ int32_t gpui_direct_keyboard_text_mode(int32_t host, int32_t window,
  * otherwise. Active is 0/1 or negative status. No native handle is returned. */
 int32_t gpui_direct_keyboard_text_epoch(int32_t host, int32_t window);
 int32_t gpui_direct_keyboard_text_active(int32_t host);
+/* Experimental, opt-in text-input-v1 editor ABI. One host-owned text target.
+ * UTF8 input is borrowed only for the call and copied before returning.
+ * The committed document is bounded to 4096 bytes, cannot contain NUL, and
+ * cursor/anchor must be scalar boundaries. Rectangles are surface-logical
+ * signed integers (never multiplied by output scale), with positive extent.
+ * Begin/update/cancel return positive nonwrapping epoch or negative status.
+ * An external update/cancel fences by deactivate -> leave -> activate; callers
+ * must wait for Entered before considering the replacement epoch ready. */
+#define GPUI_EDITOR_ABI 3
+#define GPUI_IME_MAX_BYTES 4096
+#define GPUI_IME_MAX_STYLES 64
+#define GPUI_EDITOR_EVENT_FIELDS (25 + 3 * GPUI_IME_MAX_STYLES)
+#define GPUI_EDITOR_MAX_PAYLOAD (2 * GPUI_IME_MAX_BYTES)
+#define GPUI_IME_QUEUE_BYTES (1024 * 1024)
+int32_t gpui_text_session_begin(int32_t host, int32_t window,
+    const uint8_t *text, int32_t length, int32_t cursor, int32_t anchor,
+    int32_t x, int32_t y, int32_t width, int32_t height);
+int32_t gpui_text_session_update(int32_t host, int32_t window, int32_t epoch,
+    const uint8_t *text, int32_t length, int32_t cursor, int32_t anchor,
+    int32_t x, int32_t y, int32_t width, int32_t height,
+    int32_t external_edit);
+int32_t gpui_text_session_cancel(int32_t host, int32_t window, int32_t epoch);
+int32_t gpui_text_session_end(int32_t host, int32_t window, int32_t epoch);
+/* Explicit candidate/input panel request; popup timing remains compositor/IME
+ * owned and is not qualified by transport acceptance. */
+int32_t gpui_text_session_panel(int32_t host, int32_t window, int32_t epoch,
+    int32_t visible);
+/* One ordered queue. Kinds 20 preedit, 21 atomic commit, 22 entered, 23 left,
+ * 24/25 forwarded keys. Ordinary ABI2 fields retain their existing meanings.
+ * Editor records canonicalize slots4/5 and unused key fields to zero.
+ * Editor slots: epoch10, seat11, proxy-generation12, issued serial13,
+ * text-length14, fallback-length15, preedit-cursor-present16/index17,
+ * deletion-present18/index19/length20, postinsert-position-present21,
+ * signed-index22/signed-anchor23, style-count24, then index/length/style
+ * triples. UTF8 payload is exact text bytes followed by fallback bytes, no
+ * NUL. Zero length commit remains meaningful. No serial deduplication.
+ * All invalid/insufficient outputs leave queue and both outputs unchanged.
+ * ABI1/2 readers reject an editor head without consuming it. */
+int32_t gpui_next_editor(int32_t abi, int32_t host, double *event,
+    int32_t event_capacity, uint8_t *text, int32_t text_capacity);
 int32_t gpui_present(int32_t host, int32_t window, const double *data,
                      int32_t length);
 /* v2 records: kind(0=quad,1=text), the same19 common fields as v1,
