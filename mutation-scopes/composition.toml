@@ -1,0 +1,4 @@
+# Explicit portable composition-file acceptance. This is not a changed-line
+# selector, native owner mutation, or a replacement for the existing ratchets.
+include = ["controls/text_field/composition.mbt", "text/composition.mbt"]
+operators = ["comparison", "boolean", "arithmetic", "literal", "condition"]

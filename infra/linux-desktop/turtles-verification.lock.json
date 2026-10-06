@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "profile": "moonbit-composition-helpers-v1",
+  "turtles_commit": "b91db91a00e5dd0cc2964f7fb7ed497a4256af10",
+  "adapter_sha256": "fc5d5134a876e86c1e05a259ddc756601ef2439997fdf273fa6926cc3d4620aa",
+  "turtles_binary_sha256": "07a62d16049d8ff03e43321b2f4579c6fab4b14fcc6149b0c0aca7dd89de3699",
+  "profile_sha256": "95d03cf9c56140a5c7bdb5c67b5f7b3dfc8864cf91dd074184cc89e49fd88716",
+  "pilot_revision": "packaging-39b1275",
+  "producer_sha256": "41ca263e8dd0c99ec8fd120c19ed0043c2068feb8ade9928a7311dd209f90122",
+  "proof_lock_sha256": "493e83579177583ef993a098afcb102ee529dc01afd807719ce88c3b138041f2",
+  "fixture": "testing/composition_proof",
+  "maximum_mutants": 64,
+  "maximum_stage_seconds": 840,
+  "target": "wasm",
+  "discovery_target": "native",
+  "runtime_packages": [
+    "text",
+    "controls/text_field"
+  ],
+  "reviewed_local_commit": "fd397e6e8563f1422e78ca667e66773142779ae3",
+  "turtles_tree": "2693674efc52cf05da69fd474eb20ac0130bc4ff",
+  "repository": "https://github.com/gpui-mbt/turtles.mbt",
+  "source_mapping": "Published commit metadata differs; all104treeblobs/modes and adapterbytes equal independently reviewed localfd397e6.",
+  "native_environment_provider_sha256": "3c0df9d447f679a72b9f9fd01c11ef2e4ed0717e7d8156368a5dc20f583fb847",
+  "native_profile_lock_sha256": "81b05b4f473617d03c8b11980b7e884863fdd181f040f96482a1a6f915abf503",
+  "portable_environment_policy": "verified-profile-ffi-flags-v1",
+  "native_environment_dependency_sha256": "cc1e9976380a1b0d4ff7fc6d505387249124e910b46ea7c380134c8f6f9115fe"
+}
