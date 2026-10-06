@@ -24,7 +24,7 @@ import uuid
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 LOCK_PATH = HERE / "turtles-verification.lock.json"
-LOCK_SHA256 = "8eaa1f3c2a836b9adc44bf9df14465530278faefe175cf61b7a3e40a2a4d494e"
+LOCK_SHA256 = "ee8f6b7758014df34f5fd84e8e5ac7bb129d776d8f6e0361b32e8103a1086134"
 FIELDS = ("command", "exit_code", "timed_out", "seconds", "log")
 EPHEMERAL = re.compile(r"^\.github/workflows/_local-actrun-feedback-(?:[a-z0-9_]{8}|[0-9a-f]{32})\.yml$")
 

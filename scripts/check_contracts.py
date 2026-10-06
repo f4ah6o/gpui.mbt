@@ -642,6 +642,7 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         # Reusable editing/paint state consumes portable layout results; native
         # shaping, raster admission and clipboard ownership remain in leaves.
         "controls/text_field": {"text", "text_layout", "primitives", "scene", "element"},
+        "controls/command_palette": {"text", "text_layout", "primitives", "element", "controls/text_field", "capability", "diagnostics", "scene"},
         "diagnostics": {"primitives"},
         "core": {"primitives", "diagnostics"},
         "layout": {"primitives"},
@@ -657,7 +658,7 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         },
         "examples/linux_text_field": {
             "ubuntu", "platform", "platform/linux_text", "controls/text_field",
-            "text", "text_layout", "element", "primitives", "scene", "diagnostics",
+            "text", "text_layout", "element", "primitives", "scene", "diagnostics", "controls/command_palette", "capability",
         },
         "windows": {
             "platform", "primitives", "diagnostics", "scene", "text",

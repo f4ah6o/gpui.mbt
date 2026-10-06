@@ -6,6 +6,7 @@ pub enum ElementError {
   InvalidPreorder
   UnknownElement
   NotFocusable
+  FocusIdentityExhausted
   RootRequired
   InvalidChildRoot
   MissingLayoutItem
@@ -16,6 +17,42 @@ pub enum ElementError {
 
 ///|
 pub extend ElementError with Eq::{not_equal, equal}
+
+///|
+/// Opaque ownership of one focus acquisition in one live element-tree lineage.
+/// Numeric element IDs alone cannot distinguish a removed owner from a later
+/// tree that reuses its ID. Explicitly focusing the same node again also creates
+/// a new owner, so modal cleanup can preserve a callback's deliberate focus.
+pub struct FocusOwner {
+  priv id : UInt64
+  priv lineage : UInt64
+  priv acquisition : UInt64
+} derive(Eq)
+
+///|
+pub extend FocusOwner with Eq::{not_equal, equal}
+
+///|
+/// Return the element ID for routing or diagnostics, not ownership comparison.
+pub fn FocusOwner::id(self : FocusOwner) -> UInt64 {
+  self.id
+}
+
+///|
+let focus_identity_sequence : Ref[UInt64] = Ref(1)
+
+///|
+/// Never wrap identities: an exhausted allocator cannot revive an old token.
+fn allocate_focus_identity() -> UInt64? {
+  let current = focus_identity_sequence.val
+  let max_uint64 : UInt64 = 0xffff_ffff_ffff_ffff
+  if current == max_uint64 {
+    None
+  } else {
+    focus_identity_sequence.val = current + 1
+    Some(current)
+  }
+}
 
 ///|
 /// One flat pre-order element record. Parent subtrees must remain contiguous:
@@ -238,9 +275,14 @@ pub fn DispatchOutcome::was_stopped(self : DispatchOutcome) -> Bool {
 pub struct ElementTree {
   priv nodes : Array[ElementNode]
   focused : UInt64?
+  priv lineage : UInt64
+  priv owner : FocusOwner?
 }
 
 ///|
+/// Construct a new tree with a fresh focus-owner lineage. Rebuilding from the
+/// same nodes does not adopt tokens from an earlier tree; use immutable tree
+/// operations to retain ownership when the live nodes have not been replaced.
 pub fn ElementTree::new(
   nodes : Array[ElementNode],
 ) -> Result[ElementTree, ElementError] {
@@ -303,7 +345,12 @@ pub fn ElementTree::new(
   }
   match failure {
     Some(error) => Err(error)
-    None => Ok({ nodes: owned, focused: None, })
+    None =>
+      match allocate_focus_identity() {
+        None => Err(FocusIdentityExhausted)
+        Some(lineage) =>
+          Ok({ nodes: owned, focused: None, lineage, owner: None, })
+      }
   }
 }
 
@@ -315,6 +362,14 @@ pub fn ElementTree::nodes(self : ElementTree) -> Array[ElementNode] {
 ///|
 pub fn ElementTree::focused(self : ElementTree) -> UInt64? {
   self.focused
+}
+
+///|
+/// Capture the current acquisition, including its tree lineage. Immutable
+/// operations preserve lineage; every `ElementTree::new`, including a rebuilt
+/// tree with identical numeric IDs, deliberately starts a fresh lineage.
+pub fn ElementTree::focus_owner(self : ElementTree) -> FocusOwner? {
+  self.owner
 }
 
 ///|
@@ -559,8 +614,71 @@ pub fn ElementTree::with_focus(
       if !node.focusable {
         Err(NotFocusable)
       } else {
-        Ok({ nodes: self.nodes, focused: Some(id), })
+        match allocate_focus_identity() {
+          None => Err(FocusIdentityExhausted)
+          Some(acquisition) =>
+            Ok({
+              nodes: self.nodes,
+              focused: Some(id),
+              lineage: self.lineage,
+              owner: Some({ id, lineage: self.lineage, acquisition, }),
+            })
+        }
       }
+  }
+}
+
+///|
+/// Restore a captured acquisition only while its node is live and focusable in
+/// the same tree lineage. A token from a removed or rebuilt tree is stale, even
+/// if a different tree contains the same numeric ID.
+pub fn ElementTree::with_focus_owner(
+  self : ElementTree,
+  owner : FocusOwner,
+) -> Result[ElementTree, ElementError] {
+  if owner.lineage != self.lineage {
+    Err(UnknownElement)
+  } else {
+    match self.node(owner.id) {
+      None => Err(UnknownElement)
+      Some(node) =>
+        if !node.focusable {
+          Err(NotFocusable)
+        } else {
+          Ok({
+            nodes: self.nodes,
+            focused: Some(owner.id),
+            lineage: self.lineage,
+            owner: Some(owner),
+          })
+        }
+    }
+  }
+}
+
+///|
+/// Release a modal's captured acquisition and restore its previous owner if
+/// still live. If a callback acquired new focus (even on the same numeric ID),
+/// cleared focus, removed the modal, or replaced the tree, leave it untouched.
+/// An absent or stale previous owner leaves focus clear. Call before removing
+/// the modal subtree if dismissal itself is responsible for that removal.
+pub fn ElementTree::restore_focus(
+  self : ElementTree,
+  previous : FocusOwner?,
+  expected_modal_owner : FocusOwner,
+) -> ElementTree {
+  if self.owner != Some(expected_modal_owner) {
+    self
+  } else {
+    let cleared = self.clear_focus()
+    match previous {
+      None => cleared
+      Some(owner) =>
+        match cleared.with_focus_owner(owner) {
+          Ok(restored) => restored
+          Err(_) => cleared
+        }
+    }
   }
 }
 
@@ -610,13 +728,22 @@ pub fn ElementTree::without_subtree(
         }
       }
     }
-    Ok({ nodes: kept, focused, })
+    Ok({
+      nodes: kept,
+      focused,
+      lineage: self.lineage,
+      owner: if focused is None {
+        None
+      } else {
+        self.owner
+      },
+    })
   }
 }
 
 ///|
 pub fn ElementTree::clear_focus(self : ElementTree) -> ElementTree {
-  { nodes: self.nodes, focused: None, }
+  { nodes: self.nodes, focused: None, lineage: self.lineage, owner: None, }
 }
 
 ///|
