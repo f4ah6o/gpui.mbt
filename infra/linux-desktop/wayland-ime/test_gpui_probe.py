@@ -153,7 +153,7 @@ class GpuiProbeTests(unittest.TestCase):
     def test_pixel_geometry(self):
         from PIL import Image,ImageDraw
         with tempfile.TemporaryDirectory() as root:
-            path=Path(root)/'im.png';im=Image.new('RGB',(960,640),(32,32,32));ImageDraw.Draw(im).rectangle((101,81,740,320),fill=(24,28,36));im.save(path)
+            path=Path(root)/'im.png';im=Image.new('RGB',(960,640),(32,32,32));ImageDraw.Draw(im).rectangle((101,81,740,320),fill=(24,28,36));ImageDraw.Draw(im).rectangle((125,109,636,152),fill=(255,255,255));im.save(path)
             self.assertEqual(p.gpui_click_from_pixels(path)['body'],[101,81,741,321])
             ImageDraw.Draw(im).point((0,0),fill=(24,28,36));im.save(path)
             with self.assertRaises(RuntimeError):p.gpui_click_from_pixels(path)
@@ -215,6 +215,59 @@ class GpuiProbeTests(unittest.TestCase):
                 path.write_bytes(original)
             report['focus_click']['field'][2]=535
             with self.assertRaises(e.evidence.EvidenceError):e.validate_rendered_fields(root,report)
+
+    def test_correlated_frame_readiness_before_pixels(self):
+        from PIL import Image,ImageDraw
+        with tempfile.TemporaryDirectory() as root:
+            root=Path(root);log='[1000.000] {Default Queue}  -> xdg_wm_base#1.get_xdg_surface(new id xdg_surface#2, wl_surface#3)\n[1000.001] {Default Queue}  -> wl_surface#3.frame(new id wl_callback#4)\n[1000.002] {mesa egl surface queue}  -> wl_surface#3.frame(new id wl_callback#5)\n[1000.003] {mesa egl surface queue}  -> wl_surface#3.commit()\n'+line(state())+'\n'
+            self.assertFalse(p.presentation_frame_ready(log,1)['ready'])
+            log+='[1000.004] {Default Queue} wl_callback#4.done(1)\n'
+            self.assertTrue(p.presentation_frame_ready(log,1)['ready'])
+            self.assertEqual(p.presentation_frame_ready(log,1)['requested_callbacks'],[4])
+            # An earlier callback or EGL display-sync callback cannot settle
+            # the accepted main-field presentation, even with a reused ID.
+            for bad in (log.replace('[1000.004] {Default Queue} wl_callback#4.done(1)\n','[1000.004] {mesa egl surface queue} wl_callback#5.done(1)\n'),log.replace(line(state())+'\n','').replace('[1000.004] {Default Queue} wl_callback#4.done(1)\n','[1000.004] {Default Queue} wl_callback#4.done(1)\n'+line(state())+'\n')):
+                self.assertFalse(p.presentation_frame_ready(bad,1)['ready'])
+            tick=[0];captured=[];audit=[]
+            def clock():return tick[0]
+            def poll():tick[0]+=.02
+            def capture(name):
+                captured.append(name);path=root/(name+'.png');im=Image.new('RGB',(960,640),(32,32,32))
+                if len(captured)>1:
+                    draw=ImageDraw.Draw(im);draw.rectangle((101,81,740,320),fill=(24,28,36));draw.rectangle((125,109,636,152),fill=(255,255,255))
+                im.save(path);return {'file':path.name,'sha256':p.sha(path)}
+            pixels,geometry=p.await_presented_pixels('initial',1,lambda:log,capture,lambda v:root/v['file'],audit,locate=True,clock=clock,poll=poll,timeout_seconds=.1)
+            self.assertEqual(len(captured),2);self.assertEqual(audit[0]['status'],'awaiting-actual-viewport-field-pixels');self.assertEqual(audit[-1]['status'],'ready')
+            self.assertTrue((root/audit[0]['pixels']['file']).exists());self.assertEqual(geometry['body'],[101,81,741,321])
+            # Accepted state alone must never qualify or capture before callback.
+            audit=[];captured=[];tick[0]=0
+            with self.assertRaisesRegex(RuntimeError,'timed out'):
+                p.await_presented_pixels('initial',1,lambda:log.replace('wl_callback#4.done(1)','wl_callback#99.done(1)'),capture,lambda v:root/v['file'],audit,locate=True,clock=clock,poll=poll,timeout_seconds=.1)
+            self.assertEqual(captured,[])
+            # Ambiguous geometry is a failed assertion, not a hidden retry.
+            bad=root/'bad.png';im=Image.new('RGB',(960,640),(24,28,36));im.save(bad);tick[0]=0;audit=[]
+            with self.assertRaisesRegex(RuntimeError,'ambiguous'):
+                p.await_presented_pixels('initial',1,lambda:log,lambda n:{'file':bad.name,'sha256':p.sha(bad)},lambda v:root/v['file'],audit,locate=True,clock=clock,poll=poll,timeout_seconds=.1)
+            self.assertEqual(audit[0]['status'],'failed-pixel-assertion')
+
+    def test_readiness_replay_recomputes_protocol_not_self_report(self):
+        with tempfile.TemporaryDirectory() as root:
+            root=Path(root);log='[1000.000] {Default Queue}  -> xdg_wm_base#1.get_xdg_surface(new id xdg_surface#2, wl_surface#3)\n'
+            points=[];audit=[]
+            for i,stage in enumerate(e.REQUIRED_STAGES,1):
+                callback=100+i
+                log+=f'[1000.001] {{Default Queue}}  -> wl_surface#3.frame(new id wl_callback#{callback})\n[1000.002] {{mesa egl surface queue}}  -> wl_surface#3.commit()\n'+line(state(i))+f'\n[1000.003] {{Default Queue}} wl_callback#{callback}.done(1)\n'
+                path=root/(stage+'.png');path.write_bytes(b'capture:'+stage.encode());pixels={'file':path.name,'sha256':p.sha(path)}
+                points.append({'stage':stage,'observer':{'presentation':i},'pixels':pixels})
+                audit.append({'stage':stage,'status':'ready','presentation':i,'pixels':pixels,'frame':e.presentation_frame_ready(log,i)})
+            report={'checkpoints':points,'render_readiness':audit};(root/'render-readiness.json').write_text(json.dumps(audit));(root/'gpui-snapshot.log').write_text(log)
+            self.assertEqual(e.validate_render_readiness(root,report)['qualified_checkpoints'],17)
+            for bad in (log.replace('wl_callback#101.done(1)','wl_callback#999.done(1)'),log.replace('[1000.003] {Default Queue} wl_callback#101.done(1)\n','')):
+                (root/'gpui-snapshot.log').write_text(bad)
+                with self.assertRaises(e.evidence.EvidenceError):e.validate_render_readiness(root,report)
+            (root/'gpui-snapshot.log').write_text(log);wrong=deepcopy(audit);wrong[0]['frame']['requested_callbacks']=[999]
+            report['render_readiness']=wrong;(root/'render-readiness.json').write_text(json.dumps(wrong))
+            with self.assertRaises(e.evidence.EvidenceError):e.validate_render_readiness(root,report)
 
     def test_exact_physical_sequence_nonzero(self):
         seq=e.physical_expected();self.assertGreater(len(seq),60)

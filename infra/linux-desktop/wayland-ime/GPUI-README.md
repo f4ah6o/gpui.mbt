@@ -16,7 +16,7 @@ Four native startup critical assertions remain visible and disclosed: IBus subst
 
 Every run must complete all these steps using real input, native protocol, accepted observer states and captured private pixels:
 
-1. Locate actual GPUI viewport pixels; click inside its field and require native Enter plus the newest matching IBus context FocusIn/keyboard grab.
+1. Before each checkpoint, bind its accepted observer presentation to the exact preceding own Default Queue main-surface frame callback and require its subsequent done. Independently locate actual GPUI viewport and admitted field pixels before any input; click inside its field and require native Enter plus the newest matching IBus context FocusIn/keyboard grab.
 2. OS Ctrl+A selects UTF-16 `[0,8]`. Typing `nihonn` gives preview `にほん` while committed text stays `Hello 日本`, with marked `[0,3]`.
 3. Space, Space, Up converts to `日本`; Return produces exactly one genuine native commit. The selection collapses to UTF-16 `[2,2]`; committed native surrounding text is `日本` with UTF-8 cursor/anchor `[6,6]`.
 4. Ctrl+Z restores the entire initial text and directional selection. Ctrl+Shift+Z restores `日本` as one transaction. Preedit adds no undo records. Actual selected→undone field pixels must be byte-identical; committed→redone/cancelled/final must also be byte-identical, and replacement must visibly change real glyph pixels. Mutation tests corrupt each paired image and fail closed.
@@ -30,7 +30,7 @@ The full qualification additionally requires `--held-shortcuts`, holding Ctrl+A,
 
 `prepare-gpui-deployment.py` generates an evidence-local candidate overlay above the SHA-256-pinned frozen baseline lock. Candidate-specific pins stay outside the source checkout to avoid a build-manifest self-reference. Before overlay preparation, launcher preparation, --check and native execution, established build_manifest.verify_build_manifest verifies the exact current commit/tree/worktree and binary, including verify_runtime over tools, generated protocols, fonts and runtime trees. The verified source/binary identities and closure inventory are retained. Preflight also verifies every frozen baseline byte. Historical read-only replay uses saved bytes and identities without requiring today’s source; an old diagnostic cannot claim the new exact-current held tier. It does not substitute the recovered engine.
 
-The original native-tested server remains `/workspace/scratch/72d79608add1/gpui-desktop-runtime/prefix/usr/lib/mozc/mozc_server`, SHA-256 `020f50a6cd53b3a0a5e6c66a30f698b05d5c68df4b5be73e663c1435bc8c432e`; the original engine and component remain the frozen baseline pins. Each run snapshots its actual candidate build manifest and deployment, helpers, complete pre-shutdown diagnostic streams, physical events and checkpoint pixels. Failures retain their original evidence.
+The original native-tested server remains `/workspace/scratch/72d79608add1/gpui-desktop-runtime/prefix/usr/lib/mozc/mozc_server`, SHA-256 `020f50a6cd53b3a0a5e6c66a30f698b05d5c68df4b5be73e663c1435bc8c432e`; the original engine and component remain the frozen baseline pins. Each run snapshots its actual candidate build manifest and deployment, helpers, complete pre-shutdown diagnostic streams, physical events and checkpoint pixels. The bounded render-readiness audit retains every frame wait and unsuccessful pixel capture; ambiguous geometry or timeout fails before input. Mesa/EGL callbacks and unrelated/reused sync IDs cannot settle the owner frame. Replay recomputes each ready callback binding from retained native log bytes. Failures retain their original evidence.
 
 This remains path-bound authorized own-cloud reproduction, with the frozen prefix's distribution ABI/shared-library/font prerequisites. It is not an arbitrary-machine installer, hermetic OS or production-wide IME support claim.
 
@@ -70,3 +70,16 @@ The native Python startup library/type-library paths are those in the prepared l
 - GPUI-2: replacement/conversion/commit/history/Escape/blur/refocus passed. The test clicked at a valid mid-text point after refocus, so `ka` correctly inserted at offset1 (`日か本`) rather than the test's intended end. The test now clicks far-right inside the pixel-located field; the original attempt remains unchanged.
 - GPUI-3: all 17 live checkpoints passed, but Gdk stderr assertions interleaved into a Gio stdout frame; strict mixed-stream replay correctly failed. The GPUI-specific wrapper now captures the actual streams separately without filtering or repairing them.
 - GPUI-4: all 17 live checkpoints and strict separate-stream replay passed, with real GPUI panel lifetime pixels. Required held tier remains pending; startup diagnostic assertions are retained.
+- GPUI-held-5: exact-current source/runtime gates passed on the clean final candidate, but its first accepted presentation preceded compositor frame completion/readback visibility. Initial pixels were blank, so the geometry gate correctly stopped before any keys; cleanup verified. The bounded frame and independent pixel readiness fence now preserves these observations and applies to every checkpoint.
+
+## Observed native include-cache caveat
+
+After editing Ubuntu native files included by `backend.c`, including
+`ime_transport.inc.c`, `ime_reader.inc.c` or `ime_transport.h`, use a new unused
+`--target-dir` / output directory for candidate builds and native MoonBit
+verification. In the pinned toolchain here, a reused native `backend.o` was not
+invalidated by an include-only edit; an up-to-date message therefore does not
+establish that changed included code was compiled. The direct ingress script
+recompiles production C each run. Record the fresh directory in the exact-source
+build manifest. This is an observed bounded-toolchain caveat, not a claim about
+all Moon versions.

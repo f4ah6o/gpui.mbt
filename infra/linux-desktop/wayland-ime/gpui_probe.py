@@ -89,6 +89,35 @@ def verify_current_candidate(manifest_path):
 
 
 
+class PixelsNotReady(RuntimeError):
+    pass
+
+
+presentation_frame_ready=gpui_evidence.presentation_frame_ready
+
+
+def await_presented_pixels(stage,presentation,read_current,capture,pixel_path,audit,
+                          *,locate=False,timeout_seconds=5,clock=time.monotonic,poll=None):
+    """Bounded real readiness observations; no fixed settling sleep or input."""
+    poll=poll or (lambda:time.sleep(.02))
+    started=clock();end=started+timeout_seconds;attempt=0
+    while clock()<end:
+        frame=presentation_frame_ready(read_current(),presentation)
+        item={'stage':stage,'presentation':presentation,'elapsed_ms':(clock()-started)*1000,'frame':frame}
+        if not frame['ready']:
+            item['status']='awaiting-correlated-frame';audit.append(item);poll();continue
+        attempt+=1;pixels=capture(stage+'-readiness-'+str(attempt));item.update(attempt=attempt,pixels=pixels)
+        try:
+            geometry=gpui_click_from_pixels(pixel_path(pixels)) if locate else None
+        except PixelsNotReady as error:
+            item.update(status='awaiting-actual-viewport-field-pixels',reason=str(error));audit.append(item);poll();continue
+        except Exception as error:
+            item.update(status='failed-pixel-assertion',reason=str(error));audit.append(item);raise
+        item['status']='ready';audit.append(item)
+        return pixels,geometry
+    raise RuntimeError('timed out: '+stage+' accepted frame/actual pixel readiness')
+
+
 def gpui_click_from_pixels(png):
     """Locate the actual GPUI viewport color, never infer desktop placement."""
     from PIL import Image
@@ -96,12 +125,17 @@ def gpui_click_from_pixels(png):
     points = [(x,y) for y in range(im.height) for x in range(im.width)
               if im.getpixel((x,y)) == (24,28,36)]
     if not points:
-        raise RuntimeError('GPUI viewport absent from private pixels')
+        raise PixelsNotReady('GPUI viewport absent from private pixels')
     l,r = min(x for x,y in points), max(x for x,y in points)+1
     t,b = min(y for x,y in points), max(y for x,y in points)+1
     if (r-l,b-t) != (640,240):
         raise RuntimeError('ambiguous GPUI viewport geometry: ' + str((l,t,r,b)))
-    return {'x':l+510, 'y':t+50, 'body':[l,t,r,b], 'field':[l+24,t+28,l+536,t+72]}
+    # Require actual admitted field pixels, not just a mapped empty viewport.
+    field=[l+24,t+28,l+536,t+72]
+    if not all(im.getpixel((x,y))==(255,255,255) for x,y in
+        ((field[0]+2,field[1]+2),(field[2]-3,field[1]+2),(field[0]+2,field[3]-3),(field[2]-3,field[3]-3))):
+        raise PixelsNotReady('GPUI viewport mapped but admitted field pixels not yet visible')
+    return {'x':l+510, 'y':t+50, 'body':[l,t,r,b], 'field':field}
 
 
 def input_method_wrapper(prefix, output):
@@ -227,7 +261,7 @@ def run(args, data, driver, baseline):
         'runtime_bind_verified': False, 'conversion_verified': False, 'cancel_verified': False,
         'history_verified': False, 'blur_refocus_verified': False,
         'private_display': env['DISPLAY'], 'inherited_display_excluded': os.environ.get('DISPLAY'),
-        'runtime': str(runtime), 'pins': data['pins'], 'checkpoints': [], 'cleanup': {'verified': False},
+        'runtime': str(runtime), 'pins': data['pins'], 'checkpoints': [], 'render_readiness':[], 'cleanup': {'verified': False},
         'shortcut_hold_ms':100 if args.held_shortcuts else 0,
         'route': 'XTest -> authenticated private Xvfb -> Weston X11 desktop-shell -> privileged IBus Wayland v1 -> Mozc -> GPUI native text-session ABI3 -> owned experimental field'}
     processes, streams, pressed = [], [], []
@@ -308,7 +342,13 @@ def run(args, data, driver, baseline):
                 grabs = len(re.findall(r'zwp_input_method_context_v1(?:#|@)\d+\.grab_keyboard\(', ui))
                 return active == activations and grabs == activations and evidence.native_context_ready(read_log(output / 'ibus-dbus.log'))
             wait(fresh_native_ready, label + ' latest matching native activation/FocusIn/grab')
-        report['checkpoints'].append({'stage':label, 'observer':found, 'pixels':capture(label)})
+        pixels,geometry=await_presented_pixels(label,found['presentation'],current_gpui,capture,
+            lambda value:output/value['file'],report['render_readiness'],locate=label=='initial',timeout_seconds=left(5))
+        # Preserve each unsuccessful capture separately, then retain a stable
+        # stage-named alias for independent pixel pairing and panel replay.
+        shutil.copyfile(output/pixels['file'],output/(label+'.png'))
+        if geometry is not None:report['focus_click']=geometry
+        report['checkpoints'].append({'stage':label,'observer':found,'pixels':{'file':label+'.png','sha256':sha(output/(label+'.png'))}})
         return found
 
     def chord(name, stage, modifiers=('Control_L',)):
@@ -459,6 +499,7 @@ def run(args, data, driver, baseline):
             raise RuntimeError('owned IBus Wayland identity changed before audit')
         for name in ('ibus-wayland','ibus-dbus','gpui'):
             shutil.copyfile(output / (name + '.log'), output / (name + '-snapshot.log'))
+        write_json(output/'render-readiness.json',report['render_readiness'])
         report['evidence_inputs'] = {name:sha(output/name) for name in gpui_evidence.INPUT_FILES}
         report['transport_evidence'] = gpui_evidence.qualify(output,report,data)
         write_json(output/'transport-evidence.json',report['transport_evidence'])
@@ -507,6 +548,7 @@ def run(args, data, driver, baseline):
         events.close()
         report['elapsed_seconds'] = round(time.monotonic() - started, 3)
         report['probe_sha256'] = sha(__file__)
+        if not (output/'render-readiness.json').exists():write_json(output/'render-readiness.json',report['render_readiness'])
         write_json(output / 'result.json', report)
     return 0 if report['status'] == 'passed' else (2 if report['status'] == 'qualified-partial' else 1)
 

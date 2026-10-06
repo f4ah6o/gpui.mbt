@@ -10,7 +10,7 @@ STATE_PREFIX = 'GPUI_FIELD_IME_STATE '
 HISTORICAL_INPUT_FILES = ('ibus-dbus-snapshot.log','ibus-wayland-snapshot.log','gpui-snapshot.log','events.jsonl',
     'probe.snapshot.py','gpui-evidence.snapshot.py','frozen-probe.snapshot.py',
     'frozen-evidence.snapshot.py','deployment.snapshot.json','gpui-build.snapshot.json','inherited-wayland-socket.txt')
-INPUT_FILES = HISTORICAL_INPUT_FILES + ('current-candidate-verification.snapshot.json',)
+INPUT_FILES = HISTORICAL_INPUT_FILES + ('current-candidate-verification.snapshot.json','render-readiness.json')
 KEYS = dict(evidence.KEYS, Control_L=(65507,29), Shift_L=(65505,42), a=(97,30), z=(122,44), k=(107,37))
 INTENDED = [('select-all',['Control_L','a'])] + [('roman-preedit',[x]) for x in 'nihonn'] + [
     ('conversion',[x]) for x in ('space','space','Up')] + [('commit',['Return']),
@@ -99,6 +99,61 @@ def presented_states(log):
         require(rect['width']>0 and rect['height']>0,'empty caret')
         values.append(value)
     return values
+
+
+def presentation_frame_ready(log,presentation):
+    """Correlate accepted observer N to its actual main-surface frame callbacks."""
+    surfaces=re.findall(r'xdg_wm_base(?:#|@)\d+\.get_xdg_surface\(new id xdg_surface(?:#|@)\d+, wl_surface(?:#|@)(\d+)\)',log)
+    if len(set(surfaces))!=1:
+        return {'ready':False,'reason':'main surface not yet uniquely configured'}
+    surface=surfaces[0];observer_at=None
+    offset=0
+    for line in log.splitlines(keepends=True):
+        if line.startswith(STATE_PREFIX):
+            value=json.loads(line[len(STATE_PREFIX):],object_pairs_hook=no_duplicates)
+            if value['presentation']==presentation:observer_at=offset;break
+        offset+=len(line)
+    if observer_at is None:return {'ready':False,'reason':'accepted observer record not yet complete'}
+    prefix=log[:observer_at]
+    commits=list(re.finditer(r'wl_surface(?:#|@)'+surface+r'\.commit\(\)',prefix))
+    if not commits:return {'ready':False,'reason':'accepted main-surface commit absent'}
+    commit=commits[-1];previous=commits[-2].end() if len(commits)>1 else 0
+    requests=list(re.finditer(r'^\[[0-9]+\.[0-9]+\] \{Default Queue\}  -> wl_surface(?:#|@)'+surface+r'\.frame\(new id wl_callback(?:#|@)(\d+)\)$',prefix[previous:commit.start()],re.M))
+    ids=[int(m[1]) for m in requests]
+    if len(ids)!=1:return {'ready':False,'reason':'one exact own Default Queue frame request not yet bound'}
+    observer_end=log.find('\n',observer_at)
+    if observer_end<0:return {'ready':False,'reason':'observer line incomplete'}
+    tail=log[observer_end+1:]
+    done=[]
+    for callback in ids:
+        match=re.search(r'^\[[0-9]+\.[0-9]+\] \{Default Queue\} wl_callback(?:#|@)'+str(callback)+r'\.done\(\d+\)$',tail,re.M)
+        if match:done.append({'callback':callback,'line':log[:observer_end+1+match.start()].count('\n')+1})
+    return {'ready':len(done)==len(ids),'surface':int(surface),'presentation':presentation,
+        'request_line':prefix[:previous+requests[0].start()].count('\n')+1,
+        'commit_line':prefix[:commit.start()].count('\n')+1,
+        'observer_line':prefix.count('\n')+1,'requested_callbacks':ids,'completed_callbacks':done}
+
+
+
+def validate_render_readiness(root,report):
+    root=Path(root)
+    readiness=json.loads((root/'render-readiness.json').read_text())
+    require(readiness==report['render_readiness'],'render readiness audit differs from retained capture')
+    ready=[v for v in readiness if v['status']=='ready']
+    require(tuple(v['stage'] for v in ready)==REQUIRED_STAGES,'accepted frame/pixel readiness incomplete')
+    for item in readiness:
+        if 'pixels' in item:
+            require(sha(root/item['pixels']['file'])==item['pixels']['sha256'],'readiness capture changed')
+        require(item['status']!='failed-pixel-assertion','readiness concealed a failed pixel assertion')
+    for item,point in zip(ready,report['checkpoints']):
+        require(item['presentation']==point['observer']['presentation'] and item['frame']['ready'] is True,
+            'checkpoint was not the correlated accepted/latched presentation')
+        actual=presentation_frame_ready((root/'gpui-snapshot.log').read_text(),item['presentation'])
+        require(actual==item['frame'],'readiness callback binding differs from actual native protocol bytes')
+        require(item['pixels']['sha256']==point['pixels']['sha256'],'checkpoint differs from ready native pixels')
+
+    return {'qualified_checkpoints':len(ready),'audit_observations':len(readiness),
+        'preserved_unready_pixel_captures':sum('pixels' in v and v['status']!='ready' for v in readiness)}
 
 
 def physical_expected():
@@ -248,6 +303,7 @@ def qualify(root,report,deployment):
             'current candidate exact source/binary identities differ from captured build')
         require(captured['runtime_file_count']==len(build_snapshot['runtime']['files']) and captured['runtime_tree_count']==len(build_snapshot['runtime']['trees']),
             'current candidate runtime closure inventory differs from captured build')
+        readiness_summary=validate_render_readiness(root,report)
     else:
         require(report.get('full_suite_verified') is not True and report.get('shortcut_hold_ms')==0,
             'historical diagnostic cannot claim exact-current full held qualification')
@@ -333,7 +389,8 @@ def qualify(root,report,deployment):
         v=point['observer']; c=v['caret']
         if v['focused']: require(tuple(c[k] for k in ('x','y','width','height')) in carets,'presented caret was not published to native protocol')
     return {'status':'matched','gpui_ime_verified':True,'runtime_diagnostics':diagnostics,'rendered_pixel_evidence':rendered,
-            'current_source_runtime_verified_at_launch':version==2,'matched_injected_events':len(injected),
+            'current_source_runtime_verified_at_launch':version==2,
+            'render_readiness':readiness_summary if version==2 else {'historical_frame_fence_verified':False},'matched_injected_events':len(injected),
         'matched_grabbed_events':len(received),'matched_ibus_key_calls':len(calls),'matched_v1_text_events':len(incoming),
         'native_context_paths':sorted(contexts),'accepted_presentations':len(states),'checkpoints':list(REQUIRED_STAGES),
         'complete_dbus_frames':len(frames),'demultiplexed_wayland_lines':len(removed),'demultiplex_audit':removed,
