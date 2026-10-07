@@ -1,4 +1,13 @@
 ///|
+struct PaletteNativeSnapshot {
+  document : String
+  anchor : Int
+  head : Int
+  caret : @primitives.Rect
+  epoch : Int
+}
+
+///|
 test "Windows command palette native owner fences window epoch and FIFO sequence" {
   let fixture = palette_fixture()
   fixture.palette.open(fixture.tree).unwrap()
@@ -572,6 +581,9 @@ test "rejected native marks and results restore the transaction before next reco
   let fixture = palette_fixture()
   let palette = fixture.palette
   palette.open(fixture.tree).unwrap()
+  ignore(
+    palette_handle_input(fixture, @primitives.TextInput(text="Go")).unwrap(),
+  )
   let replacement = palette.field().selection().normalized_range()
   let starting_owner = palette_native_owner(2, palette.open_epoch(), 51)
   let marked_owner = palette_native_start_composition(
@@ -587,14 +599,29 @@ test "rejected native marks and results restore the transaction before next reco
     [],
     replacement,
   ).unwrap()
+  let marked_restored_snapshot : Ref[(String, Int, Int)] = Ref(("", -1, -1))
   assert_true(
     palette.install_field_at(palette.open_epoch(), oversized_mark)
     is Err(@palette.QueryTooLarge),
   )
-  let after_mark_rejection = palette_reject_native_edit(palette, marked_owner, active => {
-    Ok(palette_native_owner_after_update(active, active.epoch + 1))
-  }).unwrap()
-  assert_eq(after_mark_rejection.epoch, 52)
+  let after_mark_rejection = palette_reject_native_edit(
+    palette,
+    marked_owner,
+    active => Ok(palette_native_owner_after_update(active, active.epoch + 1)),
+    (cancelled, restored) => {
+      let selection = restored.selection()
+      marked_restored_snapshot.val = (
+        restored.committed_document().text(),
+        selection.anchor(),
+        selection.head(),
+      )
+      Ok(palette_native_owner_after_update(cancelled, cancelled.epoch + 1))
+    },
+  ).unwrap()
+  assert_eq(marked_restored_snapshot.val.0, "Go")
+  assert_eq(marked_restored_snapshot.val.1, 2)
+  assert_eq(marked_restored_snapshot.val.2, 2)
+  assert_eq(after_mark_rejection.epoch, 53)
   assert_true(after_mark_rejection.composition is None)
   let old_mark_target : @native.TextSessionTarget = {
     window: @platform.WindowId::new(17L),
@@ -611,9 +638,9 @@ test "rejected native marks and results restore the transaction before next reco
     ),
   )
   assert_false(palette.field().is_composing())
-  assert_eq(palette.field().document().text(), "")
-  assert_eq(palette.field().committed_document().text(), "")
-  assert_eq(palette.picker().query(), "")
+  assert_eq(palette.field().document().text(), "Go")
+  assert_eq(palette.field().committed_document().text(), "Go")
+  assert_eq(palette.picker().query(), "Go")
 
   let result_owner = palette_native_start_composition(
     after_mark_rejection,
@@ -630,13 +657,66 @@ test "rejected native marks and results restore the transaction before next reco
     palette.install_field_at(palette.open_epoch(), oversized_result)
     is Err(@palette.QueryTooLarge),
   )
+  let stale_field = oversized_result
+  let stale_selection = stale_field.selection()
+  let stale_native_rect = windows_palette_caret_rect(stale_field).unwrap()
+  let native_snapshot : Ref[PaletteNativeSnapshot] = Ref({
+    document: stale_field.committed_document().text(),
+    anchor: stale_selection.anchor(),
+    head: stale_selection.head(),
+    caret: stale_native_rect,
+    epoch: result_owner.epoch,
+  })
+  assert_true(
+    native_snapshot.val.document != palette.field().committed_document().text(),
+  )
+  let pending_frame_before = pending_frame(fixture, 1, 640.0, 480.0, 1.0)
+  let pending = Some(pending_frame_before)
+  let dirty = Ref(true)
+  assert_false(palette_frame_submission_ready(dirty.val, pending))
+  let native_snapshot_before_rebase : Ref[PaletteNativeSnapshot] = Ref(
+    native_snapshot.val,
+  )
   let after_result_rejection = palette_reject_native_edit(
     palette,
     result_owner,
-    active => Ok(palette_native_owner_after_update(active, active.epoch + 1)),
+    active => {
+      // Native cancel advances ownership and prunes queued records, but it
+      // leaves the native document and selection untouched.
+      native_snapshot.val = { ..native_snapshot.val, epoch: active.epoch + 1, }
+      Ok(palette_native_owner_after_update(active, native_snapshot.val.epoch))
+    },
+    (cancelled, restored) => {
+      native_snapshot_before_rebase.val = native_snapshot.val
+      let restored_document = restored.committed_document()
+      let restored_selection = restored_document.selection()
+      let restored_rect = windows_palette_caret_rect(restored).unwrap()
+      let rebased_epoch = cancelled.epoch + 1
+      native_snapshot.val = {
+        document: restored_document.text(),
+        anchor: restored_selection.anchor(),
+        head: restored_selection.head(),
+        caret: restored_rect,
+        epoch: rebased_epoch,
+      }
+      Ok(palette_native_owner_after_update(cancelled, rebased_epoch))
+    },
   ).unwrap()
-  assert_eq(after_result_rejection.epoch, 53)
+  assert_eq(after_result_rejection.epoch, 55)
   assert_true(after_result_rejection.composition is None)
+  assert_eq(
+    native_snapshot_before_rebase.val.document,
+    stale_field.committed_document().text(),
+  )
+  assert_eq(native_snapshot_before_rebase.val.anchor, stale_selection.anchor())
+  assert_eq(native_snapshot_before_rebase.val.head, stale_selection.head())
+  assert_eq(native_snapshot.val.document, "Go")
+  assert_eq(native_snapshot.val.anchor, 2)
+  assert_eq(native_snapshot.val.head, 2)
+  assert_eq(
+    native_snapshot.val.caret.left(),
+    windows_palette_caret_rect(palette.field()).unwrap().left(),
+  )
   let old_result_target : @native.TextSessionTarget = {
     window: @platform.WindowId::new(17L),
     sequence: 1L,
@@ -652,7 +732,37 @@ test "rejected native marks and results restore the transaction before next reco
     ),
   )
   assert_false(palette.field().is_composing())
-  assert_eq(palette.field().document().text(), "")
-  assert_eq(palette.field().committed_document().text(), "")
-  assert_eq(palette.picker().query(), "")
+  assert_eq(palette.field().document().text(), "Go")
+  assert_eq(palette.field().committed_document().text(), "Go")
+  assert_eq(palette.picker().query(), "Go")
+
+  let next_native_target : @native.TextSessionTarget = {
+    window: @platform.WindowId::new(17L),
+    sequence: 1L,
+    epoch: after_result_rejection.epoch,
+    owner_generation: after_result_rejection.owner_generation,
+  }
+  assert_true(
+    palette_native_target_current(
+      palette,
+      after_result_rejection,
+      @platform.WindowId::new(17L),
+      next_native_target,
+    ),
+  )
+  assert_eq(
+    native_snapshot.val.document,
+    palette.field().committed_document().text(),
+  )
+  assert_eq(native_snapshot.val.anchor, palette.field().selection().anchor())
+  assert_eq(native_snapshot.val.head, palette.field().selection().head())
+  let next_owner = palette_native_accept_event(
+    after_result_rejection, next_native_target,
+  )
+  assert_true(
+    palette_native_start_composition(next_owner, palette.field(), replacement)
+    is Some(_),
+  )
+  assert_false(palette_frame_submission_ready(dirty.val, pending))
+  assert_true(pending_frame_matches(pending.unwrap(), pending_frame_before))
 }

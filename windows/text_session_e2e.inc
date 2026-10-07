@@ -544,6 +544,99 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
     }
   }
 
+  {
+    const uint8_t original[] = {'a', 'b'};
+    WCHAR rejected_result[] = {L'X'};
+    WCHAR next_result[] = {L'Y'};
+    WCHAR rejected_snapshot[] = {L'X'};
+    WCHAR restored_snapshot[] = {L'a', L'b'};
+    WCHAR next_snapshot[] = {L'Y'};
+    gpui_text_test_clear_ring(&g_host);
+    int32_t initial_epoch = gpui_windows_session_begin(
+        77, 5, 705, original, sizeof(original), 2, 0,
+        8.0, 9.0, 1.0, 18.0);
+    GPUI_REVIEW_REQUIRE(initial_epoch > 0 &&
+                            gpui_text_test_document_is(restored_snapshot, 2) &&
+                            g_gpui_text_session.anchor_utf16 == 2 &&
+                            g_gpui_text_session.head_utf16 == 0,
+                        60);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_start_record(&g_host) ==
+                            GPUI_WINDOWS_OK &&
+                            gpui_text_session_process_composition(
+                                &g_host, TRUE, rejected_result, 1, FALSE,
+                                NULL, 0, FALSE, 0, NULL, 0) ==
+                                GPUI_WINDOWS_OK &&
+                            gpui_text_test_document_is(rejected_snapshot, 1) &&
+                            g_gpui_text_session.anchor_utf16 == 1 &&
+                            g_gpui_text_session.head_utf16 == 1,
+                        61);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_pop(
+                            &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_STARTED &&
+                            gpui_text_session_pop(
+                                &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_INSERTED &&
+                            (int32_t)event[16] == 0 &&
+                            (int32_t)event[17] == 2 && payload[0] == 'X',
+                        62);
+
+    int32_t cancelled_epoch = gpui_windows_session_cancel(
+        77, 5, initial_epoch, 705);
+    GPUI_REVIEW_REQUIRE(cancelled_epoch > initial_epoch &&
+                            g_gpui_text_session.armed &&
+                            gpui_text_test_document_is(rejected_snapshot, 1) &&
+                            g_gpui_text_session.anchor_utf16 == 1 &&
+                            g_gpui_text_session.head_utf16 == 1,
+                        63);
+
+    int32_t rebased_epoch = gpui_windows_session_update(
+        77, 5, cancelled_epoch, 705, original, sizeof(original), 2, 0,
+        8.0, 9.0, 1.0, 18.0, 1);
+    GPUI_REVIEW_REQUIRE(rebased_epoch > cancelled_epoch &&
+                            g_gpui_text_session.armed &&
+                            g_gpui_text_session.awaiting_fresh_start &&
+                            gpui_text_test_document_is(restored_snapshot, 2) &&
+                            g_gpui_text_session.anchor_utf16 == 2 &&
+                            g_gpui_text_session.head_utf16 == 0,
+                        64);
+    int32_t next_start_status = gpui_text_session_start_record(&g_host);
+    if (next_start_status != GPUI_WINDOWS_OK) {
+      *failed_stage = 700 + next_start_status;
+      result = GPUI_WINDOWS_NATIVE;
+      goto review_cleanup;
+    }
+    GPUI_REVIEW_REQUIRE(gpui_text_test_record(
+                            &g_host, 0, GPUI_TEXT_EVENT_STARTED, 0, 2, 3),
+                        651);
+    GPUI_REVIEW_REQUIRE((int32_t)g_host.editor_fields[
+                            g_host.event_read][1] == rebased_epoch,
+                        652);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_process_composition(
+                            &g_host, TRUE, next_result, 1, FALSE,
+                            NULL, 0, FALSE, 0, NULL, 0) == GPUI_WINDOWS_OK &&
+                            gpui_text_test_document_is(next_snapshot, 1) &&
+                            g_gpui_text_session.anchor_utf16 == 1 &&
+                            g_gpui_text_session.head_utf16 == 1 &&
+                            gpui_text_test_record(
+                                &g_host, 1, GPUI_TEXT_EVENT_INSERTED, 0, 2, 4) &&
+                            (int32_t)g_host.editor_fields[
+                                (g_host.event_read + 1) % GPUI_EVENT_CAPACITY][1] ==
+                                rebased_epoch,
+                        66);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_pop(
+                            &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_STARTED &&
+                            gpui_text_session_pop(
+                                &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_INSERTED &&
+                            (int32_t)event[16] == 0 &&
+                            (int32_t)event[17] == 2 && payload[0] == 'Y',
+                        67);
+    GPUI_REVIEW_REQUIRE(gpui_windows_session_end(
+                            77, 5, rebased_epoch, 705) == GPUI_WINDOWS_OK,
+                        68);
+  }
+
 review_cleanup:
   gpui_text_test_clear_ring(&g_host);
   gpui_text_review_message_count = 0;

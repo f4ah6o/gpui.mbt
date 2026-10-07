@@ -768,11 +768,39 @@ fn palette_recover_rejected_native_record(
 ) -> Bool {
   fixture.rejected_records.val += 1
   match
-    palette_reject_native_edit(fixture.palette, active, current => {
-      palette_cancel_native_owner(host, window, current)
-    }) {
+    palette_reject_native_edit(
+      fixture.palette,
+      active,
+      current => {
+        match palette_cancel_native_owner(host, window, current) {
+          Err(error) => Err(error)
+          Ok(cancelled) => {
+            owner.val = Some(cancelled)
+            fixture.native_cancels.val += 1
+            Ok(cancelled)
+          }
+        }
+      },
+      (cancelled, restored_field) => {
+        match
+          palette_update_native_field(
+            host,
+            window,
+            cancelled,
+            restored_field,
+            fixture.palette.open_epoch(),
+            true,
+          ) {
+          Err(error) => Err(error)
+          Ok(rebased) => {
+            owner.val = Some(rebased)
+            fixture.native_updates.val += 1
+            Ok(rebased)
+          }
+        }
+      },
+    ) {
     Ok(next) => {
-      fixture.native_cancels.val += 1
       owner.val = Some(next)
       dirty.val = true
       palette_log("GPUI_WINDOWS_COMMAND_PALETTE_REJECT \{reason} recovered")
@@ -780,7 +808,8 @@ fn palette_recover_rejected_native_record(
     }
     Err(error) => {
       report(error)
-      owner.val = Some(active)
+      // Keep the most recent owner identity. A cancel may have advanced the
+      // epoch before snapshot rebase failed; the host exits before more input.
       dirty.val = false
       palette_log("GPUI_WINDOWS_COMMAND_PALETTE_REJECT \{reason} fail_closed")
       ignore(host.request_exit())

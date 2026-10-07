@@ -328,6 +328,44 @@ fn palette_update_native_owner(
 }
 
 ///|
+/// Update from an explicit restored field snapshot. Rejection recovery uses
+/// this after native cancel so the fresh epoch cannot retain an already
+/// rejected native document or caret.
+fn palette_update_native_field(
+  host : @native.Host,
+  window : @platform.WindowId,
+  owner : PaletteNativeOwner,
+  field : @text_field.TextField,
+  open_epoch : Int,
+  external_edit : Bool,
+) -> Result[PaletteNativeOwner, @diagnostics.FrameworkError] {
+  if owner.open_epoch != open_epoch || !field.is_focused() {
+    return Err(
+      @diagnostics.FrameworkError::new(
+        @diagnostics.StaleHandle,
+        "palette_rebase_open_epoch",
+      ),
+    )
+  }
+  let caret = match windows_palette_caret_rect(field) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  match
+    host.update_text_session(
+      window,
+      owner.epoch,
+      owner.owner_generation,
+      field.committed_document(),
+      caret,
+      external_edit~,
+    ) {
+    Ok(epoch) => Ok(palette_native_owner_after_update(owner, epoch))
+    Err(error) => Err(error)
+  }
+}
+
+///|
 fn palette_cancel_native_owner(
   host : @native.Host,
   window : @platform.WindowId,
@@ -391,6 +429,10 @@ fn palette_reject_native_edit(
     PaletteNativeOwner,
     @diagnostics.FrameworkError,
   ],
+  rebase : (PaletteNativeOwner, @text_field.TextField) -> Result[
+    PaletteNativeOwner,
+    @diagnostics.FrameworkError,
+  ],
 ) -> Result[PaletteNativeOwner, @diagnostics.FrameworkError] {
   let (restored, cleared) = palette_native_cancel_composition(owner)
   match restored {
@@ -407,14 +449,25 @@ fn palette_reject_native_edit(
       }
     None => ()
   }
-  match cancel(cleared) {
+  let cancelled = match cancel(cleared) {
+    Err(error) => return Err(error)
+    Ok(next) if next.epoch != owner.epoch => next
+    Ok(_) =>
+      return Err(
+        @diagnostics.FrameworkError::new(
+          @diagnostics.StaleHandle,
+          "palette_reject_native_cancel_epoch",
+        ),
+      )
+  }
+  match rebase(cancelled, palette.field()) {
     Err(error) => Err(error)
-    Ok(next) if next.epoch != owner.epoch => Ok(next)
+    Ok(next) if next.epoch != cancelled.epoch => Ok(next)
     Ok(_) =>
       Err(
         @diagnostics.FrameworkError::new(
           @diagnostics.StaleHandle,
-          "palette_reject_native_epoch",
+          "palette_reject_native_rebase_epoch",
         ),
       )
   }
