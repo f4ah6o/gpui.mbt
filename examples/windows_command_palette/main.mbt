@@ -946,25 +946,36 @@ fn palette_present_result(
 }
 
 ///|
+/// Publish any input-counter change because those counters are visible in the
+/// fixture and included in the accepted-state observer.
 fn palette_count_background_input(
   fixture : PaletteFixture,
   event : @primitives.InputEvent,
   consumed : Bool,
+  dirty : Ref[Bool],
 ) -> Unit {
   if consumed {
     match event {
-      @primitives.KeyPressed(key=@primitives.Enter | @primitives.Escape, ..) =>
+      @primitives.KeyPressed(key=@primitives.Enter | @primitives.Escape, ..) => {
         fixture.guarded_presses.val += 1
-      @primitives.KeyReleased(key=@primitives.Enter | @primitives.Escape, ..) =>
+        dirty.val = true
+      }
+      @primitives.KeyReleased(key=@primitives.Enter | @primitives.Escape, ..) => {
         fixture.guarded_releases.val += 1
+        dirty.val = true
+      }
       _ => ()
     }
   } else if fixture.tree.val.focused() == Some(9UL) {
     match event {
-      @primitives.KeyPressed(key=@primitives.Enter | @primitives.Escape, ..) =>
+      @primitives.KeyPressed(key=@primitives.Enter | @primitives.Escape, ..) => {
         fixture.background_presses.val += 1
-      @primitives.KeyReleased(key=@primitives.Enter | @primitives.Escape, ..) =>
+        dirty.val = true
+      }
+      @primitives.KeyReleased(key=@primitives.Enter | @primitives.Escape, ..) => {
         fixture.background_releases.val += 1
+        dirty.val = true
+      }
       _ => ()
     }
   }
@@ -1074,12 +1085,16 @@ fn run_palette_window() -> Unit {
               native_key_guard.val = next_key_guard
               if native_key_consumed {
                 dirty.val = true
-                palette_count_background_input(fixture, event_input, true)
+                palette_count_background_input(
+                  fixture, event_input, true, dirty,
+                )
               } else if !palette.is_open() {
                 let prior_guard = palette_handle_input(fixture, event_input).unwrap()
                 if prior_guard.consumed {
                   dirty.val = true
-                  palette_count_background_input(fixture, event_input, true)
+                  palette_count_background_input(
+                    fixture, event_input, true, dirty,
+                  )
                 } else {
                   let click_opener = match event_input {
                     @primitives.PointerButtonPressed(
@@ -1099,7 +1114,9 @@ fn run_palette_window() -> Unit {
                         palette_log("GPUI_WINDOWS_COMMAND_PALETTE_REJECT open")
                     }
                   } else {
-                    palette_count_background_input(fixture, event_input, false)
+                    palette_count_background_input(
+                      fixture, event_input, false, dirty,
+                    )
                   }
                 }
               } else {
@@ -1232,6 +1249,7 @@ fn run_palette_window() -> Unit {
                     fixture,
                     input,
                     outcome.consumed,
+                    dirty,
                   )
                 } else if input
                   is @primitives.PointerButtonPressed(

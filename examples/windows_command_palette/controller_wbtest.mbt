@@ -523,6 +523,77 @@ test "Windows command palette close waits for native fence before action and foc
 }
 
 ///|
+test "fresh Enter reaches and publishes background after one-shot palette activation" {
+  let fixture = palette_fixture()
+  let palette = fixture.palette
+  let tree = fixture.tree
+  palette.open(tree).unwrap()
+  let enter_press = @primitives.KeyPressed(
+    key=@primitives.Enter,
+    modifiers=@primitives.Modifiers::none(),
+    repeat=false,
+  )
+  let activation = palette_handle_input(fixture, enter_press).unwrap()
+  assert_true(activation.consumed)
+  let close_epoch = match activation.effect {
+    @palette.Closed(epoch~, command_id=Some(_)) => epoch
+    _ => fail("fresh Enter did not prepare the one-shot command close")
+  }
+  palette_finish_close_after_fence(palette, close_epoch, tree, true).unwrap()
+  assert_false(palette.is_open())
+  assert_eq(fixture.actions.val, 1)
+  assert_eq(fixture.background_presses.val, 0)
+  assert_eq(fixture.background_releases.val, 0)
+
+  let dirty = Ref(false)
+  let activation_release = @primitives.KeyReleased(
+    key=@primitives.Enter,
+    modifiers=@primitives.Modifiers::none(),
+  )
+  let quarantined_release = palette_handle_input(fixture, activation_release).unwrap()
+  assert_true(quarantined_release.consumed)
+  palette_count_background_input(
+    fixture,
+    activation_release,
+    quarantined_release.consumed,
+    dirty,
+  )
+  assert_eq(fixture.guarded_releases.val, 1)
+  assert_eq(fixture.background_releases.val, 0)
+  assert_true(dirty.val)
+  assert_true(palette_frame_submission_ready(dirty.val, None))
+
+  dirty.val = false
+  let background_press = palette_handle_input(fixture, enter_press).unwrap()
+  assert_false(background_press.consumed)
+  palette_count_background_input(
+    fixture,
+    enter_press,
+    background_press.consumed,
+    dirty,
+  )
+  assert_eq(fixture.background_presses.val, 1)
+  assert_true(dirty.val)
+  assert_true(palette_frame_submission_ready(dirty.val, None))
+
+  dirty.val = false
+  let background_release = palette_handle_input(fixture, activation_release).unwrap()
+  assert_false(background_release.consumed)
+  palette_count_background_input(
+    fixture,
+    activation_release,
+    background_release.consumed,
+    dirty,
+  )
+  assert_eq(fixture.background_releases.val, 1)
+  assert_true(dirty.val)
+  assert_true(palette_frame_submission_ready(dirty.val, None))
+  assert_false(palette.is_open())
+  assert_eq(fixture.actions.val, 1)
+  assert_eq(tree.val.focused(), Some(9UL))
+}
+
+///|
 test "Windows command palette holds the cancel key through its physical release" {
   let fixture = palette_fixture()
   let palette = fixture.palette
