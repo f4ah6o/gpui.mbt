@@ -141,7 +141,7 @@ extern "C" fn native_clipboard_write(
 
 ///|
 #borrow(rgba)
-extern "C" fn native_readback(
+extern "C" fn native_readback_samples(
   host : Int,
   window : Int,
   rgba : FixedArray[Double],
@@ -856,7 +856,7 @@ pub fn Host::readback_samples(
   let values = FixedArray::make(12, 0.0)
   match
     outcome(
-      native_readback(self.token, window.value().to_int(), values),
+      native_readback_samples(self.token, window.value().to_int(), values),
       "readback_samples",
     ) {
     Err(error) => Err(error)
