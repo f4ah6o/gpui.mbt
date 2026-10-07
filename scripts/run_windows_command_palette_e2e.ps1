@@ -172,17 +172,21 @@ function Test-FrameTuple {
       [string]$State.query -cne [string]$Complete.query -or
       -not (Test-ExactInteger $State.visible_count 0 8) -or
       -not (Test-ExactInteger $State.matches 0 2147483647) -or
-      $State.active_index -isnot [System.Collections.IList] -or
-      $State.active_index.Count -gt 1) { return $false }
-  if ($State.active_index.Count -eq 1 -and -not (Test-ExactInteger $State.active_index[0] 0 2147483647)) { return $false }
+      -not $State.Contains("active_index") -or
+      -not $State.Contains("active_id") -or
+      -not $Complete.Contains("active_id")) { return $false }
+  $activeIndex = $State["active_index"]
+  if ($null -ne $activeIndex -and
+      ($activeIndex -isnot [System.Collections.IList] -or $activeIndex.Count -ne 1 -or
+       -not (Test-ExactInteger $activeIndex[0] 0 2147483647))) { return $false }
   if ([bool]$State.open) {
     if ($null -eq $State.active_id) {
-      if ($null -ne $Complete.active_id -or [long]$State.visible_count -ne 0 -or $State.active_index.Count -ne 0) { return $false }
+      if ($null -ne $Complete.active_id -or [long]$State.visible_count -ne 0 -or $null -ne $activeIndex) { return $false }
     } else {
-      if ([string]$State.active_id -cne [string]$Complete.active_id -or $State.active_index.Count -ne 1 -or
+      if ([string]$State.active_id -cne [string]$Complete.active_id -or $null -eq $activeIndex -or
           $State.semantic -isnot [System.Collections.IDictionary] -or $State.semantic.options -isnot [System.Collections.IList]) { return $false }
       $matchingOptions = @($State.semantic.options | Where-Object {
-        (Test-ExactInteger $_.index 0 2147483647) -and [long]$_.index -eq [long]$State.active_index[0] -and [string]$_.id -ceq [string]$State.active_id
+        (Test-ExactInteger $_.index 0 2147483647) -and [long]$_.index -eq [long]$activeIndex[0] -and [string]$_.id -ceq [string]$State.active_id
       })
       if ($matchingOptions.Count -ne 1) { return $false }
     }
@@ -246,6 +250,27 @@ function Get-LatestFrame {
   return [pscustomobject]@{ Accepted = $a; State = $s; Complete = $c; Readback = $r }
 }
 
+function Get-LogTail {
+  param([AllowNull()][object]$Text, [bool]$Exists, [int]$MaximumLength = 1800)
+  if (-not $Exists) { return "<missing log>" }
+  if ($null -eq $Text -or [string]::IsNullOrEmpty([string]$Text)) { return "<empty log>" }
+  $value = [string]$Text
+  return $value.Substring([Math]::Max(0, $value.Length - $MaximumLength))
+}
+
+function Format-ExitedChildDiagnostic {
+  param(
+    [string]$ProcessCheckError,
+    [AllowNull()][object]$Stdout,
+    [bool]$StdoutExists,
+    [AllowNull()][object]$Stderr,
+    [bool]$StderrExists
+  )
+  $stdoutTail = Get-LogTail $Stdout $StdoutExists
+  $stderrTail = Get-LogTail $Stderr $StderrExists
+  return "Owned fixture exited before predicate. process check=$ProcessCheckError; stdout tail=$stdoutTail; stderr tail=$stderrTail."
+}
+
 function Get-FrameIdentity {
   param([object]$Frame)
   if ($null -eq $Frame) { return $null }
@@ -289,6 +314,7 @@ function Get-CaptureSemanticIdentity {
   $selection = if ($null -ne $State.selection) { [ordered]@{ anchor = $State.selection.anchor; head = $State.selection.head } } else { $null }
   $caret = if ($null -ne $State.caret) { [ordered]@{ x = $State.caret.x; y = $State.caret.y; width = $State.caret.width; height = $State.caret.height } } else { $null }
   $viewport = if ($null -ne $State.viewport) { [ordered]@{ logical_width = $State.viewport.logical_width; logical_height = $State.viewport.logical_height; scale = $State.viewport.scale; font_family = $State.viewport.font_family; font_size = $State.viewport.font_size } } else { $null }
+  $activeIndexIdentity = if ($null -eq $State.active_index) { $null } else { @($State.active_index) }
   $options = if ($null -ne $State.semantic -and $null -ne $State.semantic.options) { @($State.semantic.options) } else { @() }
   return [ordered]@{
     open = $State.open
@@ -300,7 +326,7 @@ function Get-CaptureSemanticIdentity {
     selection = $selection
     matches = $State.matches
     active_id = $State.active_id
-    active_index = @($State.active_index)
+    active_index = $activeIndexIdentity
     visible_start = $State.visible_start
     visible_count = $State.visible_count
     actions = $State.actions
@@ -644,9 +670,12 @@ function Wait-ForFrame {
       $process = Get-Process -Id $Owner.pid -ErrorAction Stop
       if ($process.StartTime.ToUniversalTime().Ticks -ne [long]$Owner.start_ticks) { throw "PID reused." }
     } catch {
-      $out = if (Test-Path $Owner.stdout) { Get-Content -Raw $Owner.stdout -ErrorAction SilentlyContinue } else { "" }
-      $err = if (Test-Path $Owner.stderr) { Get-Content -Raw $Owner.stderr -ErrorAction SilentlyContinue } else { "" }
-      throw "Owned fixture exited before predicate. stdout tail=$($out.Substring([Math]::Max(0, $out.Length - 1800))); stderr tail=$($err.Substring([Math]::Max(0, $err.Length - 1800)))."
+      $processCheckError = $_.Exception.Message
+      $outExists = Test-Path -LiteralPath $Owner.stdout
+      $errExists = Test-Path -LiteralPath $Owner.stderr
+      $out = if ($outExists) { Get-Content -Raw -LiteralPath $Owner.stdout -ErrorAction SilentlyContinue } else { $null }
+      $err = if ($errExists) { Get-Content -Raw -LiteralPath $Owner.stderr -ErrorAction SilentlyContinue } else { $null }
+      throw (Format-ExitedChildDiagnostic $processCheckError $out $outExists $err $errExists)
     }
     $frame = Get-LatestFrame $Owner.stdout
     if ($null -ne $frame -and [long]$frame.State.presentation -gt $AfterPresentation -and (& $Predicate $frame.State)) { return $frame }
@@ -1325,24 +1354,40 @@ function New-RetainedClosedWireLog {
   )
 }
 
-function New-EmptyResultWireLog {
-  # Model serialization for an open query with no active option: Option values
-  # serialize as [] for active_index and null for active_id.
-  $accepted = [ordered]@{ presentation = 6; open_epoch = 2; open = $true; query = "absent"; matches = 0; visible_count = 0 }
+function New-RetainedNoActiveWireFrame {
+  param([ValidateSet(43, 44)][int]$Presentation)
+  # Exact relevant producer values copied from the retained manual run at
+  # _build/windows-command-palette/e2e/20261007T142455481Z/primary/app.stdout.log
+  # (P43 empty query result, P44 subsequent closed frame). Moon Option None is
+  # explicit JSON null; Some(index) remains the one-element array used above.
+  $isClosed = $Presentation -eq 44
+  $eventSequence = if ($isClosed) { 90 } else { 88 }
+  $focusOwner = if ($isClosed) { 9 } else { 2 }
+  $nativeOwner = if ($isClosed) { $null } else { [ordered]@{ owner_generation = 2; palette_open_epoch = 2; native_epoch = 5; sequence = "87"; composing = $false } }
+  $nativeUpdate = if ($isClosed) { 39 } else { 38 }
+  $nativeEnd = if ($isClosed) { 2 } else { 1 }
+  $query = "zzzz"
+  $accepted = [ordered]@{ presentation = $Presentation; open_epoch = 2; open = (-not $isClosed); query = $query; matches = 0; visible_count = 0 }
   $state = [ordered]@{
-    version = 1; presentation = 6; open = $true; open_epoch = 2; query = "absent"; field_text = "absent"; committed_text = "absent"; composing = $false
-    selection = [ordered]@{ anchor = 6; head = 6 }; matches = 0; active_id = $null; active_index = @(); visible_start = 0; visible_count = 0
-    actions = 0; last_action = ""; background_presses = 0; background_releases = 0; guarded_presses = 0; guarded_releases = 0
-    native_owner = $null; viewport = [ordered]@{ logical_width = 640; logical_height = 480; scale = 1; font_family = "Segoe UI"; font_size = 18 }
-    semantic = [ordered]@{ options = @() }
+    version = 1; presentation = $Presentation; open = (-not $isClosed); open_epoch = 2; query = $query; field_text = $query; committed_text = $query; composing = $false
+    selection = [ordered]@{ anchor = 4; head = 4 }; matches = 0; active_id = $null; active_index = $null; visible_start = 0; visible_count = 0
+    actions = 0; last_action = ""; background_presses = 0; background_releases = 0; guarded_presses = 0; guarded_releases = 1
+    focus_owner = $focusOwner; field_focused = (-not $isClosed)
+    caret = [ordered]@{ x = 60; y = 32; width = 2; height = 24 }; experimental_imm32 = $true
+    native_owner = $nativeOwner
+    native_counters = [ordered]@{ begin = 2; update = $nativeUpdate; cancel = 0; end = $nativeEnd; records = 6; stale_records = 0; rejected_records = 0 }
+    viewport = [ordered]@{ logical_width = 640; logical_height = 480; scale = 1; font_family = "Segoe UI"; font_size = 18 }
+    semantic = [ordered]@{ role = "dialog"; name = "Command palette"; search_role = "textbox"; search_name = "Search commands"; search_value = $query; search_focused = (-not $isClosed); collection_role = "listbox"; options = @() }
   }
-  $complete = [ordered]@{ presentation = 6; event_sequence = 19; open_epoch = 2; query = "absent"; visible_count = 0; active_id = $null }
+  $complete = [ordered]@{ presentation = $Presentation; event_sequence = $eventSequence; open_epoch = 2; query = $query; visible_count = 0; active_id = $null }
+  $edgeRgba = @(24, 28, 36, 255)
+  $centerRgba = if ($isClosed) { @(24, 28, 36, 255) } else { @(34, 39, 49, 255) }
   $readback = [ordered]@{
-    presentation = 6; frame_event_sequence = 19; viewport = [ordered]@{ logical_width = 640; logical_height = 480; scale = 1 }
+    presentation = $Presentation; frame_event_sequence = $eventSequence; viewport = [ordered]@{ logical_width = 640; logical_height = 480; scale = 1 }
     samples = @(
-      [ordered]@{ point = @(1, 1); rgba = @(24, 28, 36, 255) },
-      [ordered]@{ point = @(160, 160); rgba = @(24, 28, 36, 255) },
-      [ordered]@{ point = @(638, 478); rgba = @(24, 28, 36, 255) }
+      [ordered]@{ point = @(1, 1); rgba = $edgeRgba },
+      [ordered]@{ point = @(160, 160); rgba = $centerRgba },
+      [ordered]@{ point = @(638, 478); rgba = $edgeRgba }
     )
   }
   return @(
@@ -1487,9 +1532,41 @@ function Invoke-ParserTests {
     [IO.File]::WriteAllLines($path, [string[]](New-RetainedClosedWireLog), $utf8NoBom)
     $closed = Get-LatestFrame $path
     if ($null -eq $closed -or [bool]$closed.State.open -or $null -ne $closed.State.active_id -or $closed.Complete.active_id -ne "palette.command.0") { throw "Parser rejected the retained closed STATE/COMPLETE shape." }
-    [IO.File]::WriteAllLines($path, [string[]](New-EmptyResultWireLog), $utf8NoBom)
+    [IO.File]::WriteAllLines($path, [string[]](New-RetainedNoActiveWireFrame 43), $utf8NoBom)
     $emptyResult = Get-LatestFrame $path
-    if ($null -eq $emptyResult -or [int]$emptyResult.State.matches -ne 0 -or [int]$emptyResult.State.visible_count -ne 0 -or $emptyResult.State.active_index.Count -ne 0 -or $null -ne $emptyResult.State.active_id) { throw "Parser rejected a zero-match frame with no active Option." }
+    if ($null -eq $emptyResult -or [long]$emptyResult.State.presentation -ne 43 -or
+        -not [bool]$emptyResult.State.open -or [string]$emptyResult.State.query -cne "zzzz" -or
+        [int]$emptyResult.State.matches -ne 0 -or [int]$emptyResult.State.visible_count -ne 0 -or
+        $null -ne $emptyResult.State.active_index -or $null -ne $emptyResult.State.active_id) {
+      throw "Parser rejected the retained P43 open zero-match frame with explicit Option None/null."
+    }
+    $emptySemanticIdentity = Get-CaptureSemanticIdentity $emptyResult.State | ConvertFrom-Json -AsHashtable
+    if ($null -ne $emptySemanticIdentity.active_index) { throw "Capture semantic identity rewrote the P43 None selection as an array." }
+    $missingIndexState = [ordered]@{}; foreach ($key in $emptyResult.State.Keys) { if ($key -ne "active_index") { $missingIndexState[$key] = $emptyResult.State[$key] } }
+    if (Test-FrameTuple $emptyResult.Accepted $missingIndexState $emptyResult.Complete $emptyResult.Readback) { throw "Tuple parser confused a missing active_index key with explicit null Option None." }
+    $missingActiveIdState = [ordered]@{}; foreach ($key in $emptyResult.State.Keys) { if ($key -ne "active_id") { $missingActiveIdState[$key] = $emptyResult.State[$key] } }
+    if (Test-FrameTuple $emptyResult.Accepted $missingActiveIdState $emptyResult.Complete $emptyResult.Readback) { throw "Tuple parser confused a missing active_id key with explicit null Option None." }
+    $missingCompleteId = [ordered]@{}; foreach ($key in $emptyResult.Complete.Keys) { if ($key -ne "active_id") { $missingCompleteId[$key] = $emptyResult.Complete[$key] } }
+    if (Test-FrameTuple $emptyResult.Accepted $emptyResult.State $missingCompleteId $emptyResult.Readback) { throw "Tuple parser confused a missing COMPLETE active_id key with explicit null Option None." }
+    $emptyListState = [ordered]@{}; foreach ($key in $emptyResult.State.Keys) { $emptyListState[$key] = $emptyResult.State[$key] }; $emptyListState.active_index = @()
+    if (Test-FrameTuple $emptyResult.Accepted $emptyListState $emptyResult.Complete $emptyResult.Readback) { throw "Tuple parser accepted an empty array as a wire Option None." }
+    $stringIndexState = [ordered]@{}; foreach ($key in $emptyResult.State.Keys) { $stringIndexState[$key] = $emptyResult.State[$key] }; $stringIndexState.active_index = @("0")
+    if (Test-FrameTuple $emptyResult.Accepted $stringIndexState $emptyResult.Complete $emptyResult.Readback) { throw "Tuple parser accepted a string payload as an integer Some index." }
+    $multiIndexState = [ordered]@{}; foreach ($key in $emptyResult.State.Keys) { $multiIndexState[$key] = $emptyResult.State[$key] }; $multiIndexState.active_index = @(0, 1)
+    if (Test-FrameTuple $emptyResult.Accepted $multiIndexState $emptyResult.Complete $emptyResult.Readback) { throw "Tuple parser accepted malformed multiple Some indices." }
+    $someWithoutIndexState = [ordered]@{}; foreach ($key in $emptyResult.State.Keys) { $someWithoutIndexState[$key] = $emptyResult.State[$key] }; $someWithoutIndexState.active_id = "palette.command.0"
+    if (Test-FrameTuple $emptyResult.Accepted $someWithoutIndexState $emptyResult.Complete $emptyResult.Readback) { throw "Tuple parser accepted active_id Some with active_index None." }
+    $mismatchedNoneComplete = [ordered]@{}; foreach ($key in $emptyResult.Complete.Keys) { $mismatchedNoneComplete[$key] = $emptyResult.Complete[$key] }; $mismatchedNoneComplete.active_id = "palette.command.0"
+    if (Test-FrameTuple $emptyResult.Accepted $emptyResult.State $mismatchedNoneComplete $emptyResult.Readback) { throw "Tuple parser accepted a Some completion ID for a None state selection." }
+    $staleNoneReadback = [ordered]@{}; foreach ($key in $emptyResult.Readback.Keys) { $staleNoneReadback[$key] = $emptyResult.Readback[$key] }; $staleNoneReadback.frame_event_sequence = [long]$staleNoneReadback.frame_event_sequence + 1
+    if (Test-FrameTuple $emptyResult.Accepted $emptyResult.State $emptyResult.Complete $staleNoneReadback) { throw "Tuple parser accepted stale readback for the retained P43 frame." }
+    [IO.File]::AppendAllLines($path, [string[]](New-RetainedNoActiveWireFrame 44), $utf8NoBom)
+    $closedEmptyResult = Get-LatestFrame $path
+    if ($null -eq $closedEmptyResult -or [long]$closedEmptyResult.State.presentation -ne 44 -or
+        [bool]$closedEmptyResult.State.open -or $null -ne $closedEmptyResult.State.active_index -or
+        $null -ne $closedEmptyResult.State.active_id -or $null -ne $closedEmptyResult.Complete.active_id) {
+      throw "Parser rejected the retained P44 closed frame with explicit Option None/null."
+    }
     [IO.File]::WriteAllLines($path, [string[]](New-MockLog -Mismatch), $utf8NoBom)
     if ($null -ne (Get-LatestFrame $path)) { throw "Parser accepted mismatched completion/readback sequence." }
     [IO.File]::WriteAllLines($path, [string[]](New-MockLog -StateMismatch), $utf8NoBom)
@@ -1508,6 +1585,28 @@ function Invoke-ParserTests {
     $negativeCondition = $false
     try { Assert-Condition $false "expected condition guard failure" } catch { $negativeCondition = $_.Exception.Message -match "expected condition guard failure" }
     if (-not $negativeCondition) { throw "Assertion helper did not reject false." }
+    $emptyStderrDiagnostic = Format-ExitedChildDiagnostic "process exited with code 0" "last stdout record" $true $null $true
+    if ($emptyStderrDiagnostic -notmatch "process exited with code 0" -or
+        $emptyStderrDiagnostic -notmatch "stderr tail=<empty log>" -or
+        $emptyStderrDiagnostic -match "Substring") { throw "Child-exit formatter hid the process diagnostic when stderr exists but is empty." }
+    $missingLogsDiagnostic = Format-ExitedChildDiagnostic "process handle disappeared" $null $false $null $false
+    if ($missingLogsDiagnostic -notmatch "process handle disappeared" -or
+        $missingLogsDiagnostic -notmatch "stdout tail=<missing log>" -or
+        $missingLogsDiagnostic -notmatch "stderr tail=<missing log>") { throw "Child-exit formatter did not safely describe missing log files." }
+    $exitStdoutPath = Join-Path $runDir "validate-child-exit.stdout.log"
+    $exitStderrPath = Join-Path $runDir "validate-child-exit.stderr.log"
+    try {
+      [IO.File]::WriteAllText($exitStdoutPath, "", $utf8NoBom)
+      [IO.File]::WriteAllText($exitStderrPath, "", $utf8NoBom)
+      $missingOwner = [pscustomobject]@{ pid = [int]::MaxValue; start_ticks = 0L; stdout = $exitStdoutPath; stderr = $exitStderrPath }
+      $waitExitDiagnostic = $null
+      try { $null = Wait-ForFrame $missingOwner 0 { param($state) $false } 1 } catch { $waitExitDiagnostic = $_.Exception.Message }
+      if ($waitExitDiagnostic -notmatch "Owned fixture exited before predicate" -or
+          $waitExitDiagnostic -notmatch "stderr tail=<empty log>" -or
+          $waitExitDiagnostic -match "Substring") { throw "Wait-ForFrame did not preserve the fake child's exit diagnostic with empty log files." }
+    } finally {
+      Remove-Item -LiteralPath $exitStdoutPath, $exitStderrPath -ErrorAction SilentlyContinue
+    }
     Invoke-OwnershipGuardTests
   } finally {
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
@@ -1558,6 +1657,7 @@ function Invoke-OwnershipGuardTests {
   $inputBody = ($functions | Where-Object { $_.Name -eq "Invoke-OwnedInput" } | Select-Object -First 1).Body.Extent.Text
   $closeBody = ($functions | Where-Object { $_.Name -eq "Close-OwnedFixture" } | Select-Object -First 1).Body.Extent.Text
   $waitBody = ($functions | Where-Object { $_.Name -eq "Wait-OwnedWindow" } | Select-Object -First 1).Body.Extent.Text
+  $frameWaitBody = ($functions | Where-Object { $_.Name -eq "Wait-ForFrame" } | Select-Object -First 1).Body.Extent.Text
   $captureBody = ($functions | Where-Object { $_.Name -eq "Capture-OwnedClient" } | Select-Object -First 1).Body.Extent.Text
   $captureCoreBody = ($functions | Where-Object { $_.Name -eq "Capture-OwnedClientCore" } | Select-Object -First 1).Body.Extent.Text
   if ([string]::IsNullOrEmpty($inputBody) -or $inputBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -lt 0 -or
@@ -1571,6 +1671,7 @@ function Invoke-OwnershipGuardTests {
   if ([string]::IsNullOrEmpty($waitBody) -or $waitBody -notmatch 'Select-OwnedGpuiWindow' -or $waitBody -match '\.Title\s+-match') {
     throw "Window discovery must select the exact native GPUI class and cannot require a caption."
   }
+  if ([string]::IsNullOrEmpty($frameWaitBody) -or $frameWaitBody -notmatch 'Format-ExitedChildDiagnostic') { throw "Wait-ForFrame must use the tested safe child-exit log formatter." }
   if ([string]::IsNullOrEmpty($captureBody) -or $captureBody -notmatch 'Invoke-CaptureStableRetry' -or
       [string]::IsNullOrEmpty($captureCoreBody) -or $captureCoreBody -notmatch 'Get-CaptureBracketDecision' -or
       $captureCoreBody -notmatch 'Test-CandidateGeometryMatchesFrame') {
@@ -1643,7 +1744,7 @@ function Test-ImeGuardDelta {
 
 if ($Mode -eq "Validate") {
   Invoke-ParserTests
-  [ordered]@{ status = "PASS"; input_size = [PaletteE2E.Win32]::InputStructureSize(); process_bits = [IntPtr]::Size * 8; input_events = 0; fixtures_launched = 0; tests = @("valid open observer tuple and disabled option", "filtered Go command.1/index0 observer identity", "filtered Japanese command.3/index0 observer identity", "retained closed STATE/COMPLETE wire shape", "zero-match Option None wire shape", "reject mismatched completion/readback identity", "reject accepted/state query mismatch", "reject READBACK_UNAVAILABLE", "reject newer incomplete accepted/state frame", "Option None/single-index/malformed multi-index cases", "IME guard deltas: OS-consumed 0/0, app-guarded 1/1, and app-delivered Escape release 0/1", "scroll capture adopts equivalent presentation 31 after expected presentation 30 with only native update count changed", "reject leaked background/guarded key counters and changed IMM32/native owner/native record provenance before capture", "capture callback failure is retained as a terminal frame-identified attempt", "scroll capture rejects active-row semantic change and preserves 30→31 strict identity retry", "pending and persistent frame advancement time out without a green capture", "candidate geometry remains tied to the matching semantic caret state", "runtime capture uses bounded semantic settle and exact before/after identity", "blank-caption GPUI discovery ignores same-PID console and other-PID/invisible decoys", "ambiguous multiple same-PID GPUI windows rejected", "wrong start ticks/executable/hash/missing HWND/zero HWND rejected before input", "native QueryFullProcessImageNameW PID path plus SHA-256 ownership guard, including nonexistent-PID failure", "source ordering proves owner validation before SendInput and WM_CLOSE") } | ConvertTo-Json -Depth 6
+  [ordered]@{ status = "PASS"; input_size = [PaletteE2E.Win32]::InputStructureSize(); process_bits = [IntPtr]::Size * 8; input_events = 0; fixtures_launched = 0; tests = @("valid open observer tuple and disabled option", "filtered Go command.1/index0 observer identity", "filtered Japanese command.3/index0 observer identity", "retained closed STATE/COMPLETE wire shape", "actual P43 open-empty and P44 closed-empty frames parse explicit active_index:null", "reject missing active-index/id keys, empty/string/multiple arrays, Some/None mismatches and stale P43 readback", "reject mismatched completion/readback identity", "reject accepted/state query mismatch", "reject READBACK_UNAVAILABLE", "reject newer incomplete accepted/state frame", "Option None/single-index/malformed multi-index cases", "IME guard deltas: OS-consumed 0/0, app-guarded 1/1, and app-delivered Escape release 0/1", "scroll capture adopts equivalent presentation 31 after expected presentation 30 with only native update count changed", "reject leaked background/guarded key counters and changed IMM32/native owner/native record provenance before capture", "capture callback failure is retained as a terminal frame-identified attempt", "scroll capture rejects active-row semantic change and preserves 30→31 strict identity retry", "pending and persistent frame advancement time out without a green capture", "candidate geometry remains tied to the matching semantic caret state", "runtime capture uses bounded semantic settle and exact before/after identity", "blank-caption GPUI discovery ignores same-PID console and other-PID/invisible decoys", "ambiguous multiple same-PID GPUI windows rejected", "wrong start ticks/executable/hash/missing HWND/zero HWND rejected before input", "native QueryFullProcessImageNameW PID path plus SHA-256 ownership guard, including nonexistent-PID failure", "source ordering proves owner validation before SendInput and WM_CLOSE", "empty/missing stderr child-exit diagnostics preserve the process cause") } | ConvertTo-Json -Depth 6
   return
 }
 
