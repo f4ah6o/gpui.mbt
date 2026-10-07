@@ -52,6 +52,8 @@ $script:result = [ordered]@{
   fixtures = @()
   focus_changes = @()
   input_events = @()
+  input_event_total_basis = $null
+  input_event_totals_error = $null
   window_discovery = @()
   captures = @()
   capture_settlements = @()
@@ -113,6 +115,44 @@ function Add-InputEvidence {
     at_utc = [DateTime]::UtcNow.ToString("o")
   }
   Save-Result
+}
+
+function Get-InputEventTotals {
+  param([AllowNull()][object]$Events)
+  if ($null -eq $Events -or $Events -isnot [System.Collections.IList]) {
+    throw "Input-event evidence must be an explicit list, including when empty."
+  }
+  [long]$requestedTotal = 0
+  [long]$insertedTotal = 0
+  foreach ($event in $Events) {
+    if ($event -isnot [System.Collections.IDictionary] -or
+        -not $event.Contains("action") -or $event.action -isnot [string] -or
+        -not $event.Contains("virtual_keys") -or $event.virtual_keys -isnot [System.Collections.IList] -or
+        -not $event.Contains("requested") -or -not $event.Contains("inserted")) {
+      throw "Input-event evidence is missing its action, virtual key list, requested count, or inserted count."
+    }
+    if (-not (Test-ExactInteger $event.requested 1 2147483647) -or
+        -not (Test-ExactInteger $event.inserted 0 2147483647) -or
+        [long]$event.inserted -gt [long]$event.requested -or
+        $event.virtual_keys.Count -ne [long]$event.requested) {
+      throw "Input-event evidence has an invalid count or virtual-key payload for '$($event.action)'."
+    }
+    foreach ($virtualKey in $event.virtual_keys) {
+      if (-not (Test-ExactInteger $virtualKey 0 65535)) { throw "Input-event evidence has an invalid virtual-key value for '$($event.action)'." }
+    }
+    if ($requestedTotal -gt ([long]::MaxValue - [long]$event.requested) -or
+        $insertedTotal -gt ([long]::MaxValue - [long]$event.inserted)) {
+      throw "Input-event evidence total exceeds Int64 range."
+    }
+    $requestedTotal += [long]$event.requested
+    $insertedTotal += [long]$event.inserted
+  }
+  return [pscustomobject]@{
+    batch_count = [int]$Events.Count
+    requested_keyboard_events_total = $requestedTotal
+    inserted_keyboard_events_total = $insertedTotal
+    basis = "sum of requested/inserted counts for input_events primary SendInput batches; targeted partial-release attempts remain separately recorded under failure.targeted_release."
+  }
 }
 
 function Get-RecordPayload {
@@ -1607,6 +1647,42 @@ function Invoke-ParserTests {
     } finally {
       Remove-Item -LiteralPath $exitStdoutPath, $exitStderrPath -ErrorAction SilentlyContinue
     }
+    # Exact input_events array retained from user run 20261007T142455481Z;
+    # keep this deterministic fixture so Validate does not depend on _build.
+    $inputBatchFixturePath = Join-Path $PSScriptRoot "testdata/windows-command-palette-input-events-25-batches.json"
+    $actualInputBatches = @(Get-Content -Raw -LiteralPath $inputBatchFixturePath | ConvertFrom-Json -AsHashtable)
+    $actualInputTotals = Get-InputEventTotals $actualInputBatches
+    if ($actualInputTotals.batch_count -ne 25 -or
+        $actualInputTotals.requested_keyboard_events_total -ne 58 -or
+        $actualInputTotals.inserted_keyboard_events_total -ne 58) {
+      throw "Retained actual 25-batch input_events wire fixture did not total 58 requested / 58 inserted."
+    }
+    $emptyInputBatches = [System.Collections.Generic.List[object]]::new()
+    $emptyInputTotals = Get-InputEventTotals $emptyInputBatches
+    if ($emptyInputTotals.batch_count -ne 0 -or $emptyInputTotals.requested_keyboard_events_total -ne 0 -or
+        $emptyInputTotals.inserted_keyboard_events_total -ne 0) { throw "Zero-batch input evidence did not total 0 / 0." }
+    $rejectedMissingInputList = $false
+    try { $null = Get-InputEventTotals -Events $null } catch { $rejectedMissingInputList = $true }
+    if (-not $rejectedMissingInputList) { throw "Input totals confused missing input_events with a valid zero-batch list." }
+    $partialInputEvent = [ordered]@{ action = "partial regression"; virtual_keys = @(65, 65, 66, 66); requested = 4; inserted = 2 }
+    $partialInputTotals = Get-InputEventTotals @($partialInputEvent)
+    if ($partialInputTotals.batch_count -ne 1 -or $partialInputTotals.requested_keyboard_events_total -ne 4 -or
+        $partialInputTotals.inserted_keyboard_events_total -ne 2) { throw "Partial insertion evidence was not reported accurately." }
+    $malformedInputCases = @(
+      [pscustomobject]@{ name = "missing requested"; event = [ordered]@{ action = "missing requested"; virtual_keys = @(65); inserted = 1 } },
+      [pscustomobject]@{ name = "missing inserted"; event = [ordered]@{ action = "missing inserted"; virtual_keys = @(65); requested = 1 } },
+      [pscustomobject]@{ name = "string count"; event = [ordered]@{ action = "string count"; virtual_keys = @(65); requested = "1"; inserted = 1 } },
+      [pscustomobject]@{ name = "string inserted"; event = [ordered]@{ action = "string inserted"; virtual_keys = @(65); requested = 1; inserted = "1" } },
+      [pscustomobject]@{ name = "fractional requested"; event = [ordered]@{ action = "fractional requested"; virtual_keys = @(65); requested = 1.5; inserted = 1 } },
+      [pscustomobject]@{ name = "key count mismatch"; event = [ordered]@{ action = "key count mismatch"; virtual_keys = @(65); requested = 2; inserted = 1 } },
+      [pscustomobject]@{ name = "inserted exceeds requested"; event = [ordered]@{ action = "inserted exceeds requested"; virtual_keys = @(65); requested = 1; inserted = 2 } },
+      [pscustomobject]@{ name = "invalid virtual key"; event = [ordered]@{ action = "invalid virtual key"; virtual_keys = @("A"); requested = 1; inserted = 1 } }
+    )
+    foreach ($case in $malformedInputCases) {
+      $rejectedInput = $false
+      try { $null = Get-InputEventTotals @($case.event) } catch { $rejectedInput = $true }
+      if (-not $rejectedInput) { throw "Input-event totals accepted malformed $($case.name) evidence." }
+    }
     Invoke-OwnershipGuardTests
   } finally {
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
@@ -1664,6 +1740,9 @@ function Invoke-OwnershipGuardTests {
       $inputBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -gt $inputBody.IndexOf("SendEvents(", [StringComparison]::Ordinal)) {
     throw "Input path no longer validates exact process ownership before SendInput."
   }
+  if ($inputBody.IndexOf('$native.Inserted -ne $native.Requested', [StringComparison]::Ordinal) -lt 0) {
+    throw "Per-batch SendInput inserted-count guard was removed or weakened."
+  }
   if ([string]::IsNullOrEmpty($closeBody) -or $closeBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -lt 0 -or
       $closeBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -gt $closeBody.IndexOf("SendClose(", [StringComparison]::Ordinal)) {
     throw "Close path no longer validates exact process ownership before WM_CLOSE."
@@ -1672,6 +1751,11 @@ function Invoke-OwnershipGuardTests {
     throw "Window discovery must select the exact native GPUI class and cannot require a caption."
   }
   if ([string]::IsNullOrEmpty($frameWaitBody) -or $frameWaitBody -notmatch 'Format-ExitedChildDiagnostic') { throw "Wait-ForFrame must use the tested safe child-exit log formatter." }
+  $sourceText = [IO.File]::ReadAllText($PSCommandPath)
+  if ($sourceText -notmatch 'Get-InputEventTotals\s+\$script:result\.input_events' -or
+      $sourceText -match 'Measure-Object\s+-Property\s+(requested|inserted)\s+-Sum') {
+    throw "Final evidence must compute keyboard totals through the validated explicit input-event helper."
+  }
   if ([string]::IsNullOrEmpty($captureBody) -or $captureBody -notmatch 'Invoke-CaptureStableRetry' -or
       [string]::IsNullOrEmpty($captureCoreBody) -or $captureCoreBody -notmatch 'Get-CaptureBracketDecision' -or
       $captureCoreBody -notmatch 'Test-CandidateGeometryMatchesFrame') {
@@ -1744,7 +1828,7 @@ function Test-ImeGuardDelta {
 
 if ($Mode -eq "Validate") {
   Invoke-ParserTests
-  [ordered]@{ status = "PASS"; input_size = [PaletteE2E.Win32]::InputStructureSize(); process_bits = [IntPtr]::Size * 8; input_events = 0; fixtures_launched = 0; tests = @("valid open observer tuple and disabled option", "filtered Go command.1/index0 observer identity", "filtered Japanese command.3/index0 observer identity", "retained closed STATE/COMPLETE wire shape", "actual P43 open-empty and P44 closed-empty frames parse explicit active_index:null", "reject missing active-index/id keys, empty/string/multiple arrays, Some/None mismatches and stale P43 readback", "reject mismatched completion/readback identity", "reject accepted/state query mismatch", "reject READBACK_UNAVAILABLE", "reject newer incomplete accepted/state frame", "Option None/single-index/malformed multi-index cases", "IME guard deltas: OS-consumed 0/0, app-guarded 1/1, and app-delivered Escape release 0/1", "scroll capture adopts equivalent presentation 31 after expected presentation 30 with only native update count changed", "reject leaked background/guarded key counters and changed IMM32/native owner/native record provenance before capture", "capture callback failure is retained as a terminal frame-identified attempt", "scroll capture rejects active-row semantic change and preserves 30→31 strict identity retry", "pending and persistent frame advancement time out without a green capture", "candidate geometry remains tied to the matching semantic caret state", "runtime capture uses bounded semantic settle and exact before/after identity", "blank-caption GPUI discovery ignores same-PID console and other-PID/invisible decoys", "ambiguous multiple same-PID GPUI windows rejected", "wrong start ticks/executable/hash/missing HWND/zero HWND rejected before input", "native QueryFullProcessImageNameW PID path plus SHA-256 ownership guard, including nonexistent-PID failure", "source ordering proves owner validation before SendInput and WM_CLOSE", "empty/missing stderr child-exit diagnostics preserve the process cause") } | ConvertTo-Json -Depth 6
+  [ordered]@{ status = "PASS"; input_size = [PaletteE2E.Win32]::InputStructureSize(); process_bits = [IntPtr]::Size * 8; input_events = 0; fixtures_launched = 0; tests = @("valid open observer tuple and disabled option", "filtered Go command.1/index0 observer identity", "filtered Japanese command.3/index0 observer identity", "retained closed STATE/COMPLETE wire shape", "actual P43 open-empty and P44 closed-empty frames parse explicit active_index:null", "reject missing active-index/id keys, empty/string/multiple arrays, Some/None mismatches and stale P43 readback", "reject mismatched completion/readback identity", "reject accepted/state query mismatch", "reject READBACK_UNAVAILABLE", "reject newer incomplete accepted/state frame", "Option None/single-index/malformed multi-index cases", "IME guard deltas: OS-consumed 0/0, app-guarded 1/1, and app-delivered Escape release 0/1", "scroll capture adopts equivalent presentation 31 after expected presentation 30 with only native update count changed", "reject leaked background/guarded key counters and changed IMM32/native owner/native record provenance before capture", "capture callback failure is retained as a terminal frame-identified attempt", "scroll capture rejects active-row semantic change and preserves 30→31 strict identity retry", "pending and persistent frame advancement time out without a green capture", "candidate geometry remains tied to the matching semantic caret state", "runtime capture uses bounded semantic settle and exact before/after identity", "blank-caption GPUI discovery ignores same-PID console and other-PID/invisible decoys", "ambiguous multiple same-PID GPUI windows rejected", "wrong start ticks/executable/hash/missing HWND/zero HWND rejected before input", "native QueryFullProcessImageNameW PID path plus SHA-256 ownership guard, including nonexistent-PID failure", "source ordering proves owner validation before SendInput and WM_CLOSE", "empty/missing stderr child-exit diagnostics preserve the process cause", "validated input-event total helper covers retained 25/58/58 array, zero batches, partial insertion, malformed counts, and unchanged per-batch guard") } | ConvertTo-Json -Depth 6
   return
 }
 
@@ -2086,8 +2170,21 @@ try {
   $script:result.input_event_count = $script:result.input_events.Count
   $script:result.input_sendinput_batch_count = $script:result.input_events.Count
   $script:result.launched_process_count = $script:result.fixtures.Count
-  $script:result.requested_keyboard_events_total = [long](($script:result.input_events | Measure-Object -Property requested -Sum).Sum)
-  $script:result.inserted_keyboard_events_total = [long](($script:result.input_events | Measure-Object -Property inserted -Sum).Sum)
+  try {
+    $inputTotals = Get-InputEventTotals $script:result.input_events
+    $script:result.input_event_count = $inputTotals.batch_count
+    $script:result.input_sendinput_batch_count = $inputTotals.batch_count
+    $script:result.requested_keyboard_events_total = $inputTotals.requested_keyboard_events_total
+    $script:result.inserted_keyboard_events_total = $inputTotals.inserted_keyboard_events_total
+    $script:result.input_event_total_basis = $inputTotals.basis
+  } catch {
+    $script:result.status = "FAIL"
+    $script:result.requested_keyboard_events_total = $null
+    $script:result.inserted_keyboard_events_total = $null
+    $script:result.input_event_totals_error = $_.Exception.Message
+    $inputTotalsFailure = [ordered]@{ kind = "input_event_totals"; message = $_.Exception.Message; at_utc = [DateTime]::UtcNow.ToString("o") }
+    if ($null -eq $script:result.failure) { $script:result.failure = $inputTotalsFailure } else { $script:result.input_event_totals_failure = $inputTotalsFailure }
+  }
   $script:result.fixture_process_count = $script:result.fixtures.Count
   $script:result.focus_policy_bypass = $false
   $script:result.input_injection_count = $script:result.input_events.Count

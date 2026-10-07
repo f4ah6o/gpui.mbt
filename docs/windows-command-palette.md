@@ -84,6 +84,10 @@ _build/windows-command-palette/e2e/ (or -OutputDirectory). The parser rejects
 a newer incomplete frame so captures cannot be paired with stale readback. It
 preserves the observer's Option encoding (`[index]` for Some and explicit JSON
 `null` for None); missing keys and malformed arrays do not stand in for None.
+Keyboard-event totals sum the validated `requested` and `inserted` counts across
+the primary SendInput batches in `input_events`; targeted partial-release
+attempts remain separately recorded under `failure.targeted_release`. Partial
+insertion remains visible in totals and still fails the per-batch input guard.
 After a requested state is reached, capture may settle on a newer complete
 frame only when its visible palette state, search selection, focus, caret,
 viewport, options, IMM32 mode, key counters, native owner generation/epoch/
