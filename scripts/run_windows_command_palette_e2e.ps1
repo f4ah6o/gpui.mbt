@@ -54,6 +54,7 @@ $script:result = [ordered]@{
   input_events = @()
   window_discovery = @()
   captures = @()
+  capture_settlements = @()
   stages = @()
   ime = [ordered]@{ original_layout = $null; original_state = $null; japanese_layout = $null; restoration = $null }
   cleanup = @()
@@ -256,6 +257,153 @@ function Get-FrameIdentity {
     completed = $Frame.Complete
     readback = $Frame.Readback
   } | ConvertTo-Json -Depth 20 -Compress
+}
+
+function Get-CaptureSemanticIdentity {
+  param([System.Collections.IDictionary]$State)
+  $ownerIdentity = $null
+  if ($null -ne $State.native_owner) {
+    $ownerIdentity = [ordered]@{
+      owner_generation = $State.native_owner.owner_generation
+      palette_open_epoch = $State.native_owner.palette_open_epoch
+      native_epoch = $State.native_owner.native_epoch
+      sequence = $State.native_owner.sequence
+      composing = $State.native_owner.composing
+    }
+  }
+  $nativeCountersIdentity = $null
+  if ($null -ne $State.native_counters) {
+    # update is a presentation-side count and can advance while an otherwise
+    # unchanged accepted frame is settling. All record/fence counters remain
+    # part of the state so key leaks or rejected native records cannot be
+    # adopted as equivalent pixels.
+    $nativeCountersIdentity = [ordered]@{
+      begin = $State.native_counters.begin
+      cancel = $State.native_counters.cancel
+      end = $State.native_counters.end
+      records = $State.native_counters.records
+      stale_records = $State.native_counters.stale_records
+      rejected_records = $State.native_counters.rejected_records
+    }
+  }
+  $selection = if ($null -ne $State.selection) { [ordered]@{ anchor = $State.selection.anchor; head = $State.selection.head } } else { $null }
+  $caret = if ($null -ne $State.caret) { [ordered]@{ x = $State.caret.x; y = $State.caret.y; width = $State.caret.width; height = $State.caret.height } } else { $null }
+  $viewport = if ($null -ne $State.viewport) { [ordered]@{ logical_width = $State.viewport.logical_width; logical_height = $State.viewport.logical_height; scale = $State.viewport.scale; font_family = $State.viewport.font_family; font_size = $State.viewport.font_size } } else { $null }
+  $options = if ($null -ne $State.semantic -and $null -ne $State.semantic.options) { @($State.semantic.options) } else { @() }
+  return [ordered]@{
+    open = $State.open
+    open_epoch = $State.open_epoch
+    query = $State.query
+    field_text = $State.field_text
+    committed_text = $State.committed_text
+    composing = $State.composing
+    selection = $selection
+    matches = $State.matches
+    active_id = $State.active_id
+    active_index = @($State.active_index)
+    visible_start = $State.visible_start
+    visible_count = $State.visible_count
+    actions = $State.actions
+    last_action = $State.last_action
+    background_presses = $State.background_presses
+    background_releases = $State.background_releases
+    guarded_presses = $State.guarded_presses
+    guarded_releases = $State.guarded_releases
+    focus_owner = $State.focus_owner
+    field_focused = $State.field_focused
+    experimental_imm32 = $State.experimental_imm32
+    caret = $caret
+    viewport = $viewport
+    semantic_options = $options
+    native_owner_identity = $ownerIdentity
+    native_counters_identity = $nativeCountersIdentity
+  } | ConvertTo-Json -Depth 20 -Compress
+}
+
+function Test-CaptureSemanticState {
+  param([System.Collections.IDictionary]$Actual, [System.Collections.IDictionary]$Expected)
+  return (Get-CaptureSemanticIdentity $Actual) -ceq (Get-CaptureSemanticIdentity $Expected)
+}
+
+function Test-CandidateGeometryMatchesFrame {
+  param([object]$Extra, [object]$Frame)
+  if ($null -eq $Extra -or -not $Extra.source_semantic_identity) { return $true }
+  return [string]::Equals([string]$Extra.source_semantic_identity, (Get-CaptureSemanticIdentity $Frame.State), [StringComparison]::Ordinal)
+}
+
+function Get-CaptureBracketDecision {
+  param([object]$Before, [object]$After, [System.Collections.IDictionary]$ExpectedState)
+  if ($null -eq $Before) { return "RETRY_BEFORE_FRAME_PENDING" }
+  if (-not (Test-CaptureSemanticState $Before.State $ExpectedState)) { return "SEMANTIC_STATE_CHANGED_BEFORE_CAPTURE" }
+  if ($null -eq $After) { return "RETRY_AFTER_FRAME_PENDING" }
+  if (-not (Test-CaptureSemanticState $After.State $ExpectedState)) { return "SEMANTIC_STATE_CHANGED_DURING_CAPTURE" }
+  if ((Get-FrameIdentity $Before) -ceq (Get-FrameIdentity $After)) { return "STABLE" }
+  return "RETRY_NEWER_EQUIVALENT_FRAME"
+}
+
+function Invoke-CaptureStableRetry {
+  param(
+    [object]$Owner,
+    [string]$Name,
+    [object]$ExpectedFrame,
+    [object]$Extra,
+    [scriptblock]$FrameReader,
+    [scriptblock]$CaptureAttempt,
+    [int]$TimeoutMilliseconds = 3000,
+    [int]$MaximumPolls = 20,
+    [int]$PollIntervalMilliseconds = 50
+  )
+  $watch = [Diagnostics.Stopwatch]::StartNew()
+  $attempts = [System.Collections.Generic.List[object]]::new()
+  $captureCount = 0
+  for ($poll = 1; $poll -le $MaximumPolls -and $watch.ElapsedMilliseconds -lt $TimeoutMilliseconds; $poll++) {
+    $frame = & $FrameReader $Owner
+    if ($null -eq $frame) {
+      [void]$attempts.Add([ordered]@{ poll = $poll; status = "WAITING_FOR_COMPLETE_FRAME" })
+    } elseif (-not (Test-CaptureSemanticState $frame.State $ExpectedFrame.State)) {
+      [void]$attempts.Add([ordered]@{ poll = $poll; status = "SEMANTIC_STATE_CHANGED"; presentation = [long]$frame.State.presentation; frame_identity = Get-FrameIdentity $frame })
+      return [pscustomobject]@{ status = "SEMANTIC_STATE_CHANGED"; frame = $frame; capture = $null; attempts = @($attempts.ToArray()); reason = "Latest complete frame no longer matches the requested semantic state." }
+    } else {
+      $captureCount++
+      try {
+        $capture = & $CaptureAttempt $Owner $Name $frame $ExpectedFrame $Extra $captureCount
+      } catch {
+        $failure = [ordered]@{
+          poll = $poll
+          status = "CAPTURE_EXCEPTION"
+          capture_attempt = $captureCount
+          presentation = [long]$frame.State.presentation
+          frame_identity = Get-FrameIdentity $frame
+          error = $_.Exception.Message
+        }
+        $attemptBitmapName = if ($captureCount -eq 1) { "$Name.bmp" } else { "$Name.attempt-$captureCount.bmp" }
+        $attemptBitmapPath = Join-Path $runDir $attemptBitmapName
+        if (Test-Path -LiteralPath $attemptBitmapPath) {
+          $failure.bitmap = $attemptBitmapPath
+          try { $failure.bitmap_sha256 = (Get-FileHash -LiteralPath $attemptBitmapPath -Algorithm SHA256).Hash.ToLowerInvariant() }
+          catch { $failure.bitmap_hash_error = $_.Exception.Message }
+        }
+        $attemptManifest = Join-Path $runDir "$Name.capture-$captureCount.failure.json"
+        $failure.attempt_manifest = $attemptManifest
+        try { $failure | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $attemptManifest -Encoding utf8 }
+        catch { $failure.attempt_manifest_error = $_.Exception.Message }
+        [void]$attempts.Add($failure)
+        return [pscustomobject]@{ status = "FAIL"; frame = $frame; capture = $null; attempts = @($attempts.ToArray()); reason = "Capture attempt failed terminally: $($_.Exception.Message)" }
+      }
+      $attempts.Add([ordered]@{ poll = $poll; status = [string]$capture.status; presentation = [long]$frame.State.presentation; frame_identity = Get-FrameIdentity $frame; reason = $capture.reason })
+      if ($capture.status -eq "STABLE") {
+        return [pscustomobject]@{ status = "PASS"; frame = $frame; capture = $capture; attempts = @($attempts.ToArray()); reason = $null }
+      }
+      if ($capture.status -in @("SEMANTIC_STATE_CHANGED_BEFORE_CAPTURE", "SEMANTIC_STATE_CHANGED_DURING_CAPTURE")) {
+        return [pscustomobject]@{ status = "SEMANTIC_STATE_CHANGED"; frame = $frame; capture = $capture; attempts = @($attempts.ToArray()); reason = [string]$capture.reason }
+      }
+      if ($capture.status -notin @("RETRY_BEFORE_FRAME_PENDING", "RETRY_AFTER_FRAME_PENDING", "RETRY_NEWER_EQUIVALENT_FRAME")) {
+        return [pscustomobject]@{ status = "FAIL"; frame = $frame; capture = $capture; attempts = @($attempts.ToArray()); reason = "Capture attempt returned unexpected status '$($capture.status)'." }
+      }
+    }
+    if ($PollIntervalMilliseconds -gt 0) { Start-Sleep -Milliseconds $PollIntervalMilliseconds }
+  }
+  return [pscustomobject]@{ status = "TIMEOUT"; frame = $null; capture = $null; attempts = @($attempts.ToArray()); reason = "No stable equivalent completed frame within ${TimeoutMilliseconds}ms and $MaximumPolls polls." }
 }
 
 function Assert-OwnedProcessIdentity {
@@ -581,10 +729,23 @@ function Start-OwnedFixture {
 }
 
 function Capture-OwnedClientCore {
-  param([object]$Owner, [string]$Name, [object]$ExpectedFrame, [object]$Extra = $null)
+  param([object]$Owner, [string]$Name, [object]$CandidateFrame, [object]$ExpectedFrame, [object]$Extra = $null, [int]$CaptureNumber = 1)
   Assert-OwnedForeground $Owner
-  $before = Get-CurrentFrame $Owner; $identity = Get-FrameIdentity $ExpectedFrame
-  if ((Get-FrameIdentity $before) -ne $identity) { throw "Capture $Name began after expected frame/state changed." }
+  if ($null -eq $CandidateFrame -or -not (Test-CaptureSemanticState $CandidateFrame.State $ExpectedFrame.State)) {
+    return [pscustomobject]@{ status = "SEMANTIC_STATE_CHANGED_BEFORE_CAPTURE"; record = $null; reason = "The selected candidate frame does not match the requested semantic state." }
+  }
+  $before = Get-LatestFrame $Owner.stdout
+  if ($null -eq $before) {
+    return [pscustomobject]@{ status = "RETRY_BEFORE_FRAME_PENDING"; record = $null; reason = "The newest accepted state has no complete readback tuple yet." }
+  }
+  if (-not (Test-CaptureSemanticState $before.State $ExpectedFrame.State)) {
+    return [pscustomobject]@{ status = "SEMANTIC_STATE_CHANGED_BEFORE_CAPTURE"; record = $null; reason = "The newest complete frame no longer matches the requested semantic state." }
+  }
+  $identity = Get-FrameIdentity $before
+  $semanticIdentity = Get-CaptureSemanticIdentity $ExpectedFrame.State
+  if (-not (Test-CandidateGeometryMatchesFrame $Extra $before)) {
+    return [pscustomobject]@{ status = "SEMANTIC_STATE_CHANGED_BEFORE_CAPTURE"; record = $null; reason = "Candidate geometry evidence belongs to a different semantic state than the adopted frame." }
+  }
   $hwnd = Assert-OwnedProcess $Owner
   $client = [PaletteE2E.RECT]::new()
   if (-not [PaletteE2E.Win32]::GetClientRect($hwnd, [ref]$client)) { throw "GetClientRect failed; Win32=$([Runtime.InteropServices.Marshal]::GetLastWin32Error())." }
@@ -598,7 +759,8 @@ function Capture-OwnedClientCore {
   $vx = [PaletteE2E.Win32]::GetSystemMetrics(76); $vy = [PaletteE2E.Win32]::GetSystemMetrics(77)
   $vw = [PaletteE2E.Win32]::GetSystemMetrics(78); $vh = [PaletteE2E.Win32]::GetSystemMetrics(79)
   if ($origin.X -lt $vx -or $origin.Y -lt $vy -or ($origin.X + $width) -gt ($vx + $vw) -or ($origin.Y + $height) -gt ($vy + $vh)) { throw "Client capture rectangle is outside the physical virtual screen." }
-  $path = Join-Path $runDir "$Name.bmp"
+  $bitmapName = if ($CaptureNumber -eq 1) { "$Name.bmp" } else { "$Name.attempt-$CaptureNumber.bmp" }
+  $path = Join-Path $runDir $bitmapName
   $dwmBefore = [PaletteE2E.Win32]::DwmFlush()
   if ($dwmBefore -lt 0) { throw "DwmFlush before capture failed; HRESULT=0x$('{0:X8}' -f [uint32]$dwmBefore)." }
   $capture = [PaletteE2E.CaptureResult]::new()
@@ -610,18 +772,28 @@ function Capture-OwnedClientCore {
   $bmpWidth = [BitConverter]::ToInt32($bytes, 18); $bmpHeight = [BitConverter]::ToInt32($bytes, 22)
   if ($bytes.Length -ne (54 + ($width * $height * 4)) -or $bmpWidth -ne $width -or $bmpHeight -ne (-$height) -or $bytes[0] -ne 0x42 -or $bytes[1] -ne 0x4d) { throw "BMP header/byte geometry validation failed for $Name." }
   Assert-OwnedForeground $Owner
-  $after = Get-CurrentFrame $Owner
-  $afterIdentity = Get-FrameIdentity $after
-  $stable = ($identity -eq $afterIdentity)
+  $after = Get-LatestFrame $Owner.stdout
+  $decision = Get-CaptureBracketDecision $before $after $ExpectedFrame.State
+  $afterIdentity = if ($null -ne $after) { Get-FrameIdentity $after } else { $null }
+  $afterSemanticIdentity = if ($null -ne $after) { Get-CaptureSemanticIdentity $after.State } else { $null }
+  $stable = $decision -eq "STABLE"
   $record = [ordered]@{
     name = $Name
+    capture_attempt = $CaptureNumber
     capture_kind = "visible compositor client via screen-DC BitBlt/CAPTUREBLT"
     bitmap_format = "top-down 32-bpp BI_RGB BMP (BGRX, alpha ignored)"
     presentation = [long]$before.State.presentation
     frame_event_sequence = [long]$before.Complete.event_sequence
+    retry_candidate_identity = Get-FrameIdentity $CandidateFrame
     state_identity = $identity
+    expected_semantic_identity = $semanticIdentity
+    extra_source_frame_identity = if ($Extra -and $Extra.source_frame_identity) { $Extra.source_frame_identity } else { $null }
+    extra_source_semantic_identity = if ($Extra -and $Extra.source_semantic_identity) { $Extra.source_semantic_identity } else { $null }
+    before_semantic_identity = Get-CaptureSemanticIdentity $before.State
+    after_semantic_identity = $afterSemanticIdentity
     before_identity = (Get-FrameIdentity $before)
     after_identity = $afterIdentity
+    capture_bracket_decision = $decision
     stable_frame_bracketing = $stable
     frame_state = $before.State
     screen_client_rect = [ordered]@{ x = $origin.X; y = $origin.Y; width = $width; height = $height }
@@ -637,11 +809,10 @@ function Capture-OwnedClientCore {
     human_pixel_audit = "UNRUN"
     extra = $Extra
   }
-  $record | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $runDir "$Name.json") -Encoding utf8
+  $record | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $runDir "$Name.capture-$CaptureNumber.json") -Encoding utf8
   $script:result.captures += $record
   Save-Result
-  if (-not $stable) { throw "Capture $Name was not bracketed by an unchanged accepted/completed/readback state identity." }
-  return $record
+  return [pscustomobject]@{ status = $decision; record = $record; reason = if ($decision -eq "STABLE") { $null } else { "The capture did not retain the exact frame identity before and after BitBlt; decision=$decision." } }
 }
 
 function Capture-OwnedClient {
@@ -649,11 +820,30 @@ function Capture-OwnedClient {
   $stage = "pixel_capture_$Name"
   Start-Stage $stage
   try {
-    $record = Capture-OwnedClientCore $Owner $Name $ExpectedFrame $Extra
-    Add-Stage $stage "PASS" ([ordered]@{ bitmap = $record.bitmap; sha256 = $record.bitmap_sha256; presentation = $record.presentation; event_sequence = $record.frame_event_sequence; stable_frame_bracketing = $record.stable_frame_bracketing })
-    return $record
+    $frameReader = { param($captureOwner) Get-LatestFrame $captureOwner.stdout }
+    $captureAttempt = { param($captureOwner, $captureName, $candidateFrame, $expectedFrame, $extraData, $captureNumber) Capture-OwnedClientCore $captureOwner $captureName $candidateFrame $expectedFrame $extraData $captureNumber }
+    $settlement = Invoke-CaptureStableRetry $Owner $Name $ExpectedFrame $Extra $frameReader $captureAttempt 3000 20 50
+    $settlementEvidence = [ordered]@{
+      name = $Name
+      status = $settlement.status
+      expected_semantic_identity = Get-CaptureSemanticIdentity $ExpectedFrame.State
+      selected_presentation = if ($settlement.capture -and $settlement.capture.record) { [long]$settlement.capture.record.presentation } elseif ($settlement.frame) { [long]$settlement.frame.State.presentation } else { $null }
+      attempts = $settlement.attempts
+      reason = $settlement.reason
+    }
+    $script:result.capture_settlements += $settlementEvidence
+    Save-Result
+    if ($settlement.status -eq "PASS") {
+      $record = $settlement.capture.record
+      Add-Stage $stage "PASS" ([ordered]@{ bitmap = $record.bitmap; sha256 = $record.bitmap_sha256; presentation = $record.presentation; event_sequence = $record.frame_event_sequence; stable_frame_bracketing = $record.stable_frame_bracketing; capture_attempts = $settlement.attempts })
+      return $record
+    }
+    Add-Stage $stage "FAIL" $settlementEvidence
+    throw "Capture $Name did not settle on a stable frame matching its requested semantic state: $($settlement.status): $($settlement.reason)"
   } catch {
-    Add-Stage $stage "FAIL" ([ordered]@{ error = $_.Exception.Message })
+    if (-not (@($script:result.stages | Where-Object { $_.name -eq $stage }).Count)) {
+      Add-Stage $stage "FAIL" ([ordered]@{ error = $_.Exception.Message })
+    }
     throw
   }
 }
@@ -811,6 +1001,10 @@ function Query-CandidateGeometry {
   $result = [ordered]@{
     status = "PASS"
     evidence_kind = "ImmGetCandidateWindow CANDIDATEFORM adapter geometry"
+    source_presentation = [long]$Frame.State.presentation
+    source_frame_event_sequence = [long]$Frame.Complete.event_sequence
+    source_frame_identity = Get-FrameIdentity $Frame
+    source_semantic_identity = Get-CaptureSemanticIdentity $Frame.State
     style = [uint32]$candidate.Style
     candidate_index = [uint32]$candidate.Index
     position_client_physical = @([int]$candidate.X, [int]$candidate.Y)
@@ -1050,6 +1244,57 @@ function New-FilteredWireLog {
   )
 }
 
+function New-CaptureScrollWireLog {
+  param(
+    [int]$Presentation,
+    [int]$ActiveIndex = 15,
+    [int]$VisibleStart = 8,
+    [long]$Sequence = 61,
+    [int]$NativeUpdate = 26,
+    [int]$BackgroundPresses = 0,
+    [int]$BackgroundReleases = 0,
+    [int]$GuardedPresses = 0,
+    [int]$GuardedReleases = 0,
+    [int]$NativeBegin = 1,
+    [int]$NativeCancel = 0,
+    [int]$NativeEnd = 0,
+    [int]$NativeRecords = 0,
+    [int]$NativeStaleRecords = 0,
+    [int]$NativeRejectedRecords = 0,
+    [string]$NativeOwnerSequence = "0",
+    [bool]$NativeOwnerComposing = $false,
+    [bool]$ExperimentalImm32 = $true
+  )
+  $source = [string[]](New-MockLog -Presentation $Presentation -Sequence $Sequence)
+  $accepted = Get-RecordPayload $source[0] "GPUI_WINDOWS_COMMAND_PALETTE_ACCEPTED "
+  $state = Get-RecordPayload $source[1] "GPUI_WINDOWS_COMMAND_PALETTE_STATE "
+  $complete = Get-RecordPayload $source[2] "GPUI_WINDOWS_COMMAND_PALETTE_COMPLETE "
+  $readback = Get-RecordPayload $source[3] "GPUI_WINDOWS_COMMAND_PALETTE_READBACK "
+  $id = "palette.command.$ActiveIndex"
+  $accepted.open_epoch = 1; $accepted.open = $true; $accepted.query = ""; $accepted.matches = 16; $accepted.visible_count = 8
+  $state.open = $true; $state.open_epoch = 1; $state.query = ""; $state.field_text = ""; $state.committed_text = ""; $state.composing = $false
+  $state.selection = [ordered]@{ anchor = 0; head = 0 }; $state.matches = 16; $state.active_id = $id; $state.active_index = @($ActiveIndex)
+  $state.visible_start = $VisibleStart; $state.visible_count = 8; $state.actions = 0; $state.last_action = ""
+  $state.background_presses = $BackgroundPresses; $state.background_releases = $BackgroundReleases
+  $state.guarded_presses = $GuardedPresses; $state.guarded_releases = $GuardedReleases
+  $state.focus_owner = 2; $state.field_focused = $true; $state.caret = [ordered]@{ x = 28; y = 32; width = 1; height = 24 }; $state.experimental_imm32 = $ExperimentalImm32
+  $state.native_owner = [ordered]@{ owner_generation = 2; palette_open_epoch = 1; native_epoch = 1; sequence = $NativeOwnerSequence; composing = $NativeOwnerComposing }
+  $state.native_counters = [ordered]@{ begin = $NativeBegin; update = $NativeUpdate; cancel = $NativeCancel; end = $NativeEnd; records = $NativeRecords; stale_records = $NativeStaleRecords; rejected_records = $NativeRejectedRecords }
+  $options = [System.Collections.Generic.List[object]]::new()
+  for ($index = $VisibleStart; $index -lt [Math]::Min(16, $VisibleStart + 8); $index++) {
+    $options.Add([ordered]@{ id = "palette.command.$index"; name = "Command $index"; index = $index; selected = ($index -eq $ActiveIndex); disabled = $false })
+  }
+  $state.semantic = [ordered]@{ role = "dialog"; name = "Command palette"; search_role = "textbox"; search_name = "Search commands"; search_value = ""; search_focused = $true; collection_role = "listbox"; options = $options.ToArray() }
+  $complete.open_epoch = 1; $complete.query = ""; $complete.visible_count = 8; $complete.active_id = $id
+  $readback.frame_event_sequence = $Sequence
+  return @(
+    "GPUI_WINDOWS_COMMAND_PALETTE_ACCEPTED $($accepted | ConvertTo-Json -Compress)",
+    "GPUI_WINDOWS_COMMAND_PALETTE_STATE $($state | ConvertTo-Json -Compress -Depth 12)",
+    "GPUI_WINDOWS_COMMAND_PALETTE_COMPLETE $($complete | ConvertTo-Json -Compress)",
+    "GPUI_WINDOWS_COMMAND_PALETTE_READBACK $($readback | ConvertTo-Json -Compress -Depth 8)"
+  )
+}
+
 function New-RetainedClosedWireLog {
   # Exact protocol shape from the retained Windows fixture startup records:
   # STATE.active_id is null while COMPLETE.active_id retains picker.command.0.
@@ -1129,6 +1374,106 @@ function Invoke-ParserTests {
     if (Test-StateActiveIndex ([ordered]@{ active_index = @() }) 0) { throw "State active-index helper accepted Option None as a selected row." }
     if (-not (Test-StateActiveIndex ([ordered]@{ active_index = @(3) }) 3)) { throw "State active-index helper rejected a single Option index." }
     if (Test-StateActiveIndex ([ordered]@{ active_index = @(3, 4) }) 3) { throw "State active-index helper accepted a malformed multi-value Option." }
+    [IO.File]::WriteAllLines($path, [string[]](New-CaptureScrollWireLog -Presentation 30 -ActiveIndex 15 -VisibleStart 8 -Sequence 61 -NativeUpdate 26), $utf8NoBom)
+    $scroll30 = Get-LatestFrame $path
+    [IO.File]::WriteAllLines($path, [string[]](New-CaptureScrollWireLog -Presentation 31 -ActiveIndex 15 -VisibleStart 8 -Sequence 63 -NativeUpdate 27), $utf8NoBom)
+    $scroll31 = Get-LatestFrame $path
+    [IO.File]::WriteAllLines($path, [string[]](New-CaptureScrollWireLog -Presentation 32 -ActiveIndex 15 -VisibleStart 8 -Sequence 65 -NativeUpdate 28), $utf8NoBom)
+    $scroll32 = Get-LatestFrame $path
+    [IO.File]::WriteAllLines($path, [string[]](New-CaptureScrollWireLog -Presentation 33 -ActiveIndex 15 -VisibleStart 8 -Sequence 67 -NativeUpdate 29), $utf8NoBom)
+    $scroll33 = Get-LatestFrame $path
+    [IO.File]::WriteAllLines($path, [string[]](New-CaptureScrollWireLog -Presentation 34 -ActiveIndex 15 -VisibleStart 8 -Sequence 69 -NativeUpdate 30), $utf8NoBom)
+    $scroll34 = Get-LatestFrame $path
+    [IO.File]::WriteAllLines($path, [string[]](New-CaptureScrollWireLog -Presentation 35 -ActiveIndex 14 -VisibleStart 8 -Sequence 71 -NativeUpdate 31), $utf8NoBom)
+    $scrollChanged = Get-LatestFrame $path
+    if ($null -eq $scroll30 -or $null -eq $scroll31 -or $null -eq $scrollChanged -or
+        (Get-FrameIdentity $scroll30) -ceq (Get-FrameIdentity $scroll31) -or
+        -not (Test-CaptureSemanticState $scroll30.State $scroll31.State)) { throw "Capture semantic identity did not distinguish a newer presentation from the same visible scroll state." }
+    if ((Get-CaptureBracketDecision $scroll30 $scroll31 $scroll30.State) -ne "RETRY_NEWER_EQUIVALENT_FRAME") { throw "Capture bracket did not request a retry for actual-order frames 30→31 with equivalent visible state." }
+    if ((Get-CaptureBracketDecision $scroll30 $scrollChanged $scroll30.State) -ne "SEMANTIC_STATE_CHANGED_DURING_CAPTURE") { throw "Capture bracket accepted a changed active row for the requested scroll state." }
+    $geometryEvidence = [ordered]@{ source_frame_identity = Get-FrameIdentity $scroll30; source_semantic_identity = Get-CaptureSemanticIdentity $scroll30.State }
+    if (-not (Test-CandidateGeometryMatchesFrame $geometryEvidence $scroll31) -or (Test-CandidateGeometryMatchesFrame $geometryEvidence $scrollChanged)) {
+      throw "Candidate-form geometry provenance did not follow equivalent caret state or reject changed semantic state."
+    }
+    $script:captureSettleTestFrame = $scroll31
+    $script:captureSettleTestCalls = 0
+    $testFrameReader = { param($ignoredOwner) $script:captureSettleTestFrame }
+    $testStableCapture = { param($ignoredOwner, $captureName, $candidate, $expectedFrame, $extraData, $captureNumber) $script:captureSettleTestCalls++; [pscustomobject]@{ status = "STABLE"; record = [ordered]@{ presentation = [long]$candidate.State.presentation; capture_attempt = $captureNumber }; reason = $null } }
+    $settled31 = Invoke-CaptureStableRetry $null "scroll-active-row" $scroll30 $null $testFrameReader $testStableCapture 1000 3 0
+    if ($settled31.status -ne "PASS" -or [long]$settled31.frame.State.presentation -ne 31 -or [long]$settled31.capture.record.presentation -ne 31 -or $script:captureSettleTestCalls -ne 1) {
+      throw "Capture settlement did not adopt latest equivalent complete frame 31 after expected frame 30."
+    }
+    $provenanceVariants = @(
+      [pscustomobject]@{ name = "background press leak"; values = @{ BackgroundPresses = 1 } },
+      [pscustomobject]@{ name = "background release leak"; values = @{ BackgroundReleases = 1 } },
+      [pscustomobject]@{ name = "guarded press leak"; values = @{ GuardedPresses = 1 } },
+      [pscustomobject]@{ name = "guarded release leak"; values = @{ GuardedReleases = 1 } },
+      [pscustomobject]@{ name = "native begin counter"; values = @{ NativeBegin = 2 } },
+      [pscustomobject]@{ name = "native cancel counter"; values = @{ NativeCancel = 1 } },
+      [pscustomobject]@{ name = "native end counter"; values = @{ NativeEnd = 1 } },
+      [pscustomobject]@{ name = "native records counter"; values = @{ NativeRecords = 1 } },
+      [pscustomobject]@{ name = "native stale-record counter"; values = @{ NativeStaleRecords = 1 } },
+      [pscustomobject]@{ name = "native rejected-record counter"; values = @{ NativeRejectedRecords = 1 } },
+      [pscustomobject]@{ name = "native owner sequence"; values = @{ NativeOwnerSequence = "1" } },
+      [pscustomobject]@{ name = "native owner composing"; values = @{ NativeOwnerComposing = $true } },
+      [pscustomobject]@{ name = "IMM32 mode"; values = @{ ExperimentalImm32 = $false } }
+    )
+    $variantPresentation = 36
+    foreach ($variant in $provenanceVariants) {
+      $variantArgs = @{ Presentation = $variantPresentation; ActiveIndex = 15; VisibleStart = 8; Sequence = 73 + $variantPresentation; NativeUpdate = 31 }
+      foreach ($key in $variant.values.Keys) { $variantArgs[$key] = $variant.values[$key] }
+      [IO.File]::WriteAllLines($path, [string[]](New-CaptureScrollWireLog @variantArgs), $utf8NoBom)
+      $variantFrame = Get-LatestFrame $path
+      if ($null -eq $variantFrame -or (Test-CaptureSemanticState $scroll30.State $variantFrame.State) -or
+          (Get-CaptureBracketDecision $scroll30 $variantFrame $scroll30.State) -ne "SEMANTIC_STATE_CHANGED_DURING_CAPTURE") {
+        throw "Capture semantic identity accepted changed $($variant.name) provenance."
+      }
+      $script:captureSettleTestFrame = $variantFrame; $script:captureSettleTestCalls = 0
+      $variantSettle = Invoke-CaptureStableRetry $null "scroll-active-row" $scroll30 $null $testFrameReader $testStableCapture 1000 3 0
+      if ($variantSettle.status -ne "SEMANTIC_STATE_CHANGED" -or $script:captureSettleTestCalls -ne 0) {
+        throw "Runtime capture settlement did not reject changed $($variant.name) before capture."
+      }
+      $variantPresentation++
+    }
+    $script:captureSettleTestFrame = $scroll31
+    $throwingCapture = { param($ignoredOwner, $captureName, $candidate, $expectedFrame, $extraData, $captureNumber) throw "synthetic BitBlt failure" }
+    $captureFailure = Invoke-CaptureStableRetry $null "capture-exception" $scroll30 $null $testFrameReader $throwingCapture 1000 3 0
+    if ($captureFailure.status -ne "FAIL" -or $captureFailure.attempts.Count -ne 1 -or
+        $captureFailure.attempts[0].status -ne "CAPTURE_EXCEPTION" -or
+        $captureFailure.attempts[0].frame_identity -cne (Get-FrameIdentity $scroll31) -or
+        $captureFailure.attempts[0].error -ne "synthetic BitBlt failure") {
+      throw "Capture callback failure escaped or was not retained as a terminal failed attempt with frame identity."
+    }
+    $failureManifest = [string]$captureFailure.attempts[0].attempt_manifest
+    if (-not (Test-Path -LiteralPath $failureManifest)) { throw "Capture callback failure did not write its per-attempt sidecar." }
+    $failureManifestData = Get-Content -Raw -LiteralPath $failureManifest | ConvertFrom-Json -AsHashtable
+    if ($failureManifestData.status -ne "CAPTURE_EXCEPTION" -or
+        $failureManifestData.frame_identity -cne (Get-FrameIdentity $scroll31) -or
+        $failureManifestData.error -ne "synthetic BitBlt failure") {
+      throw "Per-attempt capture failure sidecar omitted its frame identity or error."
+    }
+    Remove-Item -LiteralPath $failureManifest
+    $script:captureSettleTestFrame = $scrollChanged; $script:captureSettleTestCalls = 0
+    $changedSettle = Invoke-CaptureStableRetry $null "scroll-active-row" $scroll30 $null $testFrameReader $testStableCapture 1000 3 0
+    if ($changedSettle.status -ne "SEMANTIC_STATE_CHANGED" -or $script:captureSettleTestCalls -ne 0) { throw "Capture settlement captured after the requested active-row state changed." }
+    [IO.File]::WriteAllLines($path, [string[]](New-CaptureScrollWireLog -Presentation 30 -ActiveIndex 15 -VisibleStart 8 -Sequence 61 -NativeUpdate 26) + [string[]](Add-MockPendingFrame 31), $utf8NoBom)
+    if ($null -ne (Get-LatestFrame $path)) { throw "Capture parser accepted presentation 30 after newer presentation 31 remained incomplete." }
+    $script:captureSettleTestLogPath = $path
+    $pendingReader = { param($ignoredOwner) Get-LatestFrame $script:captureSettleTestLogPath }
+    $pendingSettle = Invoke-CaptureStableRetry $null "pending-frame" $scroll30 $null $pendingReader $testStableCapture 1000 3 0
+    if ($pendingSettle.status -ne "TIMEOUT" -or $pendingSettle.attempts.Count -ne 3 -or $script:captureSettleTestCalls -ne 0) { throw "Capture settlement did not fail boundedly while no complete readback tuple existed." }
+    $script:captureSettleQueue = [System.Collections.Generic.Queue[object]]::new()
+    foreach ($queuedFrame in @($scroll30, $scroll31, $scroll32)) { $script:captureSettleQueue.Enqueue($queuedFrame) }
+    $script:captureSettleFallback = $scroll32
+    $script:captureSettleAfterFrames = @($scroll31, $scroll32, $scroll33, $scroll34)
+    $script:captureSettleExpected = $scroll30
+    $unstableReader = { param($ignoredOwner) if ($script:captureSettleQueue.Count -gt 0) { return $script:captureSettleQueue.Dequeue() }; return $script:captureSettleFallback }
+    $unstableCapture = { param($ignoredOwner, $captureName, $candidate, $expectedFrame, $extraData, $captureNumber) $afterFrame = $script:captureSettleAfterFrames[$captureNumber - 1]; $decision = Get-CaptureBracketDecision $candidate $afterFrame $script:captureSettleExpected.State; [pscustomobject]@{ status = $decision; record = $null; reason = "simulated continuing frame advancement" } }
+    $unstableSettle = Invoke-CaptureStableRetry $null "scroll-active-row" $scroll30 $null $unstableReader $unstableCapture 1000 3 0
+    if ($unstableSettle.status -ne "TIMEOUT" -or $unstableSettle.attempts.Count -ne 3 -or
+        @($unstableSettle.attempts | Where-Object { $_.status -ne "RETRY_NEWER_EQUIVALENT_FRAME" }).Count -ne 0) {
+      throw "Capture settlement incorrectly passed while equivalent presentations advanced on every bounded attempt."
+    }
     if (-not (Test-ImeGuardDelta ([ordered]@{ guarded_presses = 2; guarded_releases = 3 }) 2 3) -or
         -not (Test-ImeGuardDelta ([ordered]@{ guarded_presses = 3; guarded_releases = 4 }) 2 3) -or
         -not (Test-ImeGuardDelta ([ordered]@{ guarded_presses = 2; guarded_releases = 4 }) 2 3 -AllowSingleRelease) -or
@@ -1213,6 +1558,8 @@ function Invoke-OwnershipGuardTests {
   $inputBody = ($functions | Where-Object { $_.Name -eq "Invoke-OwnedInput" } | Select-Object -First 1).Body.Extent.Text
   $closeBody = ($functions | Where-Object { $_.Name -eq "Close-OwnedFixture" } | Select-Object -First 1).Body.Extent.Text
   $waitBody = ($functions | Where-Object { $_.Name -eq "Wait-OwnedWindow" } | Select-Object -First 1).Body.Extent.Text
+  $captureBody = ($functions | Where-Object { $_.Name -eq "Capture-OwnedClient" } | Select-Object -First 1).Body.Extent.Text
+  $captureCoreBody = ($functions | Where-Object { $_.Name -eq "Capture-OwnedClientCore" } | Select-Object -First 1).Body.Extent.Text
   if ([string]::IsNullOrEmpty($inputBody) -or $inputBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -lt 0 -or
       $inputBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -gt $inputBody.IndexOf("SendEvents(", [StringComparison]::Ordinal)) {
     throw "Input path no longer validates exact process ownership before SendInput."
@@ -1223,6 +1570,11 @@ function Invoke-OwnershipGuardTests {
   }
   if ([string]::IsNullOrEmpty($waitBody) -or $waitBody -notmatch 'Select-OwnedGpuiWindow' -or $waitBody -match '\.Title\s+-match') {
     throw "Window discovery must select the exact native GPUI class and cannot require a caption."
+  }
+  if ([string]::IsNullOrEmpty($captureBody) -or $captureBody -notmatch 'Invoke-CaptureStableRetry' -or
+      [string]::IsNullOrEmpty($captureCoreBody) -or $captureCoreBody -notmatch 'Get-CaptureBracketDecision' -or
+      $captureCoreBody -notmatch 'Test-CandidateGeometryMatchesFrame') {
+    throw "Runtime pixel capture must use bounded semantic settling, strict frame bracketing, and candidate-geometry provenance checks."
   }
 }
 
@@ -1291,7 +1643,7 @@ function Test-ImeGuardDelta {
 
 if ($Mode -eq "Validate") {
   Invoke-ParserTests
-  [ordered]@{ status = "PASS"; input_size = [PaletteE2E.Win32]::InputStructureSize(); process_bits = [IntPtr]::Size * 8; input_events = 0; fixtures_launched = 0; tests = @("valid open observer tuple and disabled option", "filtered Go command.1/index0 observer identity", "filtered Japanese command.3/index0 observer identity", "retained closed STATE/COMPLETE wire shape", "zero-match Option None wire shape", "reject mismatched completion/readback identity", "reject accepted/state query mismatch", "reject READBACK_UNAVAILABLE", "reject newer incomplete accepted/state frame", "Option None/single-index/malformed multi-index cases", "IME guard deltas: OS-consumed 0/0, app-guarded 1/1, and app-delivered Escape release 0/1", "blank-caption GPUI discovery ignores same-PID console and other-PID/invisible decoys", "ambiguous multiple same-PID GPUI windows rejected", "wrong start ticks/executable/hash/missing HWND/zero HWND rejected before input", "native QueryFullProcessImageNameW PID path plus SHA-256 ownership guard, including nonexistent-PID failure", "source ordering proves owner validation before SendInput and WM_CLOSE") } | ConvertTo-Json -Depth 6
+  [ordered]@{ status = "PASS"; input_size = [PaletteE2E.Win32]::InputStructureSize(); process_bits = [IntPtr]::Size * 8; input_events = 0; fixtures_launched = 0; tests = @("valid open observer tuple and disabled option", "filtered Go command.1/index0 observer identity", "filtered Japanese command.3/index0 observer identity", "retained closed STATE/COMPLETE wire shape", "zero-match Option None wire shape", "reject mismatched completion/readback identity", "reject accepted/state query mismatch", "reject READBACK_UNAVAILABLE", "reject newer incomplete accepted/state frame", "Option None/single-index/malformed multi-index cases", "IME guard deltas: OS-consumed 0/0, app-guarded 1/1, and app-delivered Escape release 0/1", "scroll capture adopts equivalent presentation 31 after expected presentation 30 with only native update count changed", "reject leaked background/guarded key counters and changed IMM32/native owner/native record provenance before capture", "capture callback failure is retained as a terminal frame-identified attempt", "scroll capture rejects active-row semantic change and preserves 30→31 strict identity retry", "pending and persistent frame advancement time out without a green capture", "candidate geometry remains tied to the matching semantic caret state", "runtime capture uses bounded semantic settle and exact before/after identity", "blank-caption GPUI discovery ignores same-PID console and other-PID/invisible decoys", "ambiguous multiple same-PID GPUI windows rejected", "wrong start ticks/executable/hash/missing HWND/zero HWND rejected before input", "native QueryFullProcessImageNameW PID path plus SHA-256 ownership guard, including nonexistent-PID failure", "source ordering proves owner validation before SendInput and WM_CLOSE") } | ConvertTo-Json -Depth 6
   return
 }
 

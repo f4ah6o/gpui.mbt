@@ -82,12 +82,24 @@ ACCEPTED/STATE/COMPLETE/READBACK identities, exact input counts, IME layout/stat
 restoration, and full visible-client BMP captures under
 _build/windows-command-palette/e2e/ (or -OutputDirectory). The parser rejects
 a newer incomplete frame so captures cannot be paired with stale readback.
-Three GPU samples remain separate from the full client image. Candidate-form
-coordinates report the IMM32 adapter request; that query alone does not prove
-popup visibility or placement. Review each stable full-client BMP at human
-scale before marking pixels qualified. Candidate contents and highlight remain
-UNRUN unless separately qualified. Preflight or focus failures are retained as
-FAIL/BLOCKED with dependent stages UNRUN.
+After a requested state is reached, capture may settle on a newer complete
+frame only when its visible palette state, search selection, focus, caret,
+viewport, options, IMM32 mode, key counters, native owner generation/epoch/
+sequence/composition state, and native record/fence counters still match that
+request. Only the presentation-side native `update` counter may advance during
+settling; background or guarded key counts and every other native counter stay
+part of the equivalence check. The driver retries capture when the frame
+identity advances during BitBlt, while retaining each attempt (including a
+terminal capture error) and requiring exact
+ACCEPTED/STATE/COMPLETE/READBACK identity before and after a successful
+capture. A changed semantic state or exhausted bounded retry remains FAIL; an
+older frame cannot turn a failed capture green. Three GPU samples remain
+separate from the full client image. Candidate-form coordinates report
+the IMM32 adapter request and retain their source frame/semantic identity; that
+query alone does not prove popup visibility or placement. Review each stable
+full-client BMP at human scale before marking pixels qualified. Candidate
+contents and highlight remain UNRUN unless separately qualified. Preflight or
+focus failures are retained as FAIL/BLOCKED with dependent stages UNRUN.
 
 Portable component tests cover model bounds and selection behavior. Windows
 owner regressions cover native owner, epoch, sequence, composition, close-fence,
