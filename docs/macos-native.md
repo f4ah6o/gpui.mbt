@@ -126,6 +126,9 @@ The opt-in per-window composition owner is enabled with
 `GPUI_FIELD_MACOS_IME=1`. It does not advertise a global portable TextInput
 capability. Multiline text, bidi, color glyphs, reconversion ranges outside the
 current mark/selection and unsupported marked styles fail with typed errors.
+The bounded preedit renderer maps AppKit's single- and thick-underline hints
+to the same generic full-range marker; it does not reproduce native underline
+weight or pattern fidelity, and other style values remain unsupported.
 Interactive mode begins after a real native key-focus transition and keeps its
 accepted frame open while waiting; the finite acceptance run has a bounded
 focus wait and cleanup path.

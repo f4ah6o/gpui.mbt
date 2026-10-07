@@ -12,6 +12,14 @@ fn report(error : @diagnostics.FrameworkError) -> Unit {
 }
 
 ///|
+fn mac_owner_sync_should_defer(
+  error : @diagnostics.FrameworkError,
+  has_pending_ack : Bool,
+) -> Bool {
+  !has_pending_ack && error.code() is @diagnostics.Busy
+}
+
+///|
 fn mac_paste_session_current(
   host : @macos.Host,
   owner : MacTextOwner?,
@@ -227,6 +235,7 @@ fn run_window() -> Unit {
   let mut acceptance_focus_wait_ticks = 0
   let mut pending_ack : @macos.TextSessionTarget? = None
   let mut pending_owner_sync = false
+  let mut pending_geometry_revision : Int? = None
   let mut width = initial_width
   let mut height = initial_height
   let mut scale = initial_scale
@@ -236,6 +245,17 @@ fn run_window() -> Unit {
   let mut frame_count = 0
 
   while running {
+    if acceptance.enabled && mac_acceptance_has_operation(acceptance) {
+      if mac_acceptance_operation_timed_out(acceptance) {
+        acceptance = mac_acceptance_operation_timeout_trace(
+          host, window, field, owner, acceptance, dirty, pending_owner_sync, pending_ack,
+        )
+        mac_acceptance_fail_owned(
+          host, window, owner, acceptance, "timed out waiting for the accepted IME operation observation",
+        )
+      }
+      acceptance = mac_acceptance_tick_operation_iteration(acceptance)
+    }
     let native_window_ready = if ime_acceptance &&
       pending_ime_begin &&
       field.is_focused() &&
@@ -312,6 +332,17 @@ fn run_window() -> Unit {
                   Ok(new_bounds) =>
                     match field.with_bounds(new_bounds) {
                       Ok(candidate) => {
+                        let previous_revision = field.revision()
+                        pending_geometry_revision = match owner {
+                          Some(active) =>
+                            mac_owner_geometry_revision_after_resize(
+                              active,
+                              previous_revision,
+                              candidate.revision(),
+                              pending_geometry_revision,
+                            )
+                          None => None
+                        }
                         field = candidate
                         dirty = true
                       }
@@ -373,7 +404,12 @@ fn run_window() -> Unit {
               }
               @platform.Destroyed | @platform.ExitRequested => running = false
               @platform.Input(input) =>
-                if mac_platform_input_allowed(input, use_ime) {
+                if acceptance.enabled &&
+                  mac_acceptance_has_operation(acceptance) {
+                  mac_acceptance_fail_owned(
+                    host, window, owner, acceptance, "unrelated platform input interrupted the IME operation observation",
+                  )
+                } else if mac_platform_input_allowed(input, use_ime) {
                   let clicked_outside = match input {
                     @primitives.PointerButtonPressed(
                       position~,
@@ -587,7 +623,13 @@ fn run_window() -> Unit {
                 println("GPUI_MACOS_FIELD_REJECT StaleEpoch")
               }
             Some(active) =>
-              if !mac_target_current(active, batch, field) {
+              if !mac_target_current(
+                  active,
+                  batch,
+                  field,
+                  geometry_revision_pending=pending_geometry_revision ==
+                    Some(field.revision()),
+                ) {
                 if acceptance.enabled {
                   mac_acceptance_fail_owned(
                     host,
@@ -698,6 +740,17 @@ fn run_window() -> Unit {
                     )
                     let mut candidate = candidate
                     let external = transition.external_edit || action_external
+                    if acceptance.enabled &&
+                      mac_acceptance_has_operation(acceptance) &&
+                      external {
+                      mac_acceptance_fail_owned(
+                        host,
+                        window,
+                        Some(transition.owner),
+                        acceptance,
+                        "external edit interrupted the IME operation observation",
+                      )
+                    }
                     if blur ||
                       !candidate.is_focused() ||
                       !transition.owner.active {
@@ -747,7 +800,7 @@ fn run_window() -> Unit {
       !dirty &&
       acceptance.enabled &&
       acceptance.started &&
-      !acceptance.finished {
+      mac_acceptance_owner_sync_allows_progress(acceptance, pending_owner_sync) {
       let progress = mac_acceptance_poll_receipt(
         host, window, field, owner, acceptance,
       )
@@ -778,6 +831,10 @@ fn run_window() -> Unit {
           match classify_field_frame(presented) {
             Accepted => {
               let accepted_batch_ack = pending_ack is Some(_)
+              // Scale/resize events can precede their same-dispatch text batch
+              // in the native FIFO. Keep this sync pending while the batch
+              // blocks an update without its exact ACK.
+              let mut owner_sync_deferred = false
               match pending_ack {
                 Some(target) =>
                   match owner {
@@ -791,10 +848,16 @@ fn run_window() -> Unit {
                           Some(target.sequence()),
                         ) {
                         Ok(value) => owner = Some(value)
-                        Err(error) => {
-                          report(error)
-                          running = false
-                        }
+                        Err(error) =>
+                          if mac_owner_sync_should_defer(
+                              error,
+                              pending_ack is Some(_),
+                            ) {
+                            owner_sync_deferred = true
+                          } else {
+                            report(error)
+                            running = false
+                          }
                       }
                     None => running = false
                   }
@@ -811,17 +874,23 @@ fn run_window() -> Unit {
                             None,
                           ) {
                           Ok(value) => owner = Some(value)
-                          Err(error) => {
-                            report(error)
-                            running = false
-                          }
+                          Err(error) =>
+                            if mac_owner_sync_should_defer(
+                                error,
+                                pending_ack is Some(_),
+                              ) {
+                              owner_sync_deferred = true
+                            } else {
+                              report(error)
+                              running = false
+                            }
                         }
                       None => ()
                     }
                   }
               }
               pending_ack = None
-              pending_owner_sync = false
+              pending_owner_sync = owner_sync_deferred
               commit_ledger = mac_accept_commits(commit_ledger)
               if pending_ime_begin &&
                 field.is_focused() &&
@@ -917,7 +986,10 @@ fn run_window() -> Unit {
               }
               if acceptance.enabled &&
                 running &&
-                (acceptance.started || owner is Some(_)) {
+                (acceptance.started || owner is Some(_)) &&
+                mac_acceptance_owner_sync_allows_progress(
+                  acceptance, owner_sync_deferred,
+                ) {
                 if !acceptance.started {
                   match owner {
                     Some(active) =>
@@ -940,7 +1012,7 @@ fn run_window() -> Unit {
                   }
                 } else {
                   let progress = mac_acceptance_after_frame(
-                    host, window, field, owner, acceptance, accepted_batch_ack,
+                    host, window, field, owner, acceptance, accepted_batch_ack, pending_geometry_revision,
                   )
                   acceptance = progress.state
                   field = progress.field
@@ -952,7 +1024,13 @@ fn run_window() -> Unit {
                     running = false
                   }
                 }
-                if acceptance.step == 11 && !acceptance.finished && running {
+                if mac_acceptance_final_frame_ready({
+                    state: acceptance,
+                    field,
+                    owner,
+                    dirty,
+                  }) &&
+                  running {
                   acceptance = mac_acceptance_finish(
                     host,
                     window,

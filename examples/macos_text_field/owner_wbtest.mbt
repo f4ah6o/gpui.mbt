@@ -70,6 +70,96 @@ test "Mac owner accepts only current window host epoch session and newer revisio
 }
 
 ///|
+test "Mac owner accepts its pending native batch after a geometry-only resize" {
+  if mac_owner_coretext_tests_available() {
+    let window = @platform.WindowId::new(23)
+    let field = make_field("abc", owner_test_rect())
+      .unwrap()
+      .with_focus(true)
+      .unwrap()
+    let owner = mac_text_owner(window, 42L, 8, field.revision())
+    let resized = field
+      .with_bounds(@primitives.Rect::new(30.0, 32.0, 360.0, 48.0).unwrap())
+      .unwrap()
+    let pending_geometry_revision = mac_owner_geometry_revision_after_resize(
+      owner,
+      field.revision(),
+      resized.revision(),
+      None,
+    )
+    assert_eq(pending_geometry_revision, Some(resized.revision()))
+
+    let busy = @diagnostics.FrameworkError::new(@diagnostics.Busy, "sync")
+    assert_true(mac_owner_sync_should_defer(busy, false))
+
+    let batch : @macos.EditorBatch = {
+      target: {
+        window,
+        host_epoch: 42L,
+        epoch: 8,
+        sequence: 1L,
+        owner_revision: owner.revision.to_int64(),
+      },
+      events: [
+        @macos.Preedit(
+          text="に",
+          fallback="",
+          cursor_utf16=Some(1),
+          styles=[],
+          replacement_range=None,
+        ),
+      ],
+    }
+    assert_false(mac_target_current(owner, batch, resized))
+    assert_true(
+      mac_target_current(
+        owner,
+        batch,
+        resized,
+        geometry_revision_pending=pending_geometry_revision ==
+          Some(resized.revision()),
+      ),
+    )
+
+    let transition = mac_apply_batch(resized, owner, batch, 640.0, 240.0).unwrap()
+    assert_true(transition.field.is_composing())
+    assert_false(
+      mac_target_current(
+        owner,
+        batch,
+        transition.field,
+        geometry_revision_pending=pending_geometry_revision ==
+          Some(transition.field.revision()),
+      ),
+    )
+    let acknowledged = owner_ack(
+      transition.owner,
+      batch.target().sequence(),
+      transition.field.revision(),
+    )
+    let next_batch : @macos.EditorBatch = {
+      target: {
+        window,
+        host_epoch: 42L,
+        epoch: 8,
+        sequence: 2L,
+        owner_revision: acknowledged.revision.to_int64(),
+      },
+      events: [
+        @macos.Preedit(
+          text="日本",
+          fallback="",
+          cursor_utf16=Some(2),
+          styles=[],
+          replacement_range=None,
+        ),
+      ],
+    }
+    assert_true(mac_target_current(acknowledged, next_batch, transition.field))
+  }
+}
+
+///|
 test "successful begin and rearm accept Preedit without a synthetic Entered batch" {
   if mac_owner_coretext_tests_available() {
     let window = @platform.WindowId::new(22)
@@ -324,6 +414,204 @@ test "IME cancellation batch ACK preserves the Escape press release pair" {
     assert_false(released.external_edit)
     assert_eq(released.owner.forwarded_keys.length(), 0)
     assert_eq(released.field.committed_document().text(), "abc")
+  }
+}
+
+///|
+test "Escape release receipt waits while resize sync is blocked before its batch ACK" {
+  if mac_owner_coretext_tests_available() {
+    let window = @platform.WindowId::new(24)
+    let original = make_field("abc", owner_test_rect())
+      .unwrap()
+      .with_focus(true)
+      .unwrap()
+    let preview = mac_apply_preedit(original, "に", "", Some(1), [], None).unwrap()
+    let owner = mac_text_owner(window, 43L, 9, preview.revision())
+    let modifiers = owner_test_modifiers()
+    let cancel_batch : @macos.EditorBatch = {
+      target: {
+        window,
+        host_epoch: 43L,
+        epoch: 9,
+        sequence: 1L,
+        owner_revision: preview.revision().to_int64(),
+      },
+      events: [
+        @macos.ForwardedPressed(
+          key_code=53,
+          key=Some(@primitives.Escape),
+          modifiers~,
+        ),
+        @macos.Cancelled,
+      ],
+    }
+    let cancelled = mac_apply_batch(preview, owner, cancel_batch, 640.0, 240.0).unwrap()
+    let cancellation_ack = owner_ack(
+      cancelled.owner,
+      cancel_batch.target().sequence(),
+      cancelled.field.revision(),
+    )
+    let resized = cancelled.field
+      .with_bounds(@primitives.Rect::new(30.0, 32.0, 360.0, 48.0).unwrap())
+      .unwrap()
+    let pending_geometry_revision = mac_owner_geometry_revision_after_resize(
+      cancellation_ack,
+      cancelled.field.revision(),
+      resized.revision(),
+      None,
+    )
+    let acceptance = {
+      ..mac_acceptance_new(true),
+      started: true,
+      step: 10,
+      expected_dispatch_id: 11L,
+      expected_key_code: 53,
+      host_epoch: 43L,
+      session_epoch: 9,
+    }
+    assert_true(acceptance.pending_batch is None)
+
+    let busy = @diagnostics.FrameworkError::new(@diagnostics.Busy, "sync")
+    assert_true(mac_owner_sync_should_defer(busy, false))
+    assert_false(mac_acceptance_owner_sync_allows_progress(acceptance, true))
+
+    let release_batch : @macos.EditorBatch = {
+      target: {
+        window,
+        host_epoch: 43L,
+        epoch: 9,
+        sequence: 2L,
+        owner_revision: cancellation_ack.revision.to_int64(),
+      },
+      events: [
+        @macos.ForwardedReleased(
+          key_code=53,
+          key=Some(@primitives.Escape),
+          modifiers~,
+        ),
+      ],
+    }
+    assert_false(mac_target_current(cancellation_ack, release_batch, resized))
+    assert_true(
+      mac_target_current(
+        cancellation_ack,
+        release_batch,
+        resized,
+        geometry_revision_pending=pending_geometry_revision ==
+          Some(resized.revision()),
+      ),
+    )
+    let released = mac_apply_batch(
+      resized, cancellation_ack, release_batch, 640.0, 240.0,
+    ).unwrap()
+    assert_false(released.external_edit)
+    assert_eq(released.owner.forwarded_keys.length(), 0)
+    let release_ack = owner_ack(
+      released.owner,
+      release_batch.target().sequence(),
+      released.field.revision(),
+    )
+    assert_eq(release_ack.last_sequence, release_batch.target().sequence())
+    assert_true(mac_acceptance_owner_sync_allows_progress(acceptance, false))
+
+    let owner_revision = cancellation_ack.revision.to_int64()
+    let accepted_revision = release_ack.revision.to_int64()
+    assert_eq(pending_geometry_revision, Some(release_ack.revision))
+    let baseline_identity = "{\"schema_version\":1,\"window_id\":24,\"host_epoch\":43,\"session_epoch\":9,\"batch_sequence\":0,\"accepted_revision\":\{owner_revision},\"frame_revision\":28,\"frame_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"text\":\"Hello 日本語\"}"
+    let cancel_identity = "{\"schema_version\":1,\"window_id\":24,\"host_epoch\":43,\"session_epoch\":9,\"batch_sequence\":1,\"accepted_revision\":\{owner_revision},\"frame_revision\":29,\"frame_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"text\":\"Hello 日本語\"}"
+    let release_identity = "{\"schema_version\":1,\"window_id\":24,\"host_epoch\":43,\"session_epoch\":9,\"batch_sequence\":2,\"accepted_revision\":\{accepted_revision},\"frame_revision\":30,\"frame_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"text\":\"Hello 日本語\"}"
+    let baseline_batch = "{\"sequence\":0,\"owner_revision\":\{owner_revision},\"accepted_revision\":\{owner_revision},\"acknowledged\":true,\"preedit_callbacks\":1,\"commit_callbacks\":1,\"cancel_callbacks\":0,\"frame_identity\":\{baseline_identity}}"
+    let cancel_batch = "{\"sequence\":1,\"owner_revision\":\{owner_revision},\"accepted_revision\":\{owner_revision},\"acknowledged\":true,\"preedit_callbacks\":0,\"commit_callbacks\":0,\"cancel_callbacks\":1,\"frame_identity\":\{cancel_identity}}"
+    let cancel_effect = "{\"schema_version\":1,\"operation_id\":2,\"kind\":\"cancel\",\"causal_origin\":\"unknown\",\"origin_dispatch_id\":null,\"batch_index\":1,\"batch_sequence\":1,\"window_id\":24,\"host_epoch\":43,\"session_epoch\":9,\"owner_revision\":\{owner_revision},\"accepted_revision\":\{owner_revision},\"frame_revision\":29,\"preedit_callback_delta\":0,\"commit_callback_delta\":0,\"cancel_callback_delta\":1,\"frame_identity\":\{cancel_identity}}"
+    let release_batch_record = "{\"sequence\":2,\"owner_revision\":\{owner_revision},\"accepted_revision\":\{accepted_revision},\"acknowledged\":true,\"preedit_callbacks\":0,\"commit_callbacks\":0,\"cancel_callbacks\":0,\"frame_identity\":\{release_identity}}"
+    let release_operation : MacAcceptanceOperation = {
+      id: 2,
+      step: 10,
+      dispatch_id: 11L,
+      key_code: 53,
+      window_id: 24L,
+      host_epoch: 43L,
+      session_epoch: 9,
+      baseline_batch_index: 1,
+      baseline_batch_sequence: 0L,
+      baseline_accepted_revision: owner_revision,
+      baseline_frame_revision: 28L,
+      baseline_preedit_callbacks: 1,
+      baseline_commit_callbacks: 1,
+      baseline_cancel_callbacks: 0,
+      baseline_composing: true,
+      baseline_frame_identity: baseline_identity,
+      loop_iterations: 2,
+      effect_index: Some(0),
+      release_batch_index: None,
+      release_batch_sequence: None,
+      release_frame_revision: None,
+      release_geometry_revision: None,
+    }
+    let release_state = {
+      ..mac_acceptance_new(true),
+      started: true,
+      step: 10,
+      expected_dispatch_id: 11L,
+      expected_key_code: 53,
+      host_epoch: 43L,
+      session_epoch: 9,
+      input_source: "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
+      preedit_callbacks: 1,
+      commit_callbacks: 1,
+      cancel_callbacks: 1,
+      batches: [baseline_batch, cancel_batch],
+      effect_observations: [cancel_effect],
+      operation: Some(release_operation),
+      pending_batch: Some(release_batch),
+    }
+    let recorded = mac_acceptance_record_escape_release_ack(
+      release_state, release_operation, release_batch, release_identity, true, accepted_revision,
+      pending_geometry_revision,
+    )
+    match recorded {
+      Some(value) => {
+        assert_eq(value.release_geometry_revision, Some(release_ack.revision))
+        let acknowledged = {
+          ..release_state,
+          batches: [baseline_batch, cancel_batch, release_batch_record],
+        }
+        assert_true(
+          mac_acceptance_release_reference_is_acknowledged(acknowledged, value),
+        )
+        assert_false(
+          mac_acceptance_release_reference_is_acknowledged(acknowledged, {
+            ..value,
+            release_geometry_revision: Some(release_ack.revision + 1),
+          }),
+        )
+      }
+      None => assert_true(false)
+    }
+    assert_true(
+      mac_acceptance_record_escape_release_ack(
+        release_state,
+        release_operation,
+        release_batch,
+        release_identity,
+        true,
+        accepted_revision,
+        None,
+      )
+      is None,
+    )
+    assert_true(
+      mac_acceptance_record_escape_release_ack(
+        release_state,
+        release_operation,
+        release_batch,
+        release_identity,
+        true,
+        accepted_revision,
+        Some(release_ack.revision + 1),
+      )
+      is None,
+    )
   }
 }
 

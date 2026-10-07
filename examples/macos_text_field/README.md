@@ -73,6 +73,46 @@ window size so capture ROI can be mapped without guessing the titlebar offset.
 The records bind window, host, session, FIFO batch, frame, source-tree and
 executable identities.
 
+The final acceptance record uses schema version 2. Its `receipts` preserve the
+native dispatch-completion snapshot for each physical key, including the batch
+and window sequence observed when that dispatch finished. A receipt is never
+rewritten when a later text batch is acknowledged; equal window-sequence
+snapshots are valid when a key dispatch does not emit a window event.
+
+The version-2 `operations` and `effect_observations` arrays describe the Return
+and Escape checks separately from those dispatch receipts. Each operation
+captures the previously acknowledged owner frame and callback counts, then
+waits for the exact accepted batch containing the required single commit or
+cancellation and its matching presented frame. Escape also records a separate
+typed reference to the exact zero-callback ForwardedReleased(Escape) batch and
+frame after cancellation; it does not rewrite or combine the cancellation
+effect. The receipt watermark and this release ACK must both be covered by
+accepted batches before the field can blur. The operation wait is bounded by
+200 main-loop iterations and fails through the normal owned cleanup path if
+the required effect and release observation are not complete. An effect record
+links to that exact acknowledged batch and frame; intermediate preedit or
+geometry acknowledgements do not satisfy it.
+
+Acknowledged intermediate preedit frames with no commit or cancel callback
+remain part of the operation window and do not need to show the final visible
+text. The exact `Hello 日本語` requirement applies when the commit or cancel
+effect is recorded. An Escape release batch may retain the prior owner revision
+only when its accepted revision is newer and the operation records the exact
+matching pending geometry revision; the validator checks that marker against
+the acknowledged release frame.
+
+Operation observation records use schema version 2 to carry the Escape release
+reference. Accepted commit/cancel frames must retain the exact `Hello 日本語`
+text. Escape may begin after a boundary that is no longer composing only when
+the operation itself observes an accepted preedit before the cancellation.
+
+Callback origin is explicitly recorded as `unknown`, with
+`origin_dispatch_id: null`. This evidence says that the expected accepted
+state was observed during the serial Return/Escape operation window; it does
+not claim that a particular key caused an asynchronous callback. The runner
+rejects unsupported final schema versions and malformed operation or effect
+records.
+
 Control, color-font, bidirectional, multiline and reconversion metadata are
 typed failures. Emoji and other color-glyph fallback are not included in this
 monochrome path.

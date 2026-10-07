@@ -502,13 +502,243 @@ def validate_capture_item(item, manifest, expected_frame, expected_window_geomet
     return {"image": image, "roi": roi}
 
 
+MAX_OPERATION_LOOP_ITERATIONS = 200
+
+
+def validate_operation_observations(record, batches, receipts, acknowledged_sequences):
+    operations = record.get("operations")
+    effects = record.get("effect_observations")
+    if (type(operations) is not list or len(operations) != 2 or
+            type(effects) is not list or len(effects) != 2):
+        raise AcceptanceError("version-2 evidence omitted the two serialized operation/effect observations")
+
+    operation_fields = {
+        "schema_version", "operation_id", "kind", "scope", "causal_origin",
+        "origin_dispatch_id", "dispatch_id", "key_code", "dispatch_receipt_index",
+        "window_id", "host_epoch", "session_epoch", "baseline_batch_index",
+        "baseline_batch_sequence", "baseline_accepted_revision", "baseline_frame_revision",
+        "baseline_preedit_callbacks", "baseline_commit_callbacks", "baseline_cancel_callbacks",
+        "baseline_composing", "baseline_frame_identity", "loop_iterations", "effect_index",
+        "release_kind", "release_key_code", "release_batch_index",
+        "release_batch_sequence", "release_frame_revision",
+        "release_geometry_revision",
+    }
+    effect_fields = {
+        "schema_version", "operation_id", "kind", "causal_origin", "origin_dispatch_id",
+        "batch_index", "batch_sequence", "window_id", "host_epoch", "session_epoch",
+        "owner_revision", "accepted_revision", "frame_revision",
+        "preedit_callback_delta", "commit_callback_delta", "cancel_callback_delta",
+        "frame_identity",
+    }
+    operation_specs = (
+        (1, "return_commit_observation", 8, 36, "commit"),
+        (2, "escape_cancel_observation", 10, 53, "cancel"),
+    )
+    previous_effect_sequence = 0
+    previous_effect_frame_revision = 0
+    previous_effect_batch_index = -1
+    for index, (operation_id, operation_kind, receipt_index, key_code, effect_kind) in enumerate(operation_specs):
+        operation = operations[index]
+        effect = effects[index]
+        if (type(operation) is not dict or set(operation) != operation_fields or
+                type(operation.get("schema_version")) is not int or operation["schema_version"] != 2 or
+                type(operation.get("operation_id")) is not int or operation["operation_id"] != operation_id or
+                operation.get("kind") != operation_kind or
+                operation.get("scope") != "serial_post_dispatch_observation" or
+                operation.get("causal_origin") != "unknown" or operation.get("origin_dispatch_id") is not None):
+            raise AcceptanceError("operation observation is malformed or overstates callback provenance")
+        integer_fields = (
+            "dispatch_id", "key_code", "dispatch_receipt_index", "window_id", "host_epoch",
+            "session_epoch", "baseline_batch_index", "baseline_batch_sequence",
+            "baseline_accepted_revision", "baseline_frame_revision",
+            "baseline_preedit_callbacks", "baseline_commit_callbacks",
+            "baseline_cancel_callbacks", "loop_iterations", "effect_index",
+        )
+        if (any(type(operation.get(key)) is not int for key in integer_fields) or
+                type(operation.get("baseline_composing")) is not bool or
+                operation["dispatch_receipt_index"] != receipt_index or
+                operation["window_id"] != record["window_id"] or
+                operation["host_epoch"] != record["host_epoch"] or
+                operation["session_epoch"] != record["session_epoch"] or
+                operation["loop_iterations"] < 0 or
+                operation["loop_iterations"] > MAX_OPERATION_LOOP_ITERATIONS or
+                operation["baseline_batch_index"] < 0 or
+                operation["baseline_batch_index"] > len(batches) or
+                operation["effect_index"] != index):
+            raise AcceptanceError("operation observation has invalid identity, boundary, or bounded-loop evidence")
+        release_fields = (
+            operation.get("release_kind"), operation.get("release_key_code"),
+            operation.get("release_batch_index"), operation.get("release_batch_sequence"),
+            operation.get("release_frame_revision"), operation.get("release_geometry_revision"),
+        )
+        if operation_id == 1:
+            if any(value is not None for value in release_fields):
+                raise AcceptanceError("Return operation must not claim an Escape release acknowledgement")
+        elif (operation.get("release_kind") != "forwarded_escape_release" or
+              type(operation.get("release_key_code")) is not int or
+              operation["release_key_code"] != 53 or
+              any(type(operation.get(key)) is not int for key in (
+                  "release_batch_index", "release_batch_sequence", "release_frame_revision")) or
+              operation.get("release_geometry_revision") is not None and
+              type(operation.get("release_geometry_revision")) is not int):
+            raise AcceptanceError("Escape operation omitted its typed forwarded-release acknowledgement")
+        receipt = receipts[receipt_index]
+        if (operation["dispatch_id"] != receipt["dispatch_id"] or
+                operation["key_code"] != key_code or receipt["key_code"] != key_code):
+            raise AcceptanceError("operation observation does not reference its exact physical dispatch receipt")
+
+        baseline_index = operation["baseline_batch_index"]
+        baseline_sequence = operation["baseline_batch_sequence"]
+        baseline_preceding = batches[baseline_index - 1] if baseline_index else None
+        expected_baseline_sequence = baseline_preceding["sequence"] if baseline_preceding else 0
+        if baseline_sequence != expected_baseline_sequence or baseline_sequence not in acknowledged_sequences:
+            raise AcceptanceError("operation baseline is not the exact last acknowledged batch at its boundary")
+        baseline_identity = operation.get("baseline_frame_identity")
+        validate_frame_identity(baseline_identity, "operation baseline frame")
+        if (baseline_identity.get("window_id") != record["window_id"] or
+                baseline_identity.get("host_epoch") != record["host_epoch"] or
+                baseline_identity.get("session_epoch") != record["session_epoch"] or
+                baseline_identity.get("batch_sequence") != baseline_sequence or
+                baseline_identity.get("accepted_revision") != operation["baseline_accepted_revision"] or
+                baseline_identity.get("frame_revision") != operation["baseline_frame_revision"] or
+                baseline_identity["accepted_revision"] < 0 or
+                baseline_identity["frame_revision"] <= 0):
+            raise AcceptanceError("operation baseline frame does not match its owner/window/session boundary")
+        prior_counts = {
+            "preedit_callbacks": sum(row["preedit_callbacks"] for row in batches[:baseline_index]),
+            "commit_callbacks": sum(row["commit_callbacks"] for row in batches[:baseline_index]),
+            "cancel_callbacks": sum(row["cancel_callbacks"] for row in batches[:baseline_index]),
+        }
+        if (operation["baseline_preedit_callbacks"] != prior_counts["preedit_callbacks"] or
+                operation["baseline_commit_callbacks"] != prior_counts["commit_callbacks"] or
+                operation["baseline_cancel_callbacks"] != prior_counts["cancel_callbacks"] or
+                (baseline_preceding is not None and (
+                    operation["baseline_accepted_revision"] < baseline_preceding["accepted_revision"] or
+                    operation["baseline_frame_revision"] < baseline_preceding["frame_identity"]["frame_revision"]
+                ))):
+            raise AcceptanceError("operation callback or accepted-frame baseline is not ordered")
+        if operation_id == 1 and (
+            operation["baseline_commit_callbacks"] != 0 or
+            operation["baseline_cancel_callbacks"] != 0 or
+            operation["baseline_preedit_callbacks"] < 1 or
+            operation["baseline_composing"] is not True
+        ):
+            raise AcceptanceError("Return observation did not begin from the active Kotoeri composition")
+        if operation_id == 2 and (
+            operation["baseline_commit_callbacks"] != 1 or
+            operation["baseline_cancel_callbacks"] != 0 or
+            operation["baseline_preedit_callbacks"] < 1
+        ):
+            raise AcceptanceError("Escape observation did not follow the single accepted commit")
+
+        if (type(effect) is not dict or set(effect) != effect_fields or
+                type(effect.get("schema_version")) is not int or effect["schema_version"] != 1 or
+                type(effect.get("operation_id")) is not int or effect["operation_id"] != operation_id or
+                effect.get("kind") != effect_kind or effect.get("causal_origin") != "unknown" or
+                effect.get("origin_dispatch_id") is not None):
+            raise AcceptanceError("effect observation is malformed or claims an unsupported callback origin")
+        effect_integer_fields = (
+            "batch_index", "batch_sequence", "window_id", "host_epoch", "session_epoch",
+            "owner_revision", "accepted_revision", "frame_revision",
+            "preedit_callback_delta", "commit_callback_delta", "cancel_callback_delta",
+        )
+        if any(type(effect.get(key)) is not int for key in effect_integer_fields):
+            raise AcceptanceError("effect observation contains a non-integer identity or callback delta")
+        batch_index = effect["batch_index"]
+        if (batch_index < baseline_index or batch_index >= len(batches) or
+                batch_index <= previous_effect_batch_index):
+            raise AcceptanceError("effect observation references a replayed or out-of-order batch")
+        batch = batches[batch_index]
+        identity = effect.get("frame_identity")
+        validate_frame_identity(identity, "effect accepted frame")
+        if (batch.get("acknowledged") is not True or
+                effect["batch_sequence"] != batch["sequence"] or
+                effect["batch_sequence"] <= baseline_sequence or
+                effect["batch_sequence"] <= previous_effect_sequence or
+                effect["window_id"] != record["window_id"] or
+                effect["host_epoch"] != record["host_epoch"] or
+                effect["session_epoch"] != record["session_epoch"] or
+                effect["owner_revision"] != batch["owner_revision"] or
+                effect["accepted_revision"] != batch["accepted_revision"] or
+                effect["frame_revision"] != batch["frame_identity"]["frame_revision"] or
+                identity != batch["frame_identity"] or
+                identity["window_id"] != record["window_id"] or
+                identity["host_epoch"] != record["host_epoch"] or
+                identity["session_epoch"] != record["session_epoch"] or
+                identity["batch_sequence"] != effect["batch_sequence"] or
+                identity["accepted_revision"] != effect["accepted_revision"] or
+                identity["frame_revision"] != effect["frame_revision"] or
+                effect["frame_revision"] <= operation["baseline_frame_revision"] or
+                effect["frame_revision"] <= previous_effect_frame_revision):
+            raise AcceptanceError("effect observation is not bound to its exact accepted owner frame")
+        callback_delta = {
+            "preedit_callbacks": sum(row["preedit_callbacks"] for row in batches[baseline_index:batch_index + 1]),
+            "commit_callbacks": sum(row["commit_callbacks"] for row in batches[baseline_index:batch_index + 1]),
+            "cancel_callbacks": sum(row["cancel_callbacks"] for row in batches[baseline_index:batch_index + 1]),
+        }
+        if (effect["preedit_callback_delta"] != callback_delta["preedit_callbacks"] or
+                effect["commit_callback_delta"] != callback_delta["commit_callbacks"] or
+                effect["cancel_callback_delta"] != callback_delta["cancel_callbacks"]):
+            raise AcceptanceError("effect callback deltas do not match the operation boundary and ACKed batches")
+        if effect_kind == "commit":
+            if (batch["commit_callbacks"] != 1 or batch["cancel_callbacks"] != 0 or
+                    callback_delta["commit_callbacks"] != 1 or callback_delta["cancel_callbacks"] != 0):
+                raise AcceptanceError("Return effect is not the exact single commit callback batch")
+        else:
+            if (batch["cancel_callbacks"] != 1 or batch["commit_callbacks"] != 0 or
+                    callback_delta["cancel_callbacks"] != 1 or callback_delta["commit_callbacks"] != 0 or
+                    not (operation["baseline_composing"] or callback_delta["preedit_callbacks"] > 0)):
+                raise AcceptanceError("Escape effect is not the exact follow-up composition cancellation")
+            release_index = operation["release_batch_index"]
+            release_sequence = operation["release_batch_sequence"]
+            release_frame_revision = operation["release_frame_revision"]
+            if (release_index != batch_index + 1 or
+                    release_index < 0 or release_index >= len(batches)):
+                raise AcceptanceError("Escape release reference is not the exact next batch after cancellation")
+            release_batch = batches[release_index]
+            release_identity = release_batch["frame_identity"]
+            release_owner_revision = release_batch["owner_revision"]
+            release_accepted_revision = release_batch["accepted_revision"]
+            release_geometry_revision = operation["release_geometry_revision"]
+            geometry_revision_matches = (
+                release_owner_revision == release_accepted_revision and
+                release_geometry_revision is None
+            ) or (
+                release_accepted_revision > release_owner_revision and
+                type(release_geometry_revision) is int and
+                release_geometry_revision == release_accepted_revision
+            )
+            if (release_batch.get("acknowledged") is not True or
+                    release_batch["sequence"] != release_sequence or
+                    release_sequence <= effect["batch_sequence"] or
+                    any(release_batch[key] != 0 for key in (
+                        "preedit_callbacks", "commit_callbacks", "cancel_callbacks")) or
+                    type(release_batch.get("acknowledged")) is not bool or
+                    release_identity.get("window_id") != operation["window_id"] or
+                    release_identity.get("host_epoch") != operation["host_epoch"] or
+                    release_identity.get("session_epoch") != operation["session_epoch"] or
+                    release_identity.get("batch_sequence") != release_sequence or
+                    release_identity.get("accepted_revision") != release_batch["accepted_revision"] or
+                    release_identity.get("frame_revision") != release_frame_revision or
+                    not geometry_revision_matches or
+                    release_frame_revision <= effect["frame_revision"] or
+                    release_identity.get("text") != "Hello 日本語"):
+                raise AcceptanceError("Escape release reference is not its exact zero-callback acknowledged owner frame")
+        if identity.get("text") != "Hello 日本語" or batch["frame_identity"].get("text") != "Hello 日本語":
+            raise AcceptanceError("operation effect frame does not preserve the exact accepted Japanese text")
+        previous_effect_batch_index = batch_index
+        previous_effect_sequence = effect["batch_sequence"]
+        previous_effect_frame_revision = effect["frame_revision"]
+
+
 def validate_final(record, source, binary_sha, initial_revision=None, initial_frame_revision=None):
-    expected = {"schema_version": 1, "input_source": None, "committed_text": "Hello 日本語",
+    expected = {"schema_version": 2, "input_source": None, "committed_text": "Hello 日本語",
                 "composing": False, "focused": False, "commit_count": 1, "commit_callbacks": 1}
     allowed = {"schema_version", "window_id", "host_epoch", "session_epoch", "final_session_epoch",
                "input_source", "preedit_callbacks", "commit_callbacks", "cancel_callbacks", "committed_text",
                "composing", "focused", "commit_count", "batches", "receipts", "candidate_screen_rect",
-               "final_frame_identity", "final_frame_revision", "field_bounds", "source_revision", "source_tree", "binary_sha256"}
+               "operations", "effect_observations", "final_frame_identity", "final_frame_revision",
+               "field_bounds", "source_revision", "source_tree", "binary_sha256"}
     if type(record) is not dict or set(record) != allowed or type(record.get("schema_version")) is not int or \
        type(record.get("composing")) is not bool or type(record.get("focused")) is not bool or \
        type(record.get("commit_count")) is not int or type(record.get("commit_callbacks")) is not int or \
@@ -626,10 +856,11 @@ def validate_final(record, source, binary_sha, initial_revision=None, initial_fr
            type(receipt.get("session_epoch")) is not int or receipt.get("session_epoch") != record["session_epoch"] or \
            type(receipt.get("batch_sequence")) is not int or receipt["batch_sequence"] < previous_batch_sequence or \
            receipt["batch_sequence"] not in acknowledged_sequences or \
-           type(receipt.get("window_sequence")) is not int or receipt["window_sequence"] <= previous_window_sequence:
+           type(receipt.get("window_sequence")) is not int or receipt["window_sequence"] < previous_window_sequence:
             raise AcceptanceError("native key receipts do not prove the exact ordered Kotoeri dispatch sequence")
         previous_batch_sequence = receipt["batch_sequence"]
         previous_window_sequence = receipt["window_sequence"]
+    validate_operation_observations(record, batches, receipts, acknowledged_sequences)
     return record
 
 
@@ -1112,6 +1343,8 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
     app = AppOutput(process, output / "app.stdout.log")
     report = {"schema_version": 1, "scope": "logged-in desktop, native Kotoeri callback and app-window pixels",
               "status": "running", "source_before": before, "host": host,
+        "app_pid": process.pid,
+        "app_exit_code": None,
         "profile_root": str(profile_root),
         "app": {"bundle": str(app_bundle), "binary_sha256": binary_sha,
                       "library_sha256": library_sha, "binary_path": str(binary),
@@ -1125,8 +1358,10 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
                                   "helper_sha256": digest(helper), "engine": "ScreenCaptureKit.SCScreenshotManager",
                                   "helper_source_sha256": hashlib.sha256(SWIFT_WINDOW_CAPTURE.encode()).hexdigest()},
               "screenshots": {}, "ok": False}
+    summary_path = output / "summary.json"
     cleanup = None
     try:
+        summary_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
         initial_state = app.wait_line("GPUI_FIELD_MACOS_STATE ", timeout)
         initial_ready = app.wait_line("GPUI_MACOS_IME_CHECKPOINT ", timeout)
         initial_ready = validate_checkpoint(initial_ready, "initial-ready", before, binary_sha)
@@ -1148,7 +1383,6 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
             raise AcceptanceError("initial state observer and accepted native frame identity disagree")
         initial_geometry = validate_initial_window(initial_ready, initial_state, initial_identity)
         report["initial_state"] = initial_state
-        report["app_pid"] = process.pid
         report["initial_checkpoint"] = initial_ready
         report["input_source"] = initial_ready["input_source"]
         initial_png = output / "initial-window.png"
@@ -1236,7 +1470,6 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
         screenshot_index_path.write_text(json.dumps(screenshot_index, indent=2, ensure_ascii=False) + "\n")
         report["screenshots_index"] = screenshot_index_path.name
         report["screenshots_index_sha256"] = digest(screenshot_index_path)
-        report["app_exit_code"] = exit_code
         report["ok"] = True
         report["status"] = "passed"
     except BaseException as error:
@@ -1266,6 +1499,7 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
             pass
         raise
     finally:
+        report["app_exit_code"] = process.poll()
         after = source_snapshot(repo)
         report["source_after"] = after
         report["source_stable"] = before == after
@@ -1274,15 +1508,15 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
             report["status"] = "failed"
             report["error"] = "source changed during IME/pixel acceptance"
         report["finished_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
-        (output / "summary.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+        summary_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     if report.get("ok") is True:
         try:
-            validate_summary(output / "summary.json", repo, before)
+            validate_summary(summary_path, repo, before)
         except (AcceptanceError, OSError, ValueError, KeyError, TypeError) as error:
             report["ok"] = False
             report["status"] = "failed"
             report["error"] = "independent IME artifact validation failed: " + str(error)
-            (output / "summary.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+            summary_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     if not report["ok"]:
         raise AcceptanceError(report.get("error", "IME/pixel acceptance failed"))
     return report

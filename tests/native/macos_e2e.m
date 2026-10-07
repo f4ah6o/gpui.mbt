@@ -529,6 +529,128 @@ static void native_text_session_bounds(GPWindow *w, NSString *snapshot) {
   assert_focus_event_once(w, 6);
   w.testingFocusOverrideEnabled = NO;
 }
+static void native_scale_event_precedes_text_batch(GPWindow *w) {
+  drain();
+  make_test_window_key(w);
+  GPView *view = (GPView *)w.window.contentView;
+  NSString *begin = session_payload(@"ab", 1, 1, 20, 0, 72, 54, NO);
+  assert(call_op(19, w.token, 0, 0, begin) == 0);
+  int epoch = (int)api->integer(0);
+  assert(epoch > 0 && w.sessionActive);
+
+  [view setMarkedText:@"に" selectedRange:NSMakeRange(1, 0)
+    replacementRange:NSMakeRange(NSNotFound, 0)];
+  assert(w.textDispatchActive && !w.sessionAwaitingAck);
+  test_scale_override = w.scale == 1.0 ? 2.0 : 1.0;
+  resize_surface(w);
+  flush_text_batch(w);
+  assert(w.sessionAwaitingAck && !w.batchDelivered);
+  assert(events.count >= 2);
+  NSDictionary *scale_event = events[events.count - 2];
+  NSDictionary *batch_event = events.lastObject;
+  assert([scale_event[@"kind"] intValue] == 4);
+  assert([batch_event[@"kind"] intValue] == 18);
+  assert([scale_event[@"seq"] longLongValue] < [batch_event[@"seq"] longLongValue]);
+
+  assert(api->call(23, 0, 0, 0, NULL, 0) == 0);
+  assert(api->integer(1) == 4);
+  assert(api->integer(3) == [scale_event[@"seq"] longLongValue]);
+  NSString *scale_only_geometry = session_payload(@"ab", 1, 1, 21, 0, 74, 54, YES);
+  assert(call_op(20, w.token, epoch, 0, scale_only_geometry) == 12);
+  assert(w.sessionAwaitingAck && !w.batchDelivered);
+
+  NSDictionary *batch = deliver_text_batch();
+  assert_text_callback(batch, @"preedit", @"に", 1);
+  NSDictionary *identity = accept_batch_and_present(
+    w, epoch, batch, @"aにb", 2, 2, 21, 74, 54,
+    scene_json(@"[]", @"[]", @"[]"));
+  assert([identity[@"text"] isEqualToString:@"aにb"]);
+  assert([identity[@"batch_sequence"] longLongValue] == [batch[@"sequence"] longLongValue]);
+  assert(call_op(22, w.token, epoch, 0, nil) == 0);
+
+  test_scale_override = 0;
+  resize_surface(w);
+  drain();
+}
+static NSArray<NSDictionary *> *capture_preedit_style_fixture(
+    GPWindow *w, NSAttributedString *value) {
+  drain();
+  make_test_window_key(w);
+  NSString *begin = session_payload(@"ab", 1, 1, 30, 0, 72, 54, NO);
+  assert(call_op(19, w.token, 0, 0, begin) == 0);
+  int epoch = (int)api->integer(0);
+  assert(epoch > 0 && w.sessionActive);
+
+  GPView *view = (GPView *)w.window.contentView;
+  [view setMarkedText:value
+        selectedRange:NSMakeRange(value.length, 0)
+      replacementRange:NSMakeRange(NSNotFound, 0)];
+  flush_text_batch(w);
+  NSDictionary *batch = deliver_text_batch();
+  NSArray *callbacks = batch[@"events"];
+  assert(callbacks.count == 1);
+  assert([callbacks[0][@"kind"] isEqualToString:@"preedit"]);
+  NSArray<NSDictionary *> *styles = callbacks[0][@"styles"];
+  assert([styles isKindOfClass:NSArray.class]);
+
+  assert(call_op(22, w.token, epoch, 0, nil) == 0);
+  assert(!w.sessionActive);
+  drain();
+  return [styles copy];
+}
+static void assert_preedit_style_run(NSArray<NSDictionary *> *styles,
+                                     NSUInteger index, NSUInteger start,
+                                     NSUInteger end, NSInteger mapped_style) {
+  assert(index < styles.count);
+  NSDictionary *run = styles[index];
+  assert([run[@"start"] unsignedIntegerValue] == start);
+  assert([run[@"end"] unsignedIntegerValue] == end);
+  assert([run[@"style"] integerValue] == mapped_style);
+}
+static void native_preedit_style_conversion_fixtures(GPWindow *w) {
+  NSAttributedString *full_single = [[NSAttributedString alloc]
+    initWithString:@"かな"
+    attributes:@{NSUnderlineStyleAttributeName:@(NSUnderlineStyleSingle)}];
+  NSArray<NSDictionary *> *styles = capture_preedit_style_fixture(w, full_single);
+  assert(styles.count == 1);
+  assert_preedit_style_run(styles, 0, 0, 2, 5);
+
+  NSAttributedString *full_thick = [[NSAttributedString alloc]
+    initWithString:@"かな"
+    attributes:@{NSUnderlineStyleAttributeName:@(NSUnderlineStyleThick)}];
+  styles = capture_preedit_style_fixture(w, full_thick);
+  assert(styles.count == 1);
+  assert_preedit_style_run(styles, 0, 0, 2, 5);
+
+  NSAttributedString *full_double = [[NSAttributedString alloc]
+    initWithString:@"かな"
+    attributes:@{NSUnderlineStyleAttributeName:@(NSUnderlineStyleDouble)}];
+  styles = capture_preedit_style_fixture(w, full_double);
+  assert(styles.count == 1);
+  assert_preedit_style_run(styles, 0, 0, 2, 255);
+
+  NSMutableAttributedString *partial_single = [[NSMutableAttributedString alloc]
+    initWithString:@"かな"];
+  [partial_single addAttribute:NSUnderlineStyleAttributeName
+                         value:@(NSUnderlineStyleSingle)
+                         range:NSMakeRange(1, 1)];
+  styles = capture_preedit_style_fixture(w, partial_single);
+  assert(styles.count == 1);
+  assert_preedit_style_run(styles, 0, 1, 2, 5);
+
+  NSMutableAttributedString *multiple_runs = [[NSMutableAttributedString alloc]
+    initWithString:@"かな"];
+  [multiple_runs addAttribute:NSUnderlineStyleAttributeName
+                        value:@(NSUnderlineStyleSingle)
+                        range:NSMakeRange(0, 1)];
+  [multiple_runs addAttribute:NSUnderlineStyleAttributeName
+                        value:@(NSUnderlineStyleDouble)
+                        range:NSMakeRange(1, 1)];
+  styles = capture_preedit_style_fixture(w, multiple_runs);
+  assert(styles.count == 2);
+  assert_preedit_style_run(styles, 0, 0, 1, 5);
+  assert_preedit_style_run(styles, 1, 1, 2, 255);
+}
 int main(void) {
   @autoreleasepool {
     api=gpui_macos_api_v1(); assert(api->abi_version==1 && api->struct_size==sizeof(GpuiApi));
@@ -579,6 +701,8 @@ int main(void) {
     }
     test_scale_override=0; resize_surface(w);
     native_text_session_bounds(w,snapshot);
+    native_preedit_style_conversion_fixtures(w);
+    native_scale_event_precedes_text_batch(w);
     pipeline=nil; queue=nil; device=nil;
     assert(call_op(9,token,0,0,snapshot)==16);
     assert(call_op(16,token,0,0,nil)==0);
@@ -649,7 +773,7 @@ int main(void) {
     assert(call_op(2,0,0,0,nil)==0); assert(call_op(2,0,0,0,nil)==0);
     assert(call_op(1,0,0,0,nil)==0); assert(call_op(0,epoch,0,0,nil)==10);
     assert(call_op(2,0,0,0,nil)==0);
-    puts("GPUI_MACOS_E2E {\"gpu_pixels\":true,\"text_pixels_1x_2x\":true,\"scene_preflight\":true,\"synthetic_ime_transactions\":true,\"async_callback_batching\":true,\"direct_text_rollback\":true,\"input\":true,\"logical_coordinates\":true,\"resize\":true,\"wrong_thread\":true,\"churn\":32,\"stale_callbacks\":true,\"device_loss\":true,\"device_recovery\":true}");
+    puts("GPUI_MACOS_E2E {\"gpu_pixels\":true,\"text_pixels_1x_2x\":true,\"scene_preflight\":true,\"synthetic_ime_transactions\":true,\"scale_before_text_batch\":true,\"async_callback_batching\":true,\"direct_text_rollback\":true,\"input\":true,\"logical_coordinates\":true,\"resize\":true,\"wrong_thread\":true,\"churn\":32,\"stale_callbacks\":true,\"device_loss\":true,\"device_recovery\":true}");
   }
   return 0;
 }

@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 import zlib
+from unittest import mock
 
 HERE = Path(__file__).resolve().parents[1]
 REPO = HERE.parents[1]
@@ -38,7 +39,9 @@ def valid_final():
     input_source = "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"
     host, initial_epoch = 11, 7
     batches = []
-    for index, (sequence, counts) in enumerate(zip((4, 7, 9), ((1, 0, 0), (0, 1, 0), (0, 0, 1))), 1):
+    for index, (sequence, counts) in enumerate(zip((4, 7, 8, 9, 10),
+                                                    ((1, 0, 0), (0, 1, 0), (1, 0, 0),
+                                                     (0, 0, 1), (0, 0, 0))), 1):
         digest = format(index, "064x")
         identity = {"schema_version": 1, "window_id": 3, "host_epoch": host,
                     "session_epoch": initial_epoch, "batch_sequence": sequence,
@@ -51,19 +54,67 @@ def valid_final():
                         "candidate_screen_rect": {"x": 10, "y": 20, "width": 100, "height": 22}})
     receipts = []
     for index, key in enumerate(acceptance.EXPECTED_KEYS, 1):
-        batch_sequence = 0 if index == 1 else 4 if index < 5 else 7 if index < 9 else 9
+        batch_sequence = 0 if index == 1 else 4 if index < 10 else 8
+        window_sequence = index * 2
+        if index == 9:
+            window_sequence = receipts[-1]["window_sequence"]
         receipts.append({"schema_version": 1, "dispatch_id": index, "key_code": key,
                          "down_posted": True, "up_posted": True, "down_dispatched": True,
                          "up_dispatched": True, "host_epoch": host, "session_epoch": initial_epoch,
-                         "batch_sequence": batch_sequence, "window_sequence": index * 3})
+                         "batch_sequence": batch_sequence, "window_sequence": window_sequence})
+    operations = [
+        {"schema_version": 2, "operation_id": 1, "kind": "return_commit_observation",
+         "scope": "serial_post_dispatch_observation", "causal_origin": "unknown",
+         "origin_dispatch_id": None, "dispatch_id": 9, "key_code": 36,
+         "dispatch_receipt_index": 8, "window_id": 3, "host_epoch": host,
+         "session_epoch": initial_epoch, "baseline_batch_index": 1,
+         "baseline_batch_sequence": 4, "baseline_accepted_revision": 12,
+         "baseline_frame_revision": 24, "baseline_preedit_callbacks": 1,
+         "baseline_commit_callbacks": 0, "baseline_cancel_callbacks": 0,
+         "baseline_composing": True, "baseline_frame_identity": copy.deepcopy(batches[0]["frame_identity"]),
+         "loop_iterations": 3, "effect_index": 0, "release_kind": None,
+         "release_key_code": None, "release_batch_index": None,
+         "release_batch_sequence": None, "release_frame_revision": None,
+         "release_geometry_revision": None},
+        {"schema_version": 2, "operation_id": 2, "kind": "escape_cancel_observation",
+         "scope": "serial_post_dispatch_observation", "causal_origin": "unknown",
+         "origin_dispatch_id": None, "dispatch_id": 11, "key_code": 53,
+         "dispatch_receipt_index": 10, "window_id": 3, "host_epoch": host,
+         "session_epoch": initial_epoch, "baseline_batch_index": 3,
+         "baseline_batch_sequence": 8, "baseline_accepted_revision": 12,
+         "baseline_frame_revision": 28, "baseline_preedit_callbacks": 2,
+         "baseline_commit_callbacks": 1, "baseline_cancel_callbacks": 0,
+         "baseline_composing": True, "baseline_frame_identity": copy.deepcopy(batches[2]["frame_identity"]),
+         "loop_iterations": 4, "effect_index": 1,
+         "release_kind": "forwarded_escape_release", "release_key_code": 53,
+         "release_batch_index": 4, "release_batch_sequence": 10,
+         "release_frame_revision": 30, "release_geometry_revision": None},
+    ]
+    effect_observations = [
+        {"schema_version": 1, "operation_id": 1, "kind": "commit",
+         "causal_origin": "unknown", "origin_dispatch_id": None,
+         "batch_index": 1, "batch_sequence": 7, "window_id": 3,
+         "host_epoch": host, "session_epoch": initial_epoch,
+         "owner_revision": 12, "accepted_revision": 12, "frame_revision": 27,
+         "preedit_callback_delta": 0, "commit_callback_delta": 1,
+         "cancel_callback_delta": 0, "frame_identity": copy.deepcopy(batches[1]["frame_identity"])},
+        {"schema_version": 1, "operation_id": 2, "kind": "cancel",
+         "causal_origin": "unknown", "origin_dispatch_id": None,
+         "batch_index": 3, "batch_sequence": 9, "window_id": 3,
+         "host_epoch": host, "session_epoch": initial_epoch,
+         "owner_revision": 12, "accepted_revision": 12, "frame_revision": 29,
+         "preedit_callback_delta": 0, "commit_callback_delta": 0,
+         "cancel_callback_delta": 1, "frame_identity": copy.deepcopy(batches[3]["frame_identity"])},
+    ]
     final_identity = {"schema_version": 1, "window_id": 3, "host_epoch": host,
-                      "session_epoch": 0, "batch_sequence": 9, "accepted_revision": 12,
+                      "session_epoch": 0, "batch_sequence": 10, "accepted_revision": 12,
                       "frame_revision": 40, "frame_sha256": "d" * 64, "text": "Hello 日本語"}
-    report = {"schema_version": 1, "window_id": 3, "host_epoch": host,
+    report = {"schema_version": 2, "window_id": 3, "host_epoch": host,
               "session_epoch": initial_epoch, "final_session_epoch": 0,
-              "input_source": input_source, "preedit_callbacks": 1, "commit_callbacks": 1,
+              "input_source": input_source, "preedit_callbacks": 2, "commit_callbacks": 1,
               "cancel_callbacks": 1, "committed_text": "Hello 日本語", "composing": False,
               "focused": False, "commit_count": 1, "batches": batches, "receipts": receipts,
+              "operations": operations, "effect_observations": effect_observations,
               "candidate_screen_rect": {"x": 10, "y": 20, "width": 100, "height": 22},
               "final_frame_identity": final_identity, "final_frame_revision": 40,
               "field_bounds": {"x": 24, "y": 40, "width": 512, "height": 48},
@@ -338,9 +389,222 @@ class ImeEvidenceTests(unittest.TestCase):
             with self.subTest(receipt=changed), self.assertRaises(acceptance.AcceptanceError):
                 acceptance.validate_abort_receipt(changed, 11, 7)
 
+    def test_initial_summary_write_failure_still_aborts_and_records_terminal_pid(self):
+        class FakeProfile:
+            def doctor(self, root):
+                return None
+
+            def profile_environment(self, root):
+                return {"DEVELOPER_DIR": "/Developer", "SDKROOT": "/SDK",
+                        "MACOSX_DEPLOYMENT_TARGET": "14.0"}
+
+            def host_identity(self):
+                return {"hostname": "test-host"}
+
+        class FakeProcess:
+            def __init__(self):
+                self.pid = 8724
+                self.returncode = None
+
+            def poll(self):
+                return self.returncode
+
+        class FakeApp:
+            def __init__(self, process):
+                self.process = process
+                self.abort_calls = []
+                self.close_calls = 0
+
+            def abort_and_wait(self, **kwargs):
+                self.abort_calls.append(kwargs)
+                self.process.returncode = 0
+                return {"requested": True, "acknowledged": True, "exit_code": 0}
+
+            def close(self):
+                self.close_calls += 1
+
+        with tempfile.TemporaryDirectory(prefix="gpui-ime-summary-failure-") as temp:
+            root = Path(temp)
+            repo = root / "repo"
+            profile_root = root / "profile"
+            app_bundle = root / "GpuiTextField.app"
+            output = root / "run"
+            binary = app_bundle / "Contents/MacOS/GpuiTextField"
+            library = app_bundle / "Contents/Frameworks/libgpui_macos.dylib"
+            plist = app_bundle / "Contents/Info.plist"
+            swiftc = root / "swiftc"
+            for directory in (repo, profile_root, binary.parent, library.parent):
+                directory.mkdir(parents=True, exist_ok=True)
+            binary.write_bytes(b"test app")
+            binary.chmod(0o755)
+            library.write_bytes(b"test library")
+            plist.write_bytes(b"test plist")
+            swiftc.write_bytes(b"test swiftc")
+            process = FakeProcess()
+            app = FakeApp(process)
+            source = {"commit": "a" * 40, "tree": "b" * 40}
+            summary_path = output.resolve() / "summary.json"
+            original_write_text = Path.write_text
+            failed_initial_write = False
+
+            def fail_first_summary_write(path, data, *args, **kwargs):
+                nonlocal failed_initial_write
+                if path == summary_path and not failed_initial_write:
+                    failed_initial_write = True
+                    raise OSError("simulated summary storage failure")
+                return original_write_text(path, data, *args, **kwargs)
+
+            def check_output(argv, **kwargs):
+                if argv[:2] == ["xcrun", "--find"]:
+                    return str(swiftc)
+                return "Apple Swift version test"
+
+            compile_result = type("CompileResult", (), {"returncode": 0, "stdout": ""})()
+            with mock.patch.object(acceptance, "load_profile", return_value=FakeProfile()), \
+                 mock.patch.object(acceptance, "source_snapshot", return_value=source), \
+                 mock.patch.object(acceptance, "digest", return_value="c" * 64), \
+                 mock.patch.object(acceptance.subprocess, "check_output", side_effect=check_output), \
+                 mock.patch.object(acceptance.subprocess, "run", return_value=compile_result), \
+                 mock.patch.object(acceptance.subprocess, "Popen", return_value=process), \
+                 mock.patch.object(acceptance, "AppOutput", return_value=app), \
+                 mock.patch.object(Path, "write_text", new=fail_first_summary_write):
+                with self.assertRaisesRegex(OSError, "simulated summary storage failure"):
+                    acceptance.execute(profile_root, app_bundle, output, repo=repo)
+
+            self.assertTrue(failed_initial_write)
+            self.assertEqual(len(app.abort_calls), 1)
+            self.assertEqual(app.close_calls, 1)
+            self.assertEqual(process.poll(), 0)
+            report = json.loads(summary_path.read_text())
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["app_pid"], process.pid)
+            self.assertEqual(report["app_exit_code"], 0)
+            self.assertTrue(report["cleanup"]["acknowledged"])
+            self.assertTrue(report["source_stable"])
+            self.assertIn("finished_utc", report)
+
     def test_valid_receipts_allow_equal_owner_and_accepted_revision_and_final_epoch_change(self):
         report, source, binary = valid_final()
+        self.assertEqual(report["receipts"][8]["batch_sequence"], 4)
+        self.assertEqual(report["effect_observations"][0]["batch_sequence"], 7)
+        self.assertEqual(report["receipts"][8]["window_sequence"], report["receipts"][7]["window_sequence"])
+        self.assertEqual(report["receipts"][10]["batch_sequence"], 8)
+        self.assertEqual(report["effect_observations"][1]["batch_sequence"], 9)
+        self.assertEqual(report["operations"][1]["release_batch_sequence"], 10)
         self.assertIs(acceptance.validate_final(report, source, binary, 8, 10), report)
+
+    def test_v2_effect_contract_rejects_unbound_callback_provenance_or_frames(self):
+        report, source, binary = valid_final()
+        cases = [
+            ("unsupported_final_version", lambda value: value.update(schema_version=1)),
+            ("unsupported_operation_version", lambda value: value["operations"][0].update(schema_version=3)),
+            ("operation_claims_origin", lambda value: value["operations"][0].update(causal_origin="dispatch", origin_dispatch_id=9)),
+            ("operation_wrong_receipt", lambda value: value["operations"][0].update(dispatch_receipt_index=7)),
+            ("operation_wrong_key", lambda value: value["operations"][0].update(key_code=53)),
+            ("operation_wrong_host", lambda value: value["operations"][0].update(host_epoch=99)),
+            ("operation_wrong_session", lambda value: value["operations"][0].update(session_epoch=99)),
+            ("operation_bad_baseline_sequence", lambda value: value["operations"][0].update(baseline_batch_sequence=7)),
+            ("operation_bad_baseline_frame", lambda value: value["operations"][0]["baseline_frame_identity"].update(frame_revision=99)),
+            ("operation_lost_composition", lambda value: value["operations"][0].update(baseline_composing=False)),
+            ("operation_timeout", lambda value: value["operations"][0].update(loop_iterations=acceptance.MAX_OPERATION_LOOP_ITERATIONS + 1)),
+            ("effect_claims_origin", lambda value: value["effect_observations"][0].update(causal_origin="return", origin_dispatch_id=9)),
+            ("effect_wrong_window", lambda value: value["effect_observations"][0].update(window_id=99)),
+            ("effect_wrong_host", lambda value: value["effect_observations"][0].update(host_epoch=99)),
+            ("effect_wrong_session", lambda value: value["effect_observations"][0].update(session_epoch=99)),
+            ("effect_wrong_batch_sequence", lambda value: value["effect_observations"][0].update(batch_sequence=8)),
+            ("effect_wrong_owner_revision", lambda value: value["effect_observations"][0].update(owner_revision=99)),
+            ("effect_wrong_frame", lambda value: value["effect_observations"][0]["frame_identity"].update(frame_revision=99)),
+            ("effect_wrong_delta", lambda value: value["effect_observations"][0].update(commit_callback_delta=2)),
+            ("effect_replay", lambda value: value["effect_observations"][1].update(batch_index=1)),
+            ("effect_reordered", lambda value: value["effect_observations"].reverse()),
+            ("release_wrong_kind", lambda value: value["operations"][1].update(release_kind="other")),
+            ("release_wrong_key", lambda value: value["operations"][1].update(release_key_code=36)),
+            ("release_replay_cancel_batch", lambda value: value["operations"][1].update(release_batch_index=3)),
+            ("release_wrong_sequence", lambda value: value["operations"][1].update(release_batch_sequence=9)),
+            ("release_wrong_frame", lambda value: value["operations"][1].update(release_frame_revision=29)),
+            ("release_geometry_without_revision", lambda value: value["operations"][1].update(release_geometry_revision=13)),
+            ("release_wrong_window", lambda value: value["batches"][4]["frame_identity"].update(window_id=99)),
+            ("release_extra_callback", lambda value: value["batches"][4].update(preedit_callbacks=1)),
+            ("release_unacknowledged", lambda value: value["batches"][4].update(acknowledged=False)),
+            ("return_claims_release", lambda value: value["operations"][0].update(
+                release_kind="forwarded_escape_release")),
+        ]
+        for label, mutate in cases:
+            changed = copy.deepcopy(report)
+            mutate(changed)
+            with self.subTest(case=label), self.assertRaises(acceptance.AcceptanceError):
+                acceptance.validate_final(changed, source, binary)
+        report["operations"][0]["loop_iterations"] = acceptance.MAX_OPERATION_LOOP_ITERATIONS
+        self.assertIs(acceptance.validate_final(report, source, binary), report)
+
+    def test_escape_release_accepts_only_the_exact_pending_geometry_revision(self):
+        report, source, binary = valid_final()
+        release = report["batches"][4]
+        release["accepted_revision"] = 13
+        release["frame_identity"]["accepted_revision"] = 13
+        report["operations"][1]["release_geometry_revision"] = 13
+        report["final_frame_identity"]["accepted_revision"] = 13
+        self.assertIs(acceptance.validate_final(report, source, binary), report)
+
+        for marker in (None, 12, 14, True):
+            changed = copy.deepcopy(report)
+            changed["operations"][1]["release_geometry_revision"] = marker
+            with self.subTest(marker=marker), self.assertRaises(acceptance.AcceptanceError):
+                acceptance.validate_final(changed, source, binary)
+
+        changed = copy.deepcopy(report)
+        changed["batches"][4]["owner_revision"] = 11
+        with self.assertRaises(acceptance.AcceptanceError):
+            acceptance.validate_final(changed, source, binary)
+
+    def test_escape_cancel_accepts_a_preedit_observed_after_a_noncomposing_boundary(self):
+        report, source, binary = valid_final()
+        report["operations"][1]["baseline_composing"] = False
+        report["batches"][3]["preedit_callbacks"] = 1
+        report["effect_observations"][1]["preedit_callback_delta"] = 1
+        report["preedit_callbacks"] = 3
+        self.assertIs(acceptance.validate_final(report, source, binary), report)
+
+        report, source, binary = valid_final()
+        report["operations"][1]["baseline_composing"] = False
+        with self.assertRaises(acceptance.AcceptanceError):
+            acceptance.validate_final(report, source, binary)
+
+    def test_preedit_only_ack_cannot_satisfy_a_commit_effect(self):
+        report, source, binary = valid_final()
+        report["batches"][1]["commit_callbacks"] = 0
+        report["batches"][2]["commit_callbacks"] = 1
+        with self.assertRaises(acceptance.AcceptanceError):
+            acceptance.validate_final(report, source, binary)
+
+    def test_operation_wait_budget_is_tickable_once_at_the_main_loop_boundary(self):
+        main = (REPO / "examples/macos_text_field/main.mbt").read_text()
+        acceptance_source = (REPO / "examples/macos_text_field/ime_acceptance.mbt").read_text()
+        self.assertEqual(main.count("acceptance = mac_acceptance_tick_operation_iteration(acceptance)"), 1)
+        self.assertLess(main.index("mac_acceptance_operation_timed_out(acceptance)"),
+                        main.index("acceptance = mac_acceptance_tick_operation_iteration(acceptance)"))
+        self.assertEqual(acceptance_source.count("mac_acceptance_tick_operation_iteration("), 1)
+        self.assertIn("const MAC_ACCEPTANCE_OPERATION_ITERATION_LIMIT : Int = 200", acceptance_source)
+
+    def test_after_frame_preserves_diagnostic_state_when_recording_an_effect(self):
+        source = (REPO / "examples/macos_text_field/ime_acceptance.mbt").read_text()
+        after_frame = source.split("fn mac_acceptance_after_frame(", 1)[1].split(
+            "fn mac_acceptance_poll_receipt(", 1)[0]
+        effect_call = after_frame.split(
+            "next_state = mac_acceptance_record_operation_effect(", 1
+        )[1].split(")", 1)[0]
+        self.assertIn("next_state", effect_call)
+        self.assertIn("pending_geometry_revision", effect_call)
+        self.assertIn("dispatch_trace_record_count: state.dispatch_trace_record_count + 1", source)
+
+    def test_effect_frames_keep_exact_committed_text(self):
+        report, source, binary = valid_final()
+        for operation_index, batch_index in ((0, 1), (1, 3)):
+            changed = copy.deepcopy(report)
+            changed["effect_observations"][operation_index]["frame_identity"]["text"] = "Hello WRONG"
+            changed["batches"][batch_index]["frame_identity"]["text"] = "Hello WRONG"
+            with self.subTest(operation=operation_index), self.assertRaises(acceptance.AcceptanceError):
+                acceptance.validate_final(changed, source, binary)
 
     def test_batch_revision_acknowledgements_must_form_a_monotonic_chain(self):
         report, source, binary = valid_final()

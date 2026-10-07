@@ -4,6 +4,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #include <math.h>
 #include <limits.h>
+#include <stdio.h>
 #include "abi.h"
 #include "../macos_text/macos_text.h"
 
@@ -54,13 +55,126 @@
 @property BOOL testingInputSourceSaved;
 @property BOOL testingTextFocusOverride;
 @property BOOL testingFocusOverrideEnabled, testingFocusOverride;
+#ifdef GPUI_TESTING
+@property NSUInteger testingImeDispatchTraceRecordCount;
+@property NSUInteger testingImeDispatchTraceRouteRecordCount;
+@property int testingImeDispatchTraceSessionEpoch;
+@property BOOL testingImeDispatchTraceTruncated;
+@property NSUInteger testingImeCallbackObservationId;
+#endif
 @end
 @interface GPView : NSView <NSTextInputClient>
 @property(weak) GPWindow *owner;
 @property BOOL suppressTextCallbacks;
 @property NSEvent *dispatchKeyEvent;
+- (void)dispatchKeyDown:(NSEvent *)event testingDispatchId:(int64_t)dispatch_id;
 - (void)flushPendingUnmark;
 @end
+
+typedef NS_ENUM(NSInteger, GPUIImeCallbackKind) {
+  GPUIImeCallbackInsertText = 1,
+  GPUIImeCallbackSetMarkedText = 2,
+  GPUIImeCallbackUnmarkText = 3,
+  GPUIImeCallbackDoCommand = 4,
+};
+typedef NS_ENUM(NSInteger, GPUIImeCallbackGuard) {
+  GPUIImeCallbackGuardNone = 0,
+  GPUIImeCallbackGuardNoOwner = 1,
+  GPUIImeCallbackGuardClosing = 2,
+  GPUIImeCallbackGuardSuppressed = 3,
+  GPUIImeCallbackGuardInactiveSession = 4,
+  GPUIImeCallbackGuardNoMarkedText = 5,
+  GPUIImeCallbackGuardInactiveDispatch = 6,
+  GPUIImeCallbackGuardNoDispatchKey = 7,
+};
+typedef NS_ENUM(NSInteger, GPUIImeCallbackResult) {
+  GPUIImeCallbackResultGuardRejected = 1,
+  GPUIImeCallbackResultInvalidText = 2,
+  GPUIImeCallbackResultInvalidRange = 3,
+  GPUIImeCallbackResultInvalidUpdatedText = 4,
+  GPUIImeCallbackResultAppendRejected = 5,
+  GPUIImeCallbackResultAcceptedCommit = 6,
+  GPUIImeCallbackResultAcceptedDirectText = 7,
+  GPUIImeCallbackResultAcceptedMarkedText = 8,
+  GPUIImeCallbackResultAcceptedEmptyMark = 9,
+  GPUIImeCallbackResultQueuedUnmark = 10,
+  GPUIImeCallbackResultNoTextTarget = 11,
+  GPUIImeCallbackResultForwardedKey = 12,
+  GPUIImeCallbackResultForwardUnavailable = 13,
+};
+#ifdef GPUI_TESTING
+typedef NS_ENUM(NSInteger, GPUIImeCommandKind) {
+  GPUIImeCommandKindNone = 0,
+  GPUIImeCommandKindInsertNewline = 1,
+  GPUIImeCommandKindInsertNewlineIgnoringFieldEditor = 2,
+  GPUIImeCommandKindNoop = 3,
+  GPUIImeCommandKindOther = 4,
+};
+#endif
+typedef struct {
+  BOOL owner_present;
+  BOOL closing;
+  BOOL suppress_callbacks;
+  BOOL session_active;
+  BOOL direct_text;
+  BOOL has_marked_text;
+  BOOL text_dispatch_active;
+  BOOL session_awaiting_ack;
+  BOOL dispatch_key_available;
+} GPUIImeCallbackFacts;
+
+static GPUIImeCallbackGuard macos_ime_callback_guard(GPUIImeCallbackKind kind,
+                                                     GPUIImeCallbackFacts facts) {
+  if (!facts.owner_present) return GPUIImeCallbackGuardNoOwner;
+  switch (kind) {
+    case GPUIImeCallbackInsertText:
+      if (facts.closing) return GPUIImeCallbackGuardClosing;
+      if (facts.suppress_callbacks) return GPUIImeCallbackGuardSuppressed;
+      return GPUIImeCallbackGuardNone;
+    case GPUIImeCallbackSetMarkedText:
+      if (facts.closing) return GPUIImeCallbackGuardClosing;
+      if (facts.suppress_callbacks) return GPUIImeCallbackGuardSuppressed;
+      if (!facts.session_active && !facts.direct_text)
+        return GPUIImeCallbackGuardInactiveSession;
+      return GPUIImeCallbackGuardNone;
+    case GPUIImeCallbackUnmarkText:
+      if (facts.suppress_callbacks) return GPUIImeCallbackGuardSuppressed;
+      if (!facts.session_active && !facts.direct_text)
+        return GPUIImeCallbackGuardInactiveSession;
+      if (!facts.has_marked_text) return GPUIImeCallbackGuardNoMarkedText;
+      return GPUIImeCallbackGuardNone;
+    case GPUIImeCallbackDoCommand:
+      if (!facts.session_active) return GPUIImeCallbackGuardInactiveSession;
+      if (!facts.text_dispatch_active) return GPUIImeCallbackGuardInactiveDispatch;
+      if (!facts.dispatch_key_available) return GPUIImeCallbackGuardNoDispatchKey;
+      return GPUIImeCallbackGuardNone;
+  }
+  return GPUIImeCallbackGuardNoOwner;
+}
+
+#ifdef GPUI_TESTING
+static GPUIImeCommandKind macos_ime_command_kind(SEL selector) {
+  if (!selector) return GPUIImeCommandKindNone;
+  if (selector == @selector(insertNewline:)) return GPUIImeCommandKindInsertNewline;
+  if (selector == @selector(insertNewlineIgnoringFieldEditor:))
+    return GPUIImeCommandKindInsertNewlineIgnoringFieldEditor;
+  if (selector == @selector(noop:)) return GPUIImeCommandKindNoop;
+  return GPUIImeCommandKindOther;
+}
+#endif
+static GPUIImeCallbackFacts macos_ime_callback_facts(GPView *view, GPWindow *owner) {
+  return (GPUIImeCallbackFacts){
+    .owner_present = owner != nil,
+    .closing = owner && owner.closing,
+    .suppress_callbacks = view && view.suppressTextCallbacks,
+    .session_active = owner && owner.sessionActive,
+    .direct_text = owner && owner.directText,
+    .has_marked_text = owner && owner.hasMarkedText,
+    .text_dispatch_active = owner && owner.textDispatchActive,
+    .session_awaiting_ack = owner && owner.sessionAwaitingAck,
+    .dispatch_key_available = view && view.dispatchKeyEvent != nil,
+  };
+}
 static NSMutableDictionary<NSNumber *, GPWindow *> *windows;
 static NSMutableArray<NSDictionary *> *events;
 static NSDictionary *current;
@@ -76,6 +190,535 @@ static BOOL overflow;
 static NSData *frame_pixels;
 static NSUInteger frame_width, frame_height, frame_stride;
 static double test_scale_override;
+
+static BOOL macos_ime_style_trace_enabled(GPView *view, GPWindow *owner) {
+  id value = NSProcessInfo.processInfo.environment[@"GPUI_FIELD_MACOS_IME_STYLE_TRACE"];
+  return view && owner && view.owner == owner && owner.sessionActive && !owner.closing &&
+    [value isKindOfClass:NSString.class] && [value isEqualToString:@"1"];
+}
+
+static void trace_macos_ime_styles(GPView *view, NSUInteger text_utf16_length,
+                                  NSArray<NSDictionary *> *runs, BOOL truncated) {
+  id key_code = view.dispatchKeyEvent ? @(view.dispatchKeyEvent.keyCode) : NSNull.null;
+  NSDictionary *record = @{
+    @"text_utf16_length": @(text_utf16_length),
+    @"dispatch_key_code": key_code,
+    @"underline_runs": runs,
+    @"underline_runs_truncated": @(truncated),
+  };
+  NSData *json = [NSJSONSerialization dataWithJSONObject:record
+                                                  options:NSJSONWritingFragmentsAllowed
+                                                    error:nil];
+  if (!json || !json.length) return;
+  fputs("GPUI_MACOS_IME_STYLE_TRACE ", stderr);
+  (void)fwrite(json.bytes, 1, json.length, stderr);
+  fputc('\n', stderr);
+  fflush(stderr);
+}
+
+#define GPUI_IME_DISPATCH_TRACE_LIMIT 64
+#define GPUI_IME_DISPATCH_TRACE_ROUTE_RESERVE 2
+#define GPUI_IME_DISPATCH_TRACE_TRUNCATION_RESERVE 1
+#define GPUI_IME_DISPATCH_TRACE_ORDINARY_LIMIT \
+  (GPUI_IME_DISPATCH_TRACE_LIMIT - GPUI_IME_DISPATCH_TRACE_ROUTE_RESERVE - \
+   GPUI_IME_DISPATCH_TRACE_TRUNCATION_RESERVE)
+#ifdef GPUI_TESTING
+typedef struct {
+  BOOL opt_in;
+  BOOL has_view;
+  BOOL has_owner;
+  BOOL view_owns_owner;
+  BOOL content_view_matches;
+  BOOL fixture_source_saved;
+  BOOL matching_synthetic_receipt;
+  BOOL trace_session_initialized;
+  BOOL owner_closing;
+  BOOL session_active;
+} GPUIImeCallbackTraceGateFacts;
+
+static BOOL macos_ime_callback_trace_gate_allows(GPUIImeCallbackTraceGateFacts facts) {
+  // Session-active and closing are deliberately absent: those are body guard
+  // facts to observe, not diagnostic ownership conditions.
+  return facts.opt_in && facts.has_view && facts.has_owner && facts.view_owns_owner &&
+    facts.content_view_matches && facts.fixture_source_saved &&
+    facts.matching_synthetic_receipt && facts.trace_session_initialized;
+}
+
+static const char *macos_ime_callback_kind_name(GPUIImeCallbackKind kind) {
+  switch (kind) {
+    case GPUIImeCallbackInsertText: return "insert_text";
+    case GPUIImeCallbackSetMarkedText: return "set_marked_text";
+    case GPUIImeCallbackUnmarkText: return "unmark_text";
+    case GPUIImeCallbackDoCommand: return "do_command_by_selector";
+  }
+  return "unknown";
+}
+
+static const char *macos_ime_callback_guard_name(GPUIImeCallbackGuard guard) {
+  switch (guard) {
+    case GPUIImeCallbackGuardNone: return "none";
+    case GPUIImeCallbackGuardNoOwner: return "no_owner";
+    case GPUIImeCallbackGuardClosing: return "owner_closing";
+    case GPUIImeCallbackGuardSuppressed: return "callbacks_suppressed";
+    case GPUIImeCallbackGuardInactiveSession: return "session_inactive";
+    case GPUIImeCallbackGuardNoMarkedText: return "no_marked_text";
+    case GPUIImeCallbackGuardInactiveDispatch: return "text_dispatch_inactive";
+    case GPUIImeCallbackGuardNoDispatchKey: return "dispatch_key_unavailable";
+  }
+  return "unknown";
+}
+
+static const char *macos_ime_callback_result_name(GPUIImeCallbackResult result) {
+  switch (result) {
+    case GPUIImeCallbackResultGuardRejected: return "guard_rejected";
+    case GPUIImeCallbackResultInvalidText: return "invalid_text";
+    case GPUIImeCallbackResultInvalidRange: return "invalid_range";
+    case GPUIImeCallbackResultInvalidUpdatedText: return "invalid_updated_text";
+    case GPUIImeCallbackResultAppendRejected: return "append_rejected";
+    case GPUIImeCallbackResultAcceptedCommit: return "accepted_commit";
+    case GPUIImeCallbackResultAcceptedDirectText: return "accepted_direct_text";
+    case GPUIImeCallbackResultAcceptedMarkedText: return "accepted_marked_text";
+    case GPUIImeCallbackResultAcceptedEmptyMark: return "accepted_empty_mark";
+    case GPUIImeCallbackResultQueuedUnmark: return "queued_unmark";
+    case GPUIImeCallbackResultNoTextTarget: return "no_text_target";
+    case GPUIImeCallbackResultForwardedKey: return "forwarded_key";
+    case GPUIImeCallbackResultForwardUnavailable: return "forward_unavailable";
+  }
+  return "unknown";
+}
+
+static const char *macos_ime_command_kind_name(GPUIImeCommandKind kind) {
+  switch (kind) {
+    case GPUIImeCommandKindNone: return "none";
+    case GPUIImeCommandKindInsertNewline: return "insert_newline";
+    case GPUIImeCommandKindInsertNewlineIgnoringFieldEditor:
+      return "insert_newline_ignoring_field_editor";
+    case GPUIImeCommandKindNoop: return "noop";
+    case GPUIImeCommandKindOther: return "other";
+  }
+  return "other";
+}
+#endif
+
+static BOOL macos_ime_dispatch_trace_enabled(GPView *view, GPWindow *owner) {
+  id value = NSProcessInfo.processInfo.environment[@"GPUI_FIELD_MACOS_IME_DISPATCH_TRACE"];
+  if (!view || !owner || view.owner != owner || !owner.sessionActive || owner.closing ||
+      ![value isKindOfClass:NSString.class] || ![value isEqualToString:@"1"]) return NO;
+  if (owner.testingImeDispatchTraceSessionEpoch != owner.sessionEpoch) {
+    owner.testingImeDispatchTraceSessionEpoch = owner.sessionEpoch;
+    owner.testingImeDispatchTraceRecordCount = 0;
+    owner.testingImeDispatchTraceRouteRecordCount = 0;
+    owner.testingImeDispatchTraceTruncated = NO;
+    owner.testingImeCallbackObservationId = 0;
+  }
+  return YES;
+}
+
+static BOOL macos_ime_dispatch_trace_record_is_bounded(NSDictionary *record) {
+  NSSet *phases = [NSSet setWithArray:@[@"dispatch", @"callback", @"batch", @"truncated"]];
+  NSSet *kinds = [NSSet setWithArray:@[@"down", @"up", @"commit", @"text_session", @"record_limit"]];
+  NSSet *keys = [NSSet setWithArray:@[
+    @"phase", @"kind", @"session_epoch", @"dispatch_id", @"key_code",
+    @"down_dispatched", @"up_dispatched", @"batch_sequence", @"window_sequence",
+    @"text_utf16_length", @"text_dispatch_active", @"session_awaiting_ack",
+    @"commit_callback_count", @"record_limit",
+  ]];
+  for (id key in record) {
+    if (![keys containsObject:key]) return NO;
+    id value = record[key];
+    if ([key isEqual:@"phase"]) {
+      if (![value isKindOfClass:NSString.class] || ![phases containsObject:value]) return NO;
+    } else if ([key isEqual:@"kind"]) {
+      if (![value isKindOfClass:NSString.class] || ![kinds containsObject:value]) return NO;
+    } else if (value != NSNull.null && ![value isKindOfClass:NSNumber.class]) {
+      return NO;
+    }
+  }
+  return YES;
+}
+
+static void emit_macos_ime_dispatch_trace_line(NSDictionary *record) {
+  if (!macos_ime_dispatch_trace_record_is_bounded(record)) return;
+  NSData *json = [NSJSONSerialization dataWithJSONObject:record
+                                                  options:NSJSONWritingFragmentsAllowed
+                                                    error:nil];
+  if (!json || !json.length) return;
+  fputs("GPUI_MACOS_IME_DISPATCH_TRACE ", stderr);
+  (void)fwrite(json.bytes, 1, json.length, stderr);
+  fputc('\n', stderr);
+  fflush(stderr);
+}
+
+#ifdef GPUI_TESTING
+typedef NS_ENUM(NSInteger, GPUIImeTraceSlotDecision) {
+  GPUIImeTraceSlotBlocked = 0,
+  GPUIImeTraceSlotGranted = 1,
+  GPUIImeTraceSlotTruncated = 2,
+};
+static GPUIImeTraceSlotDecision macos_ime_dispatch_trace_claim_slot(NSUInteger *count,
+                                                                    BOOL *truncated) {
+  if (!count || !truncated) return GPUIImeTraceSlotBlocked;
+  if (*count < GPUI_IME_DISPATCH_TRACE_ORDINARY_LIMIT) {
+    (*count)++;
+    return GPUIImeTraceSlotGranted;
+  }
+  if (!*truncated && *count < GPUI_IME_DISPATCH_TRACE_LIMIT) {
+    (*count)++;
+    *truncated = YES;
+    return GPUIImeTraceSlotTruncated;
+  }
+  return GPUIImeTraceSlotBlocked;
+}
+static BOOL macos_ime_dispatch_trace_route_slot_available(NSUInteger route_count,
+                                                          NSUInteger record_count) {
+  return route_count < GPUI_IME_DISPATCH_TRACE_ROUTE_RESERVE &&
+    record_count < GPUI_IME_DISPATCH_TRACE_LIMIT;
+}
+
+static BOOL macos_ime_callback_trace_record_is_bounded(NSDictionary *record) {
+  NSSet *stages = [NSSet setWithArray:@[@"scope", @"entry", @"result"]];
+  NSSet *callbacks = [NSSet setWithArray:@[
+    @"scope", @"insert_text", @"set_marked_text", @"unmark_text", @"do_command_by_selector",
+  ]];
+  NSSet *guards = [NSSet setWithArray:@[
+    @"none", @"no_owner", @"owner_closing", @"callbacks_suppressed",
+          @"session_inactive", @"no_marked_text", @"text_dispatch_inactive",
+    @"dispatch_key_unavailable",
+  ]];
+  NSSet *results = [NSSet setWithArray:@[
+    @"guard_rejected", @"invalid_text", @"invalid_range", @"invalid_updated_text",
+    @"append_rejected", @"accepted_commit", @"accepted_direct_text",
+    @"accepted_marked_text", @"accepted_empty_mark", @"queued_unmark",
+    @"no_text_target", @"forwarded_key", @"forward_unavailable",
+  ]];
+  NSSet *commands = [NSSet setWithArray:@[
+    @"none", @"insert_newline", @"insert_newline_ignoring_field_editor", @"noop", @"other",
+  ]];
+  NSSet *keys = [NSSet setWithArray:@[
+    @"schema_version", @"stage", @"callback_kind", @"observation_id",
+    @"route_dispatch_id", @"host_epoch", @"session_epoch", @"current_key_code",
+    @"scope_armed", @"scope_reason", @"fixture_source_saved", @"receipt_matches",
+    @"owner_closing", @"session_active", @"direct_text", @"suppress_callbacks",
+    @"text_dispatch_active", @"session_awaiting_ack", @"has_marked_text",
+    @"guard_reason", @"result", @"selector_kind",
+  ]];
+  for (id key in record) {
+    if (![keys containsObject:key]) return NO;
+    id value = record[key];
+    if ([key isEqual:@"stage"]) {
+      if (![value isKindOfClass:NSString.class] || ![stages containsObject:value]) return NO;
+    } else if ([key isEqual:@"callback_kind"]) {
+      if (![value isKindOfClass:NSString.class] || ![callbacks containsObject:value]) return NO;
+    } else if ([key isEqual:@"scope_reason"]) {
+      if (value != NSNull.null && (![value isKindOfClass:NSString.class] ||
+          ![@[@"ready", @"fixture_source_not_saved", @"receipt_not_matching",
+               @"trace_session_uninitialized", @"ownership_unavailable", @"trace_disabled"]
+            containsObject:value])) return NO;
+    } else if ([key isEqual:@"guard_reason"]) {
+      if (value != NSNull.null && (![value isKindOfClass:NSString.class] ||
+          ![guards containsObject:value])) return NO;
+    } else if ([key isEqual:@"result"]) {
+      if (value != NSNull.null && (![value isKindOfClass:NSString.class] || ![results containsObject:value])) return NO;
+    } else if ([key isEqual:@"selector_kind"]) {
+      if (![value isKindOfClass:NSString.class] || ![commands containsObject:value]) return NO;
+    } else if (value != NSNull.null && ![value isKindOfClass:NSNumber.class]) {
+      return NO;
+    }
+  }
+  return record.count == keys.count;
+}
+
+static void emit_macos_ime_callback_trace_line(NSDictionary *record) {
+  if (!macos_ime_callback_trace_record_is_bounded(record)) return;
+  NSData *json = [NSJSONSerialization dataWithJSONObject:record
+                                                  options:NSJSONWritingFragmentsAllowed
+                                                    error:nil];
+  if (!json || !json.length) return;
+  fputs("GPUI_MACOS_IME_CALLBACK_DIAGNOSTIC_TRACE ", stderr);
+  (void)fwrite(json.bytes, 1, json.length, stderr);
+  fputc('\n', stderr);
+  fflush(stderr);
+}
+
+static BOOL macos_ime_callback_receipt_matches(GPWindow *owner) {
+  NSDictionary *receipt = owner.testingDispatchReceipt;
+  if (![receipt isKindOfClass:NSDictionary.class]) return NO;
+  return [receipt[@"dispatch_id"] longLongValue] > 0 &&
+    [receipt[@"host_epoch"] longLongValue] == host_epoch &&
+    [receipt[@"session_epoch"] intValue] == owner.sessionEpoch &&
+    [receipt[@"down_posted"] boolValue] && [receipt[@"up_posted"] boolValue];
+}
+
+static GPUIImeCallbackTraceGateFacts macos_ime_callback_trace_gate_facts(GPView *view,
+                                                                        GPWindow *owner) {
+  id opt_in = NSProcessInfo.processInfo.environment[@"GPUI_FIELD_MACOS_IME_DISPATCH_TRACE"];
+  BOOL trace_opted_in = [opt_in isKindOfClass:NSString.class] && [opt_in isEqualToString:@"1"];
+  BOOL owns_view = view && owner && view.owner == owner;
+  BOOL content_matches = owns_view && owner.window.contentView == view;
+  BOOL saved_source = owner && owner.testingInputSourceSaved;
+  BOOL receipt_matches = owner && macos_ime_callback_receipt_matches(owner);
+
+  // Initialize the existing per-session budget only while the real session is
+  // active. A later inactive/closing callback can use its already established
+  // marker, but cannot create a fresh attribution context after teardown.
+  if (trace_opted_in && owns_view && content_matches && saved_source && receipt_matches &&
+      owner.sessionActive && !owner.closing &&
+      owner.testingImeDispatchTraceSessionEpoch != owner.sessionEpoch) {
+    (void)macos_ime_dispatch_trace_enabled(view, owner);
+  }
+  return (GPUIImeCallbackTraceGateFacts){
+    .opt_in = trace_opted_in,
+    .has_view = view != nil,
+    .has_owner = owner != nil,
+    .view_owns_owner = owns_view,
+    .content_view_matches = content_matches,
+    .fixture_source_saved = saved_source,
+    .matching_synthetic_receipt = receipt_matches,
+    .trace_session_initialized = owner &&
+      owner.testingImeDispatchTraceSessionEpoch == owner.sessionEpoch,
+    .owner_closing = owner && owner.closing,
+    .session_active = owner && owner.sessionActive,
+  };
+}
+
+static const char *macos_ime_callback_trace_gate_reason(GPUIImeCallbackTraceGateFacts facts) {
+  if (!facts.opt_in) return "trace_disabled";
+  if (!facts.has_view || !facts.has_owner || !facts.view_owns_owner || !facts.content_view_matches)
+    return "ownership_unavailable";
+  if (!facts.fixture_source_saved) return "fixture_source_not_saved";
+  if (!facts.matching_synthetic_receipt) return "receipt_not_matching";
+  if (!facts.trace_session_initialized) return "trace_session_uninitialized";
+  return "ready";
+}
+
+static BOOL macos_ime_callback_trace_gate_ready(GPUIImeCallbackTraceGateFacts facts) {
+  return macos_ime_callback_trace_gate_allows(facts);
+}
+
+static NSDictionary *macos_ime_callback_trace_scope_record(
+    GPUIImeCallbackTraceGateFacts gate, int64_t route_dispatch_id,
+    int64_t event_host_epoch, int session_epoch, GPUIImeCallbackFacts facts) {
+  return @{
+    @"schema_version": @1,
+    @"stage": @"scope",
+    @"callback_kind": @"scope",
+    @"observation_id": NSNull.null,
+    @"route_dispatch_id": @(route_dispatch_id),
+    @"host_epoch": @(event_host_epoch),
+    @"session_epoch": @(session_epoch),
+    @"current_key_code": @36,
+    @"scope_armed": @(macos_ime_callback_trace_gate_ready(gate)),
+    @"scope_reason": [NSString stringWithUTF8String:macos_ime_callback_trace_gate_reason(gate)],
+    @"fixture_source_saved": @(gate.fixture_source_saved),
+    @"receipt_matches": @(gate.matching_synthetic_receipt),
+    @"owner_closing": @(facts.closing),
+    @"session_active": @(facts.session_active),
+    @"direct_text": @(facts.direct_text),
+    @"suppress_callbacks": @(facts.suppress_callbacks),
+    @"text_dispatch_active": @(facts.text_dispatch_active),
+    @"session_awaiting_ack": @(facts.session_awaiting_ack),
+    @"has_marked_text": @(facts.has_marked_text),
+    @"guard_reason": @"none",
+    @"result": NSNull.null,
+    @"selector_kind": @"none",
+  };
+}
+
+static NSDictionary *macos_ime_callback_trace_entry_record(
+    GPUIImeCallbackKind kind, GPUIImeCommandKind selector_kind,
+    NSUInteger observation_id, NSNumber *current_key_code,
+    int64_t event_host_epoch, int session_epoch,
+    GPUIImeCallbackTraceGateFacts gate, GPUIImeCallbackFacts facts) {
+  return @{
+    @"schema_version": @1,
+    @"stage": @"entry",
+    @"callback_kind": [NSString stringWithUTF8String:macos_ime_callback_kind_name(kind)],
+    @"observation_id": @(observation_id),
+    @"route_dispatch_id": NSNull.null,
+    @"host_epoch": @(event_host_epoch),
+    @"session_epoch": @(session_epoch),
+    @"current_key_code": current_key_code ?: NSNull.null,
+    @"scope_armed": @(macos_ime_callback_trace_gate_ready(gate)),
+    @"scope_reason": [NSString stringWithUTF8String:macos_ime_callback_trace_gate_reason(gate)],
+    @"fixture_source_saved": @(gate.fixture_source_saved),
+    @"receipt_matches": @(gate.matching_synthetic_receipt),
+    @"owner_closing": @(facts.closing),
+    @"session_active": @(facts.session_active),
+    @"direct_text": @(facts.direct_text),
+    @"suppress_callbacks": @(facts.suppress_callbacks),
+    @"text_dispatch_active": @(facts.text_dispatch_active),
+    @"session_awaiting_ack": @(facts.session_awaiting_ack),
+    @"has_marked_text": @(facts.has_marked_text),
+    @"guard_reason": NSNull.null,
+    @"result": NSNull.null,
+    @"selector_kind": [NSString stringWithUTF8String:macos_ime_command_kind_name(selector_kind)],
+  };
+}
+
+static BOOL macos_ime_dispatch_trace_claim_ordinary_slot(GPWindow *owner) {
+  NSUInteger record_count = owner.testingImeDispatchTraceRecordCount;
+  BOOL truncated = owner.testingImeDispatchTraceTruncated;
+  GPUIImeTraceSlotDecision decision = macos_ime_dispatch_trace_claim_slot(
+    &record_count, &truncated);
+  owner.testingImeDispatchTraceRecordCount = record_count;
+  owner.testingImeDispatchTraceTruncated = truncated;
+  if (decision == GPUIImeTraceSlotGranted) return YES;
+  if (decision == GPUIImeTraceSlotTruncated) {
+    emit_macos_ime_dispatch_trace_line(@{
+      @"phase": @"truncated", @"kind": @"record_limit",
+      @"session_epoch": @(owner.sessionEpoch),
+      @"record_limit": @(GPUI_IME_DISPATCH_TRACE_LIMIT),
+    });
+  }
+  return NO;
+}
+
+static NSDictionary *macos_ime_callback_trace_begin(GPView *view, GPWindow *owner,
+                                                    GPUIImeCallbackKind kind,
+                                                    GPUIImeCommandKind selector_kind) {
+  GPUIImeCallbackTraceGateFacts gate = macos_ime_callback_trace_gate_facts(view, owner);
+  if (!macos_ime_callback_trace_gate_ready(gate) ||
+      !macos_ime_dispatch_trace_claim_ordinary_slot(owner)) return nil;
+  owner.testingImeCallbackObservationId++;
+  GPUIImeCallbackFacts facts = macos_ime_callback_facts(view, owner);
+  NSDictionary *snapshot = macos_ime_callback_trace_entry_record(
+    kind, selector_kind, owner.testingImeCallbackObservationId,
+    view.dispatchKeyEvent ? @(view.dispatchKeyEvent.keyCode) : nil,
+    host_epoch, owner.sessionEpoch, gate, facts);
+  NSMutableDictionary *entry = [snapshot mutableCopy];
+  entry[@"result"] = NSNull.null;
+  if (!macos_ime_callback_trace_record_is_bounded(entry)) return nil;
+  emit_macos_ime_callback_trace_line(entry);
+  return snapshot;
+}
+
+static NSDictionary *macos_ime_callback_trace_result_record(NSDictionary *snapshot,
+                                                           GPUIImeCallbackGuard guard,
+                                                           GPUIImeCallbackResult result) {
+  if (!snapshot) return nil;
+  NSMutableDictionary *record = [snapshot mutableCopy];
+  record[@"stage"] = @"result";
+  record[@"guard_reason"] = [NSString stringWithUTF8String:macos_ime_callback_guard_name(guard)];
+  record[@"result"] = [NSString stringWithUTF8String:macos_ime_callback_result_name(result)];
+  return macos_ime_callback_trace_record_is_bounded(record) ? [record copy] : nil;
+}
+
+static void macos_ime_callback_trace_result(GPWindow *owner, NSDictionary *snapshot,
+                                            GPUIImeCallbackGuard guard,
+                                            GPUIImeCallbackResult result) {
+  if (!owner || !snapshot) return;
+  NSDictionary *record = macos_ime_callback_trace_result_record(snapshot, guard, result);
+  if (!record) return;
+  if (!macos_ime_dispatch_trace_claim_ordinary_slot(owner)) return;
+  emit_macos_ime_callback_trace_line(record);
+}
+
+static void trace_macos_ime_callback_scope(GPView *view, GPWindow *owner,
+                                           int64_t route_dispatch_id) {
+  if (!view || !owner || route_dispatch_id <= 0 ||
+      !macos_ime_dispatch_trace_enabled(view, owner)) return;
+  GPUIImeCallbackTraceGateFacts gate = macos_ime_callback_trace_gate_facts(view, owner);
+  NSDictionary *record = macos_ime_callback_trace_scope_record(
+    gate, route_dispatch_id, host_epoch, owner.sessionEpoch,
+    macos_ime_callback_facts(view, owner));
+  if (!macos_ime_callback_trace_record_is_bounded(record) ||
+      !macos_ime_dispatch_trace_claim_ordinary_slot(owner)) return;
+  emit_macos_ime_callback_trace_line(record);
+}
+#endif
+
+static BOOL macos_ime_return_route_trace_record_is_bounded(NSDictionary *record) {
+  NSSet *phases = [NSSet setWithArray:@[@"return_route_begin", @"return_route_result"]];
+  NSSet *keys = [NSSet setWithArray:@[
+    @"schema_version", @"phase", @"session_epoch", @"dispatch_id", @"key_code",
+    @"input_context_available", @"input_context_handled", @"interpret_fallback_invoked", @"last_batch_sequence",
+    @"window_sequence", @"awaiting_sequence", @"last_presented_batch_sequence",
+    @"session_awaiting_ack", @"batch_delivered", @"text_dispatch_active",
+    @"deferred_text_error",
+  ]];
+  for (id key in record) {
+    if (![keys containsObject:key]) return NO;
+    id value = record[key];
+    if ([key isEqual:@"phase"]) {
+      if (![value isKindOfClass:NSString.class] || ![phases containsObject:value]) return NO;
+    } else if (value != NSNull.null && ![value isKindOfClass:NSNumber.class]) {
+      return NO;
+    }
+  }
+  return record.count == keys.count;
+}
+
+// Keep the Return route markers in the two trace slots reserved above. The
+// dispatch trace and this opt-in diagnostic share one per-session 64-record
+// budget; no callback contents or user text are included.
+static void trace_macos_ime_return_route(GPView *view, GPWindow *owner,
+                                        NSString *phase, int64_t dispatch_id,
+                                        NSNumber *input_context_available,
+                                        NSNumber *input_context_handled,
+                                        NSNumber *interpret_fallback_invoked) {
+  if (!macos_ime_dispatch_trace_enabled(view, owner) ||
+      dispatch_id <= 0 ||
+      !macos_ime_dispatch_trace_route_slot_available(
+        owner.testingImeDispatchTraceRouteRecordCount, owner.testingImeDispatchTraceRecordCount)) return;
+  NSDictionary *record = @{
+    @"schema_version": @1,
+    @"phase": phase,
+    @"session_epoch": @(owner.sessionEpoch),
+    @"dispatch_id": @(dispatch_id),
+    @"key_code": @36,
+    @"input_context_available": input_context_available ?: NSNull.null,
+    @"input_context_handled": input_context_handled ?: NSNull.null,
+    @"interpret_fallback_invoked": interpret_fallback_invoked ?: NSNull.null,
+    @"last_batch_sequence": @(owner.lastBatchSequence),
+    @"window_sequence": @(owner.sequence),
+    @"awaiting_sequence": @(owner.awaitingSequence),
+    @"last_presented_batch_sequence": @(owner.lastPresentedBatchSequence),
+    @"session_awaiting_ack": @(owner.sessionAwaitingAck),
+    @"batch_delivered": @(owner.batchDelivered),
+    @"text_dispatch_active": @(owner.textDispatchActive),
+    @"deferred_text_error": @(owner.deferredTextError),
+  };
+  if (!macos_ime_return_route_trace_record_is_bounded(record)) return;
+  owner.testingImeDispatchTraceRouteRecordCount++;
+  owner.testingImeDispatchTraceRecordCount++;
+  NSData *json = [NSJSONSerialization dataWithJSONObject:record
+                                                  options:NSJSONWritingFragmentsAllowed
+                                                    error:nil];
+  if (!json || !json.length) return;
+  fputs("GPUI_MACOS_IME_DIAGNOSTIC_TRACE ", stderr);
+  (void)fwrite(json.bytes, 1, json.length, stderr);
+  fputc('\n', stderr);
+  fflush(stderr);
+}
+
+// Phase and kind are fixed literals; every other emitted value is numeric,
+// boolean, or null. This trace deliberately excludes callback contents.
+static void trace_macos_ime_dispatch(GPView *view, GPWindow *owner,
+                                     NSString *phase, NSString *kind,
+                                     NSNumber *dispatch_id, NSNumber *key_code,
+                                     NSNumber *down_dispatched, NSNumber *up_dispatched,
+                                     NSNumber *batch_sequence, NSNumber *window_sequence,
+                                     NSNumber *text_utf16_length,
+                                     NSNumber *text_dispatch_active,
+                                     NSNumber *session_awaiting_ack,
+                                     NSNumber *commit_callback_count) {
+  if (!macos_ime_dispatch_trace_enabled(view, owner)) return;
+  if (!macos_ime_dispatch_trace_claim_ordinary_slot(owner)) return;
+  emit_macos_ime_dispatch_trace_line(@{
+    @"phase": phase, @"kind": kind,
+    @"session_epoch": @(owner.sessionEpoch),
+    @"dispatch_id": dispatch_id ?: NSNull.null,
+    @"key_code": key_code ?: NSNull.null,
+    @"down_dispatched": down_dispatched ?: NSNull.null,
+    @"up_dispatched": up_dispatched ?: NSNull.null,
+    @"batch_sequence": batch_sequence ?: NSNull.null,
+    @"window_sequence": window_sequence ?: NSNull.null,
+    @"text_utf16_length": text_utf16_length ?: NSNull.null,
+    @"text_dispatch_active": text_dispatch_active ?: NSNull.null,
+    @"session_awaiting_ack": session_awaiting_ack ?: NSNull.null,
+    @"commit_callback_count": commit_callback_count ?: NSNull.null,
+  });
+}
 #endif
 static BOOL key_window_owns_view(GPWindow *w);
 static void request_application_activation(void) {
@@ -259,6 +902,18 @@ static void flush_text_batch(GPWindow *w) {
   w.awaitingSequence = sequence;
   w.sessionAwaitingAck = YES;
   w.batchDelivered = NO;
+#ifdef GPUI_TESTING
+  GPView *trace_view = (GPView *)w.window.contentView;
+  if (macos_ime_dispatch_trace_enabled(trace_view, w)) {
+    NSUInteger commit_callback_count = 0;
+    for (NSDictionary *callback in callbacks) {
+      if ([callback[@"kind"] isEqual:@"commit"]) commit_callback_count++;
+    }
+    trace_macos_ime_dispatch(trace_view, w, @"batch", @"text_session",
+      nil, nil, nil, nil, @(w.lastBatchSequence), @(w.sequence), nil,
+      @(w.textDispatchActive), @(w.sessionAwaitingAck), @(commit_callback_count));
+  }
+#endif
 }
 static void flush_async_text_transactions(void) {
   if (!windows) return;
@@ -640,6 +1295,17 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
     receipt[@"session_epoch"] = @(w.sessionEpoch);
     receipt[@"batch_sequence"] = @(w.lastBatchSequence);
     receipt[@"window_sequence"] = @(w.sequence);
+#ifdef GPUI_TESTING
+    if ([receipt[@"key_code"] intValue] == 36) {
+      GPView *view = (GPView *)w.window.contentView;
+      NSString *kind = [phase isEqualToString:@"down"] ? @"down" : @"up";
+      trace_macos_ime_dispatch(view, w, @"dispatch", kind,
+        receipt[@"dispatch_id"], receipt[@"key_code"],
+        receipt[@"down_dispatched"], receipt[@"up_dispatched"],
+        receipt[@"batch_sequence"], receipt[@"window_sequence"], nil,
+        @(w.textDispatchActive), @(w.sessionAwaitingAck), nil);
+    }
+#endif
     return;
   }
 }
@@ -688,8 +1354,10 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
 #ifdef GPUI_TESTING
   int64_t dispatch_id = take_testing_key_dispatch(self.owner, e, @"down");
   if (dispatch_id < 0) return;
+  [self dispatchKeyDown:e testingDispatchId:dispatch_id];
+#else
+  [self dispatchKeyDown:e testingDispatchId:0];
 #endif
-  [self dispatchKeyDown:e];
 #ifdef GPUI_TESTING
   complete_testing_key_dispatch(self.owner, dispatch_id, @"down");
 #endif
@@ -756,7 +1424,7 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
   return @{@"kind":kind, @"key_code":@(event.keyCode), @"key":key,
     @"modifiers":@(mods)};
 }
-- (void)dispatchKeyDown:(NSEvent *)event {
+- (void)dispatchKeyDown:(NSEvent *)event testingDispatchId:(int64_t)dispatch_id {
   GPWindow *owner = self.owner;
   if (!owner || owner.closing) return;
   resize_surface(owner);
@@ -781,8 +1449,23 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
         discard_marked_input_state(owner);
       }
     } else {
-      BOOL handled = [self.inputContext handleEvent:event];
-      if (!handled) [self interpretKeyEvents:@[event]];
+      NSTextInputContext *input_context = self.inputContext;
+      if (event.keyCode == 36) {
+#ifdef GPUI_TESTING
+        trace_macos_ime_return_route((GPView *)owner.window.contentView, owner,
+          @"return_route_begin", dispatch_id, @(input_context != nil), nil, nil);
+        trace_macos_ime_callback_scope((GPView *)owner.window.contentView, owner, dispatch_id);
+#endif
+      }
+      BOOL handled = [input_context handleEvent:event];
+      BOOL fallback_invoked = !handled;
+      if (fallback_invoked) [self interpretKeyEvents:@[event]];
+#ifdef GPUI_TESTING
+      if (event.keyCode == 36) {
+        trace_macos_ime_return_route((GPView *)owner.window.contentView, owner,
+          @"return_route_result", dispatch_id, @(input_context != nil), @(handled), @(fallback_invoked));
+      }
+#endif
     }
     self.dispatchKeyEvent = nil;
     [self flushPendingUnmark];
@@ -852,15 +1535,41 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
 // the last accepted field state plus callbacks in the current AppKit dispatch.
 - (void)insertText:(id)value replacementRange:(NSRange)replacementRange {
   GPWindow *owner = self.owner;
-  if (!owner || owner.closing || self.suppressTextCallbacks) return;
+  GPUIImeCallbackFacts callback_facts = macos_ime_callback_facts(self, owner);
+#ifdef GPUI_TESTING
+  NSDictionary *callback_trace = macos_ime_callback_trace_begin(
+    self, owner, GPUIImeCallbackInsertText, GPUIImeCommandKindNone);
+#endif
+  GPUIImeCallbackGuard callback_guard = macos_ime_callback_guard(
+    GPUIImeCallbackInsertText, callback_facts);
+  if (callback_guard != GPUIImeCallbackGuardNone) {
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultGuardRejected);
+#endif
+    return;
+  }
   NSString *text = [value isKindOfClass:NSAttributedString.class] ? [value string] :
     ([value isKindOfClass:NSString.class] ? value : nil);
   NSData *utf8 = nil;
   if (!valid_text_string(text, &utf8)) {
     if (owner.sessionActive) fail_text_session(owner, 5);
     else owner.deferredTextError = 5;
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultInvalidText);
+#endif
     return;
   }
+#ifdef GPUI_TESTING
+  if (owner.sessionActive) {
+    NSNumber *key_code = self.dispatchKeyEvent ? @(self.dispatchKeyEvent.keyCode) : nil;
+    trace_macos_ime_dispatch((GPView *)owner.window.contentView, owner,
+      @"callback", @"commit", nil, key_code, nil, nil,
+      @(owner.lastBatchSequence), @(owner.sequence), @(text.length),
+      @(owner.textDispatchActive), @(owner.sessionAwaitingAck), nil);
+  }
+#endif
   if (owner.sessionActive) {
     NSRange target = replacementRange.location == NSNotFound ?
       (owner.hasMarkedText ? owner.markedRange : owner.selectionRange) : replacementRange;
@@ -868,14 +1577,32 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
         (replacementRange.location != NSNotFound &&
          !(owner.hasMarkedText && NSEqualRanges(target, owner.markedRange)) &&
          !(!owner.hasMarkedText && NSEqualRanges(target, normalized_range(owner.selectionRange))))) {
-      fail_text_session(owner, 9); return;
+      fail_text_session(owner, 9);
+#ifdef GPUI_TESTING
+      macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+        GPUIImeCallbackResultInvalidRange);
+#endif
+      return;
     }
     NSMutableString *updated = [owner.visibleText mutableCopy];
     [updated replaceCharactersInRange:target withString:text];
-    if (!valid_text_string(updated, NULL)) { fail_text_session(owner, 13); return; }
+    if (!valid_text_string(updated, NULL)) {
+      fail_text_session(owner, 13);
+#ifdef GPUI_TESTING
+      macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+        GPUIImeCallbackResultInvalidUpdatedText);
+#endif
+      return;
+    }
     NSDictionary *commit = @{@"kind":@"commit", @"text":text,
       @"replacement_range":json_range(replacementRange, replacementRange.location != NSNotFound)};
-    if (!append_text_callback(owner, commit)) return;
+    if (!append_text_callback(owner, commit)) {
+#ifdef GPUI_TESTING
+      macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+        GPUIImeCallbackResultAppendRejected);
+#endif
+      return;
+    }
     owner.visibleText = [updated copy];
     owner.baseText = owner.visibleText;
     owner.sessionBaseSelection = NSMakeRange(target.location + text.length, 0);
@@ -886,48 +1613,111 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
     owner.markedRange = NSMakeRange(NSNotFound, 0);
     owner.pendingUnmark = NO;
     owner.textDispatchCommitted = YES;
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultAcceptedCommit);
+#endif
     return;
   }
   if (owner.directText) {
     if (owner.hasMarkedText && valid_range_for_text(owner.markedRange, owner.visibleText)) {
       NSMutableString *updated = [owner.visibleText mutableCopy];
       [updated replaceCharactersInRange:owner.markedRange withString:text];
-      if (!valid_text_string(updated, NULL)) { owner.deferredTextError = 13; return; }
-      if (!emit_direct_text(owner, text)) return;
+      if (!valid_text_string(updated, NULL)) {
+        owner.deferredTextError = 13;
+#ifdef GPUI_TESTING
+        macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+          GPUIImeCallbackResultInvalidUpdatedText);
+#endif
+        return;
+      }
+      if (!emit_direct_text(owner, text)) {
+#ifdef GPUI_TESTING
+        macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+          GPUIImeCallbackResultAppendRejected);
+#endif
+        return;
+      }
       owner.visibleText = [updated copy];
       owner.selectionRange = NSMakeRange(owner.markedRange.location + text.length, 0);
       owner.caretHead = owner.selectionRange.location;
       owner.caretRectMatchesVisible = NO;
     } else {
-      if (!emit_direct_text(owner, text)) return;
+      if (!emit_direct_text(owner, text)) {
+#ifdef GPUI_TESTING
+        macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+          GPUIImeCallbackResultAppendRejected);
+#endif
+        return;
+      }
     }
     owner.hasMarkedText = NO;
     owner.markedRange = NSMakeRange(NSNotFound, 0);
     owner.pendingUnmark = NO;
     owner.textDispatchCommitted = YES;
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultAcceptedDirectText);
+#endif
+    return;
   }
+#ifdef GPUI_TESTING
+  macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+    GPUIImeCallbackResultNoTextTarget);
+#endif
 }
 - (void)insertText:(id)value { [self insertText:value replacementRange:NSMakeRange(NSNotFound, 0)]; }
 - (void)setMarkedText:(id)value selectedRange:(NSRange)selectedRange replacementRange:(NSRange)replacementRange {
   GPWindow *owner = self.owner;
-  if (!owner || owner.closing || self.suppressTextCallbacks || (!owner.sessionActive && !owner.directText)) return;
+  GPUIImeCallbackFacts callback_facts = macos_ime_callback_facts(self, owner);
+#ifdef GPUI_TESTING
+  NSDictionary *callback_trace = macos_ime_callback_trace_begin(
+    self, owner, GPUIImeCallbackSetMarkedText, GPUIImeCommandKindNone);
+#endif
+  GPUIImeCallbackGuard callback_guard = macos_ime_callback_guard(
+    GPUIImeCallbackSetMarkedText, callback_facts);
+  if (callback_guard != GPUIImeCallbackGuardNone) {
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultGuardRejected);
+#endif
+    return;
+  }
   NSString *text = [value isKindOfClass:NSAttributedString.class] ? [value string] :
     ([value isKindOfClass:NSString.class] ? value : nil);
-  if (!valid_text_string(text, NULL)) { fail_text_session(owner, 5); return; }
+  if (!valid_text_string(text, NULL)) {
+    fail_text_session(owner, 5);
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultInvalidText);
+#endif
+    return;
+  }
   NSRange target = replacementRange.location == NSNotFound ?
     (owner.hasMarkedText ? owner.markedRange : owner.selectionRange) : replacementRange;
   if (!valid_range_for_text(target, owner.visibleText) ||
       (replacementRange.location != NSNotFound &&
        !(owner.hasMarkedText && NSEqualRanges(target, owner.markedRange)) &&
        !(!owner.hasMarkedText && NSEqualRanges(target, normalized_range(owner.selectionRange))))) {
-    fail_text_session(owner, 9); return;
+    fail_text_session(owner, 9);
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultInvalidRange);
+#endif
+    return;
   }
   if (text.length == 0) {
     if (owner.sessionActive) {
       NSDictionary *preedit = @{@"kind":@"preedit", @"text":@"", @"fallback":@"",
         @"cursor_utf16":NSNull.null, @"styles":@[],
         @"replacement_range":json_range(replacementRange, replacementRange.location != NSNotFound)};
-      if (!append_text_callback(owner, preedit)) return;
+      if (!append_text_callback(owner, preedit)) {
+#ifdef GPUI_TESTING
+        macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+          GPUIImeCallbackResultAppendRejected);
+#endif
+        return;
+      }
     }
     owner.visibleText = owner.baseText ?: @"";
     owner.selectionRange = owner.sessionBaseSelection;
@@ -935,13 +1725,24 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
     owner.markedRange = NSMakeRange(NSNotFound, 0);
     owner.caretHead = owner.sessionBaseSelection.location;
     owner.caretRectMatchesVisible = NO;
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultAcceptedEmptyMark);
+#endif
     return;
   }
   if (!owner.hasMarkedText) owner.sessionMarkedBaseRange = target;
   NSMutableString *updated = [owner.visibleText mutableCopy];
   [updated replaceCharactersInRange:target withString:text];
   NSString *newVisible = [updated copy];
-  if (!valid_text_string(newVisible, NULL)) { fail_text_session(owner, 13); return; }
+  if (!valid_text_string(newVisible, NULL)) {
+    fail_text_session(owner, 13);
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultInvalidUpdatedText);
+#endif
+    return;
+  }
   NSRange marked = NSMakeRange(target.location, text.length);
   id cursor = NSNull.null;
   if (selectedRange.location != NSNotFound && selectedRange.location <= text.length &&
@@ -955,6 +1756,11 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
     owner.selectionRange = NSMakeRange(NSNotFound, 0);
   }
   NSMutableArray *styles = [NSMutableArray new];
+#ifdef GPUI_TESTING
+  BOOL trace_styles = macos_ime_style_trace_enabled(self, owner);
+  NSMutableArray<NSDictionary *> *trace_runs = trace_styles ? [NSMutableArray new] : nil;
+  __block BOOL trace_runs_truncated = NO;
+#endif
   if ([value isKindOfClass:NSAttributedString.class]) {
     NSAttributedString *attributed = value;
     [attributed enumerateAttribute:NSUnderlineStyleAttributeName inRange:NSMakeRange(0, attributed.length)
@@ -962,22 +1768,66 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
         (void)stop;
         if (!attr || range.length == 0) return;
         NSInteger raw = [attr respondsToSelector:@selector(integerValue)] ? [attr integerValue] : -1;
-        int style = raw == NSUnderlineStyleSingle ? 5 : 255;
+        // The bounded field renders both hints with one generic full-marked-range marker.
+        int style = (raw == NSUnderlineStyleSingle || raw == NSUnderlineStyleThick) ? 5 : 255;
         [styles addObject:@{@"start":@(range.location), @"end":@(NSMaxRange(range)), @"style":@(style)}];
+#ifdef GPUI_TESTING
+        if (trace_styles) {
+          if (trace_runs.count < 64) {
+            [trace_runs addObject:@{
+              @"start": @(range.location),
+              @"end": @(NSMaxRange(range)),
+              @"length": @(range.length),
+              @"raw_style": @(raw),
+              @"mapped_style": @(style),
+            }];
+          } else {
+            trace_runs_truncated = YES;
+          }
+        }
+#endif
       }];
   }
+#ifdef GPUI_TESTING
+  if (trace_styles) {
+    trace_macos_ime_styles(self, text.length, trace_runs, trace_runs_truncated);
+  }
+#endif
   NSDictionary *preedit = @{@"kind":@"preedit", @"text":text, @"fallback":@"",
     @"cursor_utf16":cursor, @"styles":styles,
     @"replacement_range":json_range(replacementRange, replacementRange.location != NSNotFound)};
-  if (owner.sessionActive && !append_text_callback(owner, preedit)) return;
+  if (owner.sessionActive && !append_text_callback(owner, preedit)) {
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultAppendRejected);
+#endif
+    return;
+  }
   owner.visibleText = newVisible;
   owner.markedRange = marked;
   owner.hasMarkedText = YES;
   owner.caretRectMatchesVisible = NO;
+#ifdef GPUI_TESTING
+  macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+    GPUIImeCallbackResultAcceptedMarkedText);
+#endif
 }
 - (void)unmarkText {
   GPWindow *owner = self.owner;
-  if (!owner || self.suppressTextCallbacks || (!owner.sessionActive && !owner.directText) || !owner.hasMarkedText) return;
+  GPUIImeCallbackFacts callback_facts = macos_ime_callback_facts(self, owner);
+#ifdef GPUI_TESTING
+  NSDictionary *callback_trace = macos_ime_callback_trace_begin(
+    self, owner, GPUIImeCallbackUnmarkText, GPUIImeCommandKindNone);
+#endif
+  GPUIImeCallbackGuard callback_guard = macos_ime_callback_guard(
+    GPUIImeCallbackUnmarkText, callback_facts);
+  if (callback_guard != GPUIImeCallbackGuardNone) {
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultGuardRejected);
+#endif
+    return;
+  }
   owner.pendingUnmarkText = [owner.visibleText substringWithRange:owner.markedRange];
   owner.pendingUnmark = YES;
   if (!owner.textDispatchActive) {
@@ -985,6 +1835,10 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
     [self flushPendingUnmark];
     flush_text_batch(owner);
   }
+#ifdef GPUI_TESTING
+  macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+    GPUIImeCallbackResultQueuedUnmark);
+#endif
 }
 - (BOOL)hasMarkedText { return self.owner && self.owner.hasMarkedText; }
 - (NSRange)markedRange { return self.owner && self.owner.hasMarkedText ? self.owner.markedRange : NSMakeRange(NSNotFound, 0); }
@@ -1033,12 +1887,42 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
   return utf16;
 }
 - (void)doCommandBySelector:(SEL)selector {
-  (void)selector;
   GPWindow *owner = self.owner;
-  if (!owner || !owner.sessionActive || !owner.textDispatchActive || !self.dispatchKeyEvent) return;
+  GPUIImeCallbackFacts callback_facts = macos_ime_callback_facts(self, owner);
+#ifdef GPUI_TESTING
+  GPUIImeCommandKind selector_kind = macos_ime_command_kind(selector);
+  NSDictionary *callback_trace = macos_ime_callback_trace_begin(
+    self, owner, GPUIImeCallbackDoCommand, selector_kind);
+#endif
+  GPUIImeCallbackGuard callback_guard = macos_ime_callback_guard(
+    GPUIImeCallbackDoCommand, callback_facts);
+  if (callback_guard != GPUIImeCallbackGuardNone) {
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultGuardRejected);
+#endif
+    return;
+  }
   NSDictionary *forwarded = [self forwardedKey:self.dispatchKeyEvent kind:@"forwarded_pressed"];
-  if (forwarded && append_text_callback(owner, forwarded))
+  if (!forwarded) {
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultForwardUnavailable);
+#endif
+    return;
+  }
+  if (append_text_callback(owner, forwarded)) {
     [owner.sessionForwardedKeyUps addObject:@(self.dispatchKeyEvent.keyCode)];
+ #ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultForwardedKey);
+ #endif
+  } else {
+#ifdef GPUI_TESTING
+    macos_ime_callback_trace_result(owner, callback_trace, callback_guard,
+      GPUIImeCallbackResultAppendRejected);
+#endif
+  }
 }
 @end
 @interface GPApplicationDelegate : NSObject <NSApplicationDelegate>

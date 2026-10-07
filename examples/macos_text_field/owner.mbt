@@ -79,6 +79,7 @@ fn owner_batch_current(
   sequence : Int64,
   owner_revision : Int64,
   field_revision : Int,
+  geometry_revision_pending? : Bool = false,
 ) -> Bool {
   owner.active &&
   window == owner.window &&
@@ -86,7 +87,27 @@ fn owner_batch_current(
   epoch == owner.epoch &&
   sequence > owner.last_sequence &&
   owner_revision == owner.revision.to_int64() &&
-  field_revision == owner.revision
+  // Resize can advance the local field revision while native still reports
+  // the last acknowledged owner revision. The caller tracks that exact delta.
+  (
+    field_revision == owner.revision ||
+    (geometry_revision_pending && field_revision > owner.revision)
+  )
+}
+
+///|
+fn mac_owner_geometry_revision_after_resize(
+  owner : MacTextOwner,
+  previous_field_revision : Int,
+  next_field_revision : Int,
+  pending_geometry_revision : Int?,
+) -> Int? {
+  if previous_field_revision == owner.revision ||
+    pending_geometry_revision == Some(previous_field_revision) {
+    Some(next_field_revision)
+  } else {
+    None
+  }
 }
 
 ///|
@@ -639,8 +660,10 @@ fn mac_target_current(
   owner : MacTextOwner,
   batch : @macos.EditorBatch,
   field : @text_field.TextField,
+  geometry_revision_pending? : Bool = false,
 ) -> Bool {
-  mac_validate_batch_target(owner, batch, field) is Ok(_)
+  mac_validate_batch_target(owner, batch, field, geometry_revision_pending~)
+  is Ok(_)
 }
 
 ///|
@@ -648,6 +671,7 @@ fn mac_validate_batch_target(
   owner : MacTextOwner,
   batch : @macos.EditorBatch,
   field : @text_field.TextField,
+  geometry_revision_pending? : Bool = false,
 ) -> Result[Unit, MacFieldOwnerError] {
   let target = batch.target()
   if !owner.active {
@@ -673,6 +697,7 @@ fn mac_validate_batch_target(
       target.sequence(),
       target.owner_revision(),
       field.revision(),
+      geometry_revision_pending~,
     ) {
     return Err(RevisionMismatch)
   }
