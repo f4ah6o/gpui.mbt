@@ -1,0 +1,5 @@
+swift-driver version: 1.148.6 macos-ime-acceptance: GPUI_MACOS_IME_ACCEPTANCE_FAIL timed out waiting for the accepted IME operation observation
+doctor=passed
+profile=/private/tmp/gpui-macos-quality-profile
+host={"architecture": "arm64", "build_version": "25F84", "clang_path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang", "clang_sha256": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a", "clang_version": "Apple clang version 21.0.0 (clang-2100.1.1.101)", "product_version": "26.5.2", "sdk_path": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk", "sdk_settings_sha256": "e5c7c40b8c5dc1a9f99f8b9fa51870f8fe180421225b8201d0c4c826aad11bdc", "sdk_version": "26.5", "system": "Darwin", "xcode": ["Xcode 26.6", "Build version 17F113"], "xcode_select_path": "/Applications/Xcode.app/Contents/Developer"}
+RUN_RESULT normal-final 1

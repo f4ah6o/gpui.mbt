@@ -1,0 +1,458 @@
+{
+  "schema_version": 1,
+  "scope": "logged-in desktop, native Kotoeri callback and app-window pixels",
+  "status": "failed",
+  "source_before": {
+    "commit": "8a7cf7c30a4e51862484818200f2fb3dcf8e57ce",
+    "tree": "d8973f686beaf26f18d212b26930dc9731832729",
+    "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "input_files_sha256": "0b1b51a6e28f7d7e4a5a8222e179c7bb0122d4d872dd2a1fb1c34114dbaea8e8",
+    "status": ""
+  },
+  "host": {
+    "system": "Darwin",
+    "product_version": "26.5.2",
+    "build_version": "25F84",
+    "architecture": "arm64",
+    "xcode": [
+      "Xcode 26.6",
+      "Build version 17F113"
+    ],
+    "xcode_select_path": "/Applications/Xcode.app/Contents/Developer",
+    "sdk_version": "26.5",
+    "sdk_path": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+    "sdk_settings_sha256": "e5c7c40b8c5dc1a9f99f8b9fa51870f8fe180421225b8201d0c4c826aad11bdc",
+    "clang_path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+    "clang_sha256": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a",
+    "clang_version": "Apple clang version 21.0.0 (clang-2100.1.1.101)"
+  },
+  "app_pid": 61717,
+  "app_exit_code": -6,
+  "profile_root": "/private/tmp/gpui-macos-quality-profile",
+  "app": {
+    "bundle": "/private/tmp/gpui-kotoeri-20261007/final-native-validation/text-field/build/macos/GpuiTextField.app",
+    "binary_sha256": "1179d73518f029f5b8b7090a9cc5716cfe9e3bf70e1494c90f7e28ab5d7f1c27",
+    "library_sha256": "db7d2d2ee467d3b732eda03e91cabeb44943877581bd5e40a3511a710a0f49a5",
+    "binary_path": "/private/tmp/gpui-kotoeri-20261007/final-native-validation/text-field/build/macos/GpuiTextField.app/Contents/MacOS/GpuiTextField",
+    "info_plist_sha256": "4896fed4ba177cf90172b016922f17e412d3ab766e90c88bfa563d64dcbd156b",
+    "window_title": "gpui.mbt experimental macOS TextField"
+  },
+  "capture_runtime": {
+    "swiftc": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+    "swiftc_resolved": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend",
+    "swiftc_sha256": "2ed38571e92c0283091838c1649e27650ad9c99950288e883c7b2dc6c4ce89fb",
+    "swiftc_version": "Apple Swift version 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)\nTarget: arm64-apple-macosx26.0",
+    "compile_environment": {
+      "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer",
+      "SDKROOT": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+      "MACOSX_DEPLOYMENT_TARGET": "26.0"
+    },
+    "helper_compile_argv": [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-parse-as-library",
+      "-framework",
+      "AppKit",
+      "-framework",
+      "ScreenCaptureKit",
+      "-framework",
+      "ImageIO",
+      "/private/tmp/gpui-kotoeri-20261007/normal-final/owned-window-capture.swift",
+      "-o",
+      "/private/tmp/gpui-kotoeri-20261007/normal-final/owned-window-capture"
+    ],
+    "helper_sha256": "2eaa40d280f7312fd0bb68e1905cb37e68fff856b073fbd81e746f5f13bacc84",
+    "engine": "ScreenCaptureKit.SCScreenshotManager",
+    "helper_source_sha256": "c7be5f43e8cbdb317c311e9b1251f2b530033b42acb21accdb41696b280f3671"
+  },
+  "screenshots": {
+    "initial": {
+      "capture_engine": "ScreenCaptureKit.SCScreenshotManager",
+      "child_windows_included": false,
+      "content_rect": {
+        "height": 272,
+        "width": 640,
+        "x": 560,
+        "y": 135
+      },
+      "cursor_excluded": true,
+      "height": 544,
+      "owner_pid": 61717,
+      "point_pixel_scale": 2,
+      "shadows_ignored": true,
+      "title": "gpui.mbt experimental macOS TextField",
+      "width": 1280,
+      "window_frame": {
+        "height": 272,
+        "width": 640
+      },
+      "window_id": 5281,
+      "capture_command": "ScreenCaptureKit SCScreenshotManager.captureImage(desktopIndependentWindow)",
+      "pixel_sha256": "3e3a69ff864ff55f1f521f6d6c72f5442f9d442f53969a2484cfb7a31bb54f6e",
+      "file_sha256": "fd834e70a3295836c1d45b7953cf1241305074f2d7c9bdbd190d26cdb8739254",
+      "file_size": 25751,
+      "png_encoding": {
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "path": "initial-window.png",
+      "frame_identity": {
+        "frame_revision": 4,
+        "accepted_revision": 1,
+        "session_epoch": 1,
+        "schema_version": 1,
+        "text": "Hello ",
+        "window_id": 1,
+        "host_epoch": 1,
+        "batch_sequence": 0,
+        "frame_sha256": "0db9405f19dcc6098f279a38276545e7e38ce1fe06e166175617f040b78bc174"
+      },
+      "field_bounds": {
+        "x": 24,
+        "y": 40,
+        "width": 512,
+        "height": 48
+      },
+      "caret": {
+        "x": 73,
+        "y": 44,
+        "width": 2,
+        "height": 22
+      },
+      "window_geometry": {
+        "schema_version": 1,
+        "host_epoch": 1,
+        "content_size": {
+          "width": 640,
+          "height": 240
+        },
+        "native_window_id": 5281,
+        "session_active": true,
+        "window_key": true,
+        "session_epoch": 1,
+        "content_origin_in_window": {
+          "x": 0,
+          "y": 32
+        },
+        "selected_input_source": "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
+        "window_size": {
+          "width": 640,
+          "height": 272
+        },
+        "first_responder_is_content_view": true,
+        "app_key_matches": true,
+        "window_id": 1,
+        "content_view_class": "GPView",
+        "window_visible": true,
+        "direct_text": false,
+        "first_responder_class": "GPView",
+        "coordinate_space": "top_left_window_points"
+      },
+      "capture_region": "window",
+      "content_offset": {
+        "x": 0,
+        "y": 32
+      },
+      "text_roi": {
+        "pixel_bounds": {
+          "left": 54,
+          "top": 150,
+          "right": 1066,
+          "bottom": 234
+        },
+        "field_bounds": {
+          "x": 24,
+          "y": 40,
+          "width": 512,
+          "height": 48
+        },
+        "scale": 2,
+        "excluded_caret": {
+          "left": 140,
+          "top": 150,
+          "right": 156,
+          "bottom": 200
+        },
+        "content_offset": {
+          "x": 0,
+          "y": 32
+        },
+        "inset_points": 3
+      }
+    },
+    "composition": {
+      "capture_engine": "ScreenCaptureKit.SCScreenshotManager",
+      "child_windows_included": false,
+      "content_rect": {
+        "height": 272,
+        "width": 640,
+        "x": 560,
+        "y": 135
+      },
+      "cursor_excluded": true,
+      "height": 544,
+      "owner_pid": 61717,
+      "point_pixel_scale": 2,
+      "shadows_ignored": true,
+      "title": "gpui.mbt experimental macOS TextField",
+      "width": 1280,
+      "window_frame": {
+        "height": 272,
+        "width": 640
+      },
+      "window_id": 5281,
+      "capture_command": "ScreenCaptureKit SCScreenshotManager.captureImage(desktopIndependentWindow)",
+      "pixel_sha256": "7af95a2fde552e704b06ad1781f62829263a31d29b40ab11a56ef9aaff0f2591",
+      "file_sha256": "b751d67e92a3ddf0995a527510dc581fa52edd5e1b70aecdbaf74689b109344f",
+      "file_size": 31278,
+      "png_encoding": {
+        "bit_depth": 8,
+        "color_type": 6
+      },
+      "path": "composition-window.png",
+      "frame_identity": {
+        "frame_revision": 12,
+        "accepted_revision": 9,
+        "session_epoch": 1,
+        "schema_version": 1,
+        "text": "Hello 日本語",
+        "window_id": 1,
+        "host_epoch": 1,
+        "batch_sequence": 11,
+        "frame_sha256": "302c4a8e27586eb6a63f6b1833f41f6aa5e943e6d28e290168b1e54aa29581ae"
+      },
+      "field_bounds": {
+        "x": 24,
+        "y": 40,
+        "width": 512,
+        "height": 48
+      },
+      "caret": {
+        "x": 123,
+        "y": 44,
+        "width": 2,
+        "height": 22
+      },
+      "window_geometry": {
+        "schema_version": 1,
+        "host_epoch": 1,
+        "content_size": {
+          "width": 640,
+          "height": 240
+        },
+        "native_window_id": 5281,
+        "session_active": true,
+        "window_key": true,
+        "session_epoch": 1,
+        "content_origin_in_window": {
+          "x": 0,
+          "y": 32
+        },
+        "selected_input_source": "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
+        "window_size": {
+          "width": 640,
+          "height": 272
+        },
+        "first_responder_is_content_view": true,
+        "app_key_matches": true,
+        "window_id": 1,
+        "content_view_class": "GPView",
+        "window_visible": true,
+        "direct_text": false,
+        "first_responder_class": "GPView",
+        "coordinate_space": "top_left_window_points"
+      },
+      "capture_region": "window",
+      "content_offset": {
+        "x": 0,
+        "y": 32
+      },
+      "text_roi": {
+        "pixel_bounds": {
+          "left": 54,
+          "top": 150,
+          "right": 1066,
+          "bottom": 234
+        },
+        "field_bounds": {
+          "x": 24,
+          "y": 40,
+          "width": 512,
+          "height": 48
+        },
+        "scale": 2,
+        "excluded_caret": {
+          "left": 240,
+          "top": 150,
+          "right": 256,
+          "bottom": 200
+        },
+        "content_offset": {
+          "x": 0,
+          "y": 32
+        },
+        "inset_points": 3
+      }
+    }
+  },
+  "ok": false,
+  "diagnostic_only": false,
+  "initial_state": {
+    "version": 1,
+    "presentation": 1,
+    "text": "Hello ",
+    "committed": "Hello ",
+    "selection": {
+      "anchor": 6,
+      "head": 6
+    },
+    "focused": true,
+    "revision": 1,
+    "composing": false,
+    "marked": null,
+    "caret": {
+      "x": 73,
+      "y": 44,
+      "width": 2,
+      "height": 22
+    },
+    "field_bounds": {
+      "x": 24,
+      "y": 40,
+      "width": 512,
+      "height": 48
+    },
+    "session_epoch": 1,
+    "commit_count": 0,
+    "source_revision": "8a7cf7c30a4e51862484818200f2fb3dcf8e57ce",
+    "source_tree": "d8973f686beaf26f18d212b26930dc9731832729",
+    "binary_sha256": "1179d73518f029f5b8b7090a9cc5716cfe9e3bf70e1494c90f7e28ab5d7f1c27"
+  },
+  "initial_checkpoint": {
+    "schema_version": 1,
+    "phase": "initial-ready",
+    "input_source": "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
+    "text": "Hello ",
+    "field_revision": 1,
+    "field_bounds": {
+      "x": 24,
+      "y": 40,
+      "width": 512,
+      "height": 48
+    },
+    "window_geometry": {
+      "schema_version": 1,
+      "host_epoch": 1,
+      "content_size": {
+        "width": 640,
+        "height": 240
+      },
+      "native_window_id": 5281,
+      "session_active": true,
+      "window_key": true,
+      "session_epoch": 1,
+      "content_origin_in_window": {
+        "x": 0,
+        "y": 32
+      },
+      "selected_input_source": "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
+      "window_size": {
+        "width": 640,
+        "height": 272
+      },
+      "first_responder_is_content_view": true,
+      "app_key_matches": true,
+      "window_id": 1,
+      "content_view_class": "GPView",
+      "window_visible": true,
+      "direct_text": false,
+      "first_responder_class": "GPView",
+      "coordinate_space": "top_left_window_points"
+    },
+    "session_epoch": 1,
+    "commit_count": 0,
+    "frame_identity": {
+      "frame_revision": 4,
+      "accepted_revision": 1,
+      "session_epoch": 1,
+      "schema_version": 1,
+      "text": "Hello ",
+      "window_id": 1,
+      "host_epoch": 1,
+      "batch_sequence": 0,
+      "frame_sha256": "0db9405f19dcc6098f279a38276545e7e38ce1fe06e166175617f040b78bc174"
+    },
+    "source_revision": "8a7cf7c30a4e51862484818200f2fb3dcf8e57ce",
+    "source_tree": "d8973f686beaf26f18d212b26930dc9731832729",
+    "binary_sha256": "1179d73518f029f5b8b7090a9cc5716cfe9e3bf70e1494c90f7e28ab5d7f1c27"
+  },
+  "input_source": "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
+  "composition_checkpoint": {
+    "schema_version": 1,
+    "phase": "composition-ready",
+    "input_source": "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese",
+    "text": "Hello 日本語",
+    "committed": "Hello ",
+    "field_revision": 9,
+    "field_bounds": {
+      "x": 24,
+      "y": 40,
+      "width": 512,
+      "height": 48
+    },
+    "session_epoch": 1,
+    "composing": true,
+    "marked": {
+      "start": 6,
+      "end": 9
+    },
+    "caret": {
+      "x": 123,
+      "y": 44,
+      "width": 2,
+      "height": 22
+    },
+    "candidate_screen_rect": {
+      "x": 683,
+      "y": 487.80078125,
+      "width": 1,
+      "height": 21.19921875
+    },
+    "frame_identity": {
+      "frame_revision": 12,
+      "accepted_revision": 9,
+      "session_epoch": 1,
+      "schema_version": 1,
+      "text": "Hello 日本語",
+      "window_id": 1,
+      "host_epoch": 1,
+      "batch_sequence": 11,
+      "frame_sha256": "302c4a8e27586eb6a63f6b1833f41f6aa5e943e6d28e290168b1e54aa29581ae"
+    },
+    "source_revision": "8a7cf7c30a4e51862484818200f2fb3dcf8e57ce",
+    "source_tree": "d8973f686beaf26f18d212b26930dc9731832729",
+    "binary_sha256": "1179d73518f029f5b8b7090a9cc5716cfe9e3bf70e1494c90f7e28ab5d7f1c27"
+  },
+  "composition_ready_to_preview_ms": 826.2217079754919,
+  "error": "GPUI_MACOS_IME_ACCEPTANCE_FAIL timed out waiting for the accepted IME operation observation",
+  "cleanup": {
+    "requested": true,
+    "acknowledged": true,
+    "receipt": {
+      "schema_version": 1,
+      "restored": true,
+      "session_closed": true,
+      "host_epoch": 1,
+      "session_epoch": 1
+    },
+    "exit_code": -6
+  },
+  "source_after": {
+    "commit": "8a7cf7c30a4e51862484818200f2fb3dcf8e57ce",
+    "tree": "d8973f686beaf26f18d212b26930dc9731832729",
+    "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "input_files_sha256": "0b1b51a6e28f7d7e4a5a8222e179c7bb0122d4d872dd2a1fb1c34114dbaea8e8",
+    "status": ""
+  },
+  "source_stable": true,
+  "finished_utc": "2026-10-07T12:57:42.959362+00:00"
+}

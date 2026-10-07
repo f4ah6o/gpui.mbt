@@ -1,0 +1,7 @@
+[
+  {
+    "exit_code": 0,
+    "stdout": "{\"scope\":\"only the exact spawned application PID and executable\",\"executable_matches\":true,\"active_when_sampled\":0,\"pid\":61258,\"activation_request_sent\":true}\n",
+    "stderr": ""
+  }
+]
