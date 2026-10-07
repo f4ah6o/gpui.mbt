@@ -48,31 +48,40 @@ does not relabel the older frame's staging samples. The fixture logs frame
 acceptance and completion identities and obtains staging readback only after
 the matching completion event.
 
-Run the pinned Windows gates with `scripts/test_windows.ps1` or the local actrun
-workflow with `scripts/run_windows_actrun.ps1`. For a visible, bounded GUI
-fixture use `scripts/run_windows_command_palette.ps1 -Mode Run`; add
-`-ExperimentalIme` only for the manual IME exercise. `-Mode Smoke` opens the
-fixture, verifies one completed frame and readback, then exits. Launch details,
-cleanup command, flushed observer logs, and a tool/source/font/OS/GPU manifest
-are written under `_build/windows-command-palette/`.
+Run the pinned Windows gates with scripts/test_windows.ps1 or the local actrun
+workflow with scripts/run_windows_actrun.ps1. scripts/run_windows_command_palette.ps1
+-Mode Smoke verifies one completed frame and D3D11 readback before exiting.
+For the scripted real-input pass, run these commands from 64-bit PowerShell:
 
-For the one-window interaction pass, start the visible fixture and follow this
-sequence with physical key presses: Ctrl+K opens; type `Go` and confirm the
-committed query and filtered rows in `app.stdout.log`; use Up/Down and Enter to
-activate one enabled result; reopen and press Escape to cancel; reopen, click
-outside to blur, then press Ctrl+K to reopen with an empty query. The state
-records should show one activation, restored background focus, and no closing
-key counted as a background press or release. With `-ExperimentalIme`, use the
-Japanese IME to show preedit, conversion, and commit in the search field. The
-query must remain unchanged during preedit; Enter must stay with conversion;
-the first Escape cancels and leaves the palette open; a later fresh Escape
-closes it. Compare the state `caret` rectangle with the candidate-window
-placement and retain screenshots of the matching final frames for search,
-active/disabled rows, scrolling, and clipping. Use the manifest and the
-`ACCEPTED`/`COMPLETE`/`READBACK` observer records to pair each screenshot with
-its final-source presentation and completed native frame. The smoke gate parses
-the exact record prefixes, requires matching presentation and event-sequence
-identities, and validates all three expected sample coordinates and RGBA values.
+    pwsh -NoProfile -File scripts/run_windows_command_palette_e2e.ps1 -Mode Validate
+    pwsh -NoProfile -File scripts/run_windows_command_palette_e2e.ps1 -Mode Preflight
+    pwsh -NoProfile -File scripts/run_windows_command_palette_e2e.ps1 -Mode Run
+
+The driver requires a readable active Default input desktop. It records an
+access failure and exits without launching a fixture or sending input if that
+preflight is unavailable. Run mode verifies a clean source commit and matching
+executable manifest, launches two copies of the owned fixture (one IME-enabled
+primary and one input-free focus target), then sends scripted virtual-key
+events through Win32 SendInput. It uses no Unicode text injection and checks
+the owned PID, start time, executable, HWND, foreground window, and input
+desktop around each input batch. It covers Ctrl+K, ordinary committed search,
+disabled-row navigation, scrolling, one-shot activation, background key
+recovery, Japanese IME preedit/conversion/commit, Escape cancellation and
+dismissal, composition-time focus loss, and empty reopen with fresh epochs.
+The primary fixture closes only after an observed closed/end-fenced frame; both
+owned windows receive bounded WM_CLOSE.
+
+Each run saves result.json, flushed stdout/stderr, correlated
+ACCEPTED/STATE/COMPLETE/READBACK identities, exact input counts, IME layout/state
+restoration, and full visible-client BMP captures under
+_build/windows-command-palette/e2e/ (or -OutputDirectory). The parser rejects
+a newer incomplete frame so captures cannot be paired with stale readback.
+Three GPU samples remain separate from the full client image. Candidate-form
+coordinates report the IMM32 adapter request; that query alone does not prove
+popup visibility or placement. Review each stable full-client BMP at human
+scale before marking pixels qualified. Candidate contents and highlight remain
+UNRUN unless separately qualified. Preflight or focus failures are retained as
+FAIL/BLOCKED with dependent stages UNRUN.
 
 Portable component tests cover model bounds and selection behavior. Windows
 owner regressions cover native owner, epoch, sequence, composition, close-fence,

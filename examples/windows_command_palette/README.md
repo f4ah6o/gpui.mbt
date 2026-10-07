@@ -27,7 +27,7 @@ pwsh -NoProfile -File scripts/run_windows_command_palette.ps1 -Mode Smoke
 ```
 
 `-ExperimentalIme` opts into the private IMM32 session; it is off by default.
-Use physical key presses to compose and commit Japanese text. The observer log
+Use the installed Japanese IME to compose and commit text. The observer log
 records the visible field text, committed text, composition flag, selection,
 palette query/semantics,
 owner generation, native session epoch and sequence, native event counters,
@@ -42,3 +42,19 @@ capture the matching final GUI frames separately when checking search/caret,
 active and disabled rows, scrolling, and clipping. Candidate-window contents
 and highlight remain unqualified, as does any broader Windows or UI Automation
 support claim.
+
+For the bounded CLI-driven input and pixel pass, use a 64-bit PowerShell
+session:
+
+    pwsh -NoProfile -File scripts/run_windows_command_palette_e2e.ps1 -Mode Validate
+    pwsh -NoProfile -File scripts/run_windows_command_palette_e2e.ps1 -Mode Preflight
+    pwsh -NoProfile -File scripts/run_windows_command_palette_e2e.ps1 -Mode Run
+
+The script checks the active Default input desktop before it starts either
+owned fixture. If the check fails, it records the Win32 error and leaves native
+input, Japanese IME, and pixel stages UNRUN. A successful pass sends scripted
+virtual-key events through Win32 SendInput, verifies the owned window and
+foreground, exercises the palette and installed Japanese IME, and retains
+per-stage JSON plus matching full-client BMPs in _build/windows-command-palette/e2e/. The BMPs need a human
+visual audit; GPU staging samples and IMM32 candidate-form geometry are
+reported as separate evidence.
