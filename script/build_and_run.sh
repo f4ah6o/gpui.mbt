@@ -98,12 +98,14 @@ if [[ -f "$PID_FILE" ]]; then
 fi
 
 mkdir -p "$FRAMEWORKS_DIR" "$(dirname "$APP_BINARY")"
-CLANG_TEST_FLAGS=()
+# Bash 3.2 treats an empty array as unset under nounset. Keep the common
+# arguments in the array so normal builds never expand an empty array.
+CLANG_FLAGS=(-dynamiclib -fobjc-arc -Wall -Wextra -Werror)
 if [[ "$TEST_HOOKS" == 1 ]]; then
-  CLANG_TEST_FLAGS+=(-DGPUI_TESTING)
+  CLANG_FLAGS+=(-DGPUI_TESTING)
 fi
-xcrun clang -dynamiclib -fobjc-arc -Wall -Wextra -Werror \
-  "${CLANG_TEST_FLAGS[@]}" platform/macos/native.m platform/macos_text/core_text.c \
+xcrun clang "${CLANG_FLAGS[@]}" \
+  platform/macos/native.m platform/macos_text/core_text.c \
   -framework AppKit -framework QuartzCore -framework Metal \
   -framework CoreText -framework CoreGraphics \
   -o "$FRAMEWORKS_DIR/libgpui_macos.dylib"
