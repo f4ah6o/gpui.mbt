@@ -1575,6 +1575,7 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
   if (host->destroying && message != WM_NCDESTROY)
     return host->api.def_window_proc_w(hwnd, message, wparam, lparam);
   LRESULT ime_bridge_result = 0;
+  /* Authentication and request-shape checks run before bridge state changes. */
   if (gpui_text_ime_bridge_wndproc(host, hwnd, message, wparam, lparam,
                                   &ime_bridge_result))
     return ime_bridge_result;

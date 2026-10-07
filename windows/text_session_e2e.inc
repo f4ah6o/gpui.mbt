@@ -1015,13 +1015,61 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
                                 GPUI_IME_BRIDGE_CANDIDATE_X,
                                 candidate_id + 1) == -5,
                         83);
+    int32_t candidate_snapshot_id = g_host.ime_bridge_candidate_id;
+    int32_t candidate_next_id = g_host.ime_bridge_next_id;
+    int32_t candidate_snapshot_status = g_host.ime_bridge_candidate_status;
+    DWORD candidate_snapshot_error = g_host.ime_bridge_candidate_error;
+    BOOL candidate_snapshot_has_context =
+        g_host.ime_bridge_candidate_has_context;
+    DWORD candidate_snapshot_process_id =
+        g_host.ime_bridge_candidate_process_id;
+    DWORD candidate_snapshot_thread_id =
+        g_host.ime_bridge_candidate_thread_id;
+    DWORD candidate_snapshot_index = g_host.ime_bridge_candidate_index;
+    DWORD candidate_snapshot_style = g_host.ime_bridge_candidate_style;
+    POINT candidate_snapshot_position =
+        g_host.ime_bridge_candidate_position;
+    RECT candidate_snapshot_area = g_host.ime_bridge_candidate_area;
+    int32_t candidate_context_calls =
+        gpui_text_review_ime_get_context_calls;
     int32_t candidate_calls = gpui_text_review_ime_candidate_calls;
+    int32_t candidate_release_calls = gpui_text_review_ime_release_calls;
     LRESULT invalid_candidate = gpui_text_review_ime_bridge_call(
         GPUI_IME_BRIDGE_QUERY_CANDIDATE, 0, 4);
-    GPUI_REVIEW_REQUIRE(invalid_candidate == -4 &&
-                            gpui_text_review_ime_candidate_calls ==
-                                candidate_calls,
-                        84);
+    LRESULT negative_candidate = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_CANDIDATE, 0, (LPARAM)-1);
+    LRESULT high_candidate = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_CANDIDATE, 0, (LPARAM)0x10000);
+    GPUI_REVIEW_REQUIRE(
+        invalid_candidate == -4 && negative_candidate == -4 &&
+            high_candidate == -4 &&
+            g_host.ime_bridge_candidate_id == candidate_snapshot_id &&
+            g_host.ime_bridge_next_id == candidate_next_id &&
+            g_host.ime_bridge_candidate_status == candidate_snapshot_status &&
+            g_host.ime_bridge_candidate_error == candidate_snapshot_error &&
+            g_host.ime_bridge_candidate_has_context ==
+                candidate_snapshot_has_context &&
+            g_host.ime_bridge_candidate_process_id ==
+                candidate_snapshot_process_id &&
+            g_host.ime_bridge_candidate_thread_id ==
+                candidate_snapshot_thread_id &&
+            g_host.ime_bridge_candidate_index == candidate_snapshot_index &&
+            g_host.ime_bridge_candidate_style == candidate_snapshot_style &&
+            memcmp(&g_host.ime_bridge_candidate_position,
+                   &candidate_snapshot_position,
+                   sizeof(candidate_snapshot_position)) == 0 &&
+            memcmp(&g_host.ime_bridge_candidate_area,
+                   &candidate_snapshot_area,
+                   sizeof(candidate_snapshot_area)) == 0 &&
+            gpui_text_review_ime_get_context_calls ==
+                candidate_context_calls &&
+            gpui_text_review_ime_candidate_calls == candidate_calls &&
+            gpui_text_review_ime_release_calls == candidate_release_calls &&
+            gpui_text_review_ime_bridge_call(
+                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                GPUI_IME_BRIDGE_CANDIDATE_X,
+                candidate_snapshot_id) == candidate_snapshot_position.x,
+        84);
 
     gpui_text_review_associated_context = NULL;
     LRESULT no_context_id = gpui_text_review_ime_bridge_call(

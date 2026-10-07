@@ -1838,9 +1838,12 @@ function Invoke-OwnershipGuardTests {
       $nativeBridgeSource -notmatch 'gpui_ime_bridge_read_candidate_field' -or
       $nativeBridgeSource -notmatch 'GPUI_IME_BRIDGE_STATUS_STALE_SNAPSHOT' -or
       $nativeBridgeSource -notmatch 'request_nonce\s*!=\s*host->ime_bridge_nonce' -or
+      $nativeBridgeSource -notmatch 'if \(\(ULONG_PTR\)candidate > 3\)' -or
       $nativeBridgeSource.IndexOf('request_nonce != host->ime_bridge_nonce', [StringComparison]::Ordinal) -gt
-        $nativeBridgeSource.IndexOf('switch ((int32_t)operation)', [StringComparison]::Ordinal)) {
-    throw "Native bridge must authenticate the scalar nonce before dispatch, enforce owner-thread dispatch, and preserve snapshot-ID coherence."
+        $nativeBridgeSource.IndexOf('switch ((int32_t)operation)', [StringComparison]::Ordinal) -or
+      $nativeBridgeSource.IndexOf('if ((ULONG_PTR)candidate > 3)', [StringComparison]::Ordinal) -gt
+        $nativeBridgeSource.IndexOf('host->ime_bridge_candidate_id = 0', [StringComparison]::Ordinal)) {
+    throw "Native bridge must authenticate before dispatch, reject malformed candidates before changing snapshots, enforce owner-thread dispatch, and preserve snapshot-ID coherence."
   }
   if ([string]::IsNullOrEmpty($startFixtureBody) -or
       $startFixtureBody -notmatch 'RandomNumberGenerator\]::Fill' -or

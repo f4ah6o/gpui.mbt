@@ -364,6 +364,8 @@ static LRESULT gpui_text_ime_bridge_query(gpui_windows_host *host,
 
 static LRESULT gpui_text_ime_bridge_candidate(gpui_windows_host *host,
                                               HWND hwnd, WPARAM candidate) {
+  if ((ULONG_PTR)candidate > 3)
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
   host->ime_bridge_candidate_id = 0;
   host->ime_bridge_candidate_status =
       GPUI_IME_BRIDGE_STATUS_IMM_UNAVAILABLE;
@@ -377,8 +379,6 @@ static LRESULT gpui_text_ime_bridge_candidate(gpui_windows_host *host,
              sizeof(host->ime_bridge_candidate_position));
   ZeroMemory(&host->ime_bridge_candidate_area,
              sizeof(host->ime_bridge_candidate_area));
-  if ((ULONG_PTR)candidate > 3)
-    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
   SetLastError(ERROR_SUCCESS);
   if (gpui_text_imm_init() != GPUI_WINDOWS_OK) {
     host->ime_bridge_candidate_error = GetLastError();
