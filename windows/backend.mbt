@@ -140,6 +140,14 @@ extern "C" fn native_clipboard_write(
 ) -> Int = "gpui_windows_clipboard_write"
 
 ///|
+#borrow(rgba)
+extern "C" fn native_readback(
+  host : Int,
+  window : Int,
+  rgba : FixedArray[Double],
+) -> Int = "gpui_windows_readback"
+
+///|
 fn backend_error(
   status : Int,
   operation : String,
@@ -834,6 +842,32 @@ pub fn Host::write_clipboard(
     native_clipboard_write(self.token, bytes, bytes.length()),
     "write_clipboard",
   )
+}
+
+///|
+/// Read the opt-in native D3D11 staging samples from the most recent present.
+/// The returned 12 values are RGBA for pixels (1,1), (width/4,height/3), and
+/// (width-2,height-2), in that order. Enable GPUI_WINDOWS_READBACK=1 before
+/// starting the host. Call after the corresponding FrameCompleted event.
+pub fn Host::readback_samples(
+  self : Host,
+  window : @platform.WindowId,
+) -> Result[Array[Double], @diagnostics.FrameworkError] {
+  let values = FixedArray::make(12, 0.0)
+  match
+    outcome(
+      native_readback(self.token, window.value().to_int(), values),
+      "readback_samples",
+    ) {
+    Err(error) => Err(error)
+    Ok(_) => {
+      let output : Array[Double] = []
+      for value in values {
+        output.push(value)
+      }
+      Ok(output)
+    }
+  }
 }
 
 ///|

@@ -691,6 +691,12 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
             "controls/text_field", "text", "text_layout", "element",
             "primitives", "scene", "diagnostics",
         },
+        "examples/windows_command_palette": {
+            "windows", "platform/windows_text", "platform",
+            "controls/text_field", "controls/command_palette", "text",
+            "text_layout", "element", "primitives", "scene", "diagnostics",
+            "capability",
+        },
         "element": {"core", "primitives", "layout", "scene"},
         # Semantic capabilities are portable application-facing contracts. The
         # optional MCP adapter is a leaf above them and owns no domain state.
