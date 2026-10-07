@@ -87,6 +87,7 @@ static BOOL gpui_text_test_record(gpui_windows_host *host, int32_t offset,
 static MSG gpui_text_review_messages[8];
 static int32_t gpui_text_review_message_count;
 static HIMC gpui_text_review_associated_context;
+static HWND gpui_text_review_focus_hwnd;
 static int32_t gpui_text_review_failed_form;
 static int32_t gpui_text_review_def_calls;
 static int32_t gpui_text_review_reenter_mode;
@@ -99,7 +100,9 @@ static LONG_PTR WINAPI gpui_text_review_get_window_long_ptr(HWND hwnd,
   return (LONG_PTR)&g_host;
 }
 
-static HWND WINAPI gpui_text_review_get_focus(void) { return g_host.hwnd; }
+static HWND WINAPI gpui_text_review_get_focus(void) {
+  return gpui_text_review_focus_hwnd;
+}
 
 static SHORT WINAPI gpui_text_review_get_key_state(int key) {
   (void)key;
@@ -226,6 +229,7 @@ static void gpui_text_review_setup_host(void) {
   g_host.owner_thread = GetCurrentThreadId();
   g_host.state = 0;
   g_host.hwnd = (HWND)(uintptr_t)1;
+  gpui_text_review_focus_hwnd = g_host.hwnd;
   g_host.scale = 1.0;
   g_host.logical_width = 640.0;
   g_host.logical_height = 240.0;
@@ -390,6 +394,7 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
   memcpy(saved_host, &g_host, sizeof(g_host));
   gpui_text_session_state saved_session = g_gpui_text_session;
   gpui_imm_api saved_imm = g_gpui_imm;
+  HWND saved_focus_hwnd = gpui_text_review_focus_hwnd;
   LONG saved_claimed = InterlockedCompareExchange(&g_host_claimed, 0, 0);
   InterlockedExchange(&g_host_claimed, 1);
   ZeroMemory(&g_gpui_text_session, sizeof(g_gpui_text_session));
@@ -643,11 +648,82 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
                         68);
   }
 
+  {
+    const uint8_t original[] = {'a', 'b'};
+    WCHAR marked_text[] = {L'X'};
+    gpui_text_test_clear_ring(&g_host);
+    int32_t focus_epoch = gpui_windows_session_begin(
+        77, 5, 706, original, sizeof(original), 1, 2,
+        8.0, 9.0, 1.0, 18.0);
+    GPUI_REVIEW_REQUIRE(focus_epoch > 0 &&
+                            gpui_windows_window_has_keyboard_focus(77, 5) == 1,
+                        70);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_start_record(&g_host) ==
+                            GPUI_WINDOWS_OK &&
+                            gpui_text_session_process_composition(
+                                &g_host, FALSE, NULL, 0, TRUE,
+                                marked_text, 1, TRUE, 1, NULL, 0) ==
+                                GPUI_WINDOWS_OK &&
+                            g_gpui_text_session.composing,
+                        71);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_pop(
+                            &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_STARTED &&
+                            gpui_text_session_pop(
+                                &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_MARKED &&
+                            payload[0] == 'X',
+                        72);
+
+    /* WM_KILLFOCUS emits the old-epoch Cancelled record before the platform
+     * focus event, while GetFocus already reports the new owner. */
+    gpui_text_review_focus_hwnd = (HWND)(uintptr_t)2;
+    gpui_window_proc(g_host.hwnd, WM_KILLFOCUS, 0, 0);
+    int32_t cancel_slot = g_host.event_read;
+    int32_t focus_slot = (cancel_slot + 1) % GPUI_EVENT_CAPACITY;
+    GPUI_REVIEW_REQUIRE(g_host.event_count == 2 &&
+                            gpui_text_session_head_is_editor(&g_host) &&
+                            (int32_t)g_host.events[cancel_slot][0] ==
+                                GPUI_TEXT_EVENT_CANCELLED &&
+                            (int32_t)g_host.editor_fields[cancel_slot][0] ==
+                                706 &&
+                            (int32_t)g_host.editor_fields[cancel_slot][1] ==
+                                focus_epoch &&
+                            !g_host.editor_events[focus_slot] &&
+                            (int32_t)g_host.events[focus_slot][0] == 6 &&
+                            (int32_t)g_host.events[focus_slot][8] == 0,
+                        73);
+    GPUI_REVIEW_REQUIRE(!g_gpui_text_session.armed &&
+                            !g_gpui_text_session.composing &&
+                            g_gpui_text_session.epoch > focus_epoch &&
+                            gpui_windows_window_has_keyboard_focus(77, 5) == 0,
+                        74);
+    GPUI_REVIEW_REQUIRE(gpui_windows_session_update(
+                            77, 5, focus_epoch, 706, original,
+                            sizeof(original), 1, 2,
+                            8.0, 9.0, 1.0, 18.0, 0) ==
+                            -GPUI_WINDOWS_STALE,
+                        75);
+    GPUI_REVIEW_REQUIRE(gpui_windows_session_end(
+                            77, 5, focus_epoch, 706) == GPUI_WINDOWS_OK,
+                        76);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_pop(
+                            &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_CANCELLED &&
+                            (int32_t)event[11] == focus_epoch &&
+                            gpui_text_session_pop(
+                                &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == 6 &&
+                            (int32_t)event[8] == 0,
+                        77);
+  }
+
 review_cleanup:
   gpui_text_test_clear_ring(&g_host);
   gpui_text_review_message_count = 0;
   gpui_text_review_reenter_mode = 0;
   gpui_text_review_reentered = FALSE;
+  gpui_text_review_focus_hwnd = saved_focus_hwnd;
   free(g_gpui_text_session.document);
   g_gpui_text_session = saved_session;
   g_gpui_imm = saved_imm;

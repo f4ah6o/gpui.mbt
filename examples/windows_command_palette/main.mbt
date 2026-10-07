@@ -753,6 +753,68 @@ fn palette_finish_effect(
 }
 
 ///|
+/// Apply a real focus transition before a frame can update a native session
+/// that Win32 has already disarmed.
+fn palette_apply_native_focus_state(
+  host : @native.Host,
+  window : @platform.WindowId,
+  fixture : PaletteFixture,
+  owner : Ref[PaletteNativeOwner?],
+  native_focused : Ref[Bool],
+  dirty : Ref[Bool],
+  focused : Bool,
+) -> Bool {
+  let reconciled = palette_reconcile_native_focus_state(
+    focused,
+    fixture.palette,
+    fixture.tree,
+    owner,
+    native_focused,
+    dirty,
+    active => {
+      let had_owner = owner.val is Some(_)
+      let fenced = match palette_end_native_owner(host, window, active) {
+        Ok(_) => true
+        Err(error) => {
+          report(error)
+          false
+        }
+      }
+      if had_owner {
+        fixture.native_ends.val += 1
+      }
+      fenced
+    },
+  )
+  if !reconciled {
+    ignore(host.request_exit())
+  }
+  reconciled
+}
+
+///|
+fn palette_reconcile_native_focus_from_host(
+  host : @native.Host,
+  window : @platform.WindowId,
+  fixture : PaletteFixture,
+  owner : Ref[PaletteNativeOwner?],
+  native_focused : Ref[Bool],
+  dirty : Ref[Bool],
+) -> Bool {
+  match host.window_has_keyboard_focus(window) {
+    Ok(focused) =>
+      palette_apply_native_focus_state(
+        host, window, fixture, owner, native_focused, dirty, focused,
+      )
+    Err(error) => {
+      report(error)
+      ignore(host.request_exit())
+      false
+    }
+  }
+}
+
+///|
 /// A native candidate can be syntactically valid TextField state while still
 /// violating the palette's committed-query bound. Revoke that IMM transaction
 /// before accepting another record; if restore/rearm cannot be proven, keep
@@ -983,22 +1045,12 @@ fn run_palette_window() -> Unit {
               dirty.val = true
             }
             @platform.ScaleChanged => dirty.val = true
-            @platform.FocusChanged(focused) => {
-              native_focused.val = focused
-              if !focused && palette.is_open() {
-                match palette.blur() {
-                  Ok(effect) => {
-                    dirty.val = true
-                    if !palette_finish_effect(
-                        host, window, fixture, owner, effect,
-                      ) {
-                      ignore(host.request_exit())
-                    }
-                  }
-                  Err(_) => ignore(host.request_exit())
-                }
-              }
-            }
+            @platform.FocusChanged(focused) =>
+              ignore(
+                palette_apply_native_focus_state(
+                  host, window, fixture, owner, native_focused, dirty, focused,
+                ),
+              )
             @platform.CloseRequested | @platform.Destroyed =>
               ignore(host.request_exit())
             @platform.Input(event_input) => {
@@ -1428,6 +1480,17 @@ fn run_palette_window() -> Unit {
                 }
               }
             }
+            match event {
+              @native.Cancelled =>
+                if host.state() == @native.Running {
+                  ignore(
+                    palette_reconcile_native_focus_from_host(
+                      host, window, fixture, owner, native_focused, dirty,
+                    ),
+                  )
+                }
+              _ => ()
+            }
           }
           _ => fixture.stale_records.val += 1
         }
@@ -1531,7 +1594,11 @@ fn run_palette_window() -> Unit {
                     experimental_ime,
                   ),
                 )
-                if experimental_ime && palette.is_open() && native_focused.val {
+                if palette_native_session_sync_eligible(
+                    experimental_ime,
+                    palette.is_open(),
+                    native_focused.val,
+                  ) {
                   match owner.val {
                     None =>
                       match palette_begin_native_owner(host, window, palette) {

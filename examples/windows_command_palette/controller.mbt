@@ -651,3 +651,61 @@ fn palette_finish_close_after_fence(
     Ok(())
   }
 }
+
+///|
+fn palette_native_session_sync_eligible(
+  experimental_ime : Bool,
+  palette_open : Bool,
+  native_focused : Bool,
+) -> Bool {
+  experimental_ime && palette_open && native_focused
+}
+
+///|
+/// Store the observed focus before closing so the same accepted frame cannot
+/// update the native owner after Win32 has already revoked it.
+fn palette_reconcile_native_focus_state(
+  focused : Bool,
+  palette : @palette.CommandPalette,
+  tree : Ref[@element.ElementTree],
+  owner : Ref[PaletteNativeOwner?],
+  native_focused : Ref[Bool],
+  dirty : Ref[Bool],
+  end_native : (PaletteNativeOwner?) -> Bool,
+) -> Bool {
+  native_focused.val = focused
+  if focused || !palette.is_open() {
+    true
+  } else {
+    dirty.val = true
+    palette_reconcile_native_focus_loss(false, palette, tree, owner, end_native)
+  }
+}
+
+///|
+/// Reconcile a native focus query before another frame can update a session
+/// that Win32 already disarmed. The close is finished only after the owner
+/// fence succeeds.
+fn palette_reconcile_native_focus_loss(
+  native_focused : Bool,
+  palette : @palette.CommandPalette,
+  tree : Ref[@element.ElementTree],
+  owner : Ref[PaletteNativeOwner?],
+  end_native : (PaletteNativeOwner?) -> Bool,
+) -> Bool {
+  if native_focused || !palette.is_open() {
+    return true
+  }
+  match palette.blur() {
+    Err(_) => false
+    Ok(@palette.Closed(epoch~, ..)) => {
+      let fenced = end_native(owner.val)
+      owner.val = None
+      match palette_finish_close_after_fence(palette, epoch, tree, fenced) {
+        Err(_) => false
+        Ok(_) => fenced
+      }
+    }
+    Ok(_) => false
+  }
+}

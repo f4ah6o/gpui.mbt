@@ -288,6 +288,86 @@ test "Windows command palette filters committed native results but not IME marks
 }
 
 ///|
+test "native Cancelled closes before the later session sync gate" {
+  let fixture = palette_fixture()
+  let palette = fixture.palette
+  palette.open(fixture.tree).unwrap()
+  let original = palette.field()
+  let replacement = original.selection().normalized_range()
+  let initial_owner = palette_native_owner(2, palette.open_epoch(), 41)
+  let composing = palette_native_start_composition(
+    initial_owner, original, replacement,
+  ).unwrap()
+  let (preview, marked_owner) = palette_native_update_mark(
+    composing,
+    "に",
+    Some(1),
+    [0],
+    replacement,
+  ).unwrap()
+  palette.install_field_at(palette.open_epoch(), preview).unwrap()
+  assert_true(palette.field().is_composing())
+
+  // Windows queues this old-epoch Cancelled before FocusChanged(false).
+  let cancelled_target : @native.TextSessionTarget = {
+    window: @platform.WindowId::new(17L),
+    sequence: 88L,
+    epoch: marked_owner.epoch,
+    owner_generation: marked_owner.owner_generation,
+  }
+  let accepted_cancel = palette_native_accept_event(
+    marked_owner, cancelled_target,
+  )
+  let (restored, cancelled_owner) = palette_native_cancel_composition(
+    accepted_cancel,
+  )
+  palette.install_field_at(palette.open_epoch(), restored.unwrap()).unwrap()
+  assert_false(palette.field().is_composing())
+
+  let owner : Ref[PaletteNativeOwner?] = Ref(Some(cancelled_owner))
+  let native_focused = Ref(true)
+  let dirty = Ref(false)
+  assert_true(
+    palette_native_session_sync_eligible(
+      true,
+      palette.is_open(),
+      native_focused.val,
+    ),
+  )
+  let ended_owner : Ref[PaletteNativeOwner?] = Ref(None)
+  let reconciled = palette_reconcile_native_focus_state(
+    false,
+    palette,
+    fixture.tree,
+    owner,
+    native_focused,
+    dirty,
+    active => {
+      ended_owner.val = active
+      true
+    },
+  )
+
+  assert_true(reconciled)
+  assert_false(palette.is_open())
+  assert_true(owner.val is None)
+  assert_eq(ended_owner.val.unwrap().epoch, marked_owner.epoch)
+  assert_eq(ended_owner.val.unwrap().sequence, 88L)
+  assert_eq(fixture.tree.val.focused(), Some(9UL))
+  assert_eq(fixture.actions.val, 0)
+  assert_eq(fixture.native_updates.val, 0)
+  assert_false(native_focused.val)
+  assert_true(dirty.val)
+  assert_false(
+    palette_native_session_sync_eligible(
+      true,
+      palette.is_open(),
+      native_focused.val,
+    ),
+  )
+}
+
+///|
 test "Windows command palette close waits for native fence before action and focus restore" {
   let fixture = palette_fixture()
   let palette = fixture.palette

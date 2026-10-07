@@ -19,10 +19,15 @@ snapshot before the event loop can consume another IMM32 record. If a native
 candidate cannot be installed within the palette's query bound, the saved
 composition is restored and the native session is cancelled/rearmed before
 more records are accepted; a failed recovery exits with the modal focus held.
-Escape cancels composition before another press can close the palette. Closing
+Escape cancels composition before another press can close the palette. A
+Win32 focus loss can enqueue the old-epoch `Cancelled` record before
+`FocusChanged(false)`, even though the HWND has already lost focus. The palette
+rechecks actual window focus while handling `Cancelled` and closes under the
+native end fence before another frame can update the revoked owner. Closing
 ends the native owner before the palette runs a command or restores saved
 focus. A failed close fence leaves focus in the modal tree and does not run the
-command.
+command. Text-session event payloads keep reserved geometry fields zero; the
+window viewport is carried by platform events.
 
 The frame loop snapshots the scene, query, selection, owner, focus, and pending
 frame together. A busy present retains that complete prepared value for retry.
