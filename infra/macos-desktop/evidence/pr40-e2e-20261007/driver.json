@@ -1,0 +1,26 @@
+{
+  "source_HEAD": "c7e6cae99ffd218320d0377a53ea3cd5218421b4",
+  "worktree": "/Users/fu2hito/.codex/worktrees/pr40-script-e2e/gpui.mbt",
+  "branch": "test/20261007-pr40-script-e2e",
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/fu2hito/.codex/worktrees/pr40-script-e2e/gpui.mbt/infra/macos-desktop/actrun-feedback.py",
+    "--root",
+    "/private/tmp/gpui-macos-quality-profile",
+    "--mode",
+    "native",
+    "--run-dir",
+    "/Users/fu2hito/.codex/automations/mac-ios/runs/script-e2e-20261007T112817Z/native"
+  ],
+  "driver_pid": 19668,
+  "started_at": "2026-10-07T11:28:21.335392+00:00",
+  "status": "finished",
+  "computer_use": false,
+  "subagents": false,
+  "runner_pid": 19680,
+  "exit_code": 1,
+  "runner_reaped": true,
+  "finished_at": "2026-10-07T11:29:09.526773+00:00",
+  "source_HEAD_after": "c7e6cae99ffd218320d0377a53ea3cd5218421b4",
+  "worktree_clean": true
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "check-native",
+  "command": [
+    "/bin/bash",
+    "-c",
+    "\"$MOON_HOME/bin/moon\" check text controls/text_field platform/macos platform/macos_text examples/macos_text_field --target native --deny-warn --target-dir \"$GPUI_ACTRUN_BUILD_DIR/moon-native\""
+  ],
+  "started_at": "2026-10-07T11:28:32.155120+00:00",
+  "duration_seconds": 0.308325,
+  "timeout_seconds": 900,
+  "timed_out": false,
+  "exit_code": 0,
+  "status": "passed",
+  "log": "stages/check-native.log"
+}

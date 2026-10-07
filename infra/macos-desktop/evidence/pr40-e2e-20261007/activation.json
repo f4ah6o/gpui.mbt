@@ -1,0 +1,13 @@
+[
+  {
+    "helper_exit_code": 0,
+    "record": {
+      "scope": "only the exact spawned application PID and executable",
+      "executable_matches": true,
+      "active_when_sampled": 0,
+      "pid": 23915,
+      "activation_request_sent": true
+    },
+    "stderr": ""
+  }
+]

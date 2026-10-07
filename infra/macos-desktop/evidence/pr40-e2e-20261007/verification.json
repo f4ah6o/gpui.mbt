@@ -1,0 +1,70 @@
+{
+  "source_HEAD": "c7e6cae99ffd218320d0377a53ea3cd5218421b4",
+  "worktree": "/Users/fu2hito/.codex/worktrees/pr40-script-e2e/gpui.mbt",
+  "branch": "test/20261007-pr40-script-e2e",
+  "computer_use": false,
+  "subagents": false,
+  "actrun_status": "failed",
+  "actrun_passed_stages": 6,
+  "actrun_required_stages": 7,
+  "format_check": "passed",
+  "return_dispatch_complete": true,
+  "return_commit_callbacks": 0,
+  "return_iteration_limit": 200,
+  "input_context_handled": true,
+  "fallback_invoked": false,
+  "ime_status": "failed",
+  "product_green": false,
+  "input_source_restore_acknowledged": true,
+  "session_closed_acknowledged": true,
+  "app_exit_code": -6,
+  "owned_processes_remaining": false,
+  "source_stable": true,
+  "partial_pixel_delta": {
+    "changed_pixels": 1535,
+    "changed_fraction": 0.01840351045463265,
+    "bounds": {
+      "left": 104,
+      "top": 159,
+      "right": 240,
+      "bottom": 194
+    },
+    "roi": {
+      "pixel_bounds": {
+        "left": 54,
+        "top": 150,
+        "right": 1066,
+        "bottom": 234
+      },
+      "field_bounds": {
+        "x": 24,
+        "y": 40,
+        "width": 512,
+        "height": 48
+      },
+      "scale": 2,
+      "content_offset": {
+        "x": 0,
+        "y": 32
+      },
+      "inset_points": 3
+    },
+    "before_pixels_sha256": "3e3a69ff864ff55f1f521f6d6c72f5442f9d442f53969a2484cfb7a31bb54f6e",
+    "after_pixels_sha256": "7af95a2fde552e704b06ad1781f62829263a31d29b40ab11a56ef9aaff0f2591",
+    "excluded_carets": [
+      {
+        "left": 140,
+        "top": 150,
+        "right": 156,
+        "bottom": 200
+      },
+      {
+        "left": 240,
+        "top": 150,
+        "right": 256,
+        "bottom": 200
+      }
+    ]
+  },
+  "completed_at": "2026-10-07T11:36:47.447430+00:00"
+}

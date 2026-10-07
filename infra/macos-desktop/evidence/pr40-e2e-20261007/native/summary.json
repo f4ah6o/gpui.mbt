@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "mode": "native",
+  "scope": "local macOS native",
+  "started_at": "2026-10-07T11:28:21.528578+00:00",
+  "source_before": {
+    "commit": "c7e6cae99ffd218320d0377a53ea3cd5218421b4",
+    "tree": "49af3730fac01fe35f07cf644a58811babb1ef3c",
+    "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "input_files_sha256": "a68555b3b4467c023727b7317849bee35ca95b41421a80ca69cc5cee5a8b49f4",
+    "status": ""
+  },
+  "ok": false,
+  "status": "failed",
+  "green_scope": null,
+  "coverage": [
+    {
+      "id": "repo-tests",
+      "scope": "Repository contract and Python unit tests",
+      "status": "passed",
+      "timeout_seconds": 600
+    },
+    {
+      "id": "macos-runner-tests",
+      "scope": "Mac profile, runner, and evidence collector tests",
+      "status": "passed",
+      "timeout_seconds": 300
+    },
+    {
+      "id": "check-native",
+      "scope": "Type-check affected native MoonBit packages",
+      "status": "passed",
+      "timeout_seconds": 900
+    },
+    {
+      "id": "check-all-targets",
+      "scope": "Type-check all repository targets with warnings denied",
+      "status": "passed",
+      "timeout_seconds": 1500
+    },
+    {
+      "id": "test-model",
+      "scope": "Text-field owner and model tests",
+      "status": "passed",
+      "timeout_seconds": 900
+    },
+    {
+      "id": "native-macos",
+      "scope": "Synthetic Mac native E2E, CoreText, and fresh test-hook app build",
+      "status": "passed",
+      "timeout_seconds": 1500
+    },
+    {
+      "id": "ime-acceptance",
+      "scope": "Live Kotoeri composition callbacks and owned-window pixel proof",
+      "status": "failed",
+      "timeout_seconds": 300
+    }
+  ],
+  "tasks": [
+    {
+      "id": "macos-local/repo-tests",
+      "status": "success",
+      "code": 0,
+      "duration_ms": 1682
+    },
+    {
+      "id": "macos-local/macos-runner-tests",
+      "status": "success",
+      "code": 0,
+      "duration_ms": 6555
+    },
+    {
+      "id": "macos-local/check-native",
+      "status": "success",
+      "code": 0,
+      "duration_ms": 361
+    },
+    {
+      "id": "macos-local/check-all-targets",
+      "status": "success",
+      "code": 0,
+      "duration_ms": 1396
+    },
+    {
+      "id": "macos-local/test-model",
+      "status": "success",
+      "code": 0,
+      "duration_ms": 6293
+    },
+    {
+      "id": "macos-local/native-macos",
+      "status": "success",
+      "code": 0,
+      "duration_ms": 19416
+    },
+    {
+      "id": "macos-local/ime-acceptance",
+      "status": "failed",
+      "code": 1,
+      "duration_ms": 9748
+    }
+  ],
+  "doctor_status": "passed",
+  "runtime": {
+    "cli": "/private/tmp/gpui-macos-quality-profile/tools/actrun/node_modules/@mizchi/actrun/dist/actrun.js",
+    "cli_sha256": "f40b51358877bba1c922039eff40daab739a4a4a99a9cb1c4d9c35557de06088",
+    "node": "/opt/homebrew/Cellar/node/26.8.2/bin/node",
+    "node_sha256": "902b6a6984d5d825829ea9064ab73b734548df37bc0683990dca31c8dc2a9253",
+    "node_version": "v26.8.2",
+    "package_lock_sha256": "a3216a6a9058dd8f554a62f5c803884287fd940074550948f005c27e41503304",
+    "package": "@mizchi/actrun",
+    "version": "0.32.0",
+    "python": "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/bin/python3.14",
+    "python_sha256": "87d4df53fd91304be5bac391fb204643c36b7df2023c04a0953bcbc7d4fdf634",
+    "python_version": "3.14.7 (main, Aug  5 2026, 10:29:49) [Clang 21.0.0 (clang-2100.1.1.101)]",
+    "profile_root": "/private/tmp/gpui-macos-quality-profile",
+    "profile_lock_sha256": "0cdd500b0ae9ac9fe296c1ff1816a1e71606196037b14c287bbb227283b0b700",
+    "installed_marker_sha256": "8004500d0dcb18d507a24d22aaab65cc6438a5ef33e8567e8ecc48b7c0d7a22f",
+    "host_identity": {
+      "system": "Darwin",
+      "product_version": "26.5.2",
+      "build_version": "25F84",
+      "architecture": "arm64",
+      "xcode": [
+        "Xcode 26.6",
+        "Build version 17F113"
+      ],
+      "xcode_select_path": "/Applications/Xcode.app/Contents/Developer",
+      "sdk_version": "26.5",
+      "sdk_path": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+      "sdk_settings_sha256": "e5c7c40b8c5dc1a9f99f8b9fa51870f8fe180421225b8201d0c4c826aad11bdc",
+      "clang_path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+      "clang_sha256": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a",
+      "clang_version": "Apple clang version 21.0.0 (clang-2100.1.1.101)"
+    }
+  },
+  "runner_cli_sha256": "f40b51358877bba1c922039eff40daab739a4a4a99a9cb1c4d9c35557de06088",
+  "entrypoint_sha256": "e507c05ab421e61dd2ba1ef429564408ba01d2bcbdc48d08d2dccd87f18972bd",
+  "stage_runner_sha256": "32b4321ea63688d72357b181b8bf56bf03f1c26b74c93954931fbdfb0da793a7",
+  "workflow_template_sha256": "ee6e236fe832e273b3fd1a3de1f8b559e7138f2a0634ceb4cc7283a697669c0a",
+  "required_stage_ids": [
+    "repo-tests",
+    "macos-runner-tests",
+    "check-native",
+    "check-all-targets",
+    "test-model",
+    "native-macos",
+    "ime-acceptance"
+  ],
+  "generated_local_workflow": {
+    "path": ".github/workflows/_local-actrun-feedback-975f9ce29ef5405cb6ce5ce46d53b0b9.yml",
+    "sha256": "ee6e236fe832e273b3fd1a3de1f8b559e7138f2a0634ceb4cc7283a697669c0a",
+    "mode": 384
+  },
+  "source_exclusion": {
+    "path": ".github/workflows/_local-actrun-feedback-975f9ce29ef5405cb6ce5ce46d53b0b9.yml",
+    "sha256": "ee6e236fe832e273b3fd1a3de1f8b559e7138f2a0634ceb4cc7283a697669c0a",
+    "mode": 384,
+    "ignore_source": ".gitignore",
+    "ignore_pattern": ".github/workflows/_local-actrun-feedback-*.yml",
+    "source_snapshot_sha256": "6ec7c19be08a6de5f37654b26075a97a119055b7d91e73a8cebb35a80c2099c7"
+  },
+  "actrun_command": [
+    "/opt/homebrew/Cellar/node/26.8.2/bin/node",
+    "/private/tmp/gpui-macos-quality-profile/tools/actrun/node_modules/@mizchi/actrun/dist/actrun.js",
+    "workflow",
+    "run",
+    "/Users/fu2hito/.codex/worktrees/pr40-script-e2e/gpui.mbt/.github/workflows/_local-actrun-feedback-975f9ce29ef5405cb6ce5ce46d53b0b9.yml",
+    "--workspace-mode",
+    "local",
+    "--run-root",
+    "/Users/fu2hito/.codex/automations/mac-ios/runs/script-e2e-20261007T112817Z/native/runs",
+    "--artifact-root",
+    "/Users/fu2hito/.codex/automations/mac-ios/runs/script-e2e-20261007T112817Z/native/artifacts",
+    "--cache-root",
+    "/private/tmp/gpui-macos-quality-profile/feedback-cache",
+    "--no-nix"
+  ],
+  "actrun_exit_code": 1,
+  "actrun_run_id": "run-1",
+  "actrun_state": "partial_failed",
+  "actrun_ok": false,
+  "error": "actrun did not complete every task successfully",
+  "source_after": {
+    "commit": "c7e6cae99ffd218320d0377a53ea3cd5218421b4",
+    "tree": "49af3730fac01fe35f07cf644a58811babb1ef3c",
+    "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "input_files_sha256": "a68555b3b4467c023727b7317849bee35ca95b41421a80ca69cc5cee5a8b49f4",
+    "status": ""
+  },
+  "source_stable": true,
+  "finished_at": "2026-10-07T11:29:09.519136+00:00",
+  "duration_seconds": 48.116
+}

@@ -1,0 +1,2 @@
+COMMAND ["/bin/bash", "-c", "\"$MOON_HOME/bin/moon\" check --target all --deny-warn --target-dir \"$GPUI_ACTRUN_BUILD_DIR/moon-all-targets\""]
+Finished. moon: ran 239 tasks, now up to date

@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "scope": "logged-in desktop, native Kotoeri callback and app-window pixels",
+  "status": "failed",
+  "source_before": {
+    "commit": "c7e6cae99ffd218320d0377a53ea3cd5218421b4",
+    "tree": "49af3730fac01fe35f07cf644a58811babb1ef3c",
+    "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "input_files_sha256": "a68555b3b4467c023727b7317849bee35ca95b41421a80ca69cc5cee5a8b49f4",
+    "status": ""
+  },
+  "host": {
+    "system": "Darwin",
+    "product_version": "26.5.2",
+    "build_version": "25F84",
+    "architecture": "arm64",
+    "xcode": [
+      "Xcode 26.6",
+      "Build version 17F113"
+    ],
+    "xcode_select_path": "/Applications/Xcode.app/Contents/Developer",
+    "sdk_version": "26.5",
+    "sdk_path": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+    "sdk_settings_sha256": "e5c7c40b8c5dc1a9f99f8b9fa51870f8fe180421225b8201d0c4c826aad11bdc",
+    "clang_path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+    "clang_sha256": "7def90dd8829726686213a747fc5bff1583df933dae5edc55d755479e0bfe00a",
+    "clang_version": "Apple clang version 21.0.0 (clang-2100.1.1.101)"
+  },
+  "app_pid": 23530,
+  "app_exit_code": -6,
+  "profile_root": "/private/tmp/gpui-macos-quality-profile",
+  "app": {
+    "bundle": "/Users/fu2hito/.codex/automations/mac-ios/runs/script-e2e-20261007T112817Z/native/checks/text-field/build/macos/GpuiTextField.app",
+    "binary_sha256": "e4eb4e60a19fdce9cbe8bb5258a59244835b5047c3f5180f3c8310c92913f551",
+    "library_sha256": "2a7c64b523f190e78e9439ed52ff75854d19ba985c77dfc5f8bbde313b5b2667",
+    "binary_path": "/Users/fu2hito/.codex/automations/mac-ios/runs/script-e2e-20261007T112817Z/native/checks/text-field/build/macos/GpuiTextField.app/Contents/MacOS/GpuiTextField",
+    "info_plist_sha256": "70595f1d7ad6448665428cc8d2b37a3f08c27138fbaff1169821105328b524de",
+    "window_title": "gpui.mbt experimental macOS TextField"
+  },
+  "capture_runtime": {
+    "swiftc": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+    "swiftc_resolved": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift-frontend",
+    "swiftc_sha256": "2ed38571e92c0283091838c1649e27650ad9c99950288e883c7b2dc6c4ce89fb",
+    "swiftc_version": "Apple Swift version 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)\nTarget: arm64-apple-macosx26.0",
+    "compile_environment": {
+      "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer",
+      "SDKROOT": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+      "MACOSX_DEPLOYMENT_TARGET": "26.0"
+    },
+    "helper_compile_argv": [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-parse-as-library",
+      "-framework",
+      "AppKit",
+      "-framework",
+      "ScreenCaptureKit",
+      "-framework",
+      "ImageIO",
+      "/Users/fu2hito/.codex/automations/mac-ios/runs/script-e2e-20261007T112817Z/ime-trace/owned-window-capture.swift",
+      "-o",
+      "/Users/fu2hito/.codex/automations/mac-ios/runs/script-e2e-20261007T112817Z/ime-trace/owned-window-capture"
+    ],
+    "helper_sha256": "2eaa40d280f7312fd0bb68e1905cb37e68fff856b073fbd81e746f5f13bacc84",
+    "engine": "ScreenCaptureKit.SCScreenshotManager",
+    "helper_source_sha256": "c7be5f43e8cbdb317c311e9b1251f2b530033b42acb21accdb41696b280f3671"
+  },
+  "screenshots": {},
+  "ok": false,
+  "error": "GPUI_MACOS_IME_ACCEPTANCE_FAIL timed out waiting for the app-owned key window; native_state={\"schema_version\":1,\"host_epoch\":1,\"content_size\":{\"width\":640,\"height\":240},\"native_window_id\":5050,\"session_active\":false,\"window_key\":false,\"session_epoch\":0,\"content_origin_in_window\":{\"x\":0,\"y\":32},\"selected_input_source\":\"com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese\",\"window_size\":{\"width\":640,\"height\":272},\"first_responder_is_content_view\":true,\"app_key_matches\":false,\"window_id\":1,\"content_view_class\":\"GPView\",\"window_visible\":true,\"direct_text\":false,\"first_responder_class\":\"GPView\",\"coordinate_space\":\"top_left_window_points\"}",
+  "cleanup": {
+    "requested": true,
+    "acknowledged": true,
+    "receipt": {
+      "schema_version": 1,
+      "restored": true,
+      "session_closed": true,
+      "host_epoch": 0,
+      "session_epoch": 0
+    },
+    "exit_code": -6
+  },
+  "source_after": {
+    "commit": "c7e6cae99ffd218320d0377a53ea3cd5218421b4",
+    "tree": "49af3730fac01fe35f07cf644a58811babb1ef3c",
+    "tracked_patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "input_files_sha256": "a68555b3b4467c023727b7317849bee35ca95b41421a80ca69cc5cee5a8b49f4",
+    "status": ""
+  },
+  "source_stable": true,
+  "finished_utc": "2026-10-07T11:31:44.541029+00:00"
+}

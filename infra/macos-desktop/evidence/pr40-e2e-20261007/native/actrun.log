@@ -1,0 +1,11 @@
+run_id=run-1
+workflow=Local Mac native quality
+state=partial_failed
+macos-local/repo-tests: success
+macos-local/macos-runner-tests: success
+macos-local/check-native: success
+macos-local/check-all-targets: success
+macos-local/test-model: success
+macos-local/native-macos: success
+macos-local/ime-acceptance: failed
+macos-local/__finish: blocked

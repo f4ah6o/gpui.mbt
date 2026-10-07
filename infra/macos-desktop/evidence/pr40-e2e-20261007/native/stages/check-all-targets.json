@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "check-all-targets",
+  "command": [
+    "/bin/bash",
+    "-c",
+    "\"$MOON_HOME/bin/moon\" check --target all --deny-warn --target-dir \"$GPUI_ACTRUN_BUILD_DIR/moon-all-targets\""
+  ],
+  "started_at": "2026-10-07T11:28:32.514718+00:00",
+  "duration_seconds": 1.353312,
+  "timeout_seconds": 1500,
+  "timed_out": false,
+  "exit_code": 0,
+  "status": "passed",
+  "log": "stages/check-all-targets.log"
+}

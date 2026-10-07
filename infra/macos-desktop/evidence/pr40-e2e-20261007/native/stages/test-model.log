@@ -1,0 +1,2 @@
+COMMAND ["/bin/bash", "-c", "\"$MOON_HOME/bin/moon\" test --package f4ah6o/gpui/examples/macos_text_field --target native --deny-warn --target-dir \"$GPUI_ACTRUN_BUILD_DIR/model-native\""]
+Total tests: 28, passed: 28, failed: 0.

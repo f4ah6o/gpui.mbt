@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "repo-tests",
+  "command": [
+    "/bin/bash",
+    "-c",
+    "\"$GPUI_MACOS_PYTHON\" -m unittest discover -s tests -p 'test_*.py' && \"$GPUI_MACOS_PYTHON\" scripts/check_contracts.py"
+  ],
+  "started_at": "2026-10-07T11:28:23.904290+00:00",
+  "duration_seconds": 1.621749,
+  "timeout_seconds": 600,
+  "timed_out": false,
+  "exit_code": 0,
+  "status": "passed",
+  "log": "stages/repo-tests.log"
+}

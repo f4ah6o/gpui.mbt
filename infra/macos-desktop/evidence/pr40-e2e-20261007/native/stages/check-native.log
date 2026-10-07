@@ -1,0 +1,2 @@
+COMMAND ["/bin/bash", "-c", "\"$MOON_HOME/bin/moon\" check text controls/text_field platform/macos platform/macos_text examples/macos_text_field --target native --deny-warn --target-dir \"$GPUI_ACTRUN_BUILD_DIR/moon-native\""]
+Finished. moon: ran 21 tasks, now up to date
