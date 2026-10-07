@@ -14,6 +14,11 @@ epoch, native session epoch, and increasing event sequence before they can
 install a field value. Composition updates are prepared from their saved
 committed replacement range. Preview text and caret edits do not change the
 picker query; an accepted native result commits once and filters immediately.
+An ordinary committed field edit synchronously refreshes and fences the native
+snapshot before the event loop can consume another IMM32 record. If a native
+candidate cannot be installed within the palette's query bound, the saved
+composition is restored and the native session is cancelled/rearmed before
+more records are accepted; a failed recovery exits with the modal focus held.
 Escape cancels composition before another press can close the palette. Closing
 ends the native owner before the palette runs a command or restores saved
 focus. A failed close fence leaves focus in the modal tree and does not run the
@@ -24,9 +29,14 @@ frame together. A busy present retains that complete prepared value for retry.
 An intervening platform or native event invalidates the retry and builds a new
 complete scene from the updated model. A hard present failure closes without a
 command, retains modal focus if the native fence fails, and exits without
-replaying partial palette state. The fixture logs frame acceptance and
-completion identities and obtains staging readback only after the matching
-completion event.
+replaying partial palette state. Only one accepted frame may await application
+consumption of `FrameCompleted`, because that event carries no presentation
+identity. While one is pending, input can continue to update the live palette,
+but a newer scene waits for the old completion and readback to be paired. Each
+pending record retains its submitted logical viewport and scale, so a resize
+does not relabel the older frame's staging samples. The fixture logs frame
+acceptance and completion identities and obtains staging readback only after
+the matching completion event.
 
 Run the pinned Windows gates with `scripts/test_windows.ps1` or the local actrun
 workflow with `scripts/run_windows_actrun.ps1`. For a visible, bounded GUI
@@ -50,7 +60,9 @@ closes it. Compare the state `caret` rectangle with the candidate-window
 placement and retain screenshots of the matching final frames for search,
 active/disabled rows, scrolling, and clipping. Use the manifest and the
 `ACCEPTED`/`COMPLETE`/`READBACK` observer records to pair each screenshot with
-its final-source presentation and completed native frame.
+its final-source presentation and completed native frame. The smoke gate parses
+the exact record prefixes, requires matching presentation and event-sequence
+identities, and validates all three expected sample coordinates and RGBA values.
 
 Portable component tests cover model bounds and selection behavior. Windows
 owner regressions cover native owner, epoch, sequence, composition, close-fence,

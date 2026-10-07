@@ -170,6 +170,162 @@ function Write-BuildManifest {
   $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $evidence "manifest.json") -Encoding utf8
 }
 
+function Get-PaletteJsonRecord {
+  param(
+    [Parameter(Mandatory = $true)][string[]]$Lines,
+    [Parameter(Mandatory = $true)][string]$Prefix,
+    [Parameter(Mandatory = $true)][string]$Name
+  )
+  $records = @($Lines | Where-Object { $_.StartsWith($Prefix, [StringComparison]::Ordinal) })
+  if ($records.Count -ne 1) {
+    throw "Expected exactly one $Name record beginning '$Prefix'; found $($records.Count)."
+  }
+  $payload = $records[0].Substring($Prefix.Length)
+  try {
+    $value = ConvertFrom-Json -InputObject $payload -AsHashtable -ErrorAction Stop
+  } catch {
+    throw "$Name record contains malformed JSON: $($_.Exception.Message)"
+  }
+  if ($value -isnot [System.Collections.IDictionary]) {
+    throw "$Name record JSON must be an object."
+  }
+  return $value
+}
+
+function Test-PaletteExactInteger {
+  param([object]$Value, [long]$Minimum, [long]$Maximum)
+  if ($null -eq $Value -or $Value -isnot [ValueType] -or $Value -is [bool]) { return $false }
+  try { $number = [double]$Value } catch { return $false }
+  return [double]::IsFinite($number) -and
+    $number -eq [Math]::Truncate($number) -and
+    $number -ge $Minimum -and $number -le $Maximum
+}
+
+function Test-PaletteFinitePositiveNumber {
+  param([object]$Value)
+  if ($null -eq $Value -or $Value -isnot [ValueType] -or $Value -is [bool]) { return $false }
+  try { $number = [double]$Value } catch { return $false }
+  return [double]::IsFinite($number) -and $number -gt 0
+}
+
+function Get-PaletteSmokeEvidence {
+  param([Parameter(Mandatory = $true)][string]$Text)
+  $lines = @($Text -split "`r?`n" | Where-Object { -not [string]::IsNullOrEmpty($_) })
+  if (@($lines | Where-Object { $_.StartsWith("GPUI_WINDOWS_COMMAND_PALETTE_READBACK_UNAVAILABLE ", [StringComparison]::Ordinal) }).Count -gt 0) {
+    throw "Smoke log contains READBACK_UNAVAILABLE."
+  }
+  $accepted = Get-PaletteJsonRecord $lines "GPUI_WINDOWS_COMMAND_PALETTE_ACCEPTED " "accepted"
+  $complete = Get-PaletteJsonRecord $lines "GPUI_WINDOWS_COMMAND_PALETTE_COMPLETE " "completion"
+  $readback = Get-PaletteJsonRecord $lines "GPUI_WINDOWS_COMMAND_PALETTE_READBACK " "readback"
+
+  if (-not (Test-PaletteExactInteger $accepted.presentation 1 2147483647)) { throw "Accepted record has an invalid presentation identity." }
+  if (-not (Test-PaletteExactInteger $complete.presentation 1 2147483647)) { throw "Completion record has an invalid presentation identity." }
+  if (-not (Test-PaletteExactInteger $readback.presentation 1 2147483647)) { throw "Readback record has an invalid presentation identity." }
+  if ([long]$accepted.presentation -ne [long]$complete.presentation -or
+      [long]$accepted.presentation -ne [long]$readback.presentation) {
+    throw "Accepted, completed, and readback presentation identities do not match."
+  }
+  if (-not (Test-PaletteExactInteger $complete.event_sequence 1 9223372036854775807) -or
+      -not (Test-PaletteExactInteger $readback.frame_event_sequence 1 9223372036854775807) -or
+      [long]$complete.event_sequence -ne [long]$readback.frame_event_sequence) {
+    throw "Completion and readback event sequences do not match."
+  }
+
+  $viewport = $readback.viewport
+  if ($viewport -isnot [System.Collections.IDictionary]) { throw "Readback record has no viewport object." }
+  foreach ($name in @("logical_width", "logical_height", "scale")) {
+    if (-not (Test-PaletteFinitePositiveNumber $viewport[$name])) { throw "Readback viewport $name is invalid." }
+  }
+  $scaledWidth = [double]$viewport.logical_width * [double]$viewport.scale
+  $scaledHeight = [double]$viewport.logical_height * [double]$viewport.scale
+  if (-not [double]::IsFinite($scaledWidth) -or -not [double]::IsFinite($scaledHeight) -or
+      $scaledWidth -gt 2147483647 -or $scaledHeight -gt 2147483647) {
+    throw "Readback viewport exceeds supported pixel dimensions."
+  }
+  $pixelWidth = [int][Math]::Truncate($scaledWidth)
+  $pixelHeight = [int][Math]::Truncate($scaledHeight)
+  if ($pixelWidth -lt 4 -or $pixelHeight -lt 4) { throw "Readback viewport is too small for the three required samples." }
+  $expectedPoints = @(
+    "1,1",
+    "$([int][Math]::Truncate($pixelWidth / 4)),$([int][Math]::Truncate($pixelHeight / 3))",
+    "$($pixelWidth - 2),$($pixelHeight - 2)"
+  )
+  $samples = $readback.samples
+  if ($samples -isnot [System.Collections.IList] -or $samples.Count -ne 3) {
+    throw "Readback must contain exactly three RGBA samples."
+  }
+  for ($index = 0; $index -lt 3; $index++) {
+    $sample = $samples[$index]
+    if ($sample -isnot [System.Collections.IDictionary] -or
+        $sample.point -isnot [System.Collections.IList] -or $sample.point.Count -ne 2 -or
+        $sample.rgba -isnot [System.Collections.IList] -or $sample.rgba.Count -ne 4) {
+      throw "Readback sample $index has an invalid point/RGBA shape."
+    }
+    for ($axis = 0; $axis -lt 2; $axis++) {
+      if (-not (Test-PaletteExactInteger $sample.point[$axis] 0 2147483647)) {
+        throw "Readback sample $index has an unexpected pixel coordinate."
+      }
+    }
+    $actualPoint = "$([int]$sample.point[0]),$([int]$sample.point[1])"
+    if ($actualPoint -ne $expectedPoints[$index]) { throw "Readback sample $index has an unexpected pixel coordinate." }
+    foreach ($channel in $sample.rgba) {
+      if (-not (Test-PaletteExactInteger $channel 0 255)) {
+        throw "Readback sample $index contains an invalid RGBA channel."
+      }
+    }
+  }
+  return [ordered]@{
+    presentation = [long]$readback.presentation
+    frame_event_sequence = [long]$readback.frame_event_sequence
+    viewport = $viewport
+    samples = $samples
+  }
+}
+
+function Assert-PaletteParserRejects {
+  param([string]$Text, [string]$Case)
+  try {
+    $null = Get-PaletteSmokeEvidence $Text
+  } catch {
+    return
+  }
+  throw "Smoke parser accepted invalid test case '$Case'."
+}
+
+function Test-PaletteSmokeParser {
+  $accepted = [ordered]@{ presentation = 4 }
+  $complete = [ordered]@{ presentation = 4; event_sequence = 91 }
+  $readback = [ordered]@{
+    presentation = 4
+    frame_event_sequence = 91
+    viewport = [ordered]@{ logical_width = 640; logical_height = 480; scale = 1 }
+    samples = @(
+      [ordered]@{ point = @(1, 1); rgba = @(0, 1, 2, 255) },
+      [ordered]@{ point = @(160, 160); rgba = @(3, 4, 5, 255) },
+      [ordered]@{ point = @(638, 478); rgba = @(6, 7, 8, 255) }
+    )
+  }
+  $valid = @(
+    "GPUI_WINDOWS_COMMAND_PALETTE_ACCEPTED $($accepted | ConvertTo-Json -Compress)",
+    "GPUI_WINDOWS_COMMAND_PALETTE_COMPLETE $($complete | ConvertTo-Json -Compress)",
+    "GPUI_WINDOWS_COMMAND_PALETTE_READBACK $($readback | ConvertTo-Json -Compress -Depth 6)"
+  ) -join "`n"
+  $validEvidence = Get-PaletteSmokeEvidence $valid
+  if ($validEvidence.presentation -ne 4 -or $validEvidence.samples.Count -ne 3) {
+    throw "Smoke parser failed its valid record-chain test."
+  }
+  Assert-PaletteParserRejects "GPUI_WINDOWS_COMMAND_PALETTE_READBACK_UNAVAILABLE {}`n$valid" "unavailable readback"
+  $mismatchedPresentation = ([regex]::new('"presentation":4')).Replace($valid, '"presentation":5', 1)
+  Assert-PaletteParserRejects $mismatchedPresentation "presentation mismatch"
+  Assert-PaletteParserRejects ($valid -replace '"frame_event_sequence":91', '"frame_event_sequence":92') "event mismatch"
+  Assert-PaletteParserRejects ($valid -replace '"point":\[160,160\]', '"point":[159,160]') "sample coordinate mismatch"
+  Assert-PaletteParserRejects ($valid -replace '"rgba":\[0,1,2,255\]', '"rgba":[0,1,2,256]') "out-of-range channel"
+  Assert-PaletteParserRejects ($valid -replace '"rgba":\[0,1,2,255\]', '"rgba":[0,1,2,"255"]') "string channel"
+  Assert-PaletteParserRejects ($valid -replace '"logical_width":640', '"logical_width":"640"') "string viewport dimension"
+  Assert-PaletteParserRejects ($valid -replace 'GPUI_WINDOWS_COMMAND_PALETTE_READBACK \{', 'GPUI_WINDOWS_COMMAND_PALETTE_READBACK {bad') "malformed JSON"
+  Assert-PaletteParserRejects "GPUI_WINDOWS_COMMAND_PALETTE_ACCEPTED $($accepted | ConvertTo-Json -Compress)" "missing completion/readback"
+}
+
 function Build-Fixture {
   Initialize-Msvc
   if (-not $NoChecks) {
@@ -201,6 +357,7 @@ if ($Mode -eq "Stop") {
 }
 
 if (-not $IsWindows) { throw "The Windows command-palette fixture requires Windows." }
+Test-PaletteSmokeParser
 Build-Fixture
 
 if ($Mode -eq "Build") {
@@ -225,9 +382,7 @@ if ($Mode -eq "Smoke") {
   }
   if ($process.ExitCode -ne 0) { throw "Smoke fixture exited $($process.ExitCode); see $stdout and $stderr" }
   $smokeText = if (Test-Path $stdout) { Get-Content -Raw $stdout } else { "" }
-  foreach ($required in @("GPUI_WINDOWS_COMMAND_PALETTE_ACCEPTED", "GPUI_WINDOWS_COMMAND_PALETTE_COMPLETE", "GPUI_WINDOWS_COMMAND_PALETTE_READBACK")) {
-    if (-not $smokeText.Contains($required)) { throw "Smoke log is missing $required; see $stdout" }
-  }
+  $smokeEvidence = Get-PaletteSmokeEvidence $smokeText
   Copy-Item -LiteralPath $stdout -Destination (Join-Path $logs "app.stdout.log") -Force
   Copy-Item -LiteralPath $stderr -Destination (Join-Path $logs "app.stderr.log") -Force
   $manifestPath = Join-Path $evidence "manifest.json"
@@ -238,6 +393,10 @@ if ($Mode -eq "Smoke") {
     accepted_frame = $true
     completed_frame = $true
     readback_samples = $true
+    presentation = $smokeEvidence.presentation
+    frame_event_sequence = $smokeEvidence.frame_event_sequence
+    viewport = $smokeEvidence.viewport
+    samples = $smokeEvidence.samples
     stdout = $stdout
     stderr = $stderr
   }

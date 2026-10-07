@@ -353,6 +353,74 @@ fn palette_end_native_owner(
 }
 
 ///|
+/// External edits must synchronously fence the prior native snapshot before
+/// another platform/native event can be consumed. The native external-edit
+/// contract returns a fresh epoch; retaining the old one is a failed fence.
+fn palette_sync_external_edit_owner(
+  owner : PaletteNativeOwner?,
+  sync : (PaletteNativeOwner) -> Result[
+    PaletteNativeOwner,
+    @diagnostics.FrameworkError,
+  ],
+) -> Result[PaletteNativeOwner?, @diagnostics.FrameworkError] {
+  match owner {
+    None => Ok(None)
+    Some(active) =>
+      match sync(active) {
+        Err(error) => Err(error)
+        Ok(next) if next.epoch != active.epoch => Ok(Some(next))
+        Ok(_) =>
+          Err(
+            @diagnostics.FrameworkError::new(
+              @diagnostics.StaleHandle,
+              "palette_external_edit_epoch",
+            ),
+          )
+      }
+  }
+}
+
+///|
+/// Restore a rejected native transaction and synchronously revoke its session
+/// before another record can arrive. A malformed/unadmitted candidate is never
+/// allowed to leave a marked field paired with an owner that has no transaction.
+fn palette_reject_native_edit(
+  palette : @palette.CommandPalette,
+  owner : PaletteNativeOwner,
+  cancel : (PaletteNativeOwner) -> Result[
+    PaletteNativeOwner,
+    @diagnostics.FrameworkError,
+  ],
+) -> Result[PaletteNativeOwner, @diagnostics.FrameworkError] {
+  let (restored, cleared) = palette_native_cancel_composition(owner)
+  match restored {
+    Some(candidate) =>
+      match palette.install_field_at(owner.open_epoch, candidate) {
+        Ok(_) => ()
+        Err(_) =>
+          return Err(
+            @diagnostics.FrameworkError::new(
+              @diagnostics.InvalidInput,
+              "palette_restore_rejected_native_edit",
+            ),
+          )
+      }
+    None => ()
+  }
+  match cancel(cleared) {
+    Err(error) => Err(error)
+    Ok(next) if next.epoch != owner.epoch => Ok(next)
+    Ok(_) =>
+      Err(
+        @diagnostics.FrameworkError::new(
+          @diagnostics.StaleHandle,
+          "palette_reject_native_epoch",
+        ),
+      )
+  }
+}
+
+///|
 fn palette_replacement_target_matches(
   field : @text_field.TextField,
   replacement : @text.TextRange,

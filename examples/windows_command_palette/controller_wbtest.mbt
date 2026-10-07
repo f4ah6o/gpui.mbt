@@ -396,7 +396,7 @@ test "Windows command palette Busy presentation retains the complete retry state
     sequence: 7L,
   }
   let owner = Ref(Some(active_owner))
-  let previous_pending = Some(pending_frame(fixture, 1))
+  let previous_pending = Some(pending_frame(fixture, 1, 640.0, 480.0, 1.0))
   let dirty = Ref(true)
   let scene = palette_scene(fixture, 640.0, 480.0, 1.0).unwrap()
   let prepared = prepare_palette_frame(
@@ -460,7 +460,7 @@ test "Windows command palette hard presentation rejection fails closed without a
     }),
   )
   let dirty = Ref(true)
-  let previous_pending = Some(pending_frame(fixture, 1))
+  let previous_pending = Some(pending_frame(fixture, 1, 640.0, 480.0, 1.0))
   let scene = palette_scene(fixture, 640.0, 480.0, 1.0).unwrap()
   let prepared = prepare_palette_frame(
     fixture,
@@ -496,4 +496,163 @@ test "Windows command palette hard presentation rejection fails closed without a
   assert_eq(fixture.tree.val.focused(), Some(2UL))
   assert_eq(retained.frame.query, "Go")
   assert_eq(retained.previous_pending.unwrap().presentation, 1)
+}
+
+///|
+test "pending frame identity survives intervening input, external edit fence, and resize" {
+  let fixture = palette_fixture()
+  let palette = fixture.palette
+  palette.open(fixture.tree).unwrap()
+  ignore(
+    palette_handle_input(fixture, @primitives.TextInput(text="Go")).unwrap(),
+  )
+  let old_owner = palette_native_owner(2, palette.open_epoch(), 41)
+  let pending = pending_frame(fixture, 1, 640.0, 480.0, 1.0)
+  let pending_ref = Some(pending)
+  let dirty = Ref(true)
+  assert_false(palette_frame_submission_ready(dirty.val, pending_ref))
+
+  let old_target : @native.TextSessionTarget = {
+    window: @platform.WindowId::new(17L),
+    sequence: 1L,
+    epoch: old_owner.epoch,
+    owner_generation: old_owner.owner_generation,
+  }
+  let updated_owner = palette_sync_external_edit_owner(Some(old_owner), active => {
+      Ok(palette_native_owner_after_update(active, active.epoch + 1))
+    })
+    .unwrap()
+    .unwrap()
+  assert_eq(updated_owner.epoch, 42)
+  assert_false(
+    palette_native_target_current(
+      palette,
+      updated_owner,
+      @platform.WindowId::new(17L),
+      old_target,
+    ),
+  )
+  assert_eq(palette.picker().query(), "Go")
+  assert_false(palette_frame_submission_ready(dirty.val, pending_ref))
+
+  let retained_samples = palette_readback_line(
+    [10.0, 20.0, 30.0, 255.0, 40.0, 50.0, 60.0, 255.0, 70.0, 80.0, 90.0, 255.0],
+    pending,
+    77L,
+  )
+  assert_true(retained_samples.contains("\"presentation\":1"))
+  assert_true(retained_samples.contains("\"frame_event_sequence\":77"))
+  assert_true(retained_samples.contains("\"logical_width\":640"))
+  assert_true(retained_samples.contains("\"logical_height\":480"))
+  assert_true(retained_samples.contains("\"scale\":1"))
+  assert_true(retained_samples.contains("\"point\":[160,160]"))
+
+  let (completed, no_pending) = palette_take_completed_frame(pending_ref)
+  assert_true(no_pending is None)
+  assert_true(pending_frame_matches(completed.unwrap(), pending))
+  assert_true(palette_frame_submission_ready(dirty.val, no_pending))
+
+  let resized = pending_frame(fixture, 2, 800.0, 600.0, 1.5)
+  let (recorded, resized_pending) = palette_record_accepted_frame(
+    no_pending, resized,
+  )
+  assert_true(recorded)
+  assert_eq(resized_pending.unwrap().width, 800.0)
+  assert_eq(resized_pending.unwrap().height, 600.0)
+  assert_eq(resized_pending.unwrap().scale, 1.5)
+  let (overwrote, still_resized) = palette_record_accepted_frame(
+    resized_pending, pending,
+  )
+  assert_false(overwrote)
+  assert_true(pending_frame_matches(still_resized.unwrap(), resized))
+}
+
+///|
+test "rejected native marks and results restore the transaction before next record" {
+  let fixture = palette_fixture()
+  let palette = fixture.palette
+  palette.open(fixture.tree).unwrap()
+  let replacement = palette.field().selection().normalized_range()
+  let starting_owner = palette_native_owner(2, palette.open_epoch(), 51)
+  let marked_owner = palette_native_start_composition(
+    starting_owner,
+    palette.field(),
+    replacement,
+  ).unwrap()
+  let oversized = "日".repeat(86)
+  let (oversized_mark, marked_owner) = palette_native_update_mark(
+    marked_owner,
+    oversized,
+    Some(86),
+    [],
+    replacement,
+  ).unwrap()
+  assert_true(
+    palette.install_field_at(palette.open_epoch(), oversized_mark)
+    is Err(@palette.QueryTooLarge),
+  )
+  let after_mark_rejection = palette_reject_native_edit(palette, marked_owner, active => {
+    Ok(palette_native_owner_after_update(active, active.epoch + 1))
+  }).unwrap()
+  assert_eq(after_mark_rejection.epoch, 52)
+  assert_true(after_mark_rejection.composition is None)
+  let old_mark_target : @native.TextSessionTarget = {
+    window: @platform.WindowId::new(17L),
+    sequence: 1L,
+    epoch: marked_owner.epoch,
+    owner_generation: marked_owner.owner_generation,
+  }
+  assert_false(
+    palette_native_target_current(
+      palette,
+      after_mark_rejection,
+      @platform.WindowId::new(17L),
+      old_mark_target,
+    ),
+  )
+  assert_false(palette.field().is_composing())
+  assert_eq(palette.field().document().text(), "")
+  assert_eq(palette.field().committed_document().text(), "")
+  assert_eq(palette.picker().query(), "")
+
+  let result_owner = palette_native_start_composition(
+    after_mark_rejection,
+    palette.field(),
+    replacement,
+  ).unwrap()
+  let (oversized_result, _) = palette_native_append_result(
+    result_owner,
+    palette.field(),
+    oversized,
+    replacement,
+  ).unwrap()
+  assert_true(
+    palette.install_field_at(palette.open_epoch(), oversized_result)
+    is Err(@palette.QueryTooLarge),
+  )
+  let after_result_rejection = palette_reject_native_edit(
+    palette,
+    result_owner,
+    active => Ok(palette_native_owner_after_update(active, active.epoch + 1)),
+  ).unwrap()
+  assert_eq(after_result_rejection.epoch, 53)
+  assert_true(after_result_rejection.composition is None)
+  let old_result_target : @native.TextSessionTarget = {
+    window: @platform.WindowId::new(17L),
+    sequence: 1L,
+    epoch: result_owner.epoch,
+    owner_generation: result_owner.owner_generation,
+  }
+  assert_false(
+    palette_native_target_current(
+      palette,
+      after_result_rejection,
+      @platform.WindowId::new(17L),
+      old_result_target,
+    ),
+  )
+  assert_false(palette.field().is_composing())
+  assert_eq(palette.field().document().text(), "")
+  assert_eq(palette.field().committed_document().text(), "")
+  assert_eq(palette.picker().query(), "")
 }

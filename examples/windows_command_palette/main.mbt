@@ -418,15 +418,12 @@ fn palette_state_line(
 ///|
 fn readback_line(
   samples : Array[Double],
-  presentation : Int,
+  frame : PendingFrame,
   event_sequence : Int64,
-  width : Double,
-  height : Double,
-  scale : Double,
 ) -> String {
-  let pixel_width = (width * scale).to_int()
-  let pixel_height = (height * scale).to_int()
-  "GPUI_WINDOWS_COMMAND_PALETTE_READBACK {\"presentation\":\{presentation},\"frame_event_sequence\":\{event_sequence},\"samples\":[{\"point\":[1,1],\"rgba\":[\{samples[0]},\{samples[1]},\{samples[2]},\{samples[3]}]},{\"point\":[\{pixel_width / 4},\{pixel_height / 3}],\"rgba\":[\{samples[4]},\{samples[5]},\{samples[6]},\{samples[7]}]},{\"point\":[\{pixel_width - 2},\{pixel_height - 2}],\"rgba\":[\{samples[8]},\{samples[9]},\{samples[10]},\{samples[11]}]}]}"
+  let pixel_width = (frame.width * frame.scale).to_int()
+  let pixel_height = (frame.height * frame.scale).to_int()
+  "GPUI_WINDOWS_COMMAND_PALETTE_READBACK {\"presentation\":\{frame.presentation},\"frame_event_sequence\":\{event_sequence},\"viewport\":{\"logical_width\":\{frame.width},\"logical_height\":\{frame.height},\"scale\":\{frame.scale}},\"samples\":[{\"point\":[1,1],\"rgba\":[\{samples[0]},\{samples[1]},\{samples[2]},\{samples[3]}]},{\"point\":[\{pixel_width / 4},\{pixel_height / 3}],\"rgba\":[\{samples[4]},\{samples[5]},\{samples[6]},\{samples[7]}]},{\"point\":[\{pixel_width - 2},\{pixel_height - 2}],\"rgba\":[\{samples[8]},\{samples[9]},\{samples[10]},\{samples[11]}]}]}"
 }
 
 ///|
@@ -436,6 +433,9 @@ struct PendingFrame {
   query : String
   visible_count : Int
   active_id : String?
+  width : Double
+  height : Double
+  scale : Double
 }
 
 ///|
@@ -466,7 +466,13 @@ struct WindowPaletteInput {
 }
 
 ///|
-fn pending_frame(fixture : PaletteFixture, presentation : Int) -> PendingFrame {
+fn pending_frame(
+  fixture : PaletteFixture,
+  presentation : Int,
+  width : Double,
+  height : Double,
+  scale : Double,
+) -> PendingFrame {
   let palette = fixture.palette
   {
     presentation,
@@ -477,7 +483,51 @@ fn pending_frame(fixture : PaletteFixture, presentation : Int) -> PendingFrame {
       Some(value) => Some(value.id())
       None => None
     },
+    width,
+    height,
+    scale,
   }
+}
+
+///|
+/// Do not submit a second scene until the completion event for the first
+/// accepted scene has been consumed and its retained readback has been paired.
+fn palette_frame_submission_ready(
+  dirty : Bool,
+  pending : PendingFrame?,
+) -> Bool {
+  dirty && pending is None
+}
+
+///|
+/// FrameCompleted has no native presentation ID, so the single outstanding
+/// application frame is the only safe FIFO identity to consume.
+fn palette_take_completed_frame(
+  pending : PendingFrame?,
+) -> (PendingFrame?, PendingFrame?) {
+  (pending, None)
+}
+
+///|
+/// Keep an earlier pending identity if a caller violates the one-frame gate;
+/// never silently attribute its completion/readback to a newer scene.
+fn palette_record_accepted_frame(
+  pending : PendingFrame?,
+  accepted : PendingFrame,
+) -> (Bool, PendingFrame?) {
+  match pending {
+    None => (true, Some(accepted))
+    Some(_) => (false, pending)
+  }
+}
+
+///|
+fn palette_readback_line(
+  samples : Array[Double],
+  frame : PendingFrame,
+  event_sequence : Int64,
+) -> String {
+  readback_line(samples, frame, event_sequence)
 }
 
 ///|
@@ -495,7 +545,7 @@ fn prepare_palette_frame(
   let field = fixture.palette.field()
   {
     scene,
-    frame: pending_frame(fixture, presentation),
+    frame: pending_frame(fixture, presentation, width, height, scale),
     field_text: field.document().text(),
     committed_text: field.committed_document().text(),
     composing: field.is_composing(),
@@ -518,7 +568,10 @@ fn pending_frame_matches(left : PendingFrame, right : PendingFrame) -> Bool {
   left.open_epoch == right.open_epoch &&
   left.query == right.query &&
   left.visible_count == right.visible_count &&
-  left.active_id == right.active_id
+  left.active_id == right.active_id &&
+  left.width == right.width &&
+  left.height == right.height &&
+  left.scale == right.scale
 }
 
 ///|
@@ -700,6 +753,43 @@ fn palette_finish_effect(
 }
 
 ///|
+/// A native candidate can be syntactically valid TextField state while still
+/// violating the palette's committed-query bound. Revoke that IMM transaction
+/// before accepting another record; if restore/rearm cannot be proven, keep
+/// the modal owner fail-closed and stop the host.
+fn palette_recover_rejected_native_record(
+  host : @native.Host,
+  window : @platform.WindowId,
+  fixture : PaletteFixture,
+  owner : Ref[PaletteNativeOwner?],
+  dirty : Ref[Bool],
+  active : PaletteNativeOwner,
+  reason : String,
+) -> Bool {
+  fixture.rejected_records.val += 1
+  match
+    palette_reject_native_edit(fixture.palette, active, current => {
+      palette_cancel_native_owner(host, window, current)
+    }) {
+    Ok(next) => {
+      fixture.native_cancels.val += 1
+      owner.val = Some(next)
+      dirty.val = true
+      palette_log("GPUI_WINDOWS_COMMAND_PALETTE_REJECT \{reason} recovered")
+      true
+    }
+    Err(error) => {
+      report(error)
+      owner.val = Some(active)
+      dirty.val = false
+      palette_log("GPUI_WINDOWS_COMMAND_PALETTE_REJECT \{reason} fail_closed")
+      ignore(host.request_exit())
+      false
+    }
+  }
+}
+
+///|
 /// A hard presentation failure closes without a pending command. The native
 /// end fence runs before focus can be restored; a failed fence leaves the
 /// modal owner focused until the host shuts down.
@@ -858,6 +948,9 @@ fn run_palette_window() -> Unit {
             @platform.Resized(width=w, height=h) => {
               width.val = w
               height.val = h
+              // The accepted frame keeps its submitted viewport and cached
+              // staging samples until its query completes; the replacement
+              // viewport waits behind the one-frame submission gate.
               dirty.val = true
             }
             @platform.ScaleChanged => dirty.val = true
@@ -1084,6 +1177,44 @@ fn run_palette_window() -> Unit {
                       if palette.is_open() &&
                         before != palette.field().committed_document() {
                         native_external_edit.val = true
+                        if experimental_ime {
+                          match
+                            palette_sync_external_edit_owner(owner.val, active => {
+                              palette_update_native_owner(
+                                host, window, palette, active, true,
+                              )
+                            }) {
+                            Ok(Some(next)) => {
+                              owner.val = Some(next)
+                              fixture.native_updates.val += 1
+                              native_external_edit.val = false
+                            }
+                            Ok(None) => ()
+                            Err(error) => {
+                              report(error)
+                              ignore(
+                                palette_fail_closed_before_exit(
+                                  fixture,
+                                  owner,
+                                  dirty,
+                                  active => {
+                                    match
+                                      palette_end_native_owner(
+                                        host, window, active,
+                                      ) {
+                                      Ok(_) => true
+                                      Err(end_error) => {
+                                        report(end_error)
+                                        false
+                                      }
+                                    }
+                                  },
+                                ),
+                              )
+                              ignore(host.request_exit())
+                            }
+                          }
+                        }
                       }
                     }
                     Err(_) =>
@@ -1094,7 +1225,11 @@ fn run_palette_window() -> Unit {
             }
             @platform.FrameCompleted => {
               frame_completions += 1
-              match pending {
+              let (completed_frame, next_pending) = palette_take_completed_frame(
+                pending,
+              )
+              pending = next_pending
+              match completed_frame {
                 None =>
                   palette_log(
                     "GPUI_WINDOWS_COMMAND_PALETTE_COMPLETE {\"presentation\":null,\"event_sequence\":\{event.sequence()}}",
@@ -1110,21 +1245,13 @@ fn run_palette_window() -> Unit {
                   match host.readback_samples(window) {
                     Ok(samples) =>
                       palette_log(
-                        readback_line(
-                          samples,
-                          frame.presentation,
-                          event.sequence(),
-                          width.val,
-                          height.val,
-                          scale.val,
-                        ),
+                        palette_readback_line(samples, frame, event.sequence()),
                       )
                     Err(error) =>
                       palette_log(
                         "GPUI_WINDOWS_COMMAND_PALETTE_READBACK_UNAVAILABLE {\"presentation\":\{frame.presentation},\"code\":\"\{error.code().label()}\"}",
                       )
                   }
-                  pending = None
                   if smoke {
                     ignore(host.request_exit())
                   }
@@ -1173,7 +1300,7 @@ fn run_palette_window() -> Unit {
                 cursor_utf16~,
                 attributes~,
                 replacement_range~
-              ) => {
+              ) =>
                 match
                   palette_native_update_mark(
                     accepted, text, cursor_utf16, attributes, replacement_range,
@@ -1181,46 +1308,25 @@ fn run_palette_window() -> Unit {
                   Ok((candidate, next)) =>
                     match
                       palette.install_field_at(active.open_epoch, candidate) {
-                      Ok(_) => owner.val = Some(next)
-                      Err(_) => {
-                        fixture.rejected_records.val += 1
-                        palette_log(
-                          "GPUI_WINDOWS_COMMAND_PALETTE_REJECT marked_epoch",
-                        )
+                      Ok(_) => {
+                        owner.val = Some(next)
+                        dirty.val = true
                       }
+                      Err(_) =>
+                        ignore(
+                          palette_recover_rejected_native_record(
+                            host, window, fixture, owner, dirty, accepted, "marked_admission",
+                          ),
+                        )
                     }
-                  Err(_) => {
-                    fixture.rejected_records.val += 1
-                    let (original, cleared) = palette_native_cancel_composition(
-                      accepted,
+                  Err(_) =>
+                    ignore(
+                      palette_recover_rejected_native_record(
+                        host, window, fixture, owner, dirty, accepted, "marked_invalid",
+                      ),
                     )
-                    match original {
-                      Some(candidate) =>
-                        match
-                          palette.install_field_at(active.open_epoch, candidate) {
-                          Ok(_) =>
-                            match
-                              palette_cancel_native_owner(host, window, cleared) {
-                              Ok(next) => {
-                                fixture.native_cancels.val += 1
-                                owner.val = Some(next)
-                              }
-                              Err(error) => {
-                                report(error)
-                                owner.val = None
-                                ignore(host.request_exit())
-                              }
-                            }
-                          Err(_) => ignore(host.request_exit())
-                        }
-                      None => ()
-                    }
-                    palette_log("GPUI_WINDOWS_COMMAND_PALETTE_REJECT marked")
-                  }
                 }
-                dirty.val = true
-              }
-              @native.Inserted(text~, replacement_range~) => {
+              @native.Inserted(text~, replacement_range~) =>
                 match
                   palette_native_append_result(
                     accepted,
@@ -1234,22 +1340,22 @@ fn run_palette_window() -> Unit {
                       Ok(_) => {
                         owner.val = Some(next)
                         native_external_edit.val = false
+                        dirty.val = true
                       }
-                      Err(_) => {
-                        fixture.rejected_records.val += 1
-                        palette_log(
-                          "GPUI_WINDOWS_COMMAND_PALETTE_REJECT inserted_epoch",
+                      Err(_) =>
+                        ignore(
+                          palette_recover_rejected_native_record(
+                            host, window, fixture, owner, dirty, accepted, "inserted_admission",
+                          ),
                         )
-                      }
                     }
-                  Err(_) => {
-                    fixture.rejected_records.val += 1
-                    palette_log("GPUI_WINDOWS_COMMAND_PALETTE_REJECT inserted")
-                    ignore(host.request_exit())
-                  }
+                  Err(_) =>
+                    ignore(
+                      palette_recover_rejected_native_record(
+                        host, window, fixture, owner, dirty, accepted, "inserted_invalid",
+                      ),
+                    )
                 }
-                dirty.val = true
-              }
               @native.CompositionEnded => {
                 let (restored, next) = palette_native_end_composition(accepted)
                 match restored {
@@ -1260,10 +1366,12 @@ fn run_palette_window() -> Unit {
                         owner.val = Some(next)
                         dirty.val = true
                       }
-                      Err(_) => {
-                        fixture.rejected_records.val += 1
-                        ignore(host.request_exit())
-                      }
+                      Err(_) =>
+                        ignore(
+                          palette_recover_rejected_native_record(
+                            host, window, fixture, owner, dirty, accepted, "ended_admission",
+                          ),
+                        )
                     }
                   None => owner.val = Some(next)
                 }
@@ -1280,10 +1388,12 @@ fn run_palette_window() -> Unit {
                         owner.val = Some(next)
                         dirty.val = true
                       }
-                      Err(_) => {
-                        fixture.rejected_records.val += 1
-                        ignore(host.request_exit())
-                      }
+                      Err(_) =>
+                        ignore(
+                          palette_recover_rejected_native_record(
+                            host, window, fixture, owner, dirty, accepted, "cancelled_admission",
+                          ),
+                        )
                     }
                   None => owner.val = Some(next)
                 }
@@ -1295,7 +1405,8 @@ fn run_palette_window() -> Unit {
       }
     }
 
-    if dirty.val && host.state() == @native.Running {
+    if palette_frame_submission_ready(dirty.val, pending) &&
+      host.state() == @native.Running {
       let retained_retry = match retry_prepared.val {
         Some(value) if palette_prepared_frame_matches_current(
             value,
@@ -1369,62 +1480,76 @@ fn run_palette_window() -> Unit {
           )
           match decision {
             Accepted => {
-              presentation = prepared.frame.presentation
-              pending = Some(prepared.frame)
-              retry_prepared.val = None
-              palette_log(
-                "GPUI_WINDOWS_COMMAND_PALETTE_ACCEPTED {\"presentation\":\{presentation},\"open_epoch\":\{prepared.frame.open_epoch},\"open\":\{palette.is_open()},\"query\":\{prepared.frame.query.to_json().stringify()},\"matches\":\{palette.picker().match_count()},\"visible_count\":\{prepared.frame.visible_count}}",
+              let (recorded, next_pending) = palette_record_accepted_frame(
+                pending,
+                prepared.frame,
               )
-              palette_log(
-                palette_state_line(
-                  fixture,
-                  presentation,
-                  prepared.width,
-                  prepared.height,
-                  prepared.scale,
-                  prepared.owner,
-                  experimental_ime,
-                ),
-              )
-              if experimental_ime && palette.is_open() && native_focused.val {
-                match owner.val {
-                  None =>
-                    match palette_begin_native_owner(host, window, palette) {
-                      Ok(active) => {
-                        owner.val = Some(active)
-                        fixture.native_begins.val += 1
+              if recorded {
+                presentation = prepared.frame.presentation
+                pending = next_pending
+                retry_prepared.val = None
+                palette_log(
+                  "GPUI_WINDOWS_COMMAND_PALETTE_ACCEPTED {\"presentation\":\{presentation},\"open_epoch\":\{prepared.frame.open_epoch},\"open\":\{palette.is_open()},\"query\":\{prepared.frame.query.to_json().stringify()},\"matches\":\{palette.picker().match_count()},\"visible_count\":\{prepared.frame.visible_count}}",
+                )
+                palette_log(
+                  palette_state_line(
+                    fixture,
+                    presentation,
+                    prepared.width,
+                    prepared.height,
+                    prepared.scale,
+                    prepared.owner,
+                    experimental_ime,
+                  ),
+                )
+                if experimental_ime && palette.is_open() && native_focused.val {
+                  match owner.val {
+                    None =>
+                      match palette_begin_native_owner(host, window, palette) {
+                        Ok(active) => {
+                          owner.val = Some(active)
+                          fixture.native_begins.val += 1
+                        }
+                        Err(error) => {
+                          report(error)
+                          ignore(host.request_exit())
+                        }
                       }
-                      Err(error) => {
-                        report(error)
-                        ignore(host.request_exit())
+                    Some(active) =>
+                      match
+                        palette_update_native_owner(
+                          host,
+                          window,
+                          palette,
+                          active,
+                          native_external_edit.val,
+                        ) {
+                        Ok(next) => {
+                          owner.val = Some(next)
+                          fixture.native_updates.val += 1
+                        }
+                        Err(error) => {
+                          report(error)
+                          owner.val = None
+                          ignore(host.request_exit())
+                        }
                       }
-                    }
-                  Some(active) =>
-                    match
-                      palette_update_native_owner(
-                        host,
-                        window,
-                        palette,
-                        active,
-                        native_external_edit.val,
-                      ) {
-                      Ok(next) => {
-                        owner.val = Some(next)
-                        fixture.native_updates.val += 1
-                      }
-                      Err(error) => {
-                        report(error)
-                        owner.val = None
-                        ignore(host.request_exit())
-                      }
-                    }
+                  }
                 }
+                native_external_edit.val = false
+                dirty.val = false
+              } else {
+                palette_log(
+                  "GPUI_WINDOWS_COMMAND_PALETTE_REJECT accepted_with_pending_frame",
+                )
+                dirty.val = false
+                ignore(host.request_exit())
               }
-              native_external_edit.val = false
-              dirty.val = false
             }
             BusyPending => retry_prepared.val = Some(prepared)
             RecoverPending => {
+              // The one-frame gate leaves no accepted application completion
+              // outstanding here, so recovery cannot invalidate its identity.
               retry_prepared.val = Some(prepared)
               if host.recover_renderer(window) is Err(error) {
                 report(error)
