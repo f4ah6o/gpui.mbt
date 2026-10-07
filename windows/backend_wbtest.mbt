@@ -48,6 +48,9 @@ extern "C" fn native_clipboard_fixture_read(host : Int) -> Int = "gpui_windows_t
 extern "C" fn native_clipboard_fixture_write(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_write"
 
 ///|
+extern "C" fn native_clipboard_fixture_read_line(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_read_line"
+
+///|
 extern "C" fn native_clipboard_fixture_lock_start(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_lock_start"
 
 ///|
@@ -408,6 +411,20 @@ test "Win32 production IMM session staging preserves message ordering" {
   }
   assert_eq(failed_stage[0], 0)
   assert_eq(status, 0)
+}
+
+///|
+test "Windows clipboard fixture line reader drains buffered exit response" {
+  if @env.get_env_var("GPUI_WINDOWS_E2E") == Some("1") {
+    let host = required(Host::start())
+    required(
+      outcome(
+        native_clipboard_fixture_read_line(host.token),
+        "clipboard_fixture_read_line",
+      ),
+    )
+    required(host.stop())
+  }
 }
 
 ///|

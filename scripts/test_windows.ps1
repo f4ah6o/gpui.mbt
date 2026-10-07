@@ -74,6 +74,11 @@ $env:GPUI_WINDOWS_CLIPBOARD_FIXTURE = (Resolve-Path $clipboardFixture).Path
 Invoke-CheckedCommand -Program "moon" -Arguments @(
   "test", "--package", "f4ah6o/gpui/windows", "--target", "native",
   "--deny-warn", "--no-parallelize", "--filter",
+  "Windows clipboard fixture line reader drains buffered exit response"
+) -LogName "clipboard-line-reader-regression.log"
+Invoke-CheckedCommand -Program "moon" -Arguments @(
+  "test", "--package", "f4ah6o/gpui/windows", "--target", "native",
+  "--deny-warn", "--no-parallelize", "--filter",
   "Windows D3D11 HWND renders and reads back first frame"
 ) -LogName "windows-e2e.log"
 Invoke-CheckedCommand -Program "moon" -Arguments @(

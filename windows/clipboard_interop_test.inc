@@ -213,25 +213,79 @@ fail:
   return FALSE;
 }
 
+typedef struct gpui_clipboard_fixture_read_api {
+  BOOL (*peek_pipe)(void *context, HANDLE pipe, DWORD *available);
+  BOOL (*read_byte)(void *context, HANDLE pipe, char *byte);
+  DWORD (*wait_process)(void *context, HANDLE process);
+  ULONGLONG (*tick_count)(void *context);
+  void (*sleep_one_ms)(void *context);
+  void (*pump_sent_messages)(void *context);
+} gpui_clipboard_fixture_read_api;
+
+static BOOL clipboard_fixture_read_peek_pipe(void *context, HANDLE pipe,
+                                             DWORD *available) {
+  (void)context;
+  return PeekNamedPipe(pipe, NULL, 0, NULL, available, NULL);
+}
+
+static BOOL clipboard_fixture_read_byte(void *context, HANDLE pipe,
+                                        char *byte) {
+  (void)context;
+  DWORD read = 0;
+  return ReadFile(pipe, byte, 1, &read, NULL) && read == 1;
+}
+
+static DWORD clipboard_fixture_read_wait_process(void *context,
+                                                HANDLE process) {
+  (void)context;
+  return WaitForSingleObject(process, 0);
+}
+
+static ULONGLONG clipboard_fixture_read_tick_count(void *context) {
+  (void)context;
+  return GetTickCount64();
+}
+
+static void clipboard_fixture_read_sleep_one_ms(void *context) {
+  (void)context;
+  Sleep(1);
+}
+
+static void clipboard_fixture_read_pump_sent_messages(void *context) {
+  (void)context;
+  MSG message;
+  g_host.api.peek_message_w(&message, NULL, 0, 0, PM_NOREMOVE);
+}
+
+static const gpui_clipboard_fixture_read_api
+    g_clipboard_fixture_read_api = {
+        clipboard_fixture_read_peek_pipe,
+        clipboard_fixture_read_byte,
+        clipboard_fixture_read_wait_process,
+        clipboard_fixture_read_tick_count,
+        clipboard_fixture_read_sleep_one_ms,
+        clipboard_fixture_read_pump_sent_messages,
+};
+
 static BOOL clipboard_fixture_read_line(
     gpui_clipboard_fixture_process *child, char *line, size_t capacity,
-    DWORD timeout_ms) {
+    DWORD timeout_ms, const gpui_clipboard_fixture_read_api *api,
+    void *api_context) {
   size_t used = 0;
-  ULONGLONG deadline = GetTickCount64() + timeout_ms;
+  ULONGLONG deadline = api->tick_count(api_context) + timeout_ms;
+  BOOL process_exited = FALSE;
   for (;;) {
     /* EmptyClipboard can synchronously notify this thread's current clipboard
      * owner. Service sent messages while waiting so that independent writer
      * processes cannot deadlock against the test's HWND thread. PM_NOREMOVE
      * leaves ordinary queued application input for the normal host pump. */
-    MSG message;
-    g_host.api.peek_message_w(&message, NULL, 0, 0, PM_NOREMOVE);
+    api->pump_sent_messages(api_context);
     DWORD available = 0;
-    if (!PeekNamedPipe(child->stdout_read, NULL, 0, NULL, &available, NULL))
+    if (!api->peek_pipe(api_context, child->stdout_read, &available))
       return FALSE;
     if (available > 0) {
       char byte = '\0';
-      DWORD read = 0;
-      if (!ReadFile(child->stdout_read, &byte, 1, &read, NULL) || read != 1)
+      if (!api->read_byte(api_context, child->stdout_read, &byte))
         return FALSE;
       if (byte == '\n') {
         line[used] = '\0';
@@ -242,11 +296,209 @@ static BOOL clipboard_fixture_read_line(
       line[used++] = byte;
       continue;
     }
-    if (WaitForSingleObject(child->process.hProcess, 0) == WAIT_OBJECT_0 ||
-        GetTickCount64() >= deadline)
+    if (process_exited)
       return FALSE;
-    Sleep(1);
+    DWORD state = api->wait_process(api_context, child->process.hProcess);
+    if (state == WAIT_OBJECT_0) {
+      /* A child can write its final response and exit after the empty pipe
+       * peek above. Re-enter the loop once after observing exit so that those
+       * buffered bytes are drained before treating an empty pipe as failure. */
+      process_exited = TRUE;
+      continue;
+    }
+    if (api->tick_count(api_context) >= deadline)
+      return FALSE;
+    api->sleep_one_ms(api_context);
   }
+}
+
+typedef struct gpui_clipboard_fixture_read_fake {
+  char bytes[256];
+  size_t length;
+  size_t offset;
+  const char *bytes_after_wait;
+  ULONGLONG now;
+  DWORD peek_calls;
+  DWORD read_calls;
+  DWORD wait_calls;
+  DWORD sleep_calls;
+  DWORD pump_calls;
+  DWORD first_read_peek_calls;
+  BOOL inject_after_wait;
+  BOOL exit_after_wait;
+  BOOL injected;
+  BOOL process_signaled;
+} gpui_clipboard_fixture_read_fake;
+
+static BOOL clipboard_fixture_read_fake_peek(void *context, HANDLE pipe,
+                                             DWORD *available) {
+  gpui_clipboard_fixture_read_fake *fake =
+      (gpui_clipboard_fixture_read_fake *)context;
+  (void)pipe;
+  ++fake->peek_calls;
+  *available = (DWORD)(fake->length - fake->offset);
+  return TRUE;
+}
+
+static BOOL clipboard_fixture_read_fake_byte(void *context, HANDLE pipe,
+                                            char *byte) {
+  gpui_clipboard_fixture_read_fake *fake =
+      (gpui_clipboard_fixture_read_fake *)context;
+  (void)pipe;
+  if (fake->offset >= fake->length)
+    return FALSE;
+  if (fake->read_calls == 0)
+    fake->first_read_peek_calls = fake->peek_calls;
+  ++fake->read_calls;
+  *byte = fake->bytes[fake->offset++];
+  return TRUE;
+}
+
+static DWORD clipboard_fixture_read_fake_wait(void *context, HANDLE process) {
+  gpui_clipboard_fixture_read_fake *fake =
+      (gpui_clipboard_fixture_read_fake *)context;
+  (void)process;
+  ++fake->wait_calls;
+  if (fake->inject_after_wait && !fake->injected) {
+    size_t length = fake->bytes_after_wait
+                        ? strlen(fake->bytes_after_wait)
+                        : 0;
+    if (length > sizeof(fake->bytes) - fake->length)
+      return WAIT_FAILED;
+    if (length > 0)
+      memcpy(fake->bytes + fake->length, fake->bytes_after_wait, length);
+    fake->length += length;
+    fake->injected = TRUE;
+    fake->process_signaled = fake->exit_after_wait;
+  }
+  return fake->process_signaled ? WAIT_OBJECT_0 : WAIT_TIMEOUT;
+}
+
+static ULONGLONG clipboard_fixture_read_fake_tick(void *context) {
+  gpui_clipboard_fixture_read_fake *fake =
+      (gpui_clipboard_fixture_read_fake *)context;
+  return fake->now;
+}
+
+static void clipboard_fixture_read_fake_sleep(void *context) {
+  gpui_clipboard_fixture_read_fake *fake =
+      (gpui_clipboard_fixture_read_fake *)context;
+  ++fake->sleep_calls;
+  ++fake->now;
+}
+
+static void clipboard_fixture_read_fake_pump(void *context) {
+  gpui_clipboard_fixture_read_fake *fake =
+      (gpui_clipboard_fixture_read_fake *)context;
+  ++fake->pump_calls;
+}
+
+static const gpui_clipboard_fixture_read_api
+    g_clipboard_fixture_read_fake_api = {
+        clipboard_fixture_read_fake_peek,
+        clipboard_fixture_read_fake_byte,
+        clipboard_fixture_read_fake_wait,
+        clipboard_fixture_read_fake_tick,
+        clipboard_fixture_read_fake_sleep,
+        clipboard_fixture_read_fake_pump,
+};
+
+static BOOL clipboard_fixture_read_fake_run(
+    const char *initial_bytes, const char *bytes_after_wait,
+    BOOL inject_after_wait, BOOL exit_after_wait, DWORD timeout_ms,
+    size_t capacity, gpui_clipboard_fixture_read_fake *fake, char *line) {
+  ZeroMemory(fake, sizeof(*fake));
+  fake->length = initial_bytes ? strlen(initial_bytes) : 0;
+  if (fake->length > sizeof(fake->bytes))
+    return FALSE;
+  if (fake->length > 0)
+    memcpy(fake->bytes, initial_bytes, fake->length);
+  fake->bytes_after_wait = bytes_after_wait;
+  fake->inject_after_wait = inject_after_wait;
+  fake->exit_after_wait = exit_after_wait;
+  fake->now = 100;
+
+  gpui_clipboard_fixture_process child;
+  ZeroMemory(&child, sizeof(child));
+  child.stdout_read = (HANDLE)(UINT_PTR)1;
+  child.process.hProcess = (HANDLE)(UINT_PTR)2;
+  return clipboard_fixture_read_line(
+      &child, line, capacity, timeout_ms, &g_clipboard_fixture_read_fake_api,
+      fake);
+}
+
+static int32_t clipboard_fixture_read_line_regression(void) {
+  gpui_clipboard_fixture_read_fake fake;
+  char line[160];
+  const char *ready_line = "READY read-gpui 42 0000000000000001\n";
+  const char *done_line = "DONE hold-lock 42 0000000000000001\n";
+
+#define GPUI_CLIPBOARD_READ_LINE_CHECK(condition, label)                    \
+  do {                                                                       \
+    if (!(condition)) {                                                      \
+      fprintf(stderr, "clipboard fixture line regression failed: %s\n",    \
+              label);                                                        \
+      return GPUI_WINDOWS_INVALID;                                           \
+    }                                                                        \
+  } while (0)
+
+  BOOL result = clipboard_fixture_read_fake_run(
+      ready_line, NULL, FALSE, FALSE, 5, sizeof(line), &fake, line);
+  GPUI_CLIPBOARD_READ_LINE_CHECK(
+      result && strcmp(line, "READY read-gpui 42 0000000000000001") == 0 &&
+          fake.wait_calls == 0 && fake.pump_calls == fake.peek_calls,
+      "buffered response control");
+
+  result = clipboard_fixture_read_fake_run(
+      NULL, ready_line, TRUE, TRUE, 5, sizeof(line), &fake, line);
+  GPUI_CLIPBOARD_READ_LINE_CHECK(
+      result && strcmp(line, "READY read-gpui 42 0000000000000001") == 0 &&
+          fake.peek_calls >= 2 && fake.wait_calls == 1 &&
+          fake.first_read_peek_calls == 2 && fake.process_signaled,
+      "exit after empty peek preserves READY response");
+
+  result = clipboard_fixture_read_fake_run(
+      NULL, done_line, TRUE, TRUE, 5, sizeof(line), &fake, line);
+  GPUI_CLIPBOARD_READ_LINE_CHECK(
+      result && strcmp(line, "DONE hold-lock 42 0000000000000001") == 0 &&
+          fake.peek_calls >= 2 && fake.wait_calls == 1 &&
+          fake.first_read_peek_calls == 2 && fake.process_signaled,
+      "exit after empty peek preserves DONE response");
+
+  result = clipboard_fixture_read_fake_run(
+      NULL, "", TRUE, TRUE, 5, sizeof(line), &fake, line);
+  GPUI_CLIPBOARD_READ_LINE_CHECK(
+      !result && fake.peek_calls == 2 && fake.wait_calls == 1 &&
+          fake.read_calls == 0,
+      "exited child with empty pipe");
+
+  result = clipboard_fixture_read_fake_run(
+      NULL, "READY truncated", TRUE, TRUE, 5, sizeof(line), &fake, line);
+  GPUI_CLIPBOARD_READ_LINE_CHECK(
+      !result && fake.process_signaled &&
+          fake.read_calls == strlen("READY truncated") &&
+          fake.first_read_peek_calls == 2,
+      "truncated response after child exit");
+
+  result = clipboard_fixture_read_fake_run(
+      "READY partial", NULL, FALSE, FALSE, 3, sizeof(line), &fake, line);
+  GPUI_CLIPBOARD_READ_LINE_CHECK(
+      !result && fake.sleep_calls == 3 && fake.now == 103 &&
+          fake.read_calls == strlen("READY partial"),
+      "unterminated response times out");
+
+  result = clipboard_fixture_read_fake_run(
+      "AB\r\n", NULL, FALSE, FALSE, 5, sizeof(line), &fake, line);
+  GPUI_CLIPBOARD_READ_LINE_CHECK(!result && fake.read_calls == 3,
+                                 "carriage return is rejected");
+
+  result = clipboard_fixture_read_fake_run(
+      "12345678\n", NULL, FALSE, FALSE, 5, 8, &fake, line);
+  GPUI_CLIPBOARD_READ_LINE_CHECK(!result && fake.read_calls == 8,
+                                 "line buffer capacity is enforced");
+
+#undef GPUI_CLIPBOARD_READ_LINE_CHECK
+  return GPUI_WINDOWS_OK;
 }
 
 static BOOL clipboard_fixture_handshake(
@@ -254,7 +506,8 @@ static BOOL clipboard_fixture_handshake(
   char line[160];
   char expected[160];
   if (!clipboard_fixture_read_line(child, line, sizeof(line),
-                                   GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS))
+                                   GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS,
+                                   &g_clipboard_fixture_read_api, NULL))
     return FALSE;
   int count = _snprintf_s(expected, sizeof(expected), _TRUNCATE,
                           "READY %s %lu %s", mode,
@@ -302,7 +555,8 @@ static int32_t clipboard_fixture_run(const WCHAR *mode_wide,
   }
   char line[160];
   BOOL has_handshake = clipboard_fixture_read_line(
-      &child, line, sizeof(line), GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS);
+      &child, line, sizeof(line), GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS,
+      &g_clipboard_fixture_read_api, NULL);
   char expected[160];
   int expected_length = _snprintf_s(
       expected, sizeof(expected), _TRUNCATE, "READY %s %lu %s", mode_ascii,
@@ -349,6 +603,13 @@ int32_t gpui_windows_test_clipboard_fixture_write(int32_t token) {
   return clipboard_fixture_run(L"write-fixture", "write-fixture");
 }
 
+int32_t gpui_windows_test_clipboard_fixture_read_line(int32_t token) {
+  int32_t status = check_host(token, TRUE);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  return clipboard_fixture_read_line_regression();
+}
+
 int32_t gpui_windows_test_clipboard_fixture_lock_start(int32_t token) {
   int32_t status = check_host(token, TRUE);
   if (status != GPUI_WINDOWS_OK)
@@ -387,7 +648,8 @@ int32_t gpui_windows_test_clipboard_fixture_lock_stop(int32_t token) {
   BOOL completed = sent && expected_length >= 0 &&
                    clipboard_fixture_read_line(
                        child, line, sizeof(line),
-                       GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS) &&
+                       GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS,
+                       &g_clipboard_fixture_read_api, NULL) &&
                    strcmp(line, expected) == 0 &&
                    clipboard_fixture_wait_success(child);
   if (!clipboard_fixture_cleanup(child, !completed))

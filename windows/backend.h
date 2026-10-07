@@ -102,6 +102,7 @@ int32_t gpui_windows_test_clipboard_validation(void);
 /* Opt-in native E2E against the separately compiled Win32 clipboard fixture. */
 int32_t gpui_windows_test_clipboard_fixture_read(int32_t host);
 int32_t gpui_windows_test_clipboard_fixture_write(int32_t host);
+int32_t gpui_windows_test_clipboard_fixture_read_line(int32_t host);
 int32_t gpui_windows_test_clipboard_fixture_lock_start(int32_t host);
 int32_t gpui_windows_test_clipboard_fixture_lock_stop(int32_t host);
 int32_t gpui_windows_test_clipboard_fixture_expiry(int32_t host);

@@ -3053,6 +3053,10 @@ int32_t gpui_windows_test_clipboard_fixture_write(int32_t token) {
   (void)token;
   return GPUI_WINDOWS_UNSUPPORTED;
 }
+int32_t gpui_windows_test_clipboard_fixture_read_line(int32_t token) {
+  (void)token;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
 int32_t gpui_windows_test_clipboard_fixture_lock_start(int32_t token) {
   (void)token;
   return GPUI_WINDOWS_UNSUPPORTED;
