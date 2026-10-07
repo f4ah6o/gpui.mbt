@@ -739,6 +739,14 @@ test "Windows text session decoder preserves UTF-16 ranges and attributes" {
     }
     _ => fail("expected marked text record")
   }
+  data[4] = 640.0
+  data[5] = 480.0
+  assert_true(
+    match session_decode_event(data, payload, "test") {
+      Err(_) => true
+      Ok(_) => false
+    },
+  )
 }
 
 ///|

@@ -370,8 +370,11 @@ static int32_t gpui_text_session_emit_batch(gpui_windows_host *host,
     event[1] = host->window_id;
     event[2] = (double)++host->sequence;
     event[3] = host->scale > 0.0 ? host->scale : 1.0;
-    event[4] = host->logical_width;
-    event[5] = host->logical_height;
+    /* Text-session records carry viewport and pointer details only in their
+     * typed editor fields. Keep the shared platform-event payload slots
+     * reserved so the typed Windows reader can distinguish the two shapes. */
+    event[4] = 0.0;
+    event[5] = 0.0;
     event[6] = 0.0;
     event[7] = 0.0;
     event[8] = 0.0;

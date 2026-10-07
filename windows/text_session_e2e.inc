@@ -70,6 +70,12 @@ static BOOL gpui_text_test_record(gpui_windows_host *host, int32_t offset,
   return host->editor_events[slot] &&
          (int32_t)host->events[slot][0] == kind &&
          (int64_t)host->events[slot][2] == sequence &&
+         host->events[slot][4] == 0.0 &&
+         host->events[slot][5] == 0.0 &&
+         host->events[slot][6] == 0.0 &&
+         host->events[slot][7] == 0.0 &&
+         host->events[slot][8] == 0.0 &&
+         host->events[slot][9] == 0.0 &&
          (int32_t)host->editor_fields[slot][0] ==
              g_gpui_text_session.owner_generation &&
          (int32_t)host->editor_fields[slot][1] == g_gpui_text_session.epoch &&
