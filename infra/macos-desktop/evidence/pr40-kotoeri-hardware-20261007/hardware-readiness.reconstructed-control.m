@@ -12,7 +12,6 @@ static struct {
   double start_ms, down_ms, up_ms;
 } control_trace;
 static NSTextInputContext *control_expected_context;
-static NSString *control_original_source;
 @interface KotoeriControl : NSTextView
 @property unsigned int downs, ups, inserts, unmarks, marks;
 @end
@@ -37,7 +36,6 @@ static void control_record(KotoeriControl *view, NSString *phase, NSEvent *event
     @"native_event_pumps":@(control_trace.native_pumps),
     @"appkit_event_pumps":@(control_trace.appkit_pumps),
     @"selected_input_source":context.selectedKeyboardInputSource ?: NSNull.null,
-    @"original_input_source":control_original_source ?: NSNull.null,
     @"application_active":@(NSApp.active), @"key_window":@(view.window.keyWindow),
     @"first_responder_is_view":@(view.window.firstResponder == view),
     @"first_responder_class":NSStringFromClass([view.window.firstResponder class]) ?: @"",
@@ -133,7 +131,6 @@ int main(int argc, const char **argv) {
     NSTextInputContext *context = view.inputContext;
     control_expected_context = context;
     NSString *original = [context.selectedKeyboardInputSource copy];
-    control_original_source = original;
     NSString *target = @"com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese";
     BOOL source = [context.keyboardInputSources containsObject:target];
     BOOL prefix = startup_ok && NSApp.active && window.keyWindow && window.firstResponder == view && context != nil && source;
@@ -202,7 +199,6 @@ int main(int argc, const char **argv) {
               (view.inserts-insert_baseline==1 || view.unmarks-unmark_baseline==1)) passed=YES;
         }
         prefix=prefix && control_trace.valid && control_trace.return_seen;
-        passed=passed && prefix;
       }
       for (int k=0; local && prefix && k<9; k++) {
         if (k==8) {
@@ -240,18 +236,11 @@ int main(int argc, const char **argv) {
       BOOL restored = original ? [context.selectedKeyboardInputSource isEqual:original] : context.selectedKeyboardInputSource==nil;
       [window makeFirstResponder:nil]; [window close];
       BOOL closed=!window.visible;
-      if (physical && (!restored || !closed)) passed=NO;
       NSDictionary *record=@{@"schema_version":@1,@"producer":@"app_local",
         @"prefix_valid":@(prefix),@"passed":@(passed),@"down_delivered":@(down),@"up_delivered":@(up),
         @"return_iterations":@(iterations),@"insert_delta":@(inserts),
         @"unmark_delta":@(unmarks),@"marked":@(marked),
         @"expected_text":@(expected),@"source_restored":@(restored), @"window_closed":@(closed), @"cleanup_ok":@(restored && closed)};
-      if (control_trace.enabled) {
-        NSMutableDictionary *result=[record mutableCopy];
-        result[@"original_input_source"]=original ?: NSNull.null;
-        result[@"restored_input_source"]=context.selectedKeyboardInputSource ?: NSNull.null;
-        record=result;
-      }
       if (physical) {
         NSMutableDictionary *result=[record mutableCopy];
         result[@"producer"]=@"human_keyboard_requested";
@@ -261,7 +250,6 @@ int main(int argc, const char **argv) {
         result[@"return_down_count"]=@(control_trace.return_downs);
         result[@"return_up_count"]=@(control_trace.return_ups);
         result[@"return_elapsed_ms"]=control_trace.down_ms ? @(ime_monotonic_ms()-control_trace.down_ms) : NSNull.null;
-        result[@"return_up_elapsed_ms"]=control_trace.up_ms ? @(ime_monotonic_ms()-control_trace.up_ms) : NSNull.null;
         result[@"return_native_pumps"]=@(control_trace.return_seen ? control_trace.native_pumps-control_trace.start_native+1 : 0);
         result[@"return_appkit_pumps"]=@(control_trace.return_seen ? control_trace.appkit_pumps-control_trace.start_appkit+1 : 0);
         result[@"status"]=!control_trace.return_seen ? @"NOT_RUN" : (!prefix ? @"INVALID" : (passed ? @"PASS" : @"FAIL"));

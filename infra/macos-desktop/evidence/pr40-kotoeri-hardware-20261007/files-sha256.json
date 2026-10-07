@@ -1,0 +1,18 @@
+{
+  "RESULT.md": "a9d2b85035770953c99b91440ef83099ea6b00f5f81154302e166b402beafa6d",
+  "hardware-readiness.activation.json": "051dec32ee24125b0842cc1949b4b928493c7007f024e20eb61f276f60430b75",
+  "hardware-readiness.exit_code": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+  "hardware-readiness.pid": "6858f19e912fdfc1f879a55744408473e6c24611145c26771d7c00a7e85e21f3",
+  "hardware-readiness.reconstructed-control.m": "58b5efa8ebf51a4242ecf7e5f855c349cbcc9cd18f97f205260b4712ae4671fb",
+  "hardware-readiness.stderr.log": "c528d9eb58e4ad3d79e32151ce00f2d6a67e705dc1df211d04f3b3d239622ca8",
+  "hardware-readiness.stdout.log": "5973a12033696d790a1e3c856420934c6dc1f1eed40d491d4b88b3497d381b0d",
+  "provenance.json": "3cca906260c79a85d576d44fb7c82d5268b7be5698da9aca06410b3f9386aa38",
+  "synthetic-trace-off.stderr.log": "33dd33efc7fe52f182b057e94cc4488c0957090857afb81602972e44ad4c38ba",
+  "synthetic-trace-off.stdout.log": "a395bbab31afa7aa80b27f5882861c9ee082a8f16a5b47d49e1ce8f901a4a123",
+  "synthetic.activation.json": "83c2d097e79045ab981ac8b32f8d31ff27cbadadc8ef0758373e93349f39cb80",
+  "synthetic.exit_code": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+  "synthetic.stderr.log": "4f0d9138930780ba3845b86211fe9c6cb9beab92cfbe6c329e994551d23223fe",
+  "synthetic.stdout.log": "bda9b4282257b28b7a715d842d11acb29a59f587c90d2e341d70c82378210ebd",
+  "tested-control.diff": "cbc3b8c899199d80336ea8ba329792491efc3dc67fe7fa62eeb838c08b33e021",
+  "validate.py": "415aac3b1211653e7ae1493d0ff66fa97cd7334e48d5ea81f773bbea0b796906"
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "repository": "gpui-mbt/gpui.mbt",
+  "base_commit": "e60b76e63d718b1cd37653a6e54613f9fd4ba730",
+  "preserved_diagnostic_commits": [
+    "8a7cf7c30a4e51862484818200f2fb3dcf8e57ce",
+    "e60b76e63d718b1cd37653a6e54613f9fd4ba730"
+  ],
+  "product_changed": false,
+  "product_green": false,
+  "hardware_return_status": "NOT_RUN",
+  "hardware_input_confirmation": null,
+  "synthetic_executable_sha256": "2e681b709a04daef08777cb7c54fe94f8ddf29ee6b8a5d4ea795c58fb77f62bf",
+  "synthetic_fixture_sha256": "e4687cb6e5608c3251090d5a55bba6018784c10f71905cc84163316fdafa3879",
+  "hardware_readiness_executable_sha256": "a09e182763326c93908111f4ed1c36f969072598b167416b044175d16c75516f",
+  "hardware_readiness_source_note": "Pre-review fixture; reconstructed snapshot is supplied, but binary/source identity was not independently revalidated. No keys or Return were observed; this is not a comparable Return run.",
+  "synthetic_and_hardware_readiness_same_binary": false,
+  "hardware_readiness_run_directory": "/private/tmp/gpui-kotoeri-20261007/hardware-20261007-221606",
+  "activation_helper": "Same exact-owned-PID and executable helper as archived B; no keyboard injection used for --physical."
+}

@@ -50,6 +50,51 @@ complete prefix and cleanup before its two-arm result is comparable. A valid
 standard-control failure still provides independent evidence of the common
 path; it does not prove that GPUI's client implementation is defect-free.
 
+## Hardware keyboard comparison
+
+The same minimal control supports an explicit human-input mode:
+
+```sh
+GPUI_FIELD_MACOS_KOTOERI_CONTROL=1 GPUI_FIELD_MACOS_KOTOERI_CONTROL_TRACE=1 \
+  /tmp/gpui-kotoeri-control --physical
+```
+
+Use the same raw-executable launch and exact-PID activation as Experiment B;
+switching to a LaunchServices bundle would introduce a separate process/run-loop
+condition. Before typing, match the `ready` record's PID, executable, window
+number/title, frontmost PID, key window, first responder, context, and selected
+Kotoeri source. The text starts at `Hello `, with the caret at UTF-16 offset 6.
+On the **physical keyboard**, type `nihongo`, Space once, Return once, releasing
+each key. Do not paste, inject text, use an accessibility `typeText` API, or
+describe computer-use `pressKey` as hardware input. Record the human's explicit
+hardware-input confirmation separately; event metadata cannot prove provenance.
+
+The mode generates no keyboard events and never invokes text callbacks directly.
+It pumps the existing default-mode 16 ms function while awaiting human input,
+with a separate 180 s readiness deadline. Reading instructions in another app
+before typing is allowed; every keyboard event and all observation after typing
+require the original window, responder, context, and source. The sequence must
+match the same nine keycodes, without repeat or additional Return. The unchanged
+200-pump Return limit includes the pump delivering Return down. The commit
+predicate still requires down/up view delivery, one insert/unmark callback,
+exact `Hello 日本語`, and no mark. Restoration and window closure always run.
+
+`GPUI_FIELD_MACOS_KOTOERI_CONTROL_TRACE=1` also works with `--local`, allowing
+a fresh synthetic comparison on the same instrumented executable. It emits at
+most 192 `GPUI_KOTOERI_CONTROL` records per process, for app/view keyDown/keyUp,
+insertText/setMarkedText/unmarkText entry and completion, doCommandBySelector,
+ready/before-Return/final snapshots. Records include monotonic elapsed times,
+actual native/AppKit pump counts, input source, focus/context ownership, marked
+and committed text (bounded to 64 UTF-16 units), and CG/NSEvent metadata. The
+local event monitor observes only this application and returns every event
+unchanged. Logging is fixture-only and opt-in; product code is unchanged.
+
+No Return observed is `NOT_RUN`, not an IME failure. Invalid prefix/ownership or
+sequence is `INVALID`. Even `PASS` requires separate physical-provenance
+confirmation and is not Product Green. A hardware pass with a comparable
+synthetic failure narrows the problem to producer/dispatch conditions; a
+hardware failure keeps activation, source/context, and run-loop conditions open.
+
 ## Bounded timing
 
 `GPUI_FIELD_MACOS_IME_TIMING_TRACE=1` affects only `GPUI_TESTING` builds. One
