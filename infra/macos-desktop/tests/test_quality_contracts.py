@@ -368,6 +368,16 @@ class ActrunInventoryTests(unittest.TestCase):
 
 
 class ImeEvidenceTests(unittest.TestCase):
+    def test_diagnostic_capture_omission_cannot_qualify_as_product_green(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "summary.json"
+            # Even a promoted status/ok pair must reject the diagnostic marker.
+            path.write_text(json.dumps({"schema_version": 1, "status": "passed", "ok": True,
+                                        "app_exit_code": 0, "diagnostic_only": True}))
+            with self.assertRaisesRegex(acceptance.AcceptanceError, "completed pass"):
+                acceptance.validate_summary(path)
+
+
     def test_japanese_romaji_source_allowlist_rejects_bundle_parent_and_other_modes(self):
         expected = "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"
         self.assertEqual(acceptance.KOTOERI_JAPANESE_ROMAJI_SOURCE_IDS, frozenset({expected}))

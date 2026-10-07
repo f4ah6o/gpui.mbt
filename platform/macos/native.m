@@ -12,6 +12,10 @@
 #define GPUI_TEXT_BYTES_MAX 16384
 #define GPUI_TEXT_EVENT_BYTES_MAX 16384
 
+#ifdef GPUI_TESTING
+#include "ime_timing.h"
+#endif
+
 @interface GPWindow : NSObject <NSWindowDelegate>
 @property NSWindow *window;
 @property CAMetalLayer *surface;
@@ -576,6 +580,7 @@ static BOOL macos_ime_dispatch_trace_claim_ordinary_slot(GPWindow *owner) {
 static NSDictionary *macos_ime_callback_trace_begin(GPView *view, GPWindow *owner,
                                                     GPUIImeCallbackKind kind,
                                                     GPUIImeCommandKind selector_kind) {
+  ime_timing_record([NSString stringWithUTF8String:macos_ime_callback_kind_name(kind)]);
   GPUIImeCallbackTraceGateFacts gate = macos_ime_callback_trace_gate_facts(view, owner);
   if (!macos_ime_callback_trace_gate_ready(gate) ||
       !macos_ime_dispatch_trace_claim_ordinary_slot(owner)) return nil;
@@ -1239,6 +1244,8 @@ static NSArray<NSEvent *> *create_app_local_key_events(unsigned short key_code,
     if (!valid) { *status = 5; return nil; }
     created[i] = event;
   }
+  ime_timing_end();
+  if (key_code == 36) ime_timing_begin(dispatch_id);
   *status = 0;
   return @[created[0], created[1]];
 }
@@ -1352,6 +1359,7 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
 - (void)otherMouseUp:(NSEvent *)e { [self pointer:e kind:9]; }
 - (void)keyDown:(NSEvent *)e {
 #ifdef GPUI_TESTING
+  ime_timing_key(e);
   int64_t dispatch_id = take_testing_key_dispatch(self.owner, e, @"down");
   if (dispatch_id < 0) return;
   [self dispatchKeyDown:e testingDispatchId:dispatch_id];
@@ -1366,6 +1374,7 @@ static void complete_testing_key_dispatch(GPWindow *w, int64_t dispatch_id, NSSt
   GPWindow *owner = self.owner;
   if (!owner || owner.closing) return;
 #ifdef GPUI_TESTING
+  ime_timing_key(e);
   int64_t dispatch_id = take_testing_key_dispatch(owner, e, @"up");
   if (dispatch_id < 0) return;
 #endif
@@ -2456,13 +2465,22 @@ static void discard_stale_direct_head(void) {
 }
 static int pump_native_event(double timeout_ms) {
   if (!isfinite(timeout_ms) || timeout_ms < 0 || timeout_ms > 250) return 5;
+#ifdef GPUI_TESTING
+  if (ime_timing.active) ime_timing.native_pumps++;
+#endif
   if (!events.count) {
+#ifdef GPUI_TESTING
+    if (ime_timing.active) ime_timing.appkit_pumps++;
+#endif
     NSDate *until = [NSDate dateWithTimeIntervalSinceNow:timeout_ms/1000];
     NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny untilDate:until
       inMode:NSDefaultRunLoopMode dequeue:YES];
     if (event) [NSApp sendEvent:event];
     [NSApp updateWindows];
   }
+#ifdef GPUI_TESTING
+  if (ime_timing.active) ime_timing.last_pump_ms = ime_monotonic_ms();
+#endif
   reconcile_all_window_focus();
   flush_async_text_transactions();
   if (overflow) { overflow=NO; return 13; }
@@ -2717,6 +2735,7 @@ static int32_t native_call(int32_t op, int64_t token, double x, double y, const 
         return testing_select_input_source(w, target) ? 0 : 9;
       }
       case 32: {
+        ime_timing_end();
         if (!w.testingInputSourceSaved) return 0;
         GPView *view = (GPView *)w.window.contentView;
         NSString *source = w.testingOriginalInputSource;
@@ -2758,6 +2777,7 @@ static int32_t native_call(int32_t op, int64_t token, double x, double y, const 
         return encoded ? 0 : 13;
       }
       case 33: {
+        ime_timing_record(@"window_state_snapshot");
         id responder = w.window.firstResponder;
         GPView *view = (GPView *)w.window.contentView;
         NSRect frame = w.window.frame;

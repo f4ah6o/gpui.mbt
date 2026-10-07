@@ -549,6 +549,11 @@ fn mac_acceptance_operation_timeout_trace(
       active.epoch == operation.session_epoch => ()
     _ => return state
   }
+  // Sideband timing at the timeout boundary, before restoration or teardown.
+  // This read-only test hook never pumps events or changes the owner/ACK state.
+  if @env.get_env_var("GPUI_FIELD_MACOS_IME_TIMING_TRACE") == Some("1") {
+    ignore(host.testing_text_window_state(window))
+  }
   let (current_receipt_status, current_receipt) = match
     host.testing_key_dispatch_receipt(window) {
     Ok(value) => (1, Some(value))

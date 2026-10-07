@@ -827,17 +827,20 @@ static ContrastGPView *install_gpview_observer(GPWindow *owner) {
 @end
 @implementation ContrastTextView
 - (void)keyDown:(NSEvent *)event {
+  ime_timing_key(event);
   self.keyDownCount++;
   note_standard_view_event(event, YES);
   [super keyDown:event];
 }
 - (void)keyUp:(NSEvent *)event {
+  ime_timing_key(event);
   self.keyUpCount++;
   note_standard_view_event(event, NO);
   [super keyUp:event];
 }
 - (void)insertText:(id)value {
   ContrastObservation *observation = self.observation;
+  if (observation.callbackDepth == 0) ime_timing_record(@"insert_text");
   observe_insert(observation, value);
   observation.callbackDepth++;
   @try { [super insertText:value]; }
@@ -845,6 +848,7 @@ static ContrastGPView *install_gpview_observer(GPWindow *owner) {
 }
 - (void)insertText:(id)value replacementRange:(NSRange)replacementRange {
   ContrastObservation *observation = self.observation;
+  if (observation.callbackDepth == 0) ime_timing_record(@"insert_text");
   observe_insert(observation, value);
   observation.callbackDepth++;
   @try { [super insertText:value replacementRange:replacementRange]; }
@@ -859,6 +863,7 @@ static ContrastGPView *install_gpview_observer(GPWindow *owner) {
 }
 - (void)unmarkText {
   ContrastObservation *observation = self.observation;
+  if (observation.callbackDepth == 0) ime_timing_record(@"unmark_text");
   observe_unmark(observation);
   observation.callbackDepth++;
   @try { [super unmarkText]; }
@@ -1723,6 +1728,7 @@ static BOOL run_return_key(ContrastArm arm, int64_t dispatch_id,
       }
     }
   }
+  ime_timing_end();
   BOOL pair = dispatch_pair_complete(arm, dispatch_id);
   BOOL owned = arm_environment_valid(arm, standard_view);
   BOOL queue_quiescent = arm_pending_event_count(arm) == 0;

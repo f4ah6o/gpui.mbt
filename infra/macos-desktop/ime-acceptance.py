@@ -1010,6 +1010,7 @@ def validate_summary(path, repo=REPO, expected_source=None):
     report = strict_json(path.read_text())
     if type(report) is not dict or type(report.get("schema_version")) is not int or report.get("schema_version") != 1 or \
        report.get("ok") is not True or report.get("status") != "passed" or \
+       report.get("diagnostic_only", False) is not False or \
        type(report.get("app_exit_code")) is not int or report.get("app_exit_code") != 0:
         raise AcceptanceError("retained IME report does not declare a completed pass")
     source = source_snapshot(Path(repo).resolve(strict=True))
@@ -1290,7 +1291,7 @@ class AppOutput:
         self.log.close()
 
 
-def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
+def execute(profile_root, app_bundle, output, repo=REPO, timeout=90, *, diagnostic_immediate_preview=False):
     repo = Path(repo).resolve(strict=True)
     profile_root = Path(profile_root).resolve(strict=True)
     app_bundle = Path(app_bundle).resolve(strict=True)
@@ -1357,7 +1358,7 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
                                   "helper_compile_argv": helper_compile_argv,
                                   "helper_sha256": digest(helper), "engine": "ScreenCaptureKit.SCScreenshotManager",
                                   "helper_source_sha256": hashlib.sha256(SWIFT_WINDOW_CAPTURE.encode()).hexdigest()},
-              "screenshots": {}, "ok": False}
+              "screenshots": {}, "ok": False, "diagnostic_only": diagnostic_immediate_preview}
     summary_path = output / "summary.json"
     cleanup = None
     try:
@@ -1394,6 +1395,7 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
         process.stdin.flush()
 
         composing = app.wait_line("GPUI_MACOS_IME_CHECKPOINT ", timeout)
+        composition_received = time.monotonic()
         composing = validate_checkpoint(composing, "composition-ready", before, binary_sha)
         validate_frame_identity(composing.get("frame_identity"), "composition checkpoint frame")
         if composing.get("composing") is not True or composing.get("marked") is None or \
@@ -1424,13 +1426,15 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
            candidate["width"] <= 0 or candidate["height"] <= 0:
             raise AcceptanceError("composition checkpoint omits finite candidate geometry")
         report["composition_checkpoint"] = composing
-        composition_png = output / "composition-window.png"
-        composition_capture = capture_own_window(process.pid, APP_TITLE, composition_png, helper)
-        report["screenshots"]["composition"] = bind_capture(composition_capture, "composition", identity,
-                                                               composing["field_bounds"], composing["caret"],
-                                                               initial_geometry, composition_png)
+        if not diagnostic_immediate_preview:
+            composition_png = output / "composition-window.png"
+            composition_capture = capture_own_window(process.pid, APP_TITLE, composition_png, helper)
+            report["screenshots"]["composition"] = bind_capture(composition_capture, "composition", identity,
+                                                                   composing["field_bounds"], composing["caret"],
+                                                                   initial_geometry, composition_png)
         process.stdin.write("preview\n")
         process.stdin.flush()
+        report["composition_ready_to_preview_ms"] = (time.monotonic() - composition_received) * 1000
 
         final = app.wait_line("GPUI_MACOS_IME_ACCEPTANCE ", timeout)
         final = validate_final(final, before, binary_sha, initial_state["revision"], initial_identity["frame_revision"])
@@ -1449,29 +1453,35 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
         if exit_code != 0:
             raise AcceptanceError("IME acceptance app exited unsuccessfully: " + str(exit_code))
         app.close()
-        pixels = {name: png_pixels(output / report["screenshots"][name]["path"])
-                  for name in ("initial", "composition", "final")}
-        deltas = {"initial_to_composition": pixel_difference(pixels["initial"], pixels["composition"]),
-                  "composition_to_final": pixel_difference(pixels["composition"], pixels["final"]),
-                  "initial_to_final": pixel_difference(pixels["initial"], pixels["final"])}
-        roi_frames = {name: {"image": pixels[name], "roi": report["screenshots"][name]["text_roi"]}
+        if diagnostic_immediate_preview:
+            # A missing composition image can never qualify as Product Green.
+            # Every native final predicate above still applies to this diagnostic.
+            report["status"] = "diagnostic_completed"
+            report["app_exit_code"] = exit_code
+        else:
+            pixels = {name: png_pixels(output / report["screenshots"][name]["path"])
                       for name in ("initial", "composition", "final")}
-        roi_deltas = {"initial_to_composition": text_roi_difference(roi_frames["initial"], roi_frames["composition"]),
-                      "composition_to_final": text_roi_difference(roi_frames["composition"], roi_frames["final"]),
-                      "initial_to_final": text_roi_difference(roi_frames["initial"], roi_frames["final"])}
-        if any(item["changed_pixels"] < 32 for item in deltas.values()):
-            raise AcceptanceError("own-window text/preedit changes were not present in captured pixels")
-        for phase, difference in roi_deltas.items():
-            require_text_change(difference, phase)
-        report["pixel_differences"] = deltas
-        report["text_roi_differences"] = roi_deltas
-        screenshot_index = {name: dict(item) for name, item in report["screenshots"].items()}
-        screenshot_index_path = output / "screenshots-index.json"
-        screenshot_index_path.write_text(json.dumps(screenshot_index, indent=2, ensure_ascii=False) + "\n")
-        report["screenshots_index"] = screenshot_index_path.name
-        report["screenshots_index_sha256"] = digest(screenshot_index_path)
-        report["ok"] = True
-        report["status"] = "passed"
+            deltas = {"initial_to_composition": pixel_difference(pixels["initial"], pixels["composition"]),
+                      "composition_to_final": pixel_difference(pixels["composition"], pixels["final"]),
+                      "initial_to_final": pixel_difference(pixels["initial"], pixels["final"])}
+            roi_frames = {name: {"image": pixels[name], "roi": report["screenshots"][name]["text_roi"]}
+                          for name in ("initial", "composition", "final")}
+            roi_deltas = {"initial_to_composition": text_roi_difference(roi_frames["initial"], roi_frames["composition"]),
+                          "composition_to_final": text_roi_difference(roi_frames["composition"], roi_frames["final"]),
+                          "initial_to_final": text_roi_difference(roi_frames["initial"], roi_frames["final"])}
+            if any(item["changed_pixels"] < 32 for item in deltas.values()):
+                raise AcceptanceError("own-window text/preedit changes were not present in captured pixels")
+            for phase, difference in roi_deltas.items():
+                require_text_change(difference, phase)
+            report["pixel_differences"] = deltas
+            report["text_roi_differences"] = roi_deltas
+            screenshot_index = {name: dict(item) for name, item in report["screenshots"].items()}
+            screenshot_index_path = output / "screenshots-index.json"
+            screenshot_index_path.write_text(json.dumps(screenshot_index, indent=2, ensure_ascii=False) + "\n")
+            report["screenshots_index"] = screenshot_index_path.name
+            report["screenshots_index_sha256"] = digest(screenshot_index_path)
+            report["ok"] = True
+            report["status"] = "passed"
     except BaseException as error:
         report["status"] = "failed"
         report["error"] = str(error)
@@ -1509,6 +1519,8 @@ def execute(profile_root, app_bundle, output, repo=REPO, timeout=90):
             report["error"] = "source changed during IME/pixel acceptance"
         report["finished_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
         summary_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+    if diagnostic_immediate_preview and report["status"] == "diagnostic_completed" and report["source_stable"]:
+        return report
     if report.get("ok") is True:
         try:
             validate_summary(summary_path, repo, before)
@@ -1529,6 +1541,8 @@ def main(argv=None):
     parser.add_argument("--app", required=True, type=Path, help="fresh GPUI text-field test-hook app bundle")
     parser.add_argument("--output", required=True, type=Path, help="new external evidence directory")
     parser.add_argument("--timeout", type=int, default=90)
+    parser.add_argument("--diagnostic-immediate-preview", action="store_true",
+                        help="Experiment A: omit composition capture; never qualifies as Product Green")
     args = parser.parse_args(argv)
     if not 10 <= args.timeout <= 600:
         parser.error("--timeout must be in 10..600 seconds")
@@ -1538,9 +1552,13 @@ def main(argv=None):
     signal.signal(signal.SIGTERM, handle_sigterm)
     try:
         try:
-            report = execute(args.profile, args.app, args.output, args.repo, args.timeout)
+            report = execute(args.profile, args.app, args.output, args.repo, args.timeout,
+                             diagnostic_immediate_preview=args.diagnostic_immediate_preview)
             print("summary=" + str(Path(args.output).resolve() / "summary.json"))
-            print("GREEN scope=macos-kotoeri-pixels source=" + report["source_before"]["commit"])
+            if args.diagnostic_immediate_preview:
+                print("DIAGNOSTIC ONLY: final contract passed; composition screenshot omitted")
+            else:
+                print("GREEN scope=macos-kotoeri-pixels source=" + report["source_before"]["commit"])
             return 0
         except (AcceptanceError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
             print("macos-ime-acceptance: " + str(error), file=sys.stderr)
