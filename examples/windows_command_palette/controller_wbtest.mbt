@@ -368,6 +368,111 @@ test "native Cancelled closes before the later session sync gate" {
 }
 
 ///|
+test "focus revoked during accepted present defers the closed frame" {
+  let fixture = palette_fixture()
+  let palette = fixture.palette
+  palette.open(fixture.tree).unwrap()
+  ignore(
+    palette_handle_input(fixture, @primitives.TextInput(text="Go")).unwrap(),
+  )
+  let original = palette.field()
+  let replacement = original.selection().normalized_range()
+  let initial_owner = palette_native_owner(2, palette.open_epoch(), 41)
+  let composing = palette_native_start_composition(
+    initial_owner, original, replacement,
+  ).unwrap()
+  let (preview, active_owner) = palette_native_update_mark(
+    composing,
+    "に",
+    Some(1),
+    [0],
+    replacement,
+  ).unwrap()
+  palette.install_field_at(palette.open_epoch(), preview).unwrap()
+
+  let owner = Ref(Some(active_owner))
+  let native_focused = Ref(true)
+  let dirty = Ref(true)
+  let scene = palette_scene(fixture, 640.0, 480.0, 1.0).unwrap()
+  let prepared = prepare_palette_frame(
+    fixture,
+    scene,
+    7,
+    owner.val,
+    dirty.val,
+    None,
+    640.0,
+    480.0,
+    1.0,
+  )
+  let reject_fence_calls = Ref(0)
+  let (decision, accepted) = palette_present_result(
+    Ok(()),
+    prepared,
+    fixture,
+    owner,
+    dirty,
+    _ => {
+      reject_fence_calls.val += 1
+      false
+    },
+  )
+  assert_true(decision is Accepted)
+  assert_eq(reject_fence_calls.val, 0)
+
+  // The accepted scene must remain the outstanding frame while focus is
+  // reconciled after present dispatches WM_KILLFOCUS.
+  let (recorded, pending) = palette_record_accepted_frame(None, accepted.frame)
+  assert_true(recorded)
+  assert_true(pending_frame_matches(pending.unwrap(), accepted.frame))
+  let end_calls = Ref(0)
+  let ended_owner : Ref[PaletteNativeOwner?] = Ref(None)
+  let (reconciled, close_followup_dirty) = palette_reconcile_accepted_present_focus(
+    decision,
+    true,
+    palette,
+    fixture.tree,
+    owner,
+    native_focused,
+    dirty,
+    () => Ok(false),
+    active => {
+      end_calls.val += 1
+      ended_owner.val = active
+      true
+    },
+  ).unwrap()
+  dirty.val = close_followup_dirty
+
+  assert_true(reconciled)
+  assert_true(close_followup_dirty)
+  assert_eq(end_calls.val, 1)
+  assert_true(owner.val is None)
+  assert_true(ended_owner.val.unwrap().composition is None)
+  assert_false(palette.is_open())
+  assert_false(palette.field().is_composing())
+  assert_eq(palette.field().committed_document().text(), "Go")
+  assert_eq(palette.picker().query(), "Go")
+  assert_eq(fixture.tree.val.focused(), Some(9UL))
+  assert_eq(fixture.native_updates.val, 0)
+  assert_eq(fixture.actions.val, 0)
+  assert_false(native_focused.val)
+  assert_true(dirty.val)
+  assert_false(
+    palette_native_session_sync_eligible(
+      true,
+      palette.is_open(),
+      native_focused.val,
+    ),
+  )
+  assert_false(palette_frame_submission_ready(dirty.val, pending))
+
+  let (completed, no_pending) = palette_take_completed_frame(pending)
+  assert_true(pending_frame_matches(completed.unwrap(), accepted.frame))
+  assert_true(palette_frame_submission_ready(dirty.val, no_pending))
+}
+
+///|
 test "Windows command palette close waits for native fence before action and focus restore" {
   let fixture = palette_fixture()
   let palette = fixture.palette

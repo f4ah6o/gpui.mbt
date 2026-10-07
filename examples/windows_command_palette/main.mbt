@@ -753,6 +753,28 @@ fn palette_finish_effect(
 }
 
 ///|
+fn palette_end_native_for_focus_reconciliation(
+  host : @native.Host,
+  window : @platform.WindowId,
+  fixture : PaletteFixture,
+  owner : Ref[PaletteNativeOwner?],
+  active : PaletteNativeOwner?,
+) -> Bool {
+  let had_owner = owner.val is Some(_)
+  let fenced = match palette_end_native_owner(host, window, active) {
+    Ok(_) => true
+    Err(error) => {
+      report(error)
+      false
+    }
+  }
+  if had_owner {
+    fixture.native_ends.val += 1
+  }
+  fenced
+}
+
+///|
 /// Apply a real focus transition before a frame can update a native session
 /// that Win32 has already disarmed.
 fn palette_apply_native_focus_state(
@@ -772,18 +794,9 @@ fn palette_apply_native_focus_state(
     native_focused,
     dirty,
     active => {
-      let had_owner = owner.val is Some(_)
-      let fenced = match palette_end_native_owner(host, window, active) {
-        Ok(_) => true
-        Err(error) => {
-          report(error)
-          false
-        }
-      }
-      if had_owner {
-        fixture.native_ends.val += 1
-      }
-      fenced
+      palette_end_native_for_focus_reconciliation(
+        host, window, fixture, owner, active,
+      )
     },
   )
   if !reconciled {
@@ -1594,7 +1607,34 @@ fn run_palette_window() -> Unit {
                     experimental_ime,
                   ),
                 )
-                if palette_native_session_sync_eligible(
+                let (focus_reconciled, close_followup_dirty) = match
+                  palette_reconcile_accepted_present_focus(
+                    decision,
+                    experimental_ime,
+                    palette,
+                    fixture.tree,
+                    owner,
+                    native_focused,
+                    dirty,
+                    () => host.window_has_keyboard_focus(window),
+                    active => {
+                      palette_end_native_for_focus_reconciliation(
+                        host, window, fixture, owner, active,
+                      )
+                    },
+                  ) {
+                  Ok(value) => value
+                  Err(error) => {
+                    report(error)
+                    ignore(host.request_exit())
+                    (false, false)
+                  }
+                }
+                if !focus_reconciled {
+                  ignore(host.request_exit())
+                }
+                if focus_reconciled &&
+                  palette_native_session_sync_eligible(
                     experimental_ime,
                     palette.is_open(),
                     native_focused.val,
@@ -1633,7 +1673,7 @@ fn run_palette_window() -> Unit {
                   }
                 }
                 native_external_edit.val = false
-                dirty.val = false
+                dirty.val = close_followup_dirty
               } else {
                 palette_log(
                   "GPUI_WINDOWS_COMMAND_PALETTE_REJECT accepted_with_pending_frame",

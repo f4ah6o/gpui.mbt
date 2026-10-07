@@ -22,12 +22,14 @@ more records are accepted; a failed recovery exits with the modal focus held.
 Escape cancels composition before another press can close the palette. A
 Win32 focus loss can enqueue the old-epoch `Cancelled` record before
 `FocusChanged(false)`, even though the HWND has already lost focus. The palette
-rechecks actual window focus while handling `Cancelled` and closes under the
-native end fence before another frame can update the revoked owner. Closing
-ends the native owner before the palette runs a command or restores saved
-focus. A failed close fence leaves focus in the modal tree and does not run the
-command. Text-session event payloads keep reserved geometry fields zero; the
-window viewport is carried by platform events.
+rechecks actual window focus while handling `Cancelled` and immediately after
+an accepted present, before syncing the native owner. If present pumped focus
+loss, the palette restores any still-live composition transaction, ends the
+native owner, and retains the accepted frame until completion before submitting
+the closed state. Closing ends the native owner before the palette runs a
+command or restores saved focus. A failed close fence leaves focus in the modal
+tree and does not run the command. Text-session event payloads keep reserved
+geometry fields zero; the window viewport is carried by platform events.
 
 The frame loop snapshots the scene, query, selection, owner, focus, and pending
 frame together. A busy present retains that complete prepared value for retry.

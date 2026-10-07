@@ -678,7 +678,75 @@ fn palette_reconcile_native_focus_state(
     true
   } else {
     dirty.val = true
-    palette_reconcile_native_focus_loss(false, palette, tree, owner, end_native)
+    if !palette_restore_owner_composition_on_focus_loss(palette, owner) {
+      false
+    } else {
+      palette_reconcile_native_focus_loss(
+        false, palette, tree, owner, end_native,
+      )
+    }
+  }
+}
+
+///|
+/// A focus revocation can arrive during present before its queued Cancelled
+/// record is consumed. Restore the saved committed field transaction locally
+/// before closing; the queued record will be fenced out by the ended owner.
+fn palette_restore_owner_composition_on_focus_loss(
+  palette : @palette.CommandPalette,
+  owner : Ref[PaletteNativeOwner?],
+) -> Bool {
+  match owner.val {
+    None => true
+    Some(active) if active.composition is None => true
+    Some(active) => {
+      let (restored, cleared) = palette_native_cancel_composition(active)
+      match restored {
+        None => false
+        Some(field) =>
+          match palette.install_field_at(active.open_epoch, field) {
+            Err(_) => false
+            Ok(_) => {
+              owner.val = Some(cleared)
+              true
+            }
+          }
+      }
+    }
+  }
+}
+
+///|
+/// Reconcile focus again after an accepted present, since presenting can pump
+/// Win32 messages after the main loop's last event check. The accepted frame
+/// stays pending; a successful focus-loss close leaves a dirty frame for after
+/// that completion is consumed.
+fn palette_reconcile_accepted_present_focus(
+  decision : PaletteFrameDecision,
+  experimental_ime : Bool,
+  palette : @palette.CommandPalette,
+  tree : Ref[@element.ElementTree],
+  owner : Ref[PaletteNativeOwner?],
+  native_focused : Ref[Bool],
+  dirty : Ref[Bool],
+  query_focus : () -> Result[Bool, @diagnostics.FrameworkError],
+  end_native : (PaletteNativeOwner?) -> Bool,
+) -> Result[(Bool, Bool), @diagnostics.FrameworkError] {
+  match decision {
+    Accepted => ()
+    _ => return Ok((true, false))
+  }
+  if !experimental_ime || !palette.is_open() || !native_focused.val {
+    return Ok((true, false))
+  }
+  match query_focus() {
+    Err(error) => Err(error)
+    Ok(focused) => {
+      let reconciled = palette_reconcile_native_focus_state(
+        focused, palette, tree, owner, native_focused, dirty, end_native,
+      )
+      Ok((reconciled, !focused && !palette.is_open()))
+    }
   }
 }
 
