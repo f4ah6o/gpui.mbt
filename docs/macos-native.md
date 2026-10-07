@@ -1,19 +1,21 @@
 # First macOS native slice
 
-The first native slice implements issue 0006 packets A/B and part of C/F/G.
+The first native slice implements issue 0006 packets A/B and parts of C/D/F/G.
 It runs a MoonBit executable against repository-owned AppKit, Core Animation,
-and Metal code. Platform support and production release gates remain pending.
+Metal and CoreText/CoreGraphics code. Platform support and production release
+gates remain pending.
 
 ## Build and run
 
-On macOS 13 or newer, install the pinned MoonBit toolchain from
-`.github/workflows/contracts.yml` and Xcode command-line tools, then run:
+On macOS 13 or newer, install the repository's pinned MoonBit toolchain and
+Xcode command-line tools, then run:
 
 ```sh
 ./script/build_and_run.sh          # launch the interactive quad demo
 ./script/build_and_run.sh --build  # build _build/macos/GpuiNative.app
 ./script/build_and_run.sh --smoke  # MoonBit lifecycle + frame smoke
-./script/test_macos.sh             # native GPU/input/lifecycle E2E + smoke
+./script/test_macos.sh all --target-dir /private/tmp/gpui-macos-checks
+                                   # native E2E + smoke + field checks
 ```
 
 Click the quad or press Space to toggle its color; Escape requests close.
@@ -47,7 +49,7 @@ scene, and application event values contain no OS or GPU pointers.
 | close / destroy | Close requests await application policy. Destruction drops pending callbacks for the token, releases the surface before the window, and enqueues a terminal event. Tokens are monotonic and never reused. |
 | next_event | Bounded 0–250 ms wait; per-window monotonic sequence, captured scale, logical pointer positions, focus/move/resize/backing-scale notifications and portable control/character keys. |
 | wake / request_exit | UI-owner wake event and quiescing transition; new windows are rejected after exit is requested. Cross-thread enqueue is still pending. |
-| present | SceneSnapshot v1 quads, affine transforms, opacity, ordered rectangle clip chains, paint order and alpha blending. Resources and unknown item kinds return UnsupportedCapability. |
+| present | SceneSnapshot v1 quads and admitted grayscale text, affine transforms, opacity, ordered rectangle clip chains, paint order and alpha blending. Other resources and unknown item kinds return UnsupportedCapability. |
 | metrics | Current logical size and backing scale; sampled before presenting to avoid using old queued resize metadata for a current drawable. |
 | clipboard / cursor | UTF-8 string clipboard and arrow/pointing-hand/text cursors. Clipboard busy/conversion failures are typed. |
 | renderer recovery | Explicitly rebuilds the shared Metal device, queue and pipeline and rebinds every live `CAMetalLayer`, preserving logical window identities. Automatic recovery remains unimplemented. |
@@ -81,7 +83,8 @@ silently claiming success. Titles/scene/clipboard payloads are capped at 16 MiB;
 windows at 64, scene items at 65536, dimensions at 8192 logical points.
 
 Native runtime inventory: Apple AppKit (host/windows/input/services), QuartzCore
-(layer), and Metal (device/queue/GPU presentation), all owned by `platform/macos`
+(layer), Metal (device/queue/GPU presentation), and CoreText/CoreGraphics text
+shaping and rasterization, owned by `platform/macos` and `platform/macos_text`
 and upgraded with the host OS/SDK. No third-party library is added. Implementation,
 shaders, and fixtures are independently authored from local contracts and Apple
 API documentation; no GPUI source or assets were adapted.
@@ -99,20 +102,74 @@ A test-only Metal blit reads frame pixels to verify transform/clip/alpha/paint
 order and backing-pixel dimensions. Fault injection verifies DeviceLost reporting.
 The test source also removes device/queue/pipeline state, invokes explicit
 recovery and checks the following frame through pixel readback. Hosted execution
-of this path remains pending, so capability negotiation stays disabled. The
-tests do not establish bounded memory over sustained churn.
+is recorded per run in the external actrun artifacts; capability negotiation
+stays disabled pending release-tier evidence. The tests do not establish bounded
+memory over sustained churn.
 
 The MoonBit smoke executable uses the portable Backend interface and checks
 creation, two completed GPU frames, resize, close request, destruction and event
 sequence ordering. Headless tests verify portable key and error adapters on all
-four MoonBit targets. Clipboard/cursor smoke, real display movement, Japanese
-IME, accessibility, text shaping, cross-thread command completion, hosted
-automated renderer recovery, sustained resource growth and performance remain
-pending.
+four MoonBit targets. Clipboard/cursor smoke, real display movement,
+accessibility, cross-thread command completion, automated renderer recovery,
+sustained resource growth and performance remain pending. The bounded text
+field's native CoreText/Metal and Japanese input checks are described below.
 
-Hosted macOS CI builds the app/E2E runner and executes headless tests. The
-manual `macos-native-e2e.yml` workflow requires a logged-in self-hosted desktop
-with label `gpui-native` and a Metal device. It archives revision/toolchain/logs
-and app artifacts; these are inputs to future release evidence, not sufficient
-Tier 1 evidence. A native test binary printing success does not update
-`docs/release-gates.json` automatically.
+## Experimental single-line text field
+
+`examples/macos_text_field/` is a bounded experimental control built on the
+shared immutable `controls/text_field` model. It supports directional
+selection, editing, horizontal scrolling, clipboard commands, undo/redo,
+accepted-frame rollback and caret-synchronized candidate geometry. CoreText
+provides copied measurement/hit values and monochrome scene rasterization;
+AppKit's resolved `insertText:` callback is the default committed-text path.
+The opt-in per-window composition owner is enabled with
+`GPUI_FIELD_MACOS_IME=1`. It does not advertise a global portable TextInput
+capability. Multiline text, bidi, color glyphs, reconversion ranges outside the
+current mark/selection and unsupported marked styles fail with typed errors.
+Interactive mode begins after a real native key-focus transition and keeps its
+accepted frame open while waiting; the finite acceptance run has a bounded
+focus wait and cleanup path.
+The example uses a fixed 18 px system sans font. The shared field and scene
+admission cap text at 4096 UTF-8 bytes, font size at 32 px, and logical bounds at
+2048 by 128 points. CoreText additionally caps a raster mask at 16384 by 2048
+pixels and 8 MiB per text run; the renderer caps retained cropped text masks at
+8 MiB total per frame. The native scene parser caps one scene at 16 MiB and
+65536 items. Its draw staging allocation is bounded by those items at 328
+bytes per item (about 20.5 MiB), and native window dimensions remain capped at
+8192 logical points. The 4096-point limit applies to candidate-caret
+rectangles, not windows.
+
+Run the field interactively with `./script/build_and_run.sh --demo text-field`.
+For deterministic source/provider checks and a test-hook app build, use
+`./script/test_macos.sh --text-field --target-dir <fresh-external-directory>`.
+For the native GPU runner and real Kotoeri flow, provision the public pinned
+tooling profile once, then execute the local actrun matrix:
+
+```sh
+export GPUI_MACOS_PROFILE_ROOT=/private/tmp/gpui-macos-quality-profile
+python3 infra/macos-desktop/profile.py --root "$GPUI_MACOS_PROFILE_ROOT" bootstrap
+RUN_DIR="$(mktemp -d /private/tmp/gpui-macos-native.XXXXXX)"
+python3 infra/macos-desktop/actrun-feedback.py \
+  --root "$GPUI_MACOS_PROFILE_ROOT" --mode native --run-dir "$RUN_DIR/native"
+```
+
+The runner builds native checks and the text-field test-hooks app under the
+provided run directory. Its qualified host profile records macOS 26.5.2 arm64
+with Xcode 26.6 and SDK 26.5; each run retains the exact host and toolchain
+fingerprint. The runner requires a logged-in desktop with Kotoeri enabled,
+drives AppKit through app-owned key events, waits for accepted composition and
+commit frames, and retains screenshots, frame identity, source/binary identity
+and strict JSON evidence. For a saved profile, `profile.py ... doctor` checks
+readiness. `--mode quality` runs the broader approved matrix. Runtime outcomes
+are recorded in each external actrun summary and its retained artifacts; source
+configuration alone does not establish a pass. No support tier or production
+release gate changes here.
+
+To run the full approved local quality matrix, including portable/schema,
+proof, mutation, hot-path and native IME stages, use the same profile and a
+separate fresh run directory:
+
+```sh
+python3 infra/macos-desktop/actrun-feedback.py \
+  --root "$GPUI_MACOS_PROFILE_ROOT" --mode quality --run-dir "$RUN_DIR/quality"
+```

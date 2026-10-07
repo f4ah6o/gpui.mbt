@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/gpui-mbt/hotpath.mbt",
+  "upstream_commit": "87a8d8494d5e2c2b4fed2115882315ba652dc37c",
+  "upstream_tree": "f351f46137009ceaf864c12fd620fb8d23089c63",
+  "local_extension_commit": "0c3c26c251ee9603923144b1863e97a825c7b05a",
+  "published_source": {
+    "feature_commit": "4e69017c07948616106c7e0d478aa2db9fe58186",
+    "main_commit": "87a8d8494d5e2c2b4fed2115882315ba652dc37c",
+    "tree": "f351f46137009ceaf864c12fd620fb8d23089c63",
+    "reviewed_local_commit": "0c3c26c251ee9603923144b1863e97a825c7b05a",
+    "mapping": "The published feature and merged main have the same complete tree and runtime file bytes as the reviewed local extension."
+  },
+  "runtime_files": {
+    "moon.mod": "0f3e62ba2826817b72f4fd8514a579c2d3a35341242da8951256cc8c891d44ed",
+    "src/moon.pkg": "13b83554c76ea28244fd872215aceb3eb55e85a3b6a2be542498291bd8bd328b",
+    "src/hotpath.mbt": "30edba16b0fdd08fb70d8a1d842c2fc0befb566346384d33991ffbe74778f1cf",
+    "src/nanoseconds.mbt": "32779cb45f537b7edb57f2aeaae944076c9b1f32407224ce706def1fafae6d2b"
+  }
+}

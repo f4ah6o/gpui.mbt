@@ -23,6 +23,7 @@ SCHEMA_VERSION = 2
 SCOPE = "synthetic headless native input/composition/Pango/scene CPU spans"
 EXCLUDED = ["native input transport", "Wayland dispatch", "GPU presentation", "scanout", "hardware input-to-display latency"]
 OBSERVE_POLICY = "observe-only: no universal timing gate"
+COMPILER_WRAPPER = "script/linux_text_cc.py"
 WORKLOAD_FILES = ["moon.mod", "moon.pkg", "main.mbt", "clock.c"]
 PRODUCER_FILES = ["input-hotpath.py"]
 EXPECTED_CALLS = {"text.measure": 256, "text.admit": 256,
@@ -80,7 +81,7 @@ def native_build_identity(env):
     compiler = environment_words(env, "GPUI_LINUX_TEXT_CC", env.get("CC", "cc"))
     discovery = environment_words(env, "PKG_CONFIG", "pkg-config")
     identity = {"compiler": tool_identity(compiler, env), "pkg_config": tool_identity(discovery, env),
-                "wrapper_sha256": digest(REPO / "script/linux_text_cc.py"),
+                "wrapper_sha256": digest(REPO / COMPILER_WRAPPER),
                 "flags": {name: environment_words(env, name) for name in ["CPPFLAGS", "CFLAGS", "LDFLAGS"]},
                 "discovery_environment": {name: env.get(name) for name in
                     ["PKG_CONFIG_SYSROOT_DIR", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_PATH"]}}
@@ -241,8 +242,8 @@ def source_manifest_digest(entries):
 
 
 def restore_compiler_path(data, directory, override=None):
-    return data.replace(json.dumps(override or str(directory / "source/script/linux_text_cc.py")).encode(),
-                        b'"script/linux_text_cc.py"')
+    return data.replace(json.dumps(override or str(directory / ("source/" + COMPILER_WRAPPER))).encode(),
+                        json.dumps(COMPILER_WRAPPER).encode())
 
 
 def validate_evidence(report, directory):
@@ -299,7 +300,7 @@ def _validate_evidence(report, directory):
         raise RuntimeError("hotpath binary identity does not match its retained executable")
     manifest = json.loads((directory / "staging-manifest.json").read_text())
     override = manifest["compiler_path_override"]
-    if not isinstance(override, str) or not Path(override).is_absolute() or not override.endswith("/source/script/linux_text_cc.py"):
+    if not isinstance(override, str) or not Path(override).is_absolute() or not override.endswith("/source/" + COMPILER_WRAPPER):
         raise RuntimeError("retained compiler-path rewrite is malformed")
     if manifest["source_snapshot"] != before:
         raise RuntimeError("hotpath retained source snapshot is stale")
@@ -422,9 +423,9 @@ def stage(output, hotpath, lock):
     # Moon resolves dependency compiler paths relative to the invocation cwd.
     for package in source.rglob("moon.pkg"):
         text = package.read_text()
-        package.write_text(text.replace('"script/linux_text_cc.py"', json.dumps(str(source / "script/linux_text_cc.py"))))
+        package.write_text(text.replace(json.dumps(COMPILER_WRAPPER), json.dumps(str(source / COMPILER_WRAPPER))))
     package = workload / "moon.pkg"
-    package.write_text(package.read_text().replace('"script/linux_text_cc.py"', json.dumps(str(source / "script/linux_text_cc.py"))))
+    package.write_text(package.read_text().replace(json.dumps(COMPILER_WRAPPER), json.dumps(str(source / COMPILER_WRAPPER))))
     return feedback, workload, entries
 
 
@@ -478,7 +479,7 @@ def execute(hotpath, output, repeats=7, baseline=None, tolerance=None):
         env_info["cpu_model"] = next((line.split(":", 1)[1].strip() for line in cpu.splitlines() if line.startswith("model name")), None)
         report["environment"] = env_info
         (output / "staging-manifest.json").write_text(json.dumps({"source_files": source_entries, "source_snapshot": before,
-                                                                 "compiler_path_override": str(output / "source/script/linux_text_cc.py"),
+                                                                 "compiler_path_override": str(output / "source" / COMPILER_WRAPPER),
                                                                  "environment": env_info}, indent=2) + "\n")
         command = [moon, "build", ".", "--target", "native", "--release", "--warn-list", "-27-79", "--deny-warn", "--target-dir", str(output / "build")]
         with (output / "build.log").open("w") as stream:

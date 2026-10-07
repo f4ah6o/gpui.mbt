@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "profile": "macos26.5.2-arm64-xcode26.6-moon0.10.14",
+  "host_contract": {
+    "operating_system": "macOS",
+    "product_version": "26.5.2",
+    "build_version": "25F84",
+    "architecture": "arm64",
+    "xcode_version": "Xcode 26.6",
+    "xcode_build_version": "Build version 17F113",
+    "macos_sdk_version": "26.5",
+    "global_installation": false,
+    "external_profile_required": true
+  },
+  "toolchain": {
+    "moonbit_version": "0.10.14+7d59c7ec9",
+    "moon_version": "0.1.20260920",
+    "archives": [
+      {
+        "name": "moonbit-darwin-aarch64.tar.gz",
+        "url": "https://cli.moonbitlang.com/binaries/0.10.14%2B7d59c7ec9/moonbit-darwin-aarch64.tar.gz",
+        "sha256": "20967f9389ac54508899ee2fc051a3470d051452bac5818a9696ed4c144f3ec3",
+        "destination": "moon"
+      },
+      {
+        "name": "core-0.10.14+7d59c7ec9.tar.gz",
+        "url": "https://cli.moonbitlang.com/cores/core-0.10.14%2B7d59c7ec9.tar.gz",
+        "sha256": "6f18b8fdea18f85e628a75e4a1bd3977c5a5c9c6a836fd8824192b0e6bd91b14",
+        "destination": "moon/lib"
+      }
+    ]
+  },
+  "actrun": {
+    "name": "@mizchi/actrun",
+    "version": "0.32.0",
+    "repository": "https://github.com/mizchi/actrun",
+    "registry_tarball": "https://registry.npmjs.org/@mizchi/actrun/-/actrun-0.32.0.tgz",
+    "registry_integrity": "sha512-RrFy81H/XpXgHeIAeFVlxI5NryFk2V3QLpKTIlaV6SNcS/un8k/Vt/BE4k8QZafo8GrQe7kd1Wo/qqURomswBw==",
+    "cli_sha256": "f40b51358877bba1c922039eff40daab739a4a4a99a9cb1c4d9c35557de06088",
+    "node_minimum_major": 18,
+    "package_lock_sha256": "a3216a6a9058dd8f554a62f5c803884287fd940074550948f005c27e41503304"
+  },
+  "proof_build_inputs": {
+    "opam_version": "2.2.1",
+    "opam_url": "https://github.com/ocaml/opam/releases/download/2.2.1/opam-2.2.1-arm64-macos",
+    "opam_sha256": "9844cf81c76269ad243afb15cdcf93cde882e4986df102d835c5be82295ad717",
+    "opam_repository_commit": "daca28e1fae6100f9052f4cf4a8b0899fe175b57",
+    "opam_repository_url": "https://codeload.github.com/ocaml/opam-repository/tar.gz/daca28e1fae6100f9052f4cf4a8b0899fe175b57",
+    "opam_repository_sha256": "d5da405310c20f3e12a44c79dd6c483b13a808d4aacc48f013cfb61145ae3a26",
+    "ocaml_version": "5.3.0",
+    "why3_version": "1.7.2",
+    "why3_source_url": "https://why3.gitlabpages.inria.fr/releases/why3-1.7.2.tar.gz",
+    "why3_source_sha256": "55a486fc588ed8c0dd49215718926b232950c742cfc2d4fc005ed3a4f5598424",
+    "z3_version": "4.13.3",
+    "z3_url": "https://github.com/Z3Prover/z3/releases/download/z3-4.13.3/z3-4.13.3-arm64-osx-13.7.zip",
+    "z3_archive_sha256": "2b2c6e23ff5488722bc93002e04c6d6f60d621af9d345f2e05a8691b40280e53",
+    "z3_executable_sha256": "a65ab6ea34232a27570379d399570ce1e24d6e2324b7330649e69875829506b4"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "moonc_version": "0.10.14+7d59c7ec9",
+  "moon_version": "0.1.20260920",
+  "why3_version": "1.7.2",
+  "solver": {
+    "name": "z3",
+    "version": "4.13.3",
+    "archive_url": "https://github.com/Z3Prover/z3/releases/download/z3-4.13.3/z3-4.13.3-arm64-osx-13.7.zip",
+    "archive_sha256": "2b2c6e23ff5488722bc93002e04c6d6f60d621af9d345f2e05a8691b40280e53",
+    "installation": "Extract only into this external user-owned Mac profile; no OS package or security changes.",
+    "executable_sha256": null
+  },
+  "integer_model": "mathematical integers; range-length precondition and postcondition explicitly keep subtraction within signed Int bounds",
+  "prelude": "Bundled macOS profile lib/prelude_proof/moonbit_builtin_prelude.mlw; no override",
+  "artifact_sha256": {
+    "bin/moonc": "8a49fb209d896b8ce72322883aa53a2395a1bdd88d35423ebfd841fc66b8f127",
+    "lib/why3/why3server": "0c4c8db51e4904c65a0a6461ac384c30abe6d4f8f188a241b936989386db4e80",
+    "lib/prelude_proof/moonbit_builtin_prelude.mlw": "2c17e3da5a0cb51e94246d646c610a5ae92ec2ccf8eaa16f3930c5c718dd7620",
+    "bin/moon": "a0cd1c0014f2ca17089542939ac4ad3c983452c5952ca6140af0fcef258e1967",
+    "lib/core/_build/wasm/release/bundle/prelude/prelude.mi": "e72d19774700d3e12dfb53731430453e08de9b8f8fefa35bb4f6999f0fcd2217"
+  },
+  "proof_report_schema_source": "https://github.com/moonbitlang/moon/blob/914d7da/crates/moon/src/cli/prove.rs#L559-L577",
+  "export_backend": {
+    "why3_version": "1.7.2",
+    "source_archive_url": "https://why3.gitlabpages.inria.fr/releases/why3-1.7.2.tar.gz",
+    "source_archive_sha256": "55a486fc588ed8c0dd49215718926b232950c742cfc2d4fc005ed3a4f5598424",
+    "cli_sha256": null,
+    "prove_plugin_sha256": null,
+    "moon_why3_datadir_sha256": null,
+    "transformations": [
+      "inline_all",
+      "remove_unused"
+    ],
+    "driver": "z3_471.drv",
+    "expected_goal_count": 5,
+    "documentation": "https://why3.org/doc/manpages.html#the-prove-command",
+    "expected_goal_ids": [
+      "preconditions_are_inhabited'vc",
+      "mbtp___40f4ah6o_2fcomposition_proof_2eTextRange_3a_3alength'vc",
+      "utf8_scalar_width'vc",
+      "utf16_scalar_width'vc",
+      "range_preconditions_are_inhabited'vc"
+    ]
+  }
+}

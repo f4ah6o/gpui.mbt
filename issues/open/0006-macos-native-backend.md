@@ -1,9 +1,9 @@
 # macOS native backend roadmap
 
 Status: open
-Model: unknown
+Model: gpt-6-luna max
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-04
+Updated: 2026-10-06
 
 ## Current-head acceptance triage — 2026-10-04
 
@@ -225,5 +225,30 @@ Native clipboard and cursor APIs are implemented, while clipboard/cursor smoke,
 real multi-display DPI movement, Japanese IME/text shaping, accessibility,
 menus, cross-thread command completion, full multi-window focus/display E2E,
 sustained resource-growth evidence, and performance evidence remain open. No
-support tier or release gate is promoted by source tests or workflow
+support tier or release gate is promoted by source tests or runner
 configuration alone.
+
+## Implementation progress — 2026-10-06
+
+The experimental single-line macOS field now connects the shared immutable
+field model to CoreText geometry, monochrome scene text and per-window AppKit
+text sessions. Ordinary committed input uses resolved `insertText:` callbacks;
+composition is default-off and opt-in with `GPUI_FIELD_MACOS_IME=1`. The
+bounded owner covers selection/edit/scroll, clipboard, undo/redo, batch and
+revision fencing, accepted-frame rollback and candidate-rectangle updates.
+Unsupported multiline, bidi, color glyph, reconversion and unsupported marked
+styles return typed errors. This is not a general editor or global text-input
+capability.
+
+`moon check examples/macos_text_field --target native --deny-warn` passes
+locally, and the owner suite passes 17/17 on this Mac. The focused
+`script/test_macos.sh --text-field` path also runs provider tests and builds a
+test-hook app. The local actrun
+native matrix is the required path for the actual AppKit/Metal synthetic E2E
+and Kotoeri input/pixel proof:
+`python3 infra/macos-desktop/actrun-feedback.py --root "$GPUI_MACOS_PROFILE_ROOT" --mode native --run-dir "$RUN_DIR/native"`.
+Each external actrun run stores its own source/toolchain identity and runtime
+result. Source tests and runner configuration alone do not establish runtime
+success. Text field, Japanese IME, accessibility, multiscreen behavior,
+sustained resource growth and production release evidence remain open; no
+support tier or production gate is promoted.
