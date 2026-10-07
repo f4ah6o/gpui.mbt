@@ -107,6 +107,19 @@ full-client BMP at human scale before marking pixels qualified. Candidate
 contents and highlight remain UNRUN unless separately qualified. Preflight or
 focus failures are retained as FAIL/BLOCKED with dependent stages UNRUN.
 
+The E2E driver does not call IMM32 from its own process on the fixture's HWND.
+The opt-in fixture handles bounded scalar `WM_APP` requests on the HWND owner
+thread, copies query results into a request-ID snapshot, and returns each field
+through `LRESULT`. The launcher gives the IME-enabled child a per-run nonce;
+every bridge request must include it, and malformed or unauthorized requests
+are rejected before any IMM32 call or mutation. The driver revalidates the
+child's PID, start time, executable path and hash, HWND PID/thread/class,
+foreground, and Default input desktop around each request. Candidate-form
+reads are bracketed by the exact completed/readback frame and caret identity.
+This transport fixes the IMM32 requirement that the caller run on the HWND
+owner thread; it does not replace the separate native IME and rendered-pixel
+acceptance evidence.
+
 Portable component tests cover model bounds and selection behavior. Windows
 owner regressions cover native owner, epoch, sequence, composition, close-fence,
 Busy retry, and fatal rejection transitions. Actual Japanese IME behavior,

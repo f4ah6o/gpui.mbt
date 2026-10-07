@@ -771,15 +771,24 @@ function Start-OwnedFixture {
   param([string]$Role, [bool]$Readback, [bool]$Ime)
   $logDir = Join-Path $runDir $Role; New-Item -ItemType Directory -Force -Path $logDir | Out-Null
   $stdout = Join-Path $logDir "app.stdout.log"; $stderr = Join-Path $logDir "app.stderr.log"
-  $saved = @{ r = $env:GPUI_WINDOWS_READBACK; i = $env:GPUI_WINDOWS_COMMAND_PALETTE_IME; s = $env:GPUI_WINDOWS_COMMAND_PALETTE_SMOKE }
+  [uint32]$bridgeNonce = 0
+  if ($Ime) {
+    $nonceBytes = [byte[]]::new(4)
+    [Security.Cryptography.RandomNumberGenerator]::Fill($nonceBytes)
+    $bridgeNonce = [BitConverter]::ToUInt32($nonceBytes, 0)
+    if ($bridgeNonce -eq 0) { $bridgeNonce = 1 }
+  }
+  $saved = @{ r = $env:GPUI_WINDOWS_READBACK; i = $env:GPUI_WINDOWS_COMMAND_PALETTE_IME; n = $env:GPUI_WINDOWS_COMMAND_PALETTE_IME_NONCE; s = $env:GPUI_WINDOWS_COMMAND_PALETTE_SMOKE }
   try {
     $env:GPUI_WINDOWS_READBACK = if ($Readback) { "1" } else { "0" }
     $env:GPUI_WINDOWS_COMMAND_PALETTE_IME = if ($Ime) { "1" } else { "0" }
+    $env:GPUI_WINDOWS_COMMAND_PALETTE_IME_NONCE = $bridgeNonce.ToString("x8", [Globalization.CultureInfo]::InvariantCulture)
     Remove-Item Env:GPUI_WINDOWS_COMMAND_PALETTE_SMOKE -ErrorAction SilentlyContinue
     $process = Start-Process -FilePath $binary -WorkingDirectory $repo -WindowStyle Normal -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
   } finally {
     if ($null -eq $saved.r) { Remove-Item Env:GPUI_WINDOWS_READBACK -ErrorAction SilentlyContinue } else { $env:GPUI_WINDOWS_READBACK = $saved.r }
     if ($null -eq $saved.i) { Remove-Item Env:GPUI_WINDOWS_COMMAND_PALETTE_IME -ErrorAction SilentlyContinue } else { $env:GPUI_WINDOWS_COMMAND_PALETTE_IME = $saved.i }
+    if ($null -eq $saved.n) { Remove-Item Env:GPUI_WINDOWS_COMMAND_PALETTE_IME_NONCE -ErrorAction SilentlyContinue } else { $env:GPUI_WINDOWS_COMMAND_PALETTE_IME_NONCE = $saved.n }
     if ($null -eq $saved.s) { Remove-Item Env:GPUI_WINDOWS_COMMAND_PALETTE_SMOKE -ErrorAction SilentlyContinue } else { $env:GPUI_WINDOWS_COMMAND_PALETTE_SMOKE = $saved.s }
   }
   $process.Refresh()
@@ -788,7 +797,7 @@ function Start-OwnedFixture {
     started_at_utc = $process.StartTime.ToUniversalTime().ToString("o")
     executable = [IO.Path]::GetFullPath($binary); executable_sha256 = (Get-FileHash $binary -Algorithm SHA256).Hash.ToLowerInvariant()
     hwnd = 0L; thread_id = 0; title = $null; window_class = $null; window_candidates = @(); stdout = $stdout; stderr = $stderr
-    readback = $Readback; experimental_imm32 = $Ime; process = $process
+    readback = $Readback; experimental_imm32 = $Ime; bridge_nonce = $bridgeNonce; process = $process
   }
   $script:owners.Add($owner)
   $script:result.fixtures += [ordered]@{ role = $Role; pid = $owner.pid; start_time_utc = $owner.started_at_utc; executable = $owner.executable; executable_sha256 = $owner.executable_sha256; stdout = $stdout; stderr = $stderr; readback = $Readback; experimental_imm32 = $Ime }
@@ -937,8 +946,20 @@ function Send-RomanText {
 
 function Get-ImeSnapshot {
   param([object]$Owner)
-  $ime = [PaletteE2E.Win32]::QueryIme((Assert-OwnedProcess $Owner))
+  Assert-DefaultInputDesktop "owner-thread IMM32 snapshot" | Out-Null
+  $hwnd = Assert-OwnedForeground $Owner -PassThru
+  $ime = [PaletteE2E.Win32]::QueryIme($hwnd, [uint32]$Owner.pid, [uint32]$Owner.thread_id, [long]$Owner.start_ticks, [string]$Owner.executable, [string]$Owner.executable_sha256, [uint32]$Owner.bridge_nonce, 1500)
+  Assert-OwnedForeground $Owner | Out-Null
+  if ([int]$ime.Status -notin @(0, 1)) { throw "Owner-thread IMM32 snapshot failed: bridge_status=$($ime.Status), win32_error=$($ime.LastError), target_pid=$($ime.TargetProcessId), target_thread=$($ime.TargetThreadId), request_id=$($ime.BridgeRequestId)." }
   return [ordered]@{
+    query_transport = "bounded scalar WM_APP request handled by the owned HWND thread"
+    bridge_status = [int]$ime.Status
+    bridge_last_error = [int]$ime.LastError
+    bridge_request_id = [long]$ime.BridgeRequestId
+    target_process_id = [uint32]$ime.TargetProcessId
+    target_thread_id = [uint32]$ime.TargetThreadId
+    owner_process_id = [uint32]$ime.OwnerProcessId
+    owner_thread_id = [uint32]$ime.OwnerThreadId
     has_context = $ime.HasContext
     open = $ime.Open
     conversion_valid = $ime.ConversionValid
@@ -1050,7 +1071,7 @@ function Ensure-JapaneseLayout {
 function Ensure-ImeNativeMode {
   param([object]$Owner)
   $ime = Get-ImeSnapshot $Owner
-  if (-not $ime.has_context -or -not $ime.conversion_valid) { throw "The owned HWND did not expose a queryable IMM32 context/conversion state." }
+  if (-not $ime.has_context -or -not $ime.conversion_valid) { throw "The owned HWND owner-thread bridge reported no usable IMM32 context/conversion state: bridge_status=$($ime.bridge_status), win32_error=$($ime.bridge_last_error), request_id=$($ime.bridge_request_id), target_pid=$($ime.target_process_id), target_thread=$($ime.target_thread_id)." }
   if (-not $ime.open) { Send-KeyTap $Owner "physical IME_ON VK" 0x16; $ime = Wait-Ime $Owner { param($v) $v.open } }
   if ($ime.open -and -not $ime.native_mode) { Send-KeyChord $Owner "physical IME mode Alt+OEM3" 0x12 0xC0; $ime = Wait-Ime $Owner { param($v) $v.open -and $v.native_mode } }
   if (-not $ime.open -or -not $ime.native_mode) { throw "Japanese IME did not enter open native mode; observed=$(ConvertTo-Json $ime -Compress)." }
@@ -1061,8 +1082,22 @@ function Query-CandidateGeometry {
   param([object]$Owner, [object]$Frame)
   Assert-DefaultInputDesktop "candidate geometry query" | Out-Null
   $hwnd = Assert-OwnedForeground $Owner -PassThru
-  $candidate = [PaletteE2E.Win32]::QueryCandidate($hwnd, 0)
-  if (-not $candidate.HasContext -or -not $candidate.QuerySucceeded) { return [ordered]@{ status = "FAIL"; reason = "ImmGetCandidateWindow query failed"; win32_error = $candidate.LastError } }
+  $before = $null
+  try { $before = Get-CurrentFrame $Owner } catch { return [ordered]@{ status = "FAIL"; reason = "No stable frame was available before owner-thread candidate query"; error = $_.Exception.Message; expected_frame_identity = Get-FrameIdentity $Frame } }
+  if ((Get-FrameIdentity $before) -cne (Get-FrameIdentity $Frame)) {
+    return [ordered]@{ status = "FAIL"; reason = "Candidate query frame advanced before the request"; expected_frame_identity = Get-FrameIdentity $Frame; before_frame_identity = Get-FrameIdentity $before }
+  }
+  if (-not [bool]$Frame.State.experimental_imm32 -or $null -eq $Frame.State.native_owner -or -not [bool]$Frame.State.native_owner.composing) {
+    return [ordered]@{ status = "FAIL"; reason = "Candidate geometry requires the matching composing native-owner frame"; source_frame_identity = Get-FrameIdentity $Frame }
+  }
+  $candidate = [PaletteE2E.Win32]::QueryCandidate($hwnd, [uint32]$Owner.pid, [uint32]$Owner.thread_id, [long]$Owner.start_ticks, [string]$Owner.executable, [string]$Owner.executable_sha256, [uint32]$Owner.bridge_nonce, 0, 1500)
+  Assert-OwnedForeground $Owner | Out-Null
+  $after = $null
+  try { $after = Get-CurrentFrame $Owner } catch { return [ordered]@{ status = "FAIL"; reason = "No stable frame was available after owner-thread candidate query"; error = $_.Exception.Message; before_frame_identity = Get-FrameIdentity $before } }
+  if ((Get-FrameIdentity $before) -cne (Get-FrameIdentity $after)) {
+    return [ordered]@{ status = "FAIL"; reason = "Observer frame changed across owner-thread candidate query"; before_frame_identity = Get-FrameIdentity $before; after_frame_identity = Get-FrameIdentity $after }
+  }
+  if (-not $candidate.HasContext -or -not $candidate.QuerySucceeded) { return [ordered]@{ status = "FAIL"; reason = "Owner-thread ImmGetCandidateWindow query failed"; bridge_status = $candidate.Status; win32_error = $candidate.LastError; bridge_request_id = $candidate.BridgeRequestId; target_process_id = $candidate.TargetProcessId; target_thread_id = $candidate.TargetThreadId; source_frame_identity = Get-FrameIdentity $Frame } }
   $caret = $Frame.State.caret; $scale = [double]$Frame.State.viewport.scale
   $expectedX = [int][Math]::Floor(([double]$caret.x * $scale) + 0.5)
   $expectedY = [int][Math]::Floor((([double]$caret.y + [double]$caret.height) * $scale) + 0.5)
@@ -1074,6 +1109,12 @@ function Query-CandidateGeometry {
     source_frame_event_sequence = [long]$Frame.Complete.event_sequence
     source_frame_identity = Get-FrameIdentity $Frame
     source_semantic_identity = Get-CaptureSemanticIdentity $Frame.State
+    bridge_request_id = [long]$candidate.BridgeRequestId
+    target_process_id = [uint32]$candidate.TargetProcessId
+    target_thread_id = [uint32]$candidate.TargetThreadId
+    owner_process_id = [uint32]$candidate.OwnerProcessId
+    owner_thread_id = [uint32]$candidate.OwnerThreadId
+    query_transport = "bounded scalar WM_APP snapshot handled by the owned HWND thread"
     style = [uint32]$candidate.Style
     candidate_index = [uint32]$candidate.Index
     position_client_physical = @([int]$candidate.X, [int]$candidate.Y)
@@ -1128,7 +1169,8 @@ function Restore-OwnedIme {
     if ($layoutRestored -and [bool]$script:imeOriginal.state.has_context) {
       Assert-DefaultInputDesktop "IMM32 state restoration" | Out-Null
       Assert-OwnedForeground $Owner | Out-Null
-      $called = [PaletteE2E.Win32]::RestoreIme($hwnd, [bool]$script:imeOriginal.state.open, [bool]$script:imeOriginal.state.conversion_valid, [uint32]$script:imeOriginal.state.conversion_mode, [uint32]$script:imeOriginal.state.sentence_mode, [ref]$stateError)
+      $hwnd = Assert-OwnedForeground $Owner -PassThru
+      $called = [PaletteE2E.Win32]::RestoreIme($hwnd, [uint32]$Owner.pid, [uint32]$Owner.thread_id, [long]$Owner.start_ticks, [string]$Owner.executable, [string]$Owner.executable_sha256, [uint32]$Owner.bridge_nonce, [bool]$script:imeOriginal.state.open, [bool]$script:imeOriginal.state.conversion_valid, [uint32]$script:imeOriginal.state.conversion_mode, [uint32]$script:imeOriginal.state.sentence_mode, 1500, [ref]$stateError)
       $after = Get-ImeSnapshot $Owner
       $matches = $called -and $after.open -eq [bool]$script:imeOriginal.state.open -and
         $after.conversion_valid -eq [bool]$script:imeOriginal.state.conversion_valid -and
@@ -1736,6 +1778,10 @@ function Invoke-OwnershipGuardTests {
   $frameWaitBody = ($functions | Where-Object { $_.Name -eq "Wait-ForFrame" } | Select-Object -First 1).Body.Extent.Text
   $captureBody = ($functions | Where-Object { $_.Name -eq "Capture-OwnedClient" } | Select-Object -First 1).Body.Extent.Text
   $captureCoreBody = ($functions | Where-Object { $_.Name -eq "Capture-OwnedClientCore" } | Select-Object -First 1).Body.Extent.Text
+  $imeSnapshotBody = ($functions | Where-Object { $_.Name -eq "Get-ImeSnapshot" } | Select-Object -First 1).Body.Extent.Text
+  $candidateBody = ($functions | Where-Object { $_.Name -eq "Query-CandidateGeometry" } | Select-Object -First 1).Body.Extent.Text
+  $restoreImeBody = ($functions | Where-Object { $_.Name -eq "Restore-OwnedIme" } | Select-Object -First 1).Body.Extent.Text
+  $startFixtureBody = ($functions | Where-Object { $_.Name -eq "Start-OwnedFixture" } | Select-Object -First 1).Body.Extent.Text
   if ([string]::IsNullOrEmpty($inputBody) -or $inputBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -lt 0 -or
       $inputBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -gt $inputBody.IndexOf("SendEvents(", [StringComparison]::Ordinal)) {
     throw "Input path no longer validates exact process ownership before SendInput."
@@ -1760,6 +1806,48 @@ function Invoke-OwnershipGuardTests {
       [string]::IsNullOrEmpty($captureCoreBody) -or $captureCoreBody -notmatch 'Get-CaptureBracketDecision' -or
       $captureCoreBody -notmatch 'Test-CandidateGeometryMatchesFrame') {
     throw "Runtime pixel capture must use bounded semantic settling, strict frame bracketing, and candidate-geometry provenance checks."
+  }
+  if (-not [PaletteE2E.Win32]::ValidateImeBridgeProtocol()) { throw "Scalar owner-thread IMM bridge request packing/status protocol failed its deterministic regression." }
+  $interopSource = [IO.File]::ReadAllText($interop)
+  if ($interopSource -match 'ImmGetContext|ImmReleaseContext|ImmGetOpenStatus|ImmSetOpenStatus|ImmGetConversionStatus|ImmSetConversionStatus|ImmGetCandidateWindow') {
+    throw "E2E helper must not call IMM32 directly from the driver thread."
+  }
+  if ($interopSource -notmatch 'SendMessageTimeoutW' -or $interopSource -notmatch 'SMTO_ABORTIFHUNG' -or
+      $interopSource -notmatch 'SMTO_ERRORONEXIT' -or $interopSource -notmatch 'VerifyImeBridgeTarget') {
+    throw "E2E IMM transport lost its bounded scalar request or exact target checks."
+  }
+  if ([string]::IsNullOrEmpty($imeSnapshotBody) -or
+      $imeSnapshotBody.IndexOf('Assert-DefaultInputDesktop', [StringComparison]::Ordinal) -gt $imeSnapshotBody.IndexOf('QueryIme(', [StringComparison]::Ordinal) -or
+      $imeSnapshotBody.IndexOf('Assert-OwnedForeground', [StringComparison]::Ordinal) -gt $imeSnapshotBody.IndexOf('QueryIme(', [StringComparison]::Ordinal) -or
+      $imeSnapshotBody.LastIndexOf('Assert-OwnedForeground', [StringComparison]::Ordinal) -lt $imeSnapshotBody.IndexOf('QueryIme(', [StringComparison]::Ordinal)) {
+    throw "IME snapshot path must check Default desktop and exact foreground before and after the bridge query."
+  }
+  if ([string]::IsNullOrEmpty($candidateBody) -or
+      $candidateBody.IndexOf('Get-CurrentFrame $Owner', [StringComparison]::Ordinal) -gt $candidateBody.IndexOf('QueryCandidate(', [StringComparison]::Ordinal) -or
+      $candidateBody.LastIndexOf('Get-CurrentFrame $Owner', [StringComparison]::Ordinal) -lt $candidateBody.IndexOf('QueryCandidate(', [StringComparison]::Ordinal) -or
+      $candidateBody -notmatch 'Assert-OwnedForeground' -or $candidateBody -notmatch 'Assert-DefaultInputDesktop') {
+    throw "Candidate query must stay bracketed by the matching stable frame and exact owned foreground on Default desktop."
+  }
+  if ([string]::IsNullOrEmpty($restoreImeBody) -or
+      $restoreImeBody.IndexOf('Assert-OwnedForeground $Owner', [StringComparison]::Ordinal) -gt $restoreImeBody.IndexOf('RestoreIme(', [StringComparison]::Ordinal) -or
+      $restoreImeBody -notmatch 'Assert-DefaultInputDesktop') {
+    throw "IME restoration must validate the exact owned foreground and desktop before its owner-thread setter."
+  }
+  $nativeBridgeSource = [IO.File]::ReadAllText((Join-Path $repo 'windows/text_input.inc'))
+  if ($nativeBridgeSource -notmatch 'GetCurrentThreadId\(\)\s*!=\s*host->owner_thread' -or
+      $nativeBridgeSource -notmatch 'gpui_ime_bridge_read_candidate_field' -or
+      $nativeBridgeSource -notmatch 'GPUI_IME_BRIDGE_STATUS_STALE_SNAPSHOT' -or
+      $nativeBridgeSource -notmatch 'request_nonce\s*!=\s*host->ime_bridge_nonce' -or
+      $nativeBridgeSource.IndexOf('request_nonce != host->ime_bridge_nonce', [StringComparison]::Ordinal) -gt
+        $nativeBridgeSource.IndexOf('switch ((int32_t)operation)', [StringComparison]::Ordinal)) {
+    throw "Native bridge must authenticate the scalar nonce before dispatch, enforce owner-thread dispatch, and preserve snapshot-ID coherence."
+  }
+  if ([string]::IsNullOrEmpty($startFixtureBody) -or
+      $startFixtureBody -notmatch 'RandomNumberGenerator\]::Fill' -or
+      $startFixtureBody -notmatch 'GPUI_WINDOWS_COMMAND_PALETTE_IME_NONCE' -or
+      $startFixtureBody -notmatch 'bridge_nonce\s*=\s*\$bridgeNonce' -or
+      $startFixtureBody -notmatch 'finally') {
+    throw "IME fixture startup must create a per-run nonzero bridge nonce, pass it only to the child environment, and restore the parent environment."
   }
 }
 
@@ -1828,7 +1916,7 @@ function Test-ImeGuardDelta {
 
 if ($Mode -eq "Validate") {
   Invoke-ParserTests
-  [ordered]@{ status = "PASS"; input_size = [PaletteE2E.Win32]::InputStructureSize(); process_bits = [IntPtr]::Size * 8; input_events = 0; fixtures_launched = 0; tests = @("valid open observer tuple and disabled option", "filtered Go command.1/index0 observer identity", "filtered Japanese command.3/index0 observer identity", "retained closed STATE/COMPLETE wire shape", "actual P43 open-empty and P44 closed-empty frames parse explicit active_index:null", "reject missing active-index/id keys, empty/string/multiple arrays, Some/None mismatches and stale P43 readback", "reject mismatched completion/readback identity", "reject accepted/state query mismatch", "reject READBACK_UNAVAILABLE", "reject newer incomplete accepted/state frame", "Option None/single-index/malformed multi-index cases", "IME guard deltas: OS-consumed 0/0, app-guarded 1/1, and app-delivered Escape release 0/1", "scroll capture adopts equivalent presentation 31 after expected presentation 30 with only native update count changed", "reject leaked background/guarded key counters and changed IMM32/native owner/native record provenance before capture", "capture callback failure is retained as a terminal frame-identified attempt", "scroll capture rejects active-row semantic change and preserves 30→31 strict identity retry", "pending and persistent frame advancement time out without a green capture", "candidate geometry remains tied to the matching semantic caret state", "runtime capture uses bounded semantic settle and exact before/after identity", "blank-caption GPUI discovery ignores same-PID console and other-PID/invisible decoys", "ambiguous multiple same-PID GPUI windows rejected", "wrong start ticks/executable/hash/missing HWND/zero HWND rejected before input", "native QueryFullProcessImageNameW PID path plus SHA-256 ownership guard, including nonexistent-PID failure", "source ordering proves owner validation before SendInput and WM_CLOSE", "empty/missing stderr child-exit diagnostics preserve the process cause", "validated input-event total helper covers retained 25/58/58 array, zero batches, partial insertion, malformed counts, and unchanged per-batch guard") } | ConvertTo-Json -Depth 6
+  [ordered]@{ status = "PASS"; input_size = [PaletteE2E.Win32]::InputStructureSize(); process_bits = [IntPtr]::Size * 8; input_events = 0; fixtures_launched = 0; tests = @("valid open observer tuple and disabled option", "filtered Go command.1/index0 observer identity", "filtered Japanese command.3/index0 observer identity", "retained closed STATE/COMPLETE wire shape", "actual P43 open-empty and P44 closed-empty frames parse explicit active_index:null", "reject missing active-index/id keys, empty/string/multiple arrays, Some/None mismatches and stale P43 readback", "reject mismatched completion/readback identity", "reject accepted/state query mismatch", "reject READBACK_UNAVAILABLE", "reject newer incomplete accepted/state frame", "Option None/single-index/malformed multi-index cases", "IME guard deltas: OS-consumed 0/0, app-guarded 1/1, and app-delivered Escape release 0/1", "scroll capture adopts equivalent presentation 31 after expected presentation 30 with only native update count changed", "reject leaked background/guarded key counters and changed IMM32/native owner/native record provenance before capture", "capture callback failure is retained as a terminal frame-identified attempt", "scroll capture rejects active-row semantic change and preserves 30→31 strict identity retry", "pending and persistent frame advancement time out without a green capture", "candidate geometry remains tied to the matching semantic caret state", "runtime capture uses bounded semantic settling and exact before/after identity", "blank-caption GPUI discovery ignores same-PID console and other-PID/invisible decoys", "ambiguous multiple same-PID GPUI windows rejected", "wrong start ticks/executable/hash/missing HWND/zero HWND rejected before input", "native QueryFullProcessImageNameW PID path plus SHA-256 ownership guard, including nonexistent-PID failure", "source ordering proves owner validation before SendInput and WM_CLOSE", "empty/missing stderr child-exit diagnostics preserve the process cause", "validated input-event total helper covers retained 25/58/58 array, zero batches, partial insertion, malformed counts, and unchanged per-batch guard", "IMM32 state, candidate form, and restore use bounded scalar owner-thread bridge with per-run nonce, target PID/thread, desktop, foreground, frame, and snapshot IDs checked") } | ConvertTo-Json -Depth 6
   return
 }
 

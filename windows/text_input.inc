@@ -26,6 +26,51 @@ static BOOL gpui_text_session_dispatch_fenced(gpui_windows_host *host);
 #define GPUI_TEXT_MAX_PENDING_BYTES (1024 * 1024)
 #define GPUI_TEXT_MAX_UTF16_UNITS 4096
 
+/* Opt-in test-only scalar message bridge. WM_APP messages are not marshaled
+ * across processes, so every argument/result below is an integer value. IMM32
+ * calls and coherent snapshots run here on the HWND owner thread. */
+#define GPUI_IME_BRIDGE_QUERY_IME 1
+#define GPUI_IME_BRIDGE_GET_IME_FIELD 2
+#define GPUI_IME_BRIDGE_QUERY_CANDIDATE 3
+#define GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD 4
+#define GPUI_IME_BRIDGE_SET_OPEN 5
+#define GPUI_IME_BRIDGE_SET_CONVERSION 6
+
+#define GPUI_IME_BRIDGE_STATUS_OK 0
+#define GPUI_IME_BRIDGE_STATUS_NO_CONTEXT 1
+#define GPUI_IME_BRIDGE_STATUS_IMM_UNAVAILABLE 2
+#define GPUI_IME_BRIDGE_STATUS_QUERY_FAILED 3
+#define GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST 4
+#define GPUI_IME_BRIDGE_STATUS_STALE_SNAPSHOT 5
+#define GPUI_IME_BRIDGE_STATUS_NOT_FOCUSED 6
+#define GPUI_IME_BRIDGE_STATUS_SET_FAILED 7
+#define GPUI_IME_BRIDGE_STATUS_WRONG_THREAD 8
+#define GPUI_IME_BRIDGE_STATUS_UNAUTHORIZED 9
+
+#define GPUI_IME_BRIDGE_IME_STATUS 1
+#define GPUI_IME_BRIDGE_IME_ERROR 2
+#define GPUI_IME_BRIDGE_IME_HAS_CONTEXT 3
+#define GPUI_IME_BRIDGE_IME_OPEN 4
+#define GPUI_IME_BRIDGE_IME_CONVERSION_VALID 5
+#define GPUI_IME_BRIDGE_IME_CONVERSION_MODE 6
+#define GPUI_IME_BRIDGE_IME_SENTENCE_MODE 7
+#define GPUI_IME_BRIDGE_IME_PROCESS_ID 8
+#define GPUI_IME_BRIDGE_IME_THREAD_ID 9
+
+#define GPUI_IME_BRIDGE_CANDIDATE_STATUS 1
+#define GPUI_IME_BRIDGE_CANDIDATE_ERROR 2
+#define GPUI_IME_BRIDGE_CANDIDATE_HAS_CONTEXT 3
+#define GPUI_IME_BRIDGE_CANDIDATE_INDEX 4
+#define GPUI_IME_BRIDGE_CANDIDATE_STYLE 5
+#define GPUI_IME_BRIDGE_CANDIDATE_X 6
+#define GPUI_IME_BRIDGE_CANDIDATE_Y 7
+#define GPUI_IME_BRIDGE_CANDIDATE_LEFT 8
+#define GPUI_IME_BRIDGE_CANDIDATE_TOP 9
+#define GPUI_IME_BRIDGE_CANDIDATE_RIGHT 10
+#define GPUI_IME_BRIDGE_CANDIDATE_BOTTOM 11
+#define GPUI_IME_BRIDGE_CANDIDATE_PROCESS_ID 12
+#define GPUI_IME_BRIDGE_CANDIDATE_THREAD_ID 13
+
 typedef HIMC(WINAPI *gpui_imm_get_context_fn)(HWND);
 typedef BOOL(WINAPI *gpui_imm_release_context_fn)(HWND, HIMC);
 typedef HIMC(WINAPI *gpui_imm_associate_context_fn)(HWND, HIMC);
@@ -36,6 +81,13 @@ typedef BOOL(WINAPI *gpui_imm_set_composition_window_fn)(HIMC,
 typedef BOOL(WINAPI *gpui_imm_set_candidate_window_fn)(HIMC,
                                                        LPCANDIDATEFORM);
 typedef BOOL(WINAPI *gpui_imm_notify_ime_fn)(HIMC, DWORD, DWORD, DWORD);
+typedef BOOL(WINAPI *gpui_imm_get_open_status_fn)(HIMC);
+typedef BOOL(WINAPI *gpui_imm_set_open_status_fn)(HIMC, BOOL);
+typedef BOOL(WINAPI *gpui_imm_get_conversion_status_fn)(HIMC, LPDWORD,
+                                                        LPDWORD);
+typedef BOOL(WINAPI *gpui_imm_set_conversion_status_fn)(HIMC, DWORD, DWORD);
+typedef BOOL(WINAPI *gpui_imm_get_candidate_window_fn)(HIMC, DWORD,
+                                                      LPCANDIDATEFORM);
 
 typedef struct gpui_imm_api {
   HMODULE module;
@@ -46,6 +98,11 @@ typedef struct gpui_imm_api {
   gpui_imm_set_composition_window_fn set_composition_window;
   gpui_imm_set_candidate_window_fn set_candidate_window;
   gpui_imm_notify_ime_fn notify_ime;
+  gpui_imm_get_open_status_fn get_open_status;
+  gpui_imm_set_open_status_fn set_open_status;
+  gpui_imm_get_conversion_status_fn get_conversion_status;
+  gpui_imm_set_conversion_status_fn set_conversion_status;
+  gpui_imm_get_candidate_window_fn get_candidate_window;
 } gpui_imm_api;
 
 typedef struct gpui_text_session_state {
@@ -127,9 +184,381 @@ static int32_t gpui_text_imm_init(void) {
   GPUI_IMM_LOAD(set_candidate_window, gpui_imm_set_candidate_window_fn,
                 "ImmSetCandidateWindow");
   GPUI_IMM_LOAD(notify_ime, gpui_imm_notify_ime_fn, "ImmNotifyIME");
+  GPUI_IMM_LOAD(get_open_status, gpui_imm_get_open_status_fn,
+                "ImmGetOpenStatus");
+  GPUI_IMM_LOAD(set_open_status, gpui_imm_set_open_status_fn,
+                "ImmSetOpenStatus");
+  GPUI_IMM_LOAD(get_conversion_status,
+                gpui_imm_get_conversion_status_fn,
+                "ImmGetConversionStatus");
+  GPUI_IMM_LOAD(set_conversion_status,
+                gpui_imm_set_conversion_status_fn,
+                "ImmSetConversionStatus");
+  GPUI_IMM_LOAD(get_candidate_window, gpui_imm_get_candidate_window_fn,
+                "ImmGetCandidateWindow");
 #undef GPUI_IMM_LOAD
   g_gpui_imm = api;
   return GPUI_WINDOWS_OK;
+}
+
+static int32_t gpui_ime_bridge_next_id(gpui_windows_host *host) {
+  if (!host)
+    return 0;
+  if (host->ime_bridge_next_id >= INT32_MAX)
+    host->ime_bridge_next_id = 0;
+  host->ime_bridge_next_id++;
+  return host->ime_bridge_next_id;
+}
+
+static LRESULT gpui_ime_bridge_error(int32_t status) {
+  return (LRESULT)(intptr_t)(status > 0 ? -status : -1);
+}
+
+static LRESULT gpui_ime_bridge_read_ime_field(gpui_windows_host *host,
+                                              WPARAM field,
+                                              LPARAM snapshot_id) {
+  if ((ULONG_PTR)snapshot_id == 0 ||
+      (ULONG_PTR)snapshot_id > (ULONG_PTR)INT32_MAX ||
+      (int32_t)snapshot_id != host->ime_bridge_ime_id)
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_STALE_SNAPSHOT);
+  switch ((int32_t)field) {
+  case GPUI_IME_BRIDGE_IME_STATUS:
+    return host->ime_bridge_ime_status;
+  case GPUI_IME_BRIDGE_IME_ERROR:
+    return (LRESULT)(ULONG_PTR)host->ime_bridge_ime_error;
+  case GPUI_IME_BRIDGE_IME_HAS_CONTEXT:
+    return host->ime_bridge_ime_has_context ? 1 : 0;
+  case GPUI_IME_BRIDGE_IME_OPEN:
+    if (!host->ime_bridge_ime_has_context)
+      return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_NO_CONTEXT);
+    return host->ime_bridge_ime_open ? 1 : 0;
+  case GPUI_IME_BRIDGE_IME_CONVERSION_VALID:
+    if (!host->ime_bridge_ime_has_context)
+      return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_NO_CONTEXT);
+    return host->ime_bridge_ime_conversion_valid ? 1 : 0;
+  case GPUI_IME_BRIDGE_IME_CONVERSION_MODE:
+    if (!host->ime_bridge_ime_has_context)
+      return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_NO_CONTEXT);
+    return (LRESULT)(ULONG_PTR)host->ime_bridge_ime_conversion_mode;
+  case GPUI_IME_BRIDGE_IME_SENTENCE_MODE:
+    if (!host->ime_bridge_ime_has_context)
+      return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_NO_CONTEXT);
+    return (LRESULT)(ULONG_PTR)host->ime_bridge_ime_sentence_mode;
+  case GPUI_IME_BRIDGE_IME_PROCESS_ID:
+    return (LRESULT)(ULONG_PTR)host->ime_bridge_ime_process_id;
+  case GPUI_IME_BRIDGE_IME_THREAD_ID:
+    return (LRESULT)(ULONG_PTR)host->ime_bridge_ime_thread_id;
+  default:
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+  }
+}
+
+static LRESULT gpui_ime_bridge_read_candidate_field(gpui_windows_host *host,
+                                                     WPARAM field,
+                                                     LPARAM snapshot_id) {
+  if ((ULONG_PTR)snapshot_id == 0 ||
+      (ULONG_PTR)snapshot_id > (ULONG_PTR)INT32_MAX ||
+      (int32_t)snapshot_id != host->ime_bridge_candidate_id)
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_STALE_SNAPSHOT);
+  switch ((int32_t)field) {
+  case GPUI_IME_BRIDGE_CANDIDATE_STATUS:
+    return host->ime_bridge_candidate_status;
+  case GPUI_IME_BRIDGE_CANDIDATE_ERROR:
+    return (LRESULT)(ULONG_PTR)host->ime_bridge_candidate_error;
+  case GPUI_IME_BRIDGE_CANDIDATE_HAS_CONTEXT:
+    return host->ime_bridge_candidate_has_context ? 1 : 0;
+  case GPUI_IME_BRIDGE_CANDIDATE_INDEX:
+    if (host->ime_bridge_candidate_status != GPUI_IME_BRIDGE_STATUS_OK)
+      return gpui_ime_bridge_error(host->ime_bridge_candidate_status);
+    return (LRESULT)(ULONG_PTR)host->ime_bridge_candidate_index;
+  case GPUI_IME_BRIDGE_CANDIDATE_STYLE:
+    if (host->ime_bridge_candidate_status != GPUI_IME_BRIDGE_STATUS_OK)
+      return gpui_ime_bridge_error(host->ime_bridge_candidate_status);
+    return (LRESULT)(ULONG_PTR)host->ime_bridge_candidate_style;
+  case GPUI_IME_BRIDGE_CANDIDATE_X:
+    if (host->ime_bridge_candidate_status != GPUI_IME_BRIDGE_STATUS_OK)
+      return gpui_ime_bridge_error(host->ime_bridge_candidate_status);
+    return (LRESULT)host->ime_bridge_candidate_position.x;
+  case GPUI_IME_BRIDGE_CANDIDATE_Y:
+    if (host->ime_bridge_candidate_status != GPUI_IME_BRIDGE_STATUS_OK)
+      return gpui_ime_bridge_error(host->ime_bridge_candidate_status);
+    return (LRESULT)host->ime_bridge_candidate_position.y;
+  case GPUI_IME_BRIDGE_CANDIDATE_LEFT:
+    if (host->ime_bridge_candidate_status != GPUI_IME_BRIDGE_STATUS_OK)
+      return gpui_ime_bridge_error(host->ime_bridge_candidate_status);
+    return (LRESULT)host->ime_bridge_candidate_area.left;
+  case GPUI_IME_BRIDGE_CANDIDATE_TOP:
+    if (host->ime_bridge_candidate_status != GPUI_IME_BRIDGE_STATUS_OK)
+      return gpui_ime_bridge_error(host->ime_bridge_candidate_status);
+    return (LRESULT)host->ime_bridge_candidate_area.top;
+  case GPUI_IME_BRIDGE_CANDIDATE_RIGHT:
+    if (host->ime_bridge_candidate_status != GPUI_IME_BRIDGE_STATUS_OK)
+      return gpui_ime_bridge_error(host->ime_bridge_candidate_status);
+    return (LRESULT)host->ime_bridge_candidate_area.right;
+  case GPUI_IME_BRIDGE_CANDIDATE_BOTTOM:
+    if (host->ime_bridge_candidate_status != GPUI_IME_BRIDGE_STATUS_OK)
+      return gpui_ime_bridge_error(host->ime_bridge_candidate_status);
+    return (LRESULT)host->ime_bridge_candidate_area.bottom;
+  case GPUI_IME_BRIDGE_CANDIDATE_PROCESS_ID:
+    return (LRESULT)(ULONG_PTR)host->ime_bridge_candidate_process_id;
+  case GPUI_IME_BRIDGE_CANDIDATE_THREAD_ID:
+    return (LRESULT)(ULONG_PTR)host->ime_bridge_candidate_thread_id;
+  default:
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+  }
+}
+
+static LRESULT gpui_text_ime_bridge_query(gpui_windows_host *host,
+                                          HWND hwnd) {
+  host->ime_bridge_ime_id = 0;
+  host->ime_bridge_ime_status = GPUI_IME_BRIDGE_STATUS_IMM_UNAVAILABLE;
+  host->ime_bridge_ime_error = 0;
+  host->ime_bridge_ime_has_context = FALSE;
+  host->ime_bridge_ime_open = FALSE;
+  host->ime_bridge_ime_conversion_valid = FALSE;
+  host->ime_bridge_ime_conversion_mode = 0;
+  host->ime_bridge_ime_sentence_mode = 0;
+  host->ime_bridge_ime_process_id = GetCurrentProcessId();
+  host->ime_bridge_ime_thread_id = GetCurrentThreadId();
+  SetLastError(ERROR_SUCCESS);
+  if (gpui_text_imm_init() != GPUI_WINDOWS_OK) {
+    host->ime_bridge_ime_error = GetLastError();
+    return gpui_ime_bridge_error(
+        GPUI_IME_BRIDGE_STATUS_IMM_UNAVAILABLE);
+  }
+  int32_t snapshot_id = gpui_ime_bridge_next_id(host);
+  if (snapshot_id <= 0)
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+  host->ime_bridge_ime_id = snapshot_id;
+  SetLastError(ERROR_SUCCESS);
+  HIMC context = g_gpui_imm.get_context(hwnd);
+  if (!context) {
+    host->ime_bridge_ime_status = GPUI_IME_BRIDGE_STATUS_NO_CONTEXT;
+    host->ime_bridge_ime_error = GetLastError();
+    return snapshot_id;
+  }
+  host->ime_bridge_ime_has_context = TRUE;
+  host->ime_bridge_ime_open =
+      g_gpui_imm.get_open_status(context) ? TRUE : FALSE;
+  DWORD conversion = 0;
+  DWORD sentence = 0;
+  SetLastError(ERROR_SUCCESS);
+  BOOL conversion_valid =
+      g_gpui_imm.get_conversion_status(context, &conversion, &sentence);
+  DWORD query_error = conversion_valid ? 0 : GetLastError();
+  SetLastError(ERROR_SUCCESS);
+  BOOL released = g_gpui_imm.release_context(hwnd, context);
+  if (!released && query_error == 0)
+    query_error = GetLastError();
+  host->ime_bridge_ime_conversion_valid = conversion_valid;
+  if (host->ime_bridge_ime_conversion_valid) {
+    host->ime_bridge_ime_conversion_mode = conversion;
+    host->ime_bridge_ime_sentence_mode = sentence;
+  }
+  host->ime_bridge_ime_error = query_error;
+  host->ime_bridge_ime_status = conversion_valid && released
+                                    ? GPUI_IME_BRIDGE_STATUS_OK
+                                    : GPUI_IME_BRIDGE_STATUS_QUERY_FAILED;
+  return snapshot_id;
+}
+
+static LRESULT gpui_text_ime_bridge_candidate(gpui_windows_host *host,
+                                              HWND hwnd, WPARAM candidate) {
+  host->ime_bridge_candidate_id = 0;
+  host->ime_bridge_candidate_status =
+      GPUI_IME_BRIDGE_STATUS_IMM_UNAVAILABLE;
+  host->ime_bridge_candidate_error = 0;
+  host->ime_bridge_candidate_has_context = FALSE;
+  host->ime_bridge_candidate_process_id = GetCurrentProcessId();
+  host->ime_bridge_candidate_thread_id = GetCurrentThreadId();
+  host->ime_bridge_candidate_index = 0;
+  host->ime_bridge_candidate_style = 0;
+  ZeroMemory(&host->ime_bridge_candidate_position,
+             sizeof(host->ime_bridge_candidate_position));
+  ZeroMemory(&host->ime_bridge_candidate_area,
+             sizeof(host->ime_bridge_candidate_area));
+  if ((ULONG_PTR)candidate > 3)
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+  SetLastError(ERROR_SUCCESS);
+  if (gpui_text_imm_init() != GPUI_WINDOWS_OK) {
+    host->ime_bridge_candidate_error = GetLastError();
+    return gpui_ime_bridge_error(
+        GPUI_IME_BRIDGE_STATUS_IMM_UNAVAILABLE);
+  }
+  int32_t snapshot_id = gpui_ime_bridge_next_id(host);
+  if (snapshot_id <= 0)
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+  host->ime_bridge_candidate_id = snapshot_id;
+  SetLastError(ERROR_SUCCESS);
+  HIMC context = g_gpui_imm.get_context(hwnd);
+  if (!context) {
+    host->ime_bridge_candidate_status =
+        GPUI_IME_BRIDGE_STATUS_NO_CONTEXT;
+    host->ime_bridge_candidate_error = GetLastError();
+    return snapshot_id;
+  }
+  host->ime_bridge_candidate_has_context = TRUE;
+  CANDIDATEFORM form;
+  ZeroMemory(&form, sizeof(form));
+  form.dwIndex = (DWORD)candidate;
+  SetLastError(ERROR_SUCCESS);
+  BOOL success = g_gpui_imm.get_candidate_window(context, (DWORD)candidate,
+                                                 &form);
+  DWORD query_error = success ? 0 : GetLastError();
+  SetLastError(ERROR_SUCCESS);
+  BOOL released = g_gpui_imm.release_context(hwnd, context);
+  if (!released && query_error == 0)
+    query_error = GetLastError();
+  host->ime_bridge_candidate_error = query_error;
+  if (!success || !released) {
+    host->ime_bridge_candidate_status =
+        GPUI_IME_BRIDGE_STATUS_QUERY_FAILED;
+    return snapshot_id;
+  }
+  host->ime_bridge_candidate_status = GPUI_IME_BRIDGE_STATUS_OK;
+  host->ime_bridge_candidate_index = form.dwIndex;
+  host->ime_bridge_candidate_style = form.dwStyle;
+  host->ime_bridge_candidate_position = form.ptCurrentPos;
+  host->ime_bridge_candidate_area = form.rcArea;
+  return snapshot_id;
+}
+
+static LRESULT gpui_text_ime_bridge_set_open(gpui_windows_host *host,
+                                             HWND hwnd, WPARAM open) {
+  if ((ULONG_PTR)open > 1)
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+  if (!host->api.get_focus || host->api.get_focus() != hwnd)
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_NOT_FOCUSED);
+  if (gpui_text_imm_init() != GPUI_WINDOWS_OK)
+    return gpui_ime_bridge_error(
+        GPUI_IME_BRIDGE_STATUS_IMM_UNAVAILABLE);
+  SetLastError(ERROR_SUCCESS);
+  HIMC context = g_gpui_imm.get_context(hwnd);
+  if (!context)
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_NO_CONTEXT);
+  SetLastError(ERROR_SUCCESS);
+  BOOL success = g_gpui_imm.set_open_status(context, open != 0);
+  DWORD error = success ? 0 : GetLastError();
+  SetLastError(ERROR_SUCCESS);
+  BOOL released = g_gpui_imm.release_context(hwnd, context);
+  if (!released && error == 0)
+    error = GetLastError();
+  if (!success || !released) {
+    host->ime_bridge_ime_error = error;
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_SET_FAILED);
+  }
+  return 1;
+}
+
+static LRESULT gpui_text_ime_bridge_set_conversion(gpui_windows_host *host,
+                                                    HWND hwnd,
+                                                    WPARAM conversion,
+                                                    LPARAM sentence) {
+  if (!host->api.get_focus || host->api.get_focus() != hwnd)
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_NOT_FOCUSED);
+  if (gpui_text_imm_init() != GPUI_WINDOWS_OK)
+    return gpui_ime_bridge_error(
+        GPUI_IME_BRIDGE_STATUS_IMM_UNAVAILABLE);
+  SetLastError(ERROR_SUCCESS);
+  HIMC context = g_gpui_imm.get_context(hwnd);
+  if (!context)
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_NO_CONTEXT);
+  SetLastError(ERROR_SUCCESS);
+  BOOL success = g_gpui_imm.set_conversion_status(
+      context, (DWORD)(ULONG_PTR)conversion, (DWORD)(ULONG_PTR)sentence);
+  DWORD error = success ? 0 : GetLastError();
+  SetLastError(ERROR_SUCCESS);
+  BOOL released = g_gpui_imm.release_context(hwnd, context);
+  if (!released && error == 0)
+    error = GetLastError();
+  if (!success || !released) {
+    host->ime_bridge_ime_error = error;
+    return gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_SET_FAILED);
+  }
+  return 1;
+}
+
+static BOOL gpui_text_ime_bridge_wndproc(gpui_windows_host *host, HWND hwnd,
+                                          UINT message, WPARAM wparam,
+                                          LPARAM lparam, LRESULT *result) {
+  if (message != GPUI_IME_BRIDGE_MESSAGE || !host ||
+      !host->ime_bridge_enabled)
+    return FALSE;
+  if (!result)
+    return TRUE;
+  if (host != &g_host || hwnd != host->hwnd || GetCurrentThreadId() !=
+                                                  host->owner_thread) {
+    *result = gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_WRONG_THREAD);
+    return TRUE;
+  }
+#if defined(_WIN64)
+  uint32_t request_nonce = (uint32_t)((ULONG_PTR)wparam >> 32);
+#else
+  uint32_t request_nonce = 0;
+#endif
+  if (host->ime_bridge_nonce == 0 || request_nonce != host->ime_bridge_nonce) {
+    *result = gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_UNAUTHORIZED);
+    return TRUE;
+  }
+  if (host->destroying || host->state != 0) {
+    *result = gpui_ime_bridge_error(GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+    return TRUE;
+  }
+  uint32_t request = (uint32_t)(ULONG_PTR)wparam;
+  uint32_t operation = LOWORD(request);
+  uint32_t field = HIWORD(request);
+  switch ((int32_t)operation) {
+  case GPUI_IME_BRIDGE_QUERY_IME:
+    if (field != 0 || lparam != 0) {
+      *result = gpui_ime_bridge_error(
+          GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+      return TRUE;
+    }
+    *result = gpui_text_ime_bridge_query(host, hwnd);
+    return TRUE;
+  case GPUI_IME_BRIDGE_GET_IME_FIELD:
+    *result = gpui_ime_bridge_read_ime_field(host, (WPARAM)field, lparam);
+    return TRUE;
+  case GPUI_IME_BRIDGE_QUERY_CANDIDATE:
+    if (field != 0) {
+      *result = gpui_ime_bridge_error(
+          GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+      return TRUE;
+    }
+    *result = gpui_text_ime_bridge_candidate(host, hwnd, lparam);
+    return TRUE;
+  case GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD:
+    *result = gpui_ime_bridge_read_candidate_field(host, (WPARAM)field,
+                                                   lparam);
+    return TRUE;
+  case GPUI_IME_BRIDGE_SET_OPEN:
+    if (field != 0) {
+      *result = gpui_ime_bridge_error(
+          GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+      return TRUE;
+    }
+    *result = gpui_text_ime_bridge_set_open(host, hwnd, lparam);
+    return TRUE;
+  case GPUI_IME_BRIDGE_SET_CONVERSION:
+#if defined(_WIN64)
+    if (field != 0) {
+      *result = gpui_ime_bridge_error(
+          GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+      return TRUE;
+    }
+    *result = gpui_text_ime_bridge_set_conversion(
+        host, hwnd, (WPARAM)(uint32_t)(ULONG_PTR)lparam,
+        (LPARAM)(uint32_t)((ULONG_PTR)lparam >> 32));
+#else
+    *result = gpui_ime_bridge_error(
+        GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+#endif
+    return TRUE;
+  default:
+    *result = gpui_ime_bridge_error(
+        GPUI_IME_BRIDGE_STATUS_INVALID_REQUEST);
+    return TRUE;
+  }
 }
 
 static BOOL gpui_text_high_surrogate(WCHAR unit) {

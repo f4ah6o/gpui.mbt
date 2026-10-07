@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace PaletteE2E
@@ -116,6 +118,13 @@ namespace PaletteE2E
 
     public sealed class ImeResult
     {
+        public int Status;
+        public int LastError;
+        public long BridgeRequestId;
+        public uint TargetProcessId;
+        public uint TargetThreadId;
+        public uint OwnerProcessId;
+        public uint OwnerThreadId;
         public bool HasContext;
         public bool Open;
         public bool ConversionValid;
@@ -125,6 +134,12 @@ namespace PaletteE2E
 
     public sealed class CandidateResult
     {
+        public int Status;
+        public long BridgeRequestId;
+        public uint TargetProcessId;
+        public uint TargetThreadId;
+        public uint OwnerProcessId;
+        public uint OwnerThreadId;
         public bool HasContext;
         public bool QuerySucceeded;
         public int LastError;
@@ -175,7 +190,21 @@ namespace PaletteE2E
         private const uint DIB_RGB_COLORS = 0;
         private const uint WM_CLOSE = 0x0010;
         private const uint WM_INPUTLANGCHANGEREQUEST = 0x0050;
+        private const uint GPUI_IME_BRIDGE_MESSAGE = 0x8043; // WM_APP + 0x43
+        private const uint GPUI_IME_BRIDGE_QUERY_IME = 1;
+        private const uint GPUI_IME_BRIDGE_GET_IME_FIELD = 2;
+        private const uint GPUI_IME_BRIDGE_QUERY_CANDIDATE = 3;
+        private const uint GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD = 4;
+        private const uint GPUI_IME_BRIDGE_SET_OPEN = 5;
+        private const uint GPUI_IME_BRIDGE_SET_CONVERSION = 6;
+        private const uint GPUI_IME_BRIDGE_STATUS_UNAUTHORIZED = 9;
+        private const int GPUI_IME_BRIDGE_STATUS_OK = 0;
+        private const int GPUI_IME_BRIDGE_STATUS_NO_CONTEXT = 1;
+        private const int GPUI_IME_BRIDGE_STATUS_QUERY_FAILED = 3;
         private const uint SMTO_ABORTIFHUNG = 0x0002;
+        private const uint SMTO_BLOCK = 0x0001;
+        private const uint SMTO_ERRORONEXIT = 0x0020;
+        private const uint GPUI_IME_BRIDGE_TIMEOUT_MS = 1500;
         private const uint IMC_GETCANDIDATEPOS = 0x0007;
         private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
@@ -213,6 +242,8 @@ namespace PaletteE2E
         private static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, StringBuilder imagePath, ref int size);
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr handle);
+        [DllImport("kernel32.dll")]
+        private static extern void SetLastError(uint errorCode);
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
         [DllImport("user32.dll", SetLastError = true)]
@@ -242,20 +273,6 @@ namespace PaletteE2E
         [DllImport("user32.dll")]
         public static extern int GetSystemMetrics(int index);
 
-        [DllImport("imm32.dll", SetLastError = true)]
-        private static extern IntPtr ImmGetContext(IntPtr hwnd);
-        [DllImport("imm32.dll", SetLastError = true)]
-        private static extern bool ImmReleaseContext(IntPtr hwnd, IntPtr context);
-        [DllImport("imm32.dll")]
-        private static extern bool ImmGetOpenStatus(IntPtr context);
-        [DllImport("imm32.dll")]
-        private static extern bool ImmSetOpenStatus(IntPtr context, bool open);
-        [DllImport("imm32.dll", SetLastError = true)]
-        private static extern bool ImmGetConversionStatus(IntPtr context, out uint conversion, out uint sentence);
-        [DllImport("imm32.dll", SetLastError = true)]
-        private static extern bool ImmSetConversionStatus(IntPtr context, uint conversion, uint sentence);
-        [DllImport("imm32.dll", SetLastError = true)]
-        private static extern bool ImmGetCandidateWindow(IntPtr context, uint index, ref CANDIDATEFORM form);
         [DllImport("imm32.dll")]
         public static extern bool ImmIsIME(IntPtr hkl);
 
@@ -283,6 +300,35 @@ namespace PaletteE2E
         public static int InputStructureSize()
         {
             return Marshal.SizeOf(typeof(INPUT));
+        }
+
+        private static ulong PackImeFieldRequest(uint nonce, uint operation, uint field)
+        {
+            return ((ulong)nonce << 32) | operation | ((ulong)field << 16);
+        }
+
+        private static ulong PackImeConversionRequest(uint nonce)
+        {
+            return ((ulong)nonce << 32) | GPUI_IME_BRIDGE_SET_CONVERSION;
+        }
+
+        public static bool ValidateImeBridgeProtocol()
+        {
+            const uint nonce = 0x6a31d4b9u;
+            ulong fieldRequest = PackImeFieldRequest(nonce, GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD, 13);
+            ulong conversionRequest = PackImeConversionRequest(nonce);
+            ulong conversionPayload = ((ulong)0x10293847u << 32) | 0xa1b2c3d4u;
+            return GPUI_IME_BRIDGE_MESSAGE == 0x8043 &&
+                (fieldRequest >> 32) == nonce &&
+                (fieldRequest & 0xffff) == GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD &&
+                ((fieldRequest >> 16) & 0xffff) == 13 &&
+                (conversionRequest >> 32) == nonce &&
+                (conversionRequest & 0xffff) == GPUI_IME_BRIDGE_SET_CONVERSION &&
+                (conversionPayload & 0xffffffffu) == 0xa1b2c3d4u &&
+                (conversionPayload >> 32) == 0x10293847u &&
+                GPUI_IME_BRIDGE_STATUS_OK == 0 && GPUI_IME_BRIDGE_STATUS_NO_CONTEXT == 1 &&
+                GPUI_IME_BRIDGE_STATUS_QUERY_FAILED == 3 &&
+                GPUI_IME_BRIDGE_STATUS_UNAUTHORIZED == 9;
         }
 
         public static ProcessImagePathResult QueryProcessImagePath(uint processId)
@@ -424,78 +470,190 @@ namespace PaletteE2E
             return result;
         }
 
-        public static ImeResult QueryIme(IntPtr hwnd)
+        private static void VerifyImeBridgeTarget(IntPtr hwnd, uint expectedProcessId, uint expectedThreadId,
+            long expectedStartTicks, string expectedPath, string expectedSha256)
+        {
+            using (Process process = Process.GetProcessById(checked((int)expectedProcessId)))
+            {
+                if (process.StartTime.ToUniversalTime().Ticks != expectedStartTicks)
+                    throw new InvalidOperationException("Owner-thread IMM bridge PID start time changed.");
+            }
+            ProcessImagePathResult image = QueryProcessImagePath(expectedProcessId);
+            if (!image.Success || String.IsNullOrWhiteSpace(image.Path) ||
+                !String.Equals(Path.GetFullPath(image.Path), Path.GetFullPath(expectedPath), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Owner-thread IMM bridge executable path changed or could not be queried; Win32=" + image.LastError + ".");
+            using (FileStream stream = File.OpenRead(image.Path))
+            using (SHA256 sha = SHA256.Create())
+            {
+                string actualSha256 = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", String.Empty);
+                if (!String.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Owner-thread IMM bridge executable hash changed.");
+            }
+            if (hwnd == IntPtr.Zero || !IsWindow(hwnd) || !IsWindowVisible(hwnd))
+                throw new InvalidOperationException("Owner-thread IMM bridge target is not a visible HWND.");
+            uint actualProcessId;
+            uint actualThreadId = GetWindowThreadProcessId(hwnd, out actualProcessId);
+            if (actualProcessId != expectedProcessId || actualThreadId != expectedThreadId ||
+                !String.Equals(GetWindowClassName(hwnd), "gpui_mbt_windows_host_v1", StringComparison.Ordinal))
+                throw new InvalidOperationException("Owner-thread IMM bridge target PID, thread, or GPUI class changed.");
+            if (GetForegroundWindow() != hwnd)
+                throw new InvalidOperationException("Owner-thread IMM bridge target lost foreground ownership.");
+            DesktopResult desktop = CheckInputDesktop();
+            if (!desktop.Success || !String.Equals(desktop.Name, "Default", StringComparison.Ordinal))
+                throw new InvalidOperationException("Owner-thread IMM bridge requires the active Default input desktop; Win32=" + desktop.LastError + ".");
+        }
+
+        private static long SendImeBridgeRaw(IntPtr hwnd, uint expectedProcessId, uint expectedThreadId,
+            long expectedStartTicks, string expectedPath, string expectedSha256,
+            uint bridgeNonce, long packedWParam, long argument, uint timeoutMilliseconds)
+        {
+            if (bridgeNonce == 0)
+                throw new InvalidOperationException("Owner-thread IMM bridge nonce must be nonzero.");
+            VerifyImeBridgeTarget(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256);
+            IntPtr messageResult;
+            SetLastError(0);
+            IntPtr delivered = SendMessageTimeoutW(hwnd, GPUI_IME_BRIDGE_MESSAGE,
+                new IntPtr(packedWParam), new IntPtr(argument),
+                SMTO_ABORTIFHUNG | SMTO_BLOCK | SMTO_ERRORONEXIT,
+                timeoutMilliseconds, out messageResult);
+            int win32Error = Marshal.GetLastWin32Error();
+            if (delivered == IntPtr.Zero)
+                throw new InvalidOperationException("Owner-thread IMM bridge request " + (packedWParam & 0xffff) +
+                    " timed out or failed; Win32=" + (win32Error == 0 ? "unknown" : win32Error.ToString()) + ".");
+            VerifyImeBridgeTarget(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256);
+            return messageResult.ToInt64();
+        }
+
+        private static long SendImeBridge(IntPtr hwnd, uint expectedProcessId, uint expectedThreadId,
+            long expectedStartTicks, string expectedPath, string expectedSha256,
+            uint bridgeNonce, uint operation, uint field, long argument, uint timeoutMilliseconds)
+        {
+            ulong packedWParam = PackImeFieldRequest(bridgeNonce, operation, field);
+            return SendImeBridgeRaw(hwnd, expectedProcessId, expectedThreadId,
+                expectedStartTicks, expectedPath, expectedSha256,
+                bridgeNonce,
+                unchecked((long)packedWParam), argument, timeoutMilliseconds);
+        }
+
+        private static long ReadImeField(IntPtr hwnd, uint pid, uint tid, long startTicks,
+            string path, string sha256, uint bridgeNonce, uint field, long snapshotId)
+        {
+            long value = SendImeBridge(hwnd, pid, tid, startTicks, path, sha256, bridgeNonce, GPUI_IME_BRIDGE_GET_IME_FIELD,
+                field, snapshotId, GPUI_IME_BRIDGE_TIMEOUT_MS);
+            if (value < 0)
+                throw new InvalidOperationException("Owner-thread IMM bridge rejected stale/invalid IME snapshot field " + field + ".");
+            return value;
+        }
+
+        private static long ReadCandidateField(IntPtr hwnd, uint pid, uint tid, long startTicks,
+            string path, string sha256, uint bridgeNonce, uint field, long snapshotId)
+        {
+            long value = SendImeBridge(hwnd, pid, tid, startTicks, path, sha256, bridgeNonce, GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                field, snapshotId, GPUI_IME_BRIDGE_TIMEOUT_MS);
+            if (value < 0)
+                throw new InvalidOperationException("Owner-thread IMM bridge rejected stale/invalid candidate snapshot field " + field + ".");
+            return value;
+        }
+
+        public static ImeResult QueryIme(IntPtr hwnd, uint expectedProcessId, uint expectedThreadId,
+            long expectedStartTicks, string expectedPath, string expectedSha256, uint bridgeNonce, uint timeoutMilliseconds)
         {
             ImeResult result = new ImeResult();
-            IntPtr context = ImmGetContext(hwnd);
-            if (context == IntPtr.Zero)
+            result.TargetProcessId = expectedProcessId;
+            result.TargetThreadId = expectedThreadId;
+            long requestId = SendImeBridge(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256,
+                bridgeNonce,
+                GPUI_IME_BRIDGE_QUERY_IME, 0, 0, timeoutMilliseconds);
+            if (requestId <= 0)
+                throw new InvalidOperationException("Owner-thread IMM snapshot request failed with bridge status " + requestId + ".");
+            result.BridgeRequestId = requestId;
+            result.Status = checked((int)ReadImeField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 1, requestId));
+            result.LastError = unchecked((int)(uint)ReadImeField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 2, requestId));
+            result.OwnerProcessId = unchecked((uint)ReadImeField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 8, requestId));
+            result.OwnerThreadId = unchecked((uint)ReadImeField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 9, requestId));
+            if (result.OwnerProcessId != expectedProcessId || result.OwnerThreadId != expectedThreadId)
+                throw new InvalidOperationException("IMM snapshot came from a different process/thread than the owned HWND.");
+            if (result.Status == GPUI_IME_BRIDGE_STATUS_NO_CONTEXT)
                 return result;
-            try
+            if (result.Status != GPUI_IME_BRIDGE_STATUS_OK)
+                throw new InvalidOperationException("Owner-thread IMM snapshot failed with bridge status " + result.Status + ", Win32=" + result.LastError + ".");
+            result.HasContext = ReadImeField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 3, requestId) == 1;
+            if (!result.HasContext)
+                throw new InvalidOperationException("Owner-thread IMM snapshot status was OK without an HIMC.");
+            result.Open = ReadImeField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 4, requestId) == 1;
+            result.ConversionValid = ReadImeField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 5, requestId) == 1;
+            if (result.ConversionValid)
             {
-                result.HasContext = true;
-                result.Open = ImmGetOpenStatus(context);
-                result.ConversionValid = ImmGetConversionStatus(context, out result.ConversionMode, out result.SentenceMode);
-                return result;
+                result.ConversionMode = unchecked((uint)ReadImeField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 6, requestId));
+                result.SentenceMode = unchecked((uint)ReadImeField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 7, requestId));
             }
-            finally
-            {
-                ImmReleaseContext(hwnd, context);
-            }
+            return result;
         }
 
-        public static bool RestoreIme(IntPtr hwnd, bool open, bool conversionValid, uint conversionMode, uint sentenceMode, out int lastError)
+        public static bool RestoreIme(IntPtr hwnd, uint expectedProcessId, uint expectedThreadId,
+            long expectedStartTicks, string expectedPath, string expectedSha256,
+            uint bridgeNonce, bool open, bool conversionValid, uint conversionMode, uint sentenceMode, uint timeoutMilliseconds, out int lastError)
         {
             lastError = 0;
-            IntPtr context = ImmGetContext(hwnd);
-            if (context == IntPtr.Zero)
+            long openResult = SendImeBridge(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256,
+                bridgeNonce,
+                GPUI_IME_BRIDGE_SET_OPEN, 0, open ? 1 : 0, timeoutMilliseconds);
+            if (openResult != 1)
             {
-                lastError = Marshal.GetLastWin32Error();
+                lastError = openResult < 0 ? checked((int)-openResult) : GPUI_IME_BRIDGE_STATUS_QUERY_FAILED;
                 return false;
             }
-            try
-            {
-                bool openOk = ImmSetOpenStatus(context, open);
-                bool conversionOk = !conversionValid || ImmSetConversionStatus(context, conversionMode, sentenceMode);
-                if (!openOk || !conversionOk)
-                {
-                    lastError = Marshal.GetLastWin32Error();
-                    return false;
-                }
+            if (!conversionValid)
                 return true;
-            }
-            finally
+            ulong packedWParam = PackImeConversionRequest(bridgeNonce);
+            long packedArgument = unchecked((long)(((ulong)sentenceMode << 32) | conversionMode));
+            long conversionResult = SendImeBridgeRaw(hwnd, expectedProcessId, expectedThreadId,
+                expectedStartTicks, expectedPath, expectedSha256,
+                bridgeNonce, unchecked((long)packedWParam), packedArgument, timeoutMilliseconds);
+            if (conversionResult != 1)
             {
-                ImmReleaseContext(hwnd, context);
+                lastError = conversionResult < 0 ? checked((int)-conversionResult) : GPUI_IME_BRIDGE_STATUS_QUERY_FAILED;
+                return false;
             }
+            return true;
         }
 
-        public static CandidateResult QueryCandidate(IntPtr hwnd, uint index)
+        public static CandidateResult QueryCandidate(IntPtr hwnd, uint expectedProcessId, uint expectedThreadId,
+            long expectedStartTicks, string expectedPath, string expectedSha256,
+            uint bridgeNonce, uint index, uint timeoutMilliseconds)
         {
             CandidateResult result = new CandidateResult();
-            IntPtr context = ImmGetContext(hwnd);
-            if (context == IntPtr.Zero)
+            result.TargetProcessId = expectedProcessId;
+            result.TargetThreadId = expectedThreadId;
+            long requestId = SendImeBridge(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256,
+                bridgeNonce,
+                GPUI_IME_BRIDGE_QUERY_CANDIDATE, 0, index, timeoutMilliseconds);
+            if (requestId <= 0)
+                throw new InvalidOperationException("Owner-thread candidate snapshot request failed with bridge status " + requestId + ".");
+            result.BridgeRequestId = requestId;
+            result.Index = index;
+            result.Status = checked((int)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 1, requestId));
+            result.LastError = unchecked((int)(uint)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 2, requestId));
+            result.OwnerProcessId = unchecked((uint)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 12, requestId));
+            result.OwnerThreadId = unchecked((uint)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 13, requestId));
+            if (result.OwnerProcessId != expectedProcessId || result.OwnerThreadId != expectedThreadId)
+                throw new InvalidOperationException("Candidate snapshot came from a different process/thread than the owned HWND.");
+            result.HasContext = ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 3, requestId) == 1;
+            if (result.Status != GPUI_IME_BRIDGE_STATUS_OK)
             {
-                result.LastError = Marshal.GetLastWin32Error();
+                result.QuerySucceeded = false;
                 return result;
             }
-            try
-            {
-                result.HasContext = true;
-                CANDIDATEFORM form = new CANDIDATEFORM();
-                bool ok = ImmGetCandidateWindow(context, index, ref form);
-                result.QuerySucceeded = ok;
-                result.LastError = ok ? 0 : Marshal.GetLastWin32Error();
-                result.Index = form.dwIndex;
-                result.Style = form.dwStyle;
-                result.X = form.ptCurrentPos.X;
-                result.Y = form.ptCurrentPos.Y;
-                result.Area = form.rcArea;
-                return result;
-            }
-            finally
-            {
-                ImmReleaseContext(hwnd, context);
-            }
+            result.QuerySucceeded = true;
+            result.Index = unchecked((uint)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 4, requestId));
+            result.Style = unchecked((uint)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 5, requestId));
+            result.X = unchecked((int)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 6, requestId));
+            result.Y = unchecked((int)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 7, requestId));
+            result.Area.Left = unchecked((int)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 8, requestId));
+            result.Area.Top = unchecked((int)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 9, requestId));
+            result.Area.Right = unchecked((int)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 10, requestId));
+            result.Area.Bottom = unchecked((int)ReadCandidateField(hwnd, expectedProcessId, expectedThreadId, expectedStartTicks, expectedPath, expectedSha256, bridgeNonce, 11, requestId));
+            return result;
         }
 
         public static bool RequestInputLanguage(IntPtr hwnd, IntPtr hkl, out int lastError)

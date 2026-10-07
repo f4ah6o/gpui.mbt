@@ -23,6 +23,8 @@
 #define GPUI_MAX_FRAME_TEXT_BYTES 262144
 #define GPUI_WAKE_MESSAGE (WM_APP + 0x41)
 #define GPUI_EXIT_MESSAGE (WM_APP + 0x42)
+/* Reserved for the opt-in, scalar-only owner-thread IMM32 E2E bridge. */
+#define GPUI_IME_BRIDGE_MESSAGE (WM_APP + 0x43)
 #define GPUI_CLASS_NAME L"gpui_mbt_windows_host_v1"
 
 typedef struct gpui_vertex {
@@ -222,6 +224,34 @@ typedef struct gpui_windows_host {
   UINT frame_height;
   double frame_scale;
   BOOL frame_pending;
+  /* The command-palette E2E driver uses a nonce-checked scalar-only private
+   * message bridge so IMM32 calls execute on this HWND's owner thread.
+   * Snapshot values are copied here by WndProc and read by request ID; no
+   * cross-process pointers are accepted. The bridge is enabled only by the
+   * explicit E2E IME flag and valid per-run nonce. */
+  BOOL ime_bridge_enabled;
+  uint32_t ime_bridge_nonce;
+  int32_t ime_bridge_next_id;
+  int32_t ime_bridge_ime_id;
+  int32_t ime_bridge_ime_status;
+  DWORD ime_bridge_ime_error;
+  BOOL ime_bridge_ime_has_context;
+  BOOL ime_bridge_ime_open;
+  BOOL ime_bridge_ime_conversion_valid;
+  DWORD ime_bridge_ime_conversion_mode;
+  DWORD ime_bridge_ime_sentence_mode;
+  DWORD ime_bridge_ime_process_id;
+  DWORD ime_bridge_ime_thread_id;
+  int32_t ime_bridge_candidate_id;
+  int32_t ime_bridge_candidate_status;
+  DWORD ime_bridge_candidate_error;
+  BOOL ime_bridge_candidate_has_context;
+  DWORD ime_bridge_candidate_process_id;
+  DWORD ime_bridge_candidate_thread_id;
+  DWORD ime_bridge_candidate_index;
+  DWORD ime_bridge_candidate_style;
+  POINT ime_bridge_candidate_position;
+  RECT ime_bridge_candidate_area;
   int64_t test_clear_count;
   int64_t test_draw_count;
   int64_t test_present_count;
@@ -1544,6 +1574,10 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
   }
   if (host->destroying && message != WM_NCDESTROY)
     return host->api.def_window_proc_w(hwnd, message, wparam, lparam);
+  LRESULT ime_bridge_result = 0;
+  if (gpui_text_ime_bridge_wndproc(host, hwnd, message, wparam, lparam,
+                                  &ime_bridge_result))
+    return ime_bridge_result;
   LRESULT text_result = 0;
   if (gpui_text_session_wndproc(host, hwnd, message, wparam, lparam,
                                 &text_result))
@@ -1764,6 +1798,29 @@ int32_t gpui_windows_start(int32_t abi_version) {
   const char *readback = getenv("GPUI_WINDOWS_READBACK");
   g_host.readback_enabled = (readback && strcmp(readback, "1") == 0) ||
                             native_e2e_enabled();
+  const char *ime_bridge = getenv("GPUI_WINDOWS_COMMAND_PALETTE_IME");
+  const char *ime_bridge_nonce =
+      getenv("GPUI_WINDOWS_COMMAND_PALETTE_IME_NONCE");
+  g_host.ime_bridge_nonce = 0;
+  if (ime_bridge_nonce && strlen(ime_bridge_nonce) == 8) {
+    BOOL valid_nonce = TRUE;
+    for (int32_t i = 0; i < 8; i++) {
+      char digit = ime_bridge_nonce[i];
+      if (!((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f') ||
+            (digit >= 'A' && digit <= 'F'))) {
+        valid_nonce = FALSE;
+        break;
+      }
+    }
+    char *end = NULL;
+    unsigned long parsed = strtoul(ime_bridge_nonce, &end, 16);
+    if (valid_nonce && end == ime_bridge_nonce + 8 && *end == '\0' &&
+        parsed > 0 &&
+        parsed <= UINT32_MAX)
+      g_host.ime_bridge_nonce = (uint32_t)parsed;
+  }
+  g_host.ime_bridge_enabled = ime_bridge && strcmp(ime_bridge, "1") == 0 &&
+                              g_host.ime_bridge_nonce != 0;
   int32_t status = api_init(&g_host);
   if (status != GPUI_WINDOWS_OK)
     goto fail;
