@@ -63,6 +63,10 @@ int32_t gpui_windows_session_cancel(int32_t host, int32_t window,
 int32_t gpui_windows_session_end(int32_t host, int32_t window,
                                  int32_t epoch,
                                  int32_t owner_generation);
+/* Exact native IMM32 owner check; false after focus loss even if focus returns. */
+int32_t gpui_windows_session_is_current(int32_t host, int32_t window,
+                                        int32_t epoch,
+                                        int32_t owner_generation);
 int32_t gpui_windows_next_editor(int32_t host, double *event_data,
                                  uint8_t *payload, int32_t payload_capacity);
 /* Synchronous owner-thread native focus query (1=true, 0=false, negative error). */

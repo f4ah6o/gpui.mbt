@@ -420,12 +420,15 @@ test "focus revoked during accepted present defers the closed frame" {
   assert_true(decision is Accepted)
   assert_eq(reject_fence_calls.val, 0)
 
-  // The accepted scene must remain the outstanding frame while focus is
-  // reconciled after present dispatches WM_KILLFOCUS.
+  // Simulate WM_KILLFOCUS followed by WM_SETFOCUS during present: the OS
+  // focus query is true again, while the captured session owner is revoked.
+  // The accepted scene remains outstanding while that revoked owner closes.
   let (recorded, pending) = palette_record_accepted_frame(None, accepted.frame)
   assert_true(recorded)
   assert_true(pending_frame_matches(pending.unwrap(), accepted.frame))
   let end_calls = Ref(0)
+  let owner_check_calls = Ref(0)
+  let checked_owner_generation = Ref(0)
   let ended_owner : Ref[PaletteNativeOwner?] = Ref(None)
   let (reconciled, close_followup_dirty) = palette_reconcile_accepted_present_focus(
     decision,
@@ -435,7 +438,12 @@ test "focus revoked during accepted present defers the closed frame" {
     owner,
     native_focused,
     dirty,
-    () => Ok(false),
+    () => Ok(true),
+    active => {
+      owner_check_calls.val += 1
+      checked_owner_generation.val = active.owner_generation
+      Ok(false)
+    },
     active => {
       end_calls.val += 1
       ended_owner.val = active
@@ -447,6 +455,8 @@ test "focus revoked during accepted present defers the closed frame" {
   assert_true(reconciled)
   assert_true(close_followup_dirty)
   assert_eq(end_calls.val, 1)
+  assert_eq(owner_check_calls.val, 1)
+  assert_eq(checked_owner_generation.val, 2)
   assert_true(owner.val is None)
   assert_true(ended_owner.val.unwrap().composition is None)
   assert_false(palette.is_open())

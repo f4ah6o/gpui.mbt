@@ -1618,6 +1618,13 @@ fn run_palette_window() -> Unit {
                     dirty,
                     () => host.window_has_keyboard_focus(window),
                     active => {
+                      host.text_session_is_current(
+                        window,
+                        active.epoch,
+                        active.owner_generation,
+                      )
+                    },
+                    active => {
                       palette_end_native_for_focus_reconciliation(
                         host, window, fixture, owner, active,
                       )

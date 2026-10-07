@@ -1784,3 +1784,21 @@ int32_t gpui_windows_window_has_keyboard_focus(int32_t token,
     return -GPUI_WINDOWS_UNSUPPORTED;
   return g_host.api.get_focus() == g_host.hwnd ? 1 : 0;
 }
+
+int32_t gpui_windows_session_is_current(int32_t token, int32_t window,
+                                        int32_t epoch,
+                                        int32_t owner_generation) {
+  int32_t status = check_host(token, TRUE);
+  if (status != GPUI_WINDOWS_OK)
+    return -status;
+  if (window != g_host.window_id || !g_host.hwnd)
+    return -GPUI_WINDOWS_STALE;
+  if (epoch <= 0 || owner_generation <= 0)
+    return -GPUI_WINDOWS_INVALID;
+  gpui_text_session_state *session = &g_gpui_text_session;
+  return session->armed && session->window_id == window &&
+                 session->epoch == epoch &&
+                 session->owner_generation == owner_generation
+             ? 1
+             : 0;
+}

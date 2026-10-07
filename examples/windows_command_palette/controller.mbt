@@ -730,6 +730,10 @@ fn palette_reconcile_accepted_present_focus(
   native_focused : Ref[Bool],
   dirty : Ref[Bool],
   query_focus : () -> Result[Bool, @diagnostics.FrameworkError],
+  query_owner_current : (PaletteNativeOwner) -> Result[
+    Bool,
+    @diagnostics.FrameworkError,
+  ],
   end_native : (PaletteNativeOwner?) -> Bool,
 ) -> Result[(Bool, Bool), @diagnostics.FrameworkError] {
   match decision {
@@ -742,10 +746,23 @@ fn palette_reconcile_accepted_present_focus(
   match query_focus() {
     Err(error) => Err(error)
     Ok(focused) => {
+      let owner_current = if focused {
+        match owner.val {
+          None => Ok(true)
+          Some(active) => query_owner_current(active)
+        }
+      } else {
+        Ok(false)
+      }
+      let owner_current = match owner_current {
+        Err(error) => return Err(error)
+        Ok(value) => value
+      }
+      let effective_focus = focused && owner_current
       let reconciled = palette_reconcile_native_focus_state(
-        focused, palette, tree, owner, native_focused, dirty, end_native,
+        effective_focus, palette, tree, owner, native_focused, dirty, end_native,
       )
-      Ok((reconciled, !focused && !palette.is_open()))
+      Ok((reconciled, !effective_focus && !palette.is_open()))
     }
   }
 }

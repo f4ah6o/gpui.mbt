@@ -3096,6 +3096,15 @@ int32_t gpui_windows_session_end(int32_t host, int32_t window,
   (void)owner_generation;
   return -GPUI_WINDOWS_UNSUPPORTED;
 }
+int32_t gpui_windows_session_is_current(int32_t host, int32_t window,
+                                        int32_t epoch,
+                                        int32_t owner_generation) {
+  (void)host;
+  (void)window;
+  (void)epoch;
+  (void)owner_generation;
+  return -GPUI_WINDOWS_UNSUPPORTED;
+}
 int32_t gpui_windows_window_has_keyboard_focus(int32_t host, int32_t window) {
   (void)host;
   (void)window;

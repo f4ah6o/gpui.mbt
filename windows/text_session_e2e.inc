@@ -656,7 +656,9 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
         77, 5, 706, original, sizeof(original), 1, 2,
         8.0, 9.0, 1.0, 18.0);
     GPUI_REVIEW_REQUIRE(focus_epoch > 0 &&
-                            gpui_windows_window_has_keyboard_focus(77, 5) == 1,
+                            gpui_windows_window_has_keyboard_focus(77, 5) == 1 &&
+                            gpui_windows_session_is_current(
+                                77, 5, focus_epoch, 706) == 1,
                         70);
     GPUI_REVIEW_REQUIRE(gpui_text_session_start_record(&g_host) ==
                             GPUI_WINDOWS_OK &&
@@ -696,7 +698,9 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
     GPUI_REVIEW_REQUIRE(!g_gpui_text_session.armed &&
                             !g_gpui_text_session.composing &&
                             g_gpui_text_session.epoch > focus_epoch &&
-                            gpui_windows_window_has_keyboard_focus(77, 5) == 0,
+                            gpui_windows_window_has_keyboard_focus(77, 5) == 0 &&
+                            gpui_windows_session_is_current(
+                                77, 5, focus_epoch, 706) == 0,
                         74);
     GPUI_REVIEW_REQUIRE(gpui_windows_session_update(
                             77, 5, focus_epoch, 706, original,
@@ -704,9 +708,16 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
                             8.0, 9.0, 1.0, 18.0, 0) ==
                             -GPUI_WINDOWS_STALE,
                         75);
+    gpui_text_review_focus_hwnd = g_host.hwnd;
+    gpui_window_proc(g_host.hwnd, WM_SETFOCUS, 0, 0);
+    GPUI_REVIEW_REQUIRE(
+        gpui_windows_window_has_keyboard_focus(77, 5) == 1 &&
+            gpui_windows_session_is_current(77, 5, focus_epoch, 706) == 0 &&
+            g_host.event_count == 3,
+        78);
     GPUI_REVIEW_REQUIRE(gpui_windows_session_end(
                             77, 5, focus_epoch, 706) == GPUI_WINDOWS_OK,
-                        76);
+                        79);
     GPUI_REVIEW_REQUIRE(gpui_text_session_pop(
                             &g_host, event, payload, sizeof(payload)) == 1 &&
                             (int32_t)event[0] == GPUI_TEXT_EVENT_CANCELLED &&
@@ -714,7 +725,11 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
                             gpui_text_session_pop(
                                 &g_host, event, payload, sizeof(payload)) == 1 &&
                             (int32_t)event[0] == 6 &&
-                            (int32_t)event[8] == 0,
+                            (int32_t)event[8] == 0 &&
+                            gpui_text_session_pop(
+                                &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == 6 &&
+                            (int32_t)event[8] == 1,
                         77);
   }
 
