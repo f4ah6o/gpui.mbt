@@ -69,7 +69,13 @@ disabled-row navigation, scrolling, one-shot activation, background key
 recovery, Japanese IME preedit/conversion/commit, Escape cancellation and
 dismissal, composition-time focus loss, and empty reopen with fresh epochs.
 The primary fixture closes only after an observed closed/end-fenced frame; both
-owned windows receive bounded WM_CLOSE.
+owned windows receive bounded WM_CLOSE. Window discovery requires exactly one
+visible top-level `gpui_mbt_windows_host_v1` window under the child PID whose
+start time, native executable path, and executable hash still match the launch
+record. The caption is diagnostic data and is not used to identify the window;
+same-PID console windows and other-PID decoys cannot match. If startup
+discovery fails, bounded cleanup repeats those identity and class checks before
+it can send WM_CLOSE, while the original run remains failed.
 
 Each run saves result.json, flushed stdout/stderr, correlated
 ACCEPTED/STATE/COMPLETE/READBACK identities, exact input counts, IME layout/state

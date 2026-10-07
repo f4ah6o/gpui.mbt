@@ -52,6 +52,7 @@ $script:result = [ordered]@{
   fixtures = @()
   focus_changes = @()
   input_events = @()
+  window_discovery = @()
   captures = @()
   stages = @()
   ime = [ordered]@{ original_layout = $null; original_state = $null; japanese_layout = $null; restoration = $null }
@@ -74,6 +75,7 @@ $script:loadedJapaneseHandle = [IntPtr]::Zero
 $script:dpiPrevious = [IntPtr]::Zero
 $script:activeStage = $null
 $script:unrun = $false
+$script:expectedGpuiWindowClass = "gpui_mbt_windows_host_v1"
 
 function Save-Result {
   $script:result.updated_at_utc = [DateTime]::UtcNow.ToString("o")
@@ -256,16 +258,29 @@ function Get-FrameIdentity {
   } | ConvertTo-Json -Depth 20 -Compress
 }
 
-function Assert-OwnedProcess {
+function Assert-OwnedProcessIdentity {
   param([object]$Owner)
   if ($null -eq $Owner) { throw "Owned process record is missing." }
   $process = Get-Process -Id $Owner.pid -ErrorAction Stop
   if ($process.StartTime.ToUniversalTime().Ticks -ne [long]$Owner.start_ticks) { throw "Owned PID $($Owner.pid) was reused." }
-  $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$($Owner.pid)" -ErrorAction Stop
-  if (-not $cim.ExecutablePath -or
-      -not [string]::Equals([IO.Path]::GetFullPath($cim.ExecutablePath), [IO.Path]::GetFullPath($Owner.executable), [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Owned PID $($Owner.pid) executable path changed."
+  $image = [PaletteE2E.Win32]::QueryProcessImagePath([uint32]$Owner.pid)
+  if (-not $image.Success -or [string]::IsNullOrWhiteSpace($image.Path) -or
+      -not [string]::Equals([IO.Path]::GetFullPath($image.Path), [IO.Path]::GetFullPath($Owner.executable), [StringComparison]::OrdinalIgnoreCase)) {
+    $errorCode = if ($image.Success) { 0 } else { [int]$image.LastError }
+    throw "Owned PID $($Owner.pid) executable path changed or could not be queried; Win32=$errorCode."
   }
+  if ($Owner.executable_sha256) {
+    $actualHash = (Get-FileHash -LiteralPath $image.Path -Algorithm SHA256 -ErrorAction Stop).Hash
+    if (-not [string]::Equals($actualHash, [string]$Owner.executable_sha256, [StringComparison]::OrdinalIgnoreCase)) {
+      throw "Owned PID $($Owner.pid) executable hash changed."
+    }
+  }
+  return $process
+}
+
+function Assert-OwnedProcess {
+  param([object]$Owner)
+  $null = Assert-OwnedProcessIdentity $Owner
   $hwnd = [IntPtr]::new([long]$Owner.hwnd)
   if ($hwnd -eq [IntPtr]::Zero -or -not [PaletteE2E.Win32]::IsWindow($hwnd) -or -not [PaletteE2E.Win32]::IsWindowVisible($hwnd)) {
     throw "Owned HWND is no longer a visible window."
@@ -273,7 +288,93 @@ function Assert-OwnedProcess {
   $actualPid = [uint32]0
   [void][PaletteE2E.Win32]::GetWindowThreadProcessId($hwnd, [ref]$actualPid)
   if ([long]$actualPid -ne [long]$Owner.pid) { throw "Owned HWND PID mismatch." }
+  $className = [PaletteE2E.Win32]::GetWindowClassName($hwnd)
+  if (-not [string]::Equals($className, $script:expectedGpuiWindowClass, [StringComparison]::Ordinal)) {
+    throw "Owned HWND class mismatch: expected '$($script:expectedGpuiWindowClass)', got '$className'."
+  }
   return $hwnd
+}
+
+function Get-OwnedGpuiWindowCandidates {
+  param([object[]]$Windows, [long]$OwnerPid)
+  return @($Windows | Where-Object {
+    $_.Visible -and [long]$_.ProcessId -eq $OwnerPid -and [long]$_.Handle -ne 0 -and
+      [string]::Equals([string]$_.ClassName, $script:expectedGpuiWindowClass, [StringComparison]::Ordinal)
+  })
+}
+
+function Get-OwnedWindowDiagnostics {
+  param([object[]]$Windows, [long]$OwnerPid)
+  return @($Windows | Where-Object { [long]$_.ProcessId -eq $OwnerPid } | ForEach-Object {
+    [ordered]@{
+      hwnd = [long]$_.Handle
+      thread_id = [uint32]$_.ThreadId
+      visible = [bool]$_.Visible
+      class_name = [string]$_.ClassName
+      title = [string]$_.Title
+      bounds = [ordered]@{ left = [int]$_.Bounds.Left; top = [int]$_.Bounds.Top; right = [int]$_.Bounds.Right; bottom = [int]$_.Bounds.Bottom }
+    }
+  })
+}
+
+function Select-OwnedGpuiWindow {
+  param([object[]]$Windows, [long]$OwnerPid)
+  $candidates = @(Get-OwnedGpuiWindowCandidates $Windows $OwnerPid)
+  if ($candidates.Count -gt 1) {
+    $handles = @($candidates | ForEach-Object { '0x{0:X}' -f [long]$_.Handle }) -join ', '
+    throw "Ambiguous owned GPUI HWNDs for PID $($OwnerPid): $handles."
+  }
+  if ($candidates.Count -eq 0) { return $null }
+  return $candidates[0]
+}
+
+function Discover-OwnedGpuiWindow {
+  param([object]$Owner, [switch]$RecordDiagnostics)
+  $null = Assert-OwnedProcessIdentity $Owner
+  $windows = [PaletteE2E.Win32]::VisibleWindows()
+  $diagnostics = @(Get-OwnedWindowDiagnostics $windows ([long]$Owner.pid))
+  if ($RecordDiagnostics) {
+    $Owner.window_candidates = $diagnostics
+    $script:result.window_discovery += [ordered]@{ role = $Owner.role; pid = $Owner.pid; candidates = $diagnostics; at_utc = [DateTime]::UtcNow.ToString("o") }
+    Save-Result
+  }
+  $candidate = Select-OwnedGpuiWindow $windows ([long]$Owner.pid)
+  if ($null -eq $candidate) { return $null }
+  $Owner.hwnd = [long]$candidate.Handle
+  $Owner.thread_id = [uint32]$candidate.ThreadId
+  $Owner.title = [string]$candidate.Title
+  $Owner.window_class = [string]$candidate.ClassName
+  $null = Assert-OwnedProcess $Owner
+  Save-Result
+  return $candidate
+}
+
+function Assert-OwnedWindowDiscoveryRegressionTests {
+  $ownerPid = 4488L
+  $rect = [PaletteE2E.RECT]::new()
+  $windows = @(
+    [pscustomobject]@{ Handle = 3213606L; ProcessId = [uint32]$ownerPid; ThreadId = 91; Visible = $true; Title = ""; ClassName = "gpui_mbt_windows_host_v1"; Bounds = $rect },
+    [pscustomobject]@{ Handle = 3475810L; ProcessId = [uint32]$ownerPid; ThreadId = 92; Visible = $true; Title = "C:\fixture\windows-command-palette.exe"; ClassName = "ConsoleWindowClass"; Bounds = $rect },
+    [pscustomobject]@{ Handle = 410L; ProcessId = 7777; ThreadId = 93; Visible = $true; Title = "decoy"; ClassName = "gpui_mbt_windows_host_v1"; Bounds = $rect },
+    [pscustomobject]@{ Handle = 411L; ProcessId = [uint32]$ownerPid; ThreadId = 94; Visible = $false; Title = "hidden"; ClassName = "gpui_mbt_windows_host_v1"; Bounds = $rect }
+  )
+  $selected = Select-OwnedGpuiWindow $windows $ownerPid
+  if ($null -eq $selected -or [long]$selected.Handle -ne 3213606L -or $selected.Title -ne "") {
+    throw "Window-discovery regression failed: blank-caption GPUI window was not selected over same-PID console/other-PID/invisible decoys."
+  }
+  $diagnostics = @(Get-OwnedWindowDiagnostics $windows $ownerPid)
+  if ($diagnostics.Count -ne 3 -or @($diagnostics | Where-Object { [long]$_.hwnd -eq 410L }).Count -ne 0 -or
+      @($diagnostics | Where-Object { [long]$_.hwnd -eq 3475810L }).Count -ne 1) {
+    throw "Window-discovery diagnostics must retain same-PID host/console candidates without recording other-PID decoys."
+  }
+  $ambiguous = @($windows) + @([pscustomobject]@{ Handle = 412L; ProcessId = [uint32]$ownerPid; ThreadId = 95; Visible = $true; Title = "second"; ClassName = "gpui_mbt_windows_host_v1"; Bounds = $rect })
+  $rejectedAmbiguous = $false
+  try { $null = Select-OwnedGpuiWindow $ambiguous $ownerPid } catch { $rejectedAmbiguous = $_.Exception.Message -match "Ambiguous owned GPUI HWNDs" }
+  if (-not $rejectedAmbiguous) { throw "Window-discovery regression did not reject multiple visible same-PID GPUI HWNDs." }
+  $absent = @($windows | Where-Object { $_.ClassName -ne $script:expectedGpuiWindowClass -or [long]$_.ProcessId -ne $ownerPid })
+  if ($null -ne (Select-OwnedGpuiWindow $absent $ownerPid)) { throw "Window-discovery regression accepted an absent owned GPUI HWND." }
+  $invisible = @($windows | Where-Object { [long]$_.Handle -eq 411L })
+  if ($null -ne (Select-OwnedGpuiWindow $invisible $ownerPid)) { throw "Window-discovery regression accepted an invisible owned GPUI HWND." }
 }
 
 function Assert-DefaultInputDesktop {
@@ -415,19 +516,38 @@ function Get-CurrentFrame {
 
 function Wait-OwnedWindow {
   param([object]$Owner)
+  $null = Assert-OwnedProcessIdentity $Owner
   $watch = [Diagnostics.Stopwatch]::StartNew()
+  $lastWindows = @()
+  $lastDiagnostics = @()
+  $ambiguity = $null
   while ($watch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-    $matches = @([PaletteE2E.Win32]::VisibleWindows() | Where-Object { $_.Visible -and [long]$_.ProcessId -eq [long]$Owner.pid -and $_.Title -match "Windows command palette and Japanese IME" })
-    if ($matches.Count -eq 1) {
-      $Owner.hwnd = [long]$matches[0].Handle
-      $Owner.thread_id = [uint32]$matches[0].ThreadId
-      $Owner.title = [string]$matches[0].Title
+    try {
+      $process = Get-Process -Id $Owner.pid -ErrorAction Stop
+      if ($process.StartTime.ToUniversalTime().Ticks -ne [long]$Owner.start_ticks) { throw "Owned PID $($Owner.pid) was reused while waiting for its window." }
+    } catch { throw "Owned fixture PID $($Owner.pid) exited before its window was discovered: $($_.Exception.Message)" }
+    $lastWindows = [PaletteE2E.Win32]::VisibleWindows()
+    $lastDiagnostics = @(Get-OwnedWindowDiagnostics $lastWindows ([long]$Owner.pid))
+    try { $candidate = Select-OwnedGpuiWindow $lastWindows ([long]$Owner.pid) } catch { $ambiguity = $_.Exception.Message; break }
+    if ($null -ne $candidate) {
+      $Owner.hwnd = [long]$candidate.Handle
+      $Owner.thread_id = [uint32]$candidate.ThreadId
+      $Owner.title = [string]$candidate.Title
+      $Owner.window_class = [string]$candidate.ClassName
+      $Owner.window_candidates = $lastDiagnostics
+      $null = Assert-OwnedProcess $Owner
+      $script:result.window_discovery += [ordered]@{ role = $Owner.role; pid = $Owner.pid; status = "PASS"; selected_hwnd = $Owner.hwnd; class_name = $Owner.window_class; title = $Owner.title; candidates = $lastDiagnostics; at_utc = [DateTime]::UtcNow.ToString("o") }
       Save-Result
       return
     }
     Start-Sleep -Milliseconds 50
   }
-  throw "Expected one visible fixture window for owned PID $($Owner.pid)."
+  $Owner.window_candidates = $lastDiagnostics
+  $script:result.window_discovery += [ordered]@{ role = $Owner.role; pid = $Owner.pid; status = "FAIL"; ambiguity = $ambiguity; candidates = $lastDiagnostics; at_utc = [DateTime]::UtcNow.ToString("o") }
+  Save-Result
+  $details = $lastDiagnostics | ConvertTo-Json -Depth 8 -Compress
+  if ($ambiguity) { throw "$ambiguity; final same-PID candidates=$details" }
+  throw "Expected exactly one visible top-level '$($script:expectedGpuiWindowClass)' for owned PID $($Owner.pid); title is diagnostic only. Final same-PID candidates=$details"
 }
 
 function Start-OwnedFixture {
@@ -450,7 +570,7 @@ function Start-OwnedFixture {
     role = $Role; pid = [int]$process.Id; start_ticks = [long]$process.StartTime.ToUniversalTime().Ticks
     started_at_utc = $process.StartTime.ToUniversalTime().ToString("o")
     executable = [IO.Path]::GetFullPath($binary); executable_sha256 = (Get-FileHash $binary -Algorithm SHA256).Hash.ToLowerInvariant()
-    hwnd = 0L; thread_id = 0; title = $null; stdout = $stdout; stderr = $stderr
+    hwnd = 0L; thread_id = 0; title = $null; window_class = $null; window_candidates = @(); stdout = $stdout; stderr = $stderr
     readback = $Readback; experimental_imm32 = $Ime; process = $process
   }
   $script:owners.Add($owner)
@@ -805,16 +925,30 @@ function Close-OwnedFixture {
         $endFenced = $null -ne $frame -and -not [bool]$frame.State.open -and $null -eq $frame.State.native_owner
         $entry.end_fenced_closed_state = [bool]$endFenced
         if (-not $endFenced) { [void]$errors.Add("palette/session was not observed closed and end-fenced before WM_CLOSE") }
-        if ($endFenced -and $null -ne $script:imeOriginal) {
-          $entry.ime_restoration = Restore-OwnedIme $Owner
-          if ($entry.ime_restoration.status -notin @("PASS", "NOT_APPLICABLE")) {
-            [void]$errors.Add("IME/layout restoration did not pass: $($entry.ime_restoration | ConvertTo-Json -Compress -Depth 8)")
-          }
-        }
       } else {
         $entry.end_fenced_closed_state = "NOT_REQUIRED_auxiliary_received_no_input"
       }
+      if ([long]$Owner.hwnd -eq 0) {
+        try {
+          $candidate = Discover-OwnedGpuiWindow $Owner -RecordDiagnostics
+          if ($null -eq $candidate) { throw "No unique visible owned GPUI HWND was available for bounded cleanup." }
+          $entry.rediscovered_hwnd = [long]$Owner.hwnd
+          $entry.rediscovered_class = [string]$Owner.window_class
+          $entry.rediscovered_title = [string]$Owner.title
+          $entry.rediscovery_status = "PASS"
+        } catch {
+          $entry.rediscovery_status = "FAIL"
+          [void]$errors.Add("owned HWND rediscovery failed: $($_.Exception.Message)")
+        }
+      } else { $entry.rediscovery_status = "NOT_NEEDED" }
+      if ($Owner.role -eq "primary" -and $entry.end_fenced_closed_state -and $null -ne $script:imeOriginal -and [long]$Owner.hwnd -ne 0) {
+        $entry.ime_restoration = Restore-OwnedIme $Owner
+        if ($entry.ime_restoration.status -notin @("PASS", "NOT_APPLICABLE")) {
+          [void]$errors.Add("IME/layout restoration did not pass: $($entry.ime_restoration | ConvertTo-Json -Compress -Depth 8)")
+        }
+      }
       try {
+        if ([long]$Owner.hwnd -eq 0) { throw "No exact owned GPUI HWND was discovered; WM_CLOSE was not sent." }
         $hwnd = Assert-OwnedProcess $Owner
         $closeError = 0
         $entry.normal_close_sent = [PaletteE2E.Win32]::SendClose($hwnd, 2000, [ref]$closeError)
@@ -1037,22 +1171,25 @@ function Invoke-ParserTests {
 
 function Invoke-OwnershipGuardTests {
   $process = Get-Process -Id $PID -ErrorAction Stop
-  $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop
-  if (-not $cim.ExecutablePath) { throw "Validate could not resolve its own executable path for ownership guard tests." }
+  $image = [PaletteE2E.Win32]::QueryProcessImagePath([uint32]$PID)
+  if (-not $image.Success -or -not $image.Path) { throw "Validate could not resolve its own executable path for ownership guard tests; Win32=$($image.LastError)." }
   $base = [ordered]@{
     pid = [int]$PID
     start_ticks = [long]$process.StartTime.ToUniversalTime().Ticks
-    executable = [IO.Path]::GetFullPath($cim.ExecutablePath)
+    executable = [IO.Path]::GetFullPath($image.Path)
+    executable_sha256 = (Get-FileHash -LiteralPath $image.Path -Algorithm SHA256).Hash
     hwnd = 0L
     role = "validate-only"
   }
   $wrongStart = [ordered]@{}; foreach ($key in $base.Keys) { $wrongStart[$key] = $base[$key] }; $wrongStart.start_ticks = [long]$wrongStart.start_ticks + 1
   $wrongPath = [ordered]@{}; foreach ($key in $base.Keys) { $wrongPath[$key] = $base[$key] }; $wrongPath.executable = [IO.Path]::Combine([IO.Path]::GetDirectoryName($base.executable), "not-the-owned-process.exe")
+  $wrongHash = [ordered]@{}; foreach ($key in $base.Keys) { $wrongHash[$key] = $base[$key] }; $wrongHash.executable_sha256 = "0" * 64
   $missingHwnd = [ordered]@{}; foreach ($key in $base.Keys) { if ($key -ne "hwnd") { $missingHwnd[$key] = $base[$key] } }
   $zeroHwnd = [ordered]@{}; foreach ($key in $base.Keys) { $zeroHwnd[$key] = $base[$key] }; $zeroHwnd.hwnd = 0L
   $cases = @(
     [pscustomobject]@{ name = "wrong_start_ticks"; owner = $wrongStart; expected = "reused" },
     [pscustomobject]@{ name = "mismatched_executable_path"; owner = $wrongPath; expected = "executable path changed" },
+    [pscustomobject]@{ name = "mismatched_executable_hash"; owner = $wrongHash; expected = "executable hash changed" },
     [pscustomobject]@{ name = "missing_hwnd"; owner = $missingHwnd; expected = "visible window" },
     [pscustomobject]@{ name = "zero_hwnd"; owner = $zeroHwnd; expected = "visible window" }
   )
@@ -1065,6 +1202,9 @@ function Invoke-OwnershipGuardTests {
     if ($null -eq $message -or $message -notmatch [regex]::Escape($case.expected)) { throw "Ownership guard did not reject $($case.name) before SendInput: $message" }
   }
   if ($script:result.input_events.Count -ne $beforeEvents) { throw "Invalid-owner validation recorded an injected input event." }
+  $missingImage = [PaletteE2E.Win32]::QueryProcessImagePath([uint32]::MaxValue)
+  if ($missingImage.Success -or $missingImage.LastError -eq 0) { throw "Native process-image query accepted a nonexistent PID or omitted its Win32 error." }
+  Assert-OwnedWindowDiscoveryRegressionTests
 
   $tokens = $null; $parseErrors = $null
   $ast = [System.Management.Automation.Language.Parser]::ParseFile($PSCommandPath, [ref]$tokens, [ref]$parseErrors)
@@ -1072,6 +1212,7 @@ function Invoke-OwnershipGuardTests {
   $functions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))
   $inputBody = ($functions | Where-Object { $_.Name -eq "Invoke-OwnedInput" } | Select-Object -First 1).Body.Extent.Text
   $closeBody = ($functions | Where-Object { $_.Name -eq "Close-OwnedFixture" } | Select-Object -First 1).Body.Extent.Text
+  $waitBody = ($functions | Where-Object { $_.Name -eq "Wait-OwnedWindow" } | Select-Object -First 1).Body.Extent.Text
   if ([string]::IsNullOrEmpty($inputBody) -or $inputBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -lt 0 -or
       $inputBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -gt $inputBody.IndexOf("SendEvents(", [StringComparison]::Ordinal)) {
     throw "Input path no longer validates exact process ownership before SendInput."
@@ -1079,6 +1220,9 @@ function Invoke-OwnershipGuardTests {
   if ([string]::IsNullOrEmpty($closeBody) -or $closeBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -lt 0 -or
       $closeBody.IndexOf('Assert-OwnedProcess $Owner', [StringComparison]::Ordinal) -gt $closeBody.IndexOf("SendClose(", [StringComparison]::Ordinal)) {
     throw "Close path no longer validates exact process ownership before WM_CLOSE."
+  }
+  if ([string]::IsNullOrEmpty($waitBody) -or $waitBody -notmatch 'Select-OwnedGpuiWindow' -or $waitBody -match '\.Title\s+-match') {
+    throw "Window discovery must select the exact native GPUI class and cannot require a caption."
   }
 }
 
@@ -1147,7 +1291,7 @@ function Test-ImeGuardDelta {
 
 if ($Mode -eq "Validate") {
   Invoke-ParserTests
-  [ordered]@{ status = "PASS"; input_size = [PaletteE2E.Win32]::InputStructureSize(); process_bits = [IntPtr]::Size * 8; input_events = 0; fixtures_launched = 0; tests = @("valid open observer tuple and disabled option", "filtered Go command.1/index0 observer identity", "filtered Japanese command.3/index0 observer identity", "retained closed STATE/COMPLETE wire shape", "zero-match Option None wire shape", "reject mismatched completion/readback identity", "reject accepted/state query mismatch", "reject READBACK_UNAVAILABLE", "reject newer incomplete accepted/state frame", "Option None/single-index/malformed multi-index cases", "IME guard deltas: OS-consumed 0/0, app-guarded 1/1, and app-delivered Escape release 0/1", "wrong start ticks/executable/missing HWND/zero HWND rejected before input", "source ordering proves owner validation before SendInput and WM_CLOSE") } | ConvertTo-Json -Depth 6
+  [ordered]@{ status = "PASS"; input_size = [PaletteE2E.Win32]::InputStructureSize(); process_bits = [IntPtr]::Size * 8; input_events = 0; fixtures_launched = 0; tests = @("valid open observer tuple and disabled option", "filtered Go command.1/index0 observer identity", "filtered Japanese command.3/index0 observer identity", "retained closed STATE/COMPLETE wire shape", "zero-match Option None wire shape", "reject mismatched completion/readback identity", "reject accepted/state query mismatch", "reject READBACK_UNAVAILABLE", "reject newer incomplete accepted/state frame", "Option None/single-index/malformed multi-index cases", "IME guard deltas: OS-consumed 0/0, app-guarded 1/1, and app-delivered Escape release 0/1", "blank-caption GPUI discovery ignores same-PID console and other-PID/invisible decoys", "ambiguous multiple same-PID GPUI windows rejected", "wrong start ticks/executable/hash/missing HWND/zero HWND rejected before input", "native QueryFullProcessImageNameW PID path plus SHA-256 ownership guard, including nonexistent-PID failure", "source ordering proves owner validation before SendInput and WM_CLOSE") } | ConvertTo-Json -Depth 6
   return
 }
 

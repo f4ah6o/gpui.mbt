@@ -156,6 +156,13 @@ namespace PaletteE2E
         public long Bytes;
     }
 
+    public sealed class ProcessImagePathResult
+    {
+        public bool Success;
+        public int LastError;
+        public string Path;
+    }
+
     public static class Win32
     {
         private const uint DESKTOP_READOBJECTS = 0x0001;
@@ -170,6 +177,7 @@ namespace PaletteE2E
         private const uint WM_INPUTLANGCHANGEREQUEST = 0x0050;
         private const uint SMTO_ABORTIFHUNG = 0x0002;
         private const uint IMC_GETCANDIDATEPOS = 0x0007;
+        private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
         private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 
@@ -199,6 +207,12 @@ namespace PaletteE2E
         private static extern int GetWindowTextW(IntPtr hwnd, StringBuilder text, int maxCount);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetClassNameW(IntPtr hwnd, StringBuilder className, int maxCount);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, uint processId);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, StringBuilder imagePath, ref int size);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr handle);
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
         [DllImport("user32.dll", SetLastError = true)]
@@ -269,6 +283,39 @@ namespace PaletteE2E
         public static int InputStructureSize()
         {
             return Marshal.SizeOf(typeof(INPUT));
+        }
+
+        public static ProcessImagePathResult QueryProcessImagePath(uint processId)
+        {
+            ProcessImagePathResult result = new ProcessImagePathResult();
+            IntPtr process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
+            if (process == IntPtr.Zero)
+            {
+                result.Success = false;
+                result.LastError = Marshal.GetLastWin32Error();
+                result.Path = null;
+                return result;
+            }
+            try
+            {
+                StringBuilder path = new StringBuilder(32768);
+                int size = path.Capacity;
+                result.Success = QueryFullProcessImageNameW(process, 0, path, ref size);
+                result.LastError = result.Success ? 0 : Marshal.GetLastWin32Error();
+                result.Path = result.Success ? path.ToString() : null;
+                return result;
+            }
+            finally
+            {
+                CloseHandle(process);
+            }
+        }
+
+        public static string GetWindowClassName(IntPtr hwnd)
+        {
+            StringBuilder className = new StringBuilder(256);
+            int length = GetClassNameW(hwnd, className, className.Capacity);
+            return length > 0 ? className.ToString() : String.Empty;
         }
         public static IntPtr[] LoadedKeyboardLayouts()
         {
