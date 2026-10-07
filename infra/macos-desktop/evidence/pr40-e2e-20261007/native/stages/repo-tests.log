@@ -1,0 +1,7 @@
+COMMAND ["/bin/bash", "-c", "\"$GPUI_MACOS_PYTHON\" -m unittest discover -s tests -p 'test_*.py' && \"$GPUI_MACOS_PYTHON\" scripts/check_contracts.py"]
+.....................................................................................................
+----------------------------------------------------------------------
+Ran 101 tests in 1.376s
+
+OK
+Contract documents valid; production release evidence is pending.

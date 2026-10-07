@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "ime-acceptance",
+  "command": [
+    "/bin/bash",
+    "-c",
+    "\"$GPUI_MACOS_PYTHON\" infra/macos-desktop/ime-acceptance.py --repo \"$GPUI_ACTRUN_REPO\" --profile \"$GPUI_MACOS_PROFILE_ROOT\" --app \"$GPUI_ACTRUN_RUN_DIR/checks/text-field/build/macos/GpuiTextField.app\" --output \"$GPUI_ACTRUN_RUN_DIR/ime-acceptance\""
+  ],
+  "started_at": "2026-10-07T11:28:59.662669+00:00",
+  "duration_seconds": 9.692759,
+  "timeout_seconds": 300,
+  "timed_out": false,
+  "exit_code": 1,
+  "status": "failed",
+  "log": "stages/ime-acceptance.log"
+}

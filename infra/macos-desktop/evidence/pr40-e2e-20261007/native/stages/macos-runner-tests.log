@@ -1,0 +1,6 @@
+COMMAND ["/bin/bash", "-c", "\"$GPUI_MACOS_PYTHON\" -m unittest discover -s infra/macos-desktop/tests"]
+..........................swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 swift-driver version: 1.148.6 .......
+----------------------------------------------------------------------
+Ran 33 tests in 6.350s
+
+OK

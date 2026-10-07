@@ -1,0 +1,9 @@
+COMMAND ["/bin/bash", "-c", "bash script/test_macos.sh all --target-dir \"$GPUI_ACTRUN_RUN_DIR/checks\""]
+GPUI_MACOS_E2E {"gpu_pixels":true,"text_pixels_1x_2x":true,"scene_preflight":true,"synthetic_ime_transactions":true,"scale_before_text_batch":true,"async_callback_batching":true,"direct_text_rollback":true,"input":true,"logical_coordinates":true,"resize":true,"wrong_thread":true,"churn":32,"stale_callbacks":true,"device_loss":true,"device_recovery":true}
+Finished. moon: ran 18 tasks, now up to date
+GPUI_MACOS_SMOKE {"frames":2,"resized":true,"close_requested":true,"destroyed":true}
+Total tests: 5, passed: 5, failed: 0.
+Total tests: 1, passed: 1, failed: 0.
+Total tests: 28, passed: 28, failed: 0.
+Finished. moon: ran 26 tasks, now up to date
+/Users/fu2hito/.codex/automations/mac-ios/runs/script-e2e-20261007T112817Z/native/checks/text-field/build/macos/GpuiTextField.app

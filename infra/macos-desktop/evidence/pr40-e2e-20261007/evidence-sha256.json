@@ -1,0 +1,21 @@
+{
+  "activation.json": "ccf045889bf67fd35e18da9a7cd357b1084b84a367fcf752a10a2973aecac529",
+  "run_e2e.py": "39783febcc69270912bcc38ab28ce8479c8d3a3d7b6b65b6218768f1075a859b",
+  "return-diagnostics.json": "3ab4218db930c63cb17a9e137e371a835fc377284b41d1cc11b386ac6845c168",
+  "activate_owned_app.m": "8b59d65a0b6b98026c19cbe1802a3c688198ba63f7bc5f2fadcecbde8751b894",
+  "activate_owned_app": "e5b203f2cc91952b88a8e08511e83128c2a05d330cd3593aac033157539a88b3",
+  "driver.json": "e8d9e3f140919378586f35560ed7d5ef62dacd630f02808ecea61187c30cee4a",
+  "verification.json": "a0a87d6d819222056601376931ce61fddc609fb431fe4ba8e97c5342b30c8385",
+  "run_ime_with_activation.py": "f4794e234a81c5586c123c949e3a7fa1b12d53e2fe14fb60102384c58bf5c5d3",
+  "native/summary.json": "ef12327eb78d4d94655d687462366a55ed6e4561c5e2866aa1576930ed410fb6",
+  "ime-activated/summary.json": "01fd59c860343ed3f3210c673f7ad5ba8eddfe851a2aa7c162670e35a314deb0",
+  "ime-activated/app.stdout.log": "0add02219a4367dc9cf91853904d6b2a577862a8a706b18d9f8559d30a8286a0",
+  "ime-activated/composition-window.png": "b751d67e92a3ddf0995a527510dc581fa52edd5e1b70aecdbaf74689b109344f",
+  "ime-activated/initial-window.png": "fd834e70a3295836c1d45b7953cf1241305074f2d7c9bdbd190d26cdb8739254",
+  "ime-trace/summary.json": "bbd6a43b7dedb7829c45669bfe07cf910a80724b8cc0e0a94f0d0be668dfc737",
+  "ime-trace/app.stdout.log": "63160a84d662ce09a7deaf8bab5fb515ebf90e5fc6cc3b1127dadc29479dad17",
+  "native/ime-acceptance/summary.json": "8bb5e63c8971e8e789be02655aeb451901a1cc9c5ef80b15dd6167f9e58c43f4",
+  "native/ime-acceptance/app.stdout.log": "2a3f423520d853dd543bd829ea06b2830956c3c51f9db255a03a91cc83c7dfb1",
+  "native/ime-acceptance/composition-window.png": "b751d67e92a3ddf0995a527510dc581fa52edd5e1b70aecdbaf74689b109344f",
+  "native/ime-acceptance/initial-window.png": "fd834e70a3295836c1d45b7953cf1241305074f2d7c9bdbd190d26cdb8739254"
+}

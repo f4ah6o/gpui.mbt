@@ -1,0 +1,36 @@
+name: Local Mac native quality
+on:
+  push:
+jobs:
+  macos-local:
+    runs-on: macos-latest
+    timeout-minutes: 300
+    steps:
+      - id: repo-tests
+        name: Repository contract and Python unit tests
+        run: |
+          "$GPUI_MACOS_PYTHON" infra/macos-desktop/stage.py --run-dir "$GPUI_ACTRUN_RUN_DIR" --id repo-tests --timeout 600 -- /bin/bash -c '"$GPUI_MACOS_PYTHON" -m unittest discover -s tests -p '"'"'test_*.py'"'"' && "$GPUI_MACOS_PYTHON" scripts/check_contracts.py'
+      - id: macos-runner-tests
+        name: Mac profile, runner, and evidence collector tests
+        run: |
+          "$GPUI_MACOS_PYTHON" infra/macos-desktop/stage.py --run-dir "$GPUI_ACTRUN_RUN_DIR" --id macos-runner-tests --timeout 300 -- /bin/bash -c '"$GPUI_MACOS_PYTHON" -m unittest discover -s infra/macos-desktop/tests'
+      - id: check-native
+        name: Type-check affected native MoonBit packages
+        run: |
+          "$GPUI_MACOS_PYTHON" infra/macos-desktop/stage.py --run-dir "$GPUI_ACTRUN_RUN_DIR" --id check-native --timeout 900 -- /bin/bash -c '"$MOON_HOME/bin/moon" check text controls/text_field platform/macos platform/macos_text examples/macos_text_field --target native --deny-warn --target-dir "$GPUI_ACTRUN_BUILD_DIR/moon-native"'
+      - id: check-all-targets
+        name: Type-check all repository targets with warnings denied
+        run: |
+          "$GPUI_MACOS_PYTHON" infra/macos-desktop/stage.py --run-dir "$GPUI_ACTRUN_RUN_DIR" --id check-all-targets --timeout 1500 -- /bin/bash -c '"$MOON_HOME/bin/moon" check --target all --deny-warn --target-dir "$GPUI_ACTRUN_BUILD_DIR/moon-all-targets"'
+      - id: test-model
+        name: Text-field owner and model tests
+        run: |
+          "$GPUI_MACOS_PYTHON" infra/macos-desktop/stage.py --run-dir "$GPUI_ACTRUN_RUN_DIR" --id test-model --timeout 900 -- /bin/bash -c '"$MOON_HOME/bin/moon" test --package f4ah6o/gpui/examples/macos_text_field --target native --deny-warn --target-dir "$GPUI_ACTRUN_BUILD_DIR/model-native"'
+      - id: native-macos
+        name: Synthetic Mac native E2E, CoreText, and fresh test-hook app build
+        run: |
+          "$GPUI_MACOS_PYTHON" infra/macos-desktop/stage.py --run-dir "$GPUI_ACTRUN_RUN_DIR" --id native-macos --timeout 1500 -- /bin/bash -c 'bash script/test_macos.sh all --target-dir "$GPUI_ACTRUN_RUN_DIR/checks"'
+      - id: ime-acceptance
+        name: Live Kotoeri composition callbacks and owned-window pixel proof
+        run: |
+          "$GPUI_MACOS_PYTHON" infra/macos-desktop/stage.py --run-dir "$GPUI_ACTRUN_RUN_DIR" --id ime-acceptance --timeout 300 -- /bin/bash -c '"$GPUI_MACOS_PYTHON" infra/macos-desktop/ime-acceptance.py --repo "$GPUI_ACTRUN_REPO" --profile "$GPUI_MACOS_PROFILE_ROOT" --app "$GPUI_ACTRUN_RUN_DIR/checks/text-field/build/macos/GpuiTextField.app" --output "$GPUI_ACTRUN_RUN_DIR/ime-acceptance"'

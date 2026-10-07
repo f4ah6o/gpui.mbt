@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "/Users/fu2hito/.codex/worktrees/pr40-script-e2e/gpui.mbt/infra/macos-desktop/ime-acceptance.py",
+    "--repo",
+    "/Users/fu2hito/.codex/worktrees/pr40-script-e2e/gpui.mbt",
+    "--profile",
+    "/private/tmp/gpui-macos-quality-profile",
+    "--app",
+    "/Users/fu2hito/.codex/automations/mac-ios/runs/script-e2e-20261007T112817Z/native/checks/text-field/build/macos/GpuiTextField.app",
+    "--output",
+    "/Users/fu2hito/.codex/automations/mac-ios/runs/script-e2e-20261007T112817Z/ime-trace"
+  ],
+  "diagnostic_opt_in": "GPUI_FIELD_MACOS_IME_DISPATCH_TRACE=1",
+  "started_at": "2026-10-07T11:31:37.789077+00:00",
+  "computer_use": false,
+  "subagents": false,
+  "binary_sha256": "e4eb4e60a19fdce9cbe8bb5258a59244835b5047c3f5180f3c8310c92913f551",
+  "runner_pid": 23432,
+  "exit_code": 1,
+  "runner_reaped": true,
+  "finished_at": "2026-10-07T11:31:44.548816+00:00"
+}

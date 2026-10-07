@@ -1,0 +1,51 @@
+{
+  "scope": "partial initial-to-composition pixel verification; not final acceptance",
+  "initial_to_composition_text_roi": {
+    "changed_pixels": 1535,
+    "changed_fraction": 0.01840351045463265,
+    "bounds": {
+      "left": 104,
+      "top": 159,
+      "right": 240,
+      "bottom": 194
+    },
+    "roi": {
+      "pixel_bounds": {
+        "left": 54,
+        "top": 150,
+        "right": 1066,
+        "bottom": 234
+      },
+      "field_bounds": {
+        "x": 24,
+        "y": 40,
+        "width": 512,
+        "height": 48
+      },
+      "scale": 2,
+      "content_offset": {
+        "x": 0,
+        "y": 32
+      },
+      "inset_points": 3
+    },
+    "before_pixels_sha256": "3e3a69ff864ff55f1f521f6d6c72f5442f9d442f53969a2484cfb7a31bb54f6e",
+    "after_pixels_sha256": "7af95a2fde552e704b06ad1781f62829263a31d29b40ab11a56ef9aaff0f2591",
+    "excluded_carets": [
+      {
+        "left": 140,
+        "top": 150,
+        "right": 156,
+        "bottom": 200
+      },
+      {
+        "left": 240,
+        "top": 150,
+        "right": 256,
+        "bottom": 200
+      }
+    ]
+  },
+  "passed": true,
+  "product_green": false
+}
