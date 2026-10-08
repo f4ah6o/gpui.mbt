@@ -4,6 +4,7 @@ package "f4ah6o/gpui/ubuntu"
 import {
   "f4ah6o/gpui/diagnostics",
   "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/platform/testing",
   "f4ah6o/gpui/primitives",
   "f4ah6o/gpui/scene",
   "f4ah6o/gpui/text",
@@ -24,11 +25,13 @@ pub struct Host {
 }
 pub fn Host::begin_text_session(Self, @platform.WindowId, @text.TextDocument, @primitives.Rect) -> Result[Int, @diagnostics.FrameworkError]
 pub fn Host::cancel_text_session(Self, @platform.WindowId, Int) -> Result[Int, @diagnostics.FrameworkError]
+pub fn Host::copy_frame(Self, @platform.WindowId, FixedArray[Byte]) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::create_window(Self, Int, Int, String) -> Result[@platform.WindowId, @diagnostics.FrameworkError]
 pub fn Host::destroy_window(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::direct_keyboard_text_epoch(Self, @platform.WindowId) -> Result[Int, @diagnostics.FrameworkError]
 pub fn Host::dispatch(Self, Int) -> Result[Array[@platform.Event], @diagnostics.FrameworkError]
 pub fn Host::end_text_session(Self, @platform.WindowId, Int) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::frame_metrics(Self, @platform.WindowId) -> Result[(Int, Int, Double), @diagnostics.FrameworkError]
 pub fn Host::next_editor_event(Self, timeout_ms? : Int) -> Result[EditorEvent?, @diagnostics.FrameworkError]
 pub fn Host::next_event(Self, timeout_ms? : Int) -> Result[@platform.Event?, @diagnostics.FrameworkError]
 pub fn Host::present(Self, @platform.WindowId, @scene.SceneSnapshot) -> Result[Unit, @diagnostics.FrameworkError]
@@ -51,6 +54,7 @@ pub fn Host::wake(Self) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::window_metrics(Self, @platform.WindowId) -> Result[(Double, Double, Double), @diagnostics.FrameworkError]
 pub fn Host::write_clipboard(Self, String) -> Result[Unit, @diagnostics.FrameworkError]
 pub impl @platform.Backend for Host
+pub impl @testing.FrameReadback for Host
 
 pub(all) enum HostState {
   Running
