@@ -125,11 +125,19 @@ extern "C" fn native_cursor(host : Int, cursor : Int) -> Int = "gpui_windows_cur
 
 ///|
 #borrow(output)
-extern "C" fn native_clipboard_read(
+extern "C" fn native_clipboard_read_size(
   host : Int,
   output : Bytes,
   capacity : Int,
-) -> Int = "gpui_windows_clipboard_read"
+) -> Int = "gpui_windows_clipboard_read_size"
+
+///|
+#borrow(output)
+extern "C" fn native_clipboard_read_data(
+  host : Int,
+  output : Bytes,
+  capacity : Int,
+) -> Int = "gpui_windows_clipboard_read_data"
 
 ///|
 #borrow(text)
@@ -809,7 +817,7 @@ pub fn Host::read_clipboard(
   self : Host,
 ) -> Result[String, @diagnostics.FrameworkError] {
   let empty = b""
-  let size = native_clipboard_read(self.token, empty, 0)
+  let size = native_clipboard_read_size(self.token, empty, 0)
   if size < 0 {
     return Err(backend_error(-size, "read_clipboard"))
   }
@@ -818,7 +826,7 @@ pub fn Host::read_clipboard(
   }
   let zero : Int = 0
   let output = Bytes::makei(size, _ => zero.to_byte())
-  let result = native_clipboard_read(self.token, output, size)
+  let result = native_clipboard_read_data(self.token, output, size)
   if result < 0 {
     return Err(backend_error(-result, "read_clipboard"))
   }

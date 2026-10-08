@@ -51,6 +51,12 @@ extern "C" fn native_window_title_matches(
 extern "C" fn native_clipboard_validation() -> Int = "gpui_windows_test_clipboard_validation"
 
 ///|
+extern "C" fn native_clipboard_diagnostics() -> Int = "gpui_windows_test_clipboard_diagnostics"
+
+///|
+extern "C" fn native_clipboard_diagnostics_disabled() -> Int = "gpui_windows_test_clipboard_diagnostics_disabled"
+
+///|
 extern "C" fn native_clipboard_fixture_read(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_read"
 
 ///|
@@ -186,6 +192,23 @@ test "Win32 status adapter returns stable framework errors" {
     assert_eq(error.code().label(), expected.label())
     assert_eq(error.operation(), "operation")
     assert_true(error.backend() == Some("windows-d3d11"))
+  }
+}
+
+///|
+test "clipboard diagnostic snapshots preserve error and read stage" {
+  required(outcome(native_clipboard_diagnostics(), "clipboard_diagnostics"))
+}
+
+///|
+test "clipboard diagnostic sink is off without its opt-in path" {
+  if @env.get_env_var("GPUI_WINDOWS_CLIPBOARD_DIAGNOSTICS_PATH") is None {
+    required(
+      outcome(
+        native_clipboard_diagnostics_disabled(),
+        "clipboard_diagnostics_disabled",
+      ),
+    )
   }
 }
 

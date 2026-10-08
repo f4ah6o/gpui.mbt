@@ -78,8 +78,10 @@ int32_t gpui_windows_present_text(int32_t abi, int32_t host, int32_t window,
                                   const uint8_t *text, int32_t text_length);
 int32_t gpui_windows_recover(int32_t host, int32_t window);
 int32_t gpui_windows_cursor(int32_t host, int32_t cursor);
-int32_t gpui_windows_clipboard_read(int32_t host, uint8_t *output,
-                                    int32_t capacity);
+int32_t gpui_windows_clipboard_read_size(int32_t host, uint8_t *output,
+                                         int32_t capacity);
+int32_t gpui_windows_clipboard_read_data(int32_t host, uint8_t *output,
+                                         int32_t capacity);
 int32_t gpui_windows_clipboard_write(int32_t host, const uint8_t *text,
                                      int32_t length);
 int32_t gpui_windows_readback(int32_t host, int32_t window, double *rgba);
@@ -111,6 +113,10 @@ int32_t gpui_windows_test_window_title(int32_t host, int32_t window,
 int32_t gpui_windows_test_wake_stop_race(int32_t host);
 /* CI-only pure-data probe for malformed, unterminated UTF-16 clipboard data. */
 int32_t gpui_windows_test_clipboard_validation(void);
+/* Pure formatter/order regression; it never calls the clipboard API. */
+int32_t gpui_windows_test_clipboard_diagnostics(void);
+/* Checks that the opt-in diagnostics sink stays disabled when no path is set. */
+int32_t gpui_windows_test_clipboard_diagnostics_disabled(void);
 /* Opt-in native E2E against the separately compiled Win32 clipboard fixture. */
 int32_t gpui_windows_test_clipboard_fixture_read(int32_t host);
 int32_t gpui_windows_test_clipboard_fixture_write(int32_t host);

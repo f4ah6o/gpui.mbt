@@ -12,11 +12,68 @@ typedef struct gpui_clipboard_fixture_process {
   HANDLE stdout_read;
   HANDLE job;
   char nonce[17];
+  const char *mode_label;
   BOOL active;
 } gpui_clipboard_fixture_process;
 
 static gpui_clipboard_fixture_process g_clipboard_fixture_process;
 static volatile LONG64 g_clipboard_fixture_nonce;
+
+static const char *clipboard_fixture_mode_label(const WCHAR *mode) {
+  if (wcscmp(mode, L"read-gpui") == 0)
+    return "read_gpui";
+  if (wcscmp(mode, L"write-fixture") == 0)
+    return "write_fixture";
+  if (wcscmp(mode, L"hold-lock") == 0)
+    return "hold_lock";
+  return "unknown";
+}
+
+static void clipboard_fixture_diag_parent_event(
+    const char *event, const char *stage, const char *api,
+    const char *result, const gpui_clipboard_fixture_process *child,
+    int error_valid, DWORD error, int exit_code_valid, DWORD exit_code) {
+  if (!gpui_clipboard_diag_is_enabled())
+    return;
+  gpui_clipboard_diag_record record = {0};
+  record.role = "host";
+  record.event = event;
+  record.stage = stage;
+  record.api = api;
+  record.result = result;
+  record.error_valid = error_valid;
+  record.error = error;
+  record.exit_code_valid = exit_code_valid;
+  record.exit_code = exit_code;
+  gpui_clipboard_diag_fill_actor(&record, g_host.hwnd);
+  if (child) {
+    record.child_pid = (uint32_t)child->process.dwProcessId;
+    record.child_tid = (uint32_t)child->process.dwThreadId;
+  }
+  gpui_clipboard_diag_emit(GPUI_CLIPBOARD_DIAG_ROLE_HOST, &record);
+}
+
+static void clipboard_fixture_diag_parent_values(
+    const char *event, const char *stage, const char *api,
+    const char *result, DWORD child_pid, DWORD child_tid, int error_valid,
+    DWORD error, int exit_code_valid, DWORD exit_code) {
+  if (!gpui_clipboard_diag_is_enabled())
+    return;
+  gpui_clipboard_diag_record record = {0};
+  record.role = "host";
+  record.event = event;
+  record.stage = stage;
+  record.api = api;
+  record.result = result;
+  record.error_valid = error_valid;
+  record.error = error;
+  record.child_pid = (uint32_t)child_pid;
+  record.child_tid = (uint32_t)child_tid;
+  record.exit_code_valid = exit_code_valid;
+  record.exit_code = exit_code;
+  gpui_clipboard_diag_fill_actor(&record, g_host.hwnd);
+  gpui_clipboard_diag_emit(GPUI_CLIPBOARD_DIAG_ROLE_HOST, &record);
+}
 
 static BOOL clipboard_fixture_path(WCHAR *path, DWORD capacity) {
   DWORD length = GetEnvironmentVariableW(L"GPUI_WINDOWS_CLIPBOARD_FIXTURE",
@@ -51,6 +108,11 @@ static BOOL clipboard_fixture_process_image_is(HANDLE process,
 static BOOL clipboard_fixture_cleanup(gpui_clipboard_fixture_process *child,
                                       BOOL terminate) {
   BOOL reaped = TRUE;
+  DWORD exit_code = STILL_ACTIVE;
+  BOOL exit_code_valid = FALSE;
+  DWORD child_pid = child->process.dwProcessId;
+  DWORD child_tid = child->process.dwThreadId;
+  const char *mode_label = child->mode_label ? child->mode_label : "unknown";
   if (child->process.hProcess) {
     DWORD state = WaitForSingleObject(child->process.hProcess, 0);
     if (state == WAIT_TIMEOUT && terminate) {
@@ -71,6 +133,10 @@ static BOOL clipboard_fixture_cleanup(gpui_clipboard_fixture_process *child,
     }
     if (state != WAIT_OBJECT_0)
       reaped = FALSE;
+    if (state == WAIT_OBJECT_0 &&
+        GetExitCodeProcess(child->process.hProcess, &exit_code) &&
+        exit_code != STILL_ACTIVE)
+      exit_code_valid = TRUE;
   }
   if (child->stdin_write)
     CloseHandle(child->stdin_write);
@@ -82,6 +148,10 @@ static BOOL clipboard_fixture_cleanup(gpui_clipboard_fixture_process *child,
     CloseHandle(child->process.hProcess);
   if (child->job)
     CloseHandle(child->job);
+  clipboard_fixture_diag_parent_values(
+      "fixture_child_reaped", mode_label, "CloseHandle",
+      reaped ? "success" : "failure", child_pid, child_tid,
+      FALSE, 0, exit_code_valid, exit_code_valid ? exit_code : 0);
   memset(child, 0, sizeof(*child));
   return reaped;
 }
@@ -89,6 +159,7 @@ static BOOL clipboard_fixture_cleanup(gpui_clipboard_fixture_process *child,
 static BOOL clipboard_fixture_spawn(const WCHAR *mode,
                                     gpui_clipboard_fixture_process *child) {
   ZeroMemory(child, sizeof(*child));
+  child->mode_label = clipboard_fixture_mode_label(mode);
   WCHAR image_path[MAX_PATH * 4];
   if (!clipboard_fixture_path(image_path,
                               (DWORD)(sizeof(image_path) / sizeof(WCHAR))))
@@ -169,10 +240,18 @@ static BOOL clipboard_fixture_spawn(const WCHAR *mode,
       image_path, command_line, NULL, NULL, TRUE,
       CREATE_NO_WINDOW | CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
       NULL, NULL, &startup.StartupInfo, &child->process);
+  DWORD create_error = created ? 0 : GetLastError();
   DeleteProcThreadAttributeList(attributes);
   HeapFree(GetProcessHeap(), 0, attributes);
-  if (!created)
+  if (!created) {
+    clipboard_fixture_diag_parent_event(
+        "fixture_created", child->mode_label, "CreateProcessW", "failure",
+        child, TRUE, create_error, FALSE, 0);
     goto fail;
+  }
+  clipboard_fixture_diag_parent_event(
+      "fixture_created", child->mode_label, "CreateProcessW", "success",
+      child, FALSE, 0, FALSE, 0);
   CloseHandle(child_stdin);
   child_stdin = NULL;
   CloseHandle(child_stdout);
@@ -188,6 +267,9 @@ static BOOL clipboard_fixture_spawn(const WCHAR *mode,
                                           image_path))
     goto fail_child;
   child->active = TRUE;
+  clipboard_fixture_diag_parent_event(
+      "fixture_resumed", child->mode_label, "ResumeThread", "success",
+      child, FALSE, 0, FALSE, 0);
   return TRUE;
 
 fail_child:
@@ -505,25 +587,47 @@ static BOOL clipboard_fixture_handshake(
     gpui_clipboard_fixture_process *child, const char *mode) {
   char line[160];
   char expected[160];
-  if (!clipboard_fixture_read_line(child, line, sizeof(line),
-                                   GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS,
-                                   &g_clipboard_fixture_read_api, NULL))
+  BOOL received = clipboard_fixture_read_line(
+      child, line, sizeof(line), GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS,
+      &g_clipboard_fixture_read_api, NULL);
+  if (!received) {
+    clipboard_fixture_diag_parent_event(
+        "fixture_ready_received", child->mode_label, "pipe_read",
+        "timeout_or_pipe_failure", child, FALSE, 0, FALSE, 0);
     return FALSE;
+  }
   int count = _snprintf_s(expected, sizeof(expected), _TRUNCATE,
                           "READY %s %lu %s", mode,
                           (unsigned long)child->process.dwProcessId,
                           child->nonce);
-  return count >= 0 && strcmp(line, expected) == 0;
+  BOOL matches = count >= 0 && strcmp(line, expected) == 0;
+  clipboard_fixture_diag_parent_event("fixture_ready_received",
+                                      child->mode_label, "pipe_read",
+                                      matches ? "matched" : "mismatch",
+                                      child, FALSE, 0, FALSE, 0);
+  return matches;
 }
 
 static BOOL clipboard_fixture_wait_success(
     gpui_clipboard_fixture_process *child) {
-  if (WaitForSingleObject(child->process.hProcess,
-                          GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS) != WAIT_OBJECT_0)
+  DWORD wait_state = WaitForSingleObject(child->process.hProcess,
+                                         GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS);
+  if (wait_state != WAIT_OBJECT_0) {
+    DWORD error = wait_state == WAIT_FAILED ? GetLastError() : 0;
+    clipboard_fixture_diag_parent_event(
+        "fixture_child_exit", child->mode_label, "WaitForSingleObject",
+        "timeout_or_failure", child, wait_state == WAIT_FAILED, error, FALSE,
+        0);
     return FALSE;
+  }
   DWORD exit_code = 0;
-  return GetExitCodeProcess(child->process.hProcess, &exit_code) &&
-         exit_code == 0;
+  BOOL has_exit_code = GetExitCodeProcess(child->process.hProcess, &exit_code);
+  BOOL success = has_exit_code && exit_code == 0;
+  clipboard_fixture_diag_parent_event(
+      "fixture_child_exit", child->mode_label, "GetExitCodeProcess",
+      success ? "success" : "failure", child, !has_exit_code,
+      has_exit_code ? 0 : GetLastError(), has_exit_code, exit_code);
+  return success;
 }
 
 static BOOL clipboard_fixture_wait_exit_code(
@@ -534,11 +638,23 @@ static BOOL clipboard_fixture_wait_exit_code(
     DWORD state = WaitForSingleObject(child->process.hProcess, 0);
     if (state == WAIT_OBJECT_0) {
       DWORD exit_code = 0;
-      return GetExitCodeProcess(child->process.hProcess, &exit_code) &&
-             exit_code == expected_exit_code;
+      BOOL has_exit_code = GetExitCodeProcess(child->process.hProcess,
+                                              &exit_code);
+      BOOL matches = has_exit_code && exit_code == expected_exit_code;
+      clipboard_fixture_diag_parent_event(
+          "fixture_child_exit", child->mode_label, "GetExitCodeProcess",
+          matches ? "expected" : "unexpected", child, !has_exit_code,
+          has_exit_code ? 0 : GetLastError(), has_exit_code, exit_code);
+      return matches;
     }
-    if (state == WAIT_FAILED || GetTickCount64() >= deadline)
+    if (state == WAIT_FAILED || GetTickCount64() >= deadline) {
+      DWORD error = state == WAIT_FAILED ? GetLastError() : 0;
+      clipboard_fixture_diag_parent_event(
+          "fixture_child_exit", child->mode_label, "WaitForSingleObject",
+          state == WAIT_FAILED ? "wait_failed" : "timeout", child,
+          state == WAIT_FAILED, error, FALSE, 0);
       return FALSE;
+    }
     MSG message;
     g_host.api.peek_message_w(&message, NULL, 0, 0, PM_NOREMOVE);
     Sleep(1);
@@ -563,6 +679,11 @@ static int32_t clipboard_fixture_run(const WCHAR *mode_wide,
       (unsigned long)child.process.dwProcessId, child.nonce);
   BOOL handshake_matches = has_handshake && expected_length >= 0 &&
                            strcmp(line, expected) == 0;
+  clipboard_fixture_diag_parent_event(
+      "fixture_ready_received", child.mode_label, "pipe_read",
+      handshake_matches ? "matched"
+                        : has_handshake ? "mismatch" : "timeout_or_pipe_failure",
+      &child, FALSE, 0, FALSE, 0);
   BOOL exited_successfully =
       handshake_matches && clipboard_fixture_wait_success(&child);
   if (!handshake_matches) {
@@ -636,22 +757,40 @@ int32_t gpui_windows_test_clipboard_fixture_lock_stop(int32_t token) {
   int release_length = _snprintf_s(release, sizeof(release), _TRUNCATE,
                                    "RELEASE %s\n", child->nonce);
   DWORD written = 0;
-  BOOL sent = release_length >= 0 &&
-              WriteFile(child->stdin_write, release, (DWORD)release_length,
-                        &written, NULL) &&
-              written == (DWORD)release_length;
+  BOOL write_ok = FALSE;
+  DWORD write_error = 0;
+  if (release_length >= 0) {
+    write_ok = WriteFile(child->stdin_write, release, (DWORD)release_length,
+                         &written, NULL);
+    if (!write_ok)
+      write_error = GetLastError();
+  }
+  BOOL sent = write_ok && written == (DWORD)release_length;
+  clipboard_fixture_diag_parent_event(
+      "fixture_release_sent", "lock_stop", "WriteFile",
+      sent ? "success" : "failure", child, !write_ok && release_length >= 0,
+      write_error, FALSE, 0);
   char line[160];
   char expected[160];
   int expected_length = _snprintf_s(
       expected, sizeof(expected), _TRUNCATE, "DONE hold-lock %lu %s",
       (unsigned long)child->process.dwProcessId, child->nonce);
-  BOOL completed = sent && expected_length >= 0 &&
-                   clipboard_fixture_read_line(
-                       child, line, sizeof(line),
-                       GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS,
-                       &g_clipboard_fixture_read_api, NULL) &&
-                   strcmp(line, expected) == 0 &&
-                   clipboard_fixture_wait_success(child);
+  BOOL done_line_received = FALSE;
+  BOOL done_matches = FALSE;
+  if (sent && expected_length >= 0) {
+    done_line_received = clipboard_fixture_read_line(
+        child, line, sizeof(line), GPUI_CLIPBOARD_FIXTURE_TIMEOUT_MS,
+        &g_clipboard_fixture_read_api, NULL);
+    done_matches = done_line_received && strcmp(line, expected) == 0;
+    clipboard_fixture_diag_parent_event(
+        "fixture_done_received", "lock_stop", "pipe_read",
+        done_matches ? "matched"
+                     : done_line_received ? "mismatch" : "timeout_or_pipe_failure",
+        child, FALSE, 0, FALSE, 0);
+  }
+  BOOL exited_successfully = done_matches && clipboard_fixture_wait_success(child);
+  BOOL completed = sent && expected_length >= 0 && done_matches &&
+                   exited_successfully;
   if (!clipboard_fixture_cleanup(child, !completed))
     completed = FALSE;
   return completed ? GPUI_WINDOWS_OK : GPUI_WINDOWS_NATIVE;
