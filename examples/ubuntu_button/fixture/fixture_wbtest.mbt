@@ -208,3 +208,191 @@ test "fixture scene includes label and status as copied snapshot text" {
   assert_true(items[5] is @scene.TextItem(id=201, ..))
   assert_true(scene.canonical_json().contains("Run action"))
 }
+
+///|
+fn ubuntu_button_semantic_node(demo : ButtonDemo) -> @accessibility.SemanticNode {
+  demo.accessibility_snapshot().nodes()[1]
+}
+
+///|
+fn ubuntu_button_semantic_request(demo : ButtonDemo) -> @accessibility.ActionRequest {
+  @accessibility.ActionRequest::new(
+    ubuntu_button_semantic_node(demo).id(),
+    @accessibility.Invoke,
+  )
+}
+
+///|
+fn ubuntu_button_semantic_action_is_error(
+  demo : ButtonDemo,
+  request : @accessibility.ActionRequest,
+  expected : @accessibility.ActionError,
+) -> Bool {
+  match demo.validate_accessibility_request(request) {
+    Err(error) => error == expected
+    Ok(_) => false
+  }
+}
+
+///|
+test "fixture publishes button identity name geometry and state" {
+  let demo = ButtonDemo::new(640.0, 240.0).unwrap()
+  let nodes = demo.accessibility_snapshot().nodes()
+  let expected_viewport = @primitives.Rect::new(0.0, 0.0, 640.0, 240.0).unwrap()
+
+  assert_eq(nodes.length(), 2)
+  assert_true(nodes[0].role() == @accessibility.Window)
+  assert_eq(nodes[0].name(), "Ubuntu button demo")
+  assert_true(nodes[0].bounds() == expected_viewport)
+  assert_true(nodes[0].parent() is None)
+
+  let button = nodes[1]
+  let actions = button.supported_actions()
+  assert_true(button.role() == @accessibility.Button)
+  assert_eq(button.name(), demo.button().label())
+  assert_true(button.bounds() == demo.button().bounds())
+  assert_eq(button.id().key(), demo.button().id())
+  assert_true(button.parent() == Some(nodes[0].id()))
+  assert_true(button.is_enabled())
+  assert_true(!button.is_loading())
+  assert_true(!button.is_focused())
+  assert_eq(actions.length(), 1)
+  assert_true(actions[0] == @accessibility.Invoke)
+}
+
+///|
+test "fixture ordinary updates preserve identity and revalidate latest state" {
+  let demo = ButtonDemo::new(640.0, 240.0).unwrap()
+  let original_id = ubuntu_button_semantic_node(demo).id()
+  let request = @accessibility.ActionRequest::new(original_id, @accessibility.Invoke)
+
+  let focused = demo.focus_button().unwrap()
+  let focused_button = ubuntu_button_semantic_node(focused)
+  assert_true(focused_button.id() == original_id)
+  assert_true(focused_button.is_focused())
+
+  let loading = focused.with_loading(true).unwrap()
+  let loading_button = ubuntu_button_semantic_node(loading)
+  assert_true(loading_button.id() == original_id)
+  assert_true(loading_button.is_loading())
+  assert_true(loading_button.is_focused())
+  assert_eq(loading_button.supported_actions().length(), 1)
+  assert_true(
+    ubuntu_button_semantic_action_is_error(
+      loading,
+      request,
+      @accessibility.Loading,
+    ),
+  )
+
+  let disabled = focused.with_enabled(false).unwrap()
+  let disabled_button = ubuntu_button_semantic_node(disabled)
+  assert_true(disabled_button.id() == original_id)
+  assert_true(!disabled_button.is_enabled())
+  assert_true(!disabled_button.is_focused())
+  assert_eq(disabled_button.supported_actions().length(), 1)
+  assert_true(
+    ubuntu_button_semantic_action_is_error(
+      disabled,
+      request,
+      @accessibility.Disabled,
+    ),
+  )
+  assert_true(disabled.dispatch_accessibility_request(request) is Err(_))
+  assert_eq(disabled.activations(), 0)
+}
+
+///|
+test "fixture removal and restoration allocate a fresh semantic generation" {
+  let demo = ButtonDemo::new(640.0, 240.0).unwrap()
+  let original = ubuntu_button_semantic_node(demo).id()
+  let request = @accessibility.ActionRequest::new(original, @accessibility.Invoke)
+
+  let small = demo.resize(80.0, 30.0).unwrap()
+  assert_eq(small.accessibility_snapshot().nodes().length(), 1)
+  assert_true(
+    ubuntu_button_semantic_action_is_error(small, request, @accessibility.StaleNode),
+  )
+
+  let restored = small.resize(640.0, 240.0).unwrap()
+  let replacement = ubuntu_button_semantic_node(restored).id()
+  assert_eq(restored.button().id(), demo.button().id())
+  assert_eq(replacement.key(), original.key())
+  assert_true(replacement != original)
+  assert_true(
+    ubuntu_button_semantic_action_is_error(
+      restored,
+      request,
+      @accessibility.StaleNode,
+    ),
+  )
+}
+
+///|
+test "fixture resets the model before reusing its button key" {
+  let demo = ButtonDemo::new(640.0, 240.0).unwrap()
+  let original = ubuntu_button_semantic_node(demo).id()
+  let request = @accessibility.ActionRequest::new(original, @accessibility.Invoke)
+  let reset = demo.reset_session().unwrap()
+  let replacement = ubuntu_button_semantic_node(reset).id()
+
+  assert_eq(reset.button().id(), demo.button().id())
+  assert_eq(replacement.key(), original.key())
+  assert_true(replacement != original)
+  assert_true(
+    ubuntu_button_semantic_action_is_error(
+      reset,
+      request,
+      @accessibility.StaleNode,
+    ),
+  )
+}
+
+///|
+test "fixture close and reopen reject old owner requests" {
+  let demo = ButtonDemo::new(640.0, 240.0).unwrap()
+  let old_request = ubuntu_button_semantic_request(demo)
+  demo.close()
+
+  assert_true(
+    ubuntu_button_semantic_action_is_error(
+      demo,
+      old_request,
+      @accessibility.ModelClosed,
+    ),
+  )
+  let reopened = demo.reopen().unwrap()
+  assert_eq(reopened.button().id(), demo.button().id())
+  assert_true(
+    ubuntu_button_semantic_action_is_error(
+      reopened,
+      old_request,
+      @accessibility.ForeignOwner,
+    ),
+  )
+  assert_eq(reopened.activations(), 0)
+}
+
+///|
+test "fixture validation is inert and owner delivery uses shared counter" {
+  let demo = ButtonDemo::new(640.0, 240.0).unwrap()
+  let request = ubuntu_button_semantic_request(demo)
+  let original_button = demo.button()
+  let receipt = demo.validate_accessibility_request(request).unwrap()
+  assert_true(receipt.action() == @accessibility.Invoke)
+  assert_eq(demo.activations(), 0)
+  assert_true(!demo.button().is_focused())
+  assert_true(!demo.button().is_pressed())
+
+  let delivered = demo.dispatch_accessibility_request(request).unwrap()
+  assert_eq(delivered.activations(), 1)
+  assert_true(!delivered.button().is_focused())
+  assert_true(!delivered.button().is_pressed())
+  assert_true(delivered.button().id() == original_button.id())
+
+  // ActionIntent is a repeatable validation receipt. This fixture deliberately
+  // does not deduplicate requests; app-specific idempotency belongs to the
+  // owner’s action path.
+  let repeated = delivered.dispatch_accessibility_request(request).unwrap()
+  assert_eq(repeated.activations(), 2)
+}

@@ -6,6 +6,7 @@ pub(all) enum ButtonDemoError {
   ElementError(@element.ElementError)
   PaintError(@button.ButtonPaintError)
   SceneError(@scene.SnapshotError)
+  AccessibilityError(@accessibility.AccessibilityError)
 } derive(Eq)
 
 ///|
@@ -20,6 +21,7 @@ pub struct ButtonDemo {
   priv viewport : @primitives.Rect
   priv activations : Int
   priv button_visible : Bool
+  priv accessibility_model : @accessibility.AccessibilityModel
 }
 
 ///|
@@ -92,11 +94,78 @@ fn demo_tree(
 }
 
 ///|
-/// Create a portable input/paint fixture with the same button ID on each
-/// session. This does not start a window or claim Wayland acceptance.
-pub fn ButtonDemo::new(
+/// Project the current fixture into the portable semantic model. The button's
+/// logical ID is the continuity key; the accessibility model supplies its
+/// own owner-scoped generation for each continuous admission.
+fn demo_accessibility_specs(
+  button : @button.Button,
+  viewport : @primitives.Rect,
+  button_visible : Bool,
+) -> Result[Array[@accessibility.NodeSpec], ButtonDemoError] {
+  let root = @accessibility.NodeSpec::new(
+    1UL,
+    None,
+    @accessibility.Window,
+    "Ubuntu button demo",
+    viewport,
+  )
+  if !button_visible {
+    return Ok([root])
+  }
+  let button_spec = @accessibility.NodeSpec::new(
+    button.id(),
+    Some(1UL),
+    @accessibility.Button,
+    button.label(),
+    button.bounds(),
+  )
+  .with_enabled(button.is_enabled())
+  .with_loading(button.is_loading())
+  .with_focused(button.is_focused())
+  let button_spec = match button_spec.with_actions([@accessibility.Invoke]) {
+    Ok(value) => value
+    Err(error) => return Err(AccessibilityError(error))
+  }
+  Ok([root, button_spec])
+}
+
+///|
+fn demo_publish_accessibility(
+  model : @accessibility.AccessibilityModel,
+  button : @button.Button,
+  viewport : @primitives.Rect,
+  button_visible : Bool,
+) -> Result[@accessibility.AccessibilitySnapshot, ButtonDemoError] {
+  let specs = match demo_accessibility_specs(button, viewport, button_visible) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  match model.publish(specs) {
+    Ok(snapshot) => Ok(snapshot)
+    Err(error) => Err(AccessibilityError(error))
+  }
+}
+
+///|
+fn demo_sync_accessibility_or_abort(demo : ButtonDemo) -> ButtonDemo {
+  match
+    demo_publish_accessibility(
+      demo.accessibility_model,
+      demo.button,
+      demo.viewport,
+      demo.button_visible,
+    ) {
+    Ok(_) => demo
+    Err(AccessibilityError(@accessibility.ModelClosed)) => demo
+    Err(_) => abort("Ubuntu button semantic fixture invariant")
+  }
+}
+
+///|
+fn demo_new_with_model(
   width : Double,
   height : Double,
+  accessibility_model : @accessibility.AccessibilityModel,
 ) -> Result[ButtonDemo, ButtonDemoError] {
   let viewport = match demo_rect(0.0, 0.0, width, height) {
     Ok(value) => value
@@ -122,7 +191,42 @@ pub fn ButtonDemo::new(
     Ok(value) => value
     Err(error) => return Err(error)
   }
-  Ok({ button, tree, viewport, activations: 0, button_visible, })
+  let demo = {
+    button,
+    tree,
+    viewport,
+    activations: 0,
+    button_visible,
+    accessibility_model,
+  }
+  match
+    demo_publish_accessibility(
+      demo.accessibility_model,
+      demo.button,
+      demo.viewport,
+      demo.button_visible,
+    ) {
+    Ok(_) => Ok(demo)
+    Err(error) => Err(error)
+  }
+}
+
+///|
+/// Create a portable input/paint fixture with the same button ID on each
+/// session. This does not start a window or claim Wayland acceptance.
+pub fn ButtonDemo::new(
+  width : Double,
+  height : Double,
+) -> Result[ButtonDemo, ButtonDemoError] {
+  let _ = match demo_rect(0.0, 0.0, width, height) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  let accessibility_model = match @accessibility.AccessibilityModel::new() {
+    Ok(value) => value
+    Err(error) => return Err(AccessibilityError(error))
+  }
+  demo_new_with_model(width, height, accessibility_model)
 }
 
 ///|
@@ -146,6 +250,64 @@ pub fn ButtonDemo::is_button_visible(self : ButtonDemo) -> Bool {
 }
 
 ///|
+/// Return the latest immutable semantic snapshot for this fixture. This is a
+/// headless projection, not an operating-system accessibility object.
+pub fn ButtonDemo::accessibility_snapshot(
+  self : ButtonDemo,
+) -> @accessibility.AccessibilitySnapshot {
+  self.accessibility_model.snapshot()
+}
+
+///|
+/// Validate an accessibility request without running the application action.
+/// The returned intent is a repeatable validation receipt, not a one-shot
+/// token or a command that executes by itself.
+pub fn ButtonDemo::validate_accessibility_request(
+  self : ButtonDemo,
+  request : @accessibility.ActionRequest,
+) -> Result[@accessibility.ActionIntent, @accessibility.ActionError] {
+  self.accessibility_model.resolve_action(request)
+}
+
+///|
+/// Synchronously validate a request owned by this fixture, then route an
+/// accepted Invoke through the same app-owned activation counter as input.
+pub fn ButtonDemo::dispatch_accessibility_request(
+  self : ButtonDemo,
+  request : @accessibility.ActionRequest,
+) -> Result[ButtonDemo, @accessibility.ActionError] {
+  match self.accessibility_model.resolve_action(request) {
+    Err(error) => Err(error)
+    Ok(intent) => {
+      if intent.action() == @accessibility.Invoke &&
+        intent.node_id().key() == self.button.id() && self.button_visible {
+        Ok(ButtonDemo::apply_effect(self, @button.Activated))
+      } else {
+        Err(@accessibility.StaleNode)
+      }
+    }
+  }
+}
+
+///|
+/// Revoke the current live semantic tree. A later reopen receives a distinct
+/// owner, so IDs from this session remain foreign to the replacement.
+pub fn ButtonDemo::close(self : ButtonDemo) -> Unit {
+  self.accessibility_model.close()
+}
+
+///|
+/// Open a fresh fixture model with the same viewport and stable button key.
+pub fn ButtonDemo::reopen(
+  self : ButtonDemo,
+) -> Result[ButtonDemo, ButtonDemoError] {
+  ButtonDemo::new(
+    self.viewport.size().width(),
+    self.viewport.size().height(),
+  )
+}
+
+///|
 pub fn ButtonDemo::focus_button(
   self : ButtonDemo,
 ) -> Result[ButtonDemo, ButtonDemoError] {
@@ -156,16 +318,26 @@ pub fn ButtonDemo::focus_button(
     Ok(value) => value
     Err(error) => return Err(ElementError(error))
   }
-  Ok({ ..self, button: self.button.with_focus(true), tree, })
+  let next = { ..self, button: self.button.with_focus(true), tree, }
+  match
+    demo_publish_accessibility(
+      next.accessibility_model,
+      next.button,
+      next.viewport,
+      next.button_visible,
+    ) {
+    Ok(_) => Ok(next)
+    Err(error) => Err(error)
+  }
 }
 
 ///|
 pub fn ButtonDemo::blur(self : ButtonDemo) -> ButtonDemo {
-  {
+  demo_sync_accessibility_or_abort({
     ..self,
     button: self.button.with_focus(false).cancel_press(),
     tree: self.tree.clear_focus(),
-  }
+  })
 }
 
 ///|
@@ -179,7 +351,17 @@ fn ButtonDemo::replace_button(
     Ok(value) => value
     Err(error) => return Err(error)
   }
-  Ok({ ..self, button, tree, })
+  let next = { ..self, button, tree, }
+  match
+    demo_publish_accessibility(
+      next.accessibility_model,
+      next.button,
+      next.viewport,
+      next.button_visible,
+    ) {
+    Ok(_) => Ok(next)
+    Err(error) => Err(error)
+  }
 }
 
 ///|
@@ -239,7 +421,17 @@ pub fn ButtonDemo::resize(
     Ok(value) => value
     Err(error) => return Err(error)
   }
-  Ok({ ..self, button, tree, viewport, button_visible, })
+  let next = { ..self, button, tree, viewport, button_visible, }
+  match
+    demo_publish_accessibility(
+      next.accessibility_model,
+      next.button,
+      next.viewport,
+      next.button_visible,
+    ) {
+    Ok(_) => Ok(next)
+    Err(error) => Err(error)
+  }
 }
 
 ///|
@@ -248,7 +440,15 @@ pub fn ButtonDemo::resize(
 pub fn ButtonDemo::reset_session(
   self : ButtonDemo,
 ) -> Result[ButtonDemo, ButtonDemoError] {
-  ButtonDemo::new(self.viewport.size().width(), self.viewport.size().height())
+  match self.accessibility_model.reset() {
+    Ok(_) => ()
+    Err(error) => return Err(AccessibilityError(error))
+  }
+  demo_new_with_model(
+    self.viewport.size().width(),
+    self.viewport.size().height(),
+    self.accessibility_model,
+  )
 }
 
 ///|
@@ -260,6 +460,16 @@ fn demo_effect_count(
     @button.Activated if activations < 2147483647 => activations + 1
     _ => activations
   }
+}
+
+///|
+/// One app-owned effect path shared by physical input and validated semantic
+/// Invoke. Semantic dispatch deliberately leaves focus and press state alone.
+fn ButtonDemo::apply_effect(
+  self : ButtonDemo,
+  effect : @button.ButtonEffect,
+) -> ButtonDemo {
+  { ..self, activations: demo_effect_count(self.activations, effect), }
 }
 
 ///|
@@ -306,11 +516,16 @@ pub fn ButtonDemo::handle_input(
       }
     _ => ()
   }
-  {
+  let next = {
     ..self,
     button,
     tree,
-    activations: demo_effect_count(self.activations, result.effect()),
+  }
+  let next = ButtonDemo::apply_effect(next, result.effect())
+  if next.button.is_focused() != self.button.is_focused() {
+    demo_sync_accessibility_or_abort(next)
+  } else {
+    next
   }
 }
 
