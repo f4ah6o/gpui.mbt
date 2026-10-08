@@ -39,6 +39,15 @@ extern "C" fn native_test_text_density2(
 extern "C" fn native_wrong_thread(host : Int, window : Int) -> Int = "gpui_windows_test_wrong_thread"
 
 ///|
+#borrow(title)
+extern "C" fn native_window_title_matches(
+  host : Int,
+  window : Int,
+  title : Bytes,
+  length : Int,
+) -> Int = "gpui_windows_test_window_title"
+
+///|
 extern "C" fn native_clipboard_validation() -> Int = "gpui_windows_test_clipboard_validation"
 
 ///|
@@ -441,8 +450,19 @@ test "Windows D3D11 HWND renders and reads back first frame" {
         fail("second native host should be busy")
       }
     }
-    let window = required(
-      host.create_window(128, 96, "gpui.mbt Windows 日本語"),
+    let initial_title = "gpui.mbt Windows 日本語"
+    let window = required(host.create_window(128, 96, initial_title))
+    let initial_title_bytes = @utf8.encode(initial_title)
+    required(
+      outcome(
+        native_window_title_matches(
+          host.token,
+          window.value().to_int(),
+          initial_title_bytes,
+          initial_title_bytes.length(),
+        ),
+        "initial_window_title",
+      ),
     )
     match host.create_window(32, 32, "second window") {
       Err(error) => assert_eq(error.code().label(), "busy")

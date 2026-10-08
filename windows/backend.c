@@ -56,6 +56,7 @@ typedef LONG_PTR(WINAPI *fn_get_window_long_ptr_w)(HWND, int);
 typedef BOOL(WINAPI *fn_show_window)(HWND, int);
 typedef BOOL(WINAPI *fn_update_window)(HWND);
 typedef BOOL(WINAPI *fn_set_window_text_w)(HWND, LPCWSTR);
+typedef int(WINAPI *fn_get_window_text_w)(HWND, LPWSTR, int);
 typedef BOOL(WINAPI *fn_set_window_pos)(HWND, HWND, int, int, int, int, UINT);
 typedef BOOL(WINAPI *fn_get_client_rect)(HWND, LPRECT);
 typedef BOOL(WINAPI *fn_get_window_rect)(HWND, LPRECT);
@@ -119,6 +120,7 @@ typedef struct gpui_windows_api {
   fn_show_window show_window;
   fn_update_window update_window;
   fn_set_window_text_w set_window_text_w;
+  fn_get_window_text_w get_window_text_w;
   fn_set_window_pos set_window_pos;
   fn_get_client_rect get_client_rect;
   fn_get_window_rect get_window_rect;
@@ -215,6 +217,10 @@ typedef struct gpui_windows_host {
   UINT staging_height;
   BOOL readback_enabled;
   BOOL readback_valid;
+  uint8_t *frame_pixels;
+  UINT frame_width;
+  UINT frame_height;
+  double frame_scale;
   BOOL frame_pending;
   int64_t test_clear_count;
   int64_t test_draw_count;
@@ -228,6 +234,10 @@ static gpui_windows_host g_host;
 static volatile LONG g_host_claimed;
 static volatile LONG g_next_host;
 static volatile LONG g_next_window;
+static BOOL native_e2e_enabled(void) {
+  const char *value = getenv("GPUI_NATIVE_E2E");
+  return value && strcmp(value, "1") == 0;
+}
 /* Wake and lifecycle calls can arrive on different threads. Keep the loaded
  * user32 function pointer and owner-thread ID alive while a wake is posted. */
 static SRWLOCK g_host_lifecycle_lock = SRWLOCK_INIT;
@@ -434,6 +444,7 @@ static int32_t api_init(gpui_windows_host *host) {
   GPUI_LOAD(user32, show_window, fn_show_window, "ShowWindow");
   GPUI_LOAD(user32, update_window, fn_update_window, "UpdateWindow");
   GPUI_LOAD(user32, set_window_text_w, fn_set_window_text_w, "SetWindowTextW");
+  GPUI_LOAD(user32, get_window_text_w, fn_get_window_text_w, "GetWindowTextW");
   GPUI_LOAD(user32, set_window_pos, fn_set_window_pos, "SetWindowPos");
   GPUI_LOAD(user32, get_client_rect, fn_get_client_rect, "GetClientRect");
   GPUI_LOAD(user32, get_window_rect, fn_get_window_rect, "GetWindowRect");
@@ -1012,6 +1023,45 @@ static int32_t readback_frame(gpui_windows_host *host) {
   return GPUI_WINDOWS_OK;
 }
 
+static int32_t copy_staging_frame(gpui_windows_host *host,
+                                  uint8_t **pixels_out) {
+  *pixels_out = NULL;
+  int64_t pixels = (int64_t)host->staging_width * host->staging_height;
+  int64_t bytes = pixels * 4;
+  if (!host->staging_texture || host->staging_width == 0 ||
+      host->staging_height == 0 || host->staging_width > 16384 ||
+      host->staging_height > 16384 || pixels > 16 * 1024 * 1024 ||
+      bytes > INT32_MAX)
+    return GPUI_WINDOWS_RESOURCE;
+  uint8_t *copy = malloc((size_t)bytes);
+  if (!copy)
+    return GPUI_WINDOWS_RESOURCE;
+  D3D11_MAPPED_SUBRESOURCE mapped;
+  HRESULT hr = ID3D11DeviceContext_Map(host->context,
+                                       (ID3D11Resource *)host->staging_texture,
+                                       0, D3D11_MAP_READ, 0, &mapped);
+  if (FAILED(hr)) {
+    free(copy);
+    return map_hresult(hr);
+  }
+  size_t row_bytes = (size_t)host->staging_width * 4;
+  if (!mapped.pData || mapped.RowPitch < row_bytes) {
+    ID3D11DeviceContext_Unmap(host->context,
+                              (ID3D11Resource *)host->staging_texture, 0);
+    free(copy);
+    return GPUI_WINDOWS_CONVERSION;
+  }
+  for (UINT y = 0; y < host->staging_height; ++y) {
+    const uint8_t *row = (const uint8_t *)mapped.pData +
+                         (size_t)y * mapped.RowPitch;
+    memcpy(copy + (size_t)y * row_bytes, row, row_bytes);
+  }
+  ID3D11DeviceContext_Unmap(host->context,
+                            (ID3D11Resource *)host->staging_texture, 0);
+  *pixels_out = copy;
+  return GPUI_WINDOWS_OK;
+}
+
 static int32_t present_frame_internal(gpui_windows_host *host,
                                       int32_t abi, BOOL mixed,
                                       const double *data, int32_t length,
@@ -1310,13 +1360,29 @@ static int32_t present_frame_internal(gpui_windows_host *host,
     release_staged_text(texts, staged_count);
     return status;
   }
+  uint8_t *captured_frame = NULL;
+  if (native_e2e_enabled()) {
+    status = copy_staging_frame(host, &captured_frame);
+    if (status != GPUI_WINDOWS_OK) {
+      release_staged_text(texts, staged_count);
+      return status;
+    }
+  }
   ID3D11DeviceContext_End(host->context, (ID3D11Asynchronous *)host->frame_query);
   host->test_present_count++;
   HRESULT hr = IDXGISwapChain_Present(host->swap_chain, 1, 0);
   if (FAILED(hr)) {
     host->frame_pending = FALSE;
+    free(captured_frame);
     release_staged_text(texts, staged_count);
     return map_hresult(hr);
+  }
+  if (captured_frame) {
+    free(host->frame_pixels);
+    host->frame_pixels = captured_frame;
+    host->frame_width = host->staging_width;
+    host->frame_height = host->staging_height;
+    host->frame_scale = host->scale;
   }
   host->frame_pending = TRUE;
   release_staged_text(texts, staged_count);
@@ -1467,6 +1533,10 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
   }
   if (!host || host != &g_host || host->hwnd != hwnd ||
       host->window_id <= 0) {
+    /* Preserve the caption supplied through CREATESTRUCT during creation. */
+    if (message == WM_NCCREATE && host == &g_host && !host->hwnd &&
+        host->window_id > 0)
+      return host->api.def_window_proc_w(hwnd, message, wparam, lparam);
     if (message == WM_NCCREATE)
       return TRUE;
     return host ? host->api.def_window_proc_w(hwnd, message, wparam, lparam)
@@ -1692,7 +1762,8 @@ int32_t gpui_windows_start(int32_t abi_version) {
   g_host.scale = 1.0;
   g_host.dpi = 96;
   const char *readback = getenv("GPUI_WINDOWS_READBACK");
-  g_host.readback_enabled = readback && strcmp(readback, "1") == 0;
+  g_host.readback_enabled = (readback && strcmp(readback, "1") == 0) ||
+                            native_e2e_enabled();
   int32_t status = api_init(&g_host);
   if (status != GPUI_WINDOWS_OK)
     goto fail;
@@ -1909,6 +1980,10 @@ int32_t gpui_windows_destroy(int32_t token, int32_t window) {
   g_host.pixel_height = 0;
   g_host.logical_width = 0;
   g_host.logical_height = 0;
+  free(g_host.frame_pixels);
+  g_host.frame_pixels = NULL;
+  g_host.frame_width = g_host.frame_height = 0;
+  g_host.frame_scale = 0.0;
   return GPUI_WINDOWS_OK;
 }
 
@@ -1925,6 +2000,31 @@ int32_t gpui_windows_title(int32_t token, int32_t window,
   BOOL ok = g_host.api.set_window_text_w(g_host.hwnd, wide_title);
   free(wide_title);
   return ok ? GPUI_WINDOWS_OK : GPUI_WINDOWS_NATIVE;
+}
+
+/* Verify the initial caption through Win32's public retrieval API. This is
+ * exercised immediately after CreateWindowExW by the native E2E test. */
+int32_t gpui_windows_test_window_title(int32_t token, int32_t window,
+                                       const uint8_t *title,
+                                       int32_t title_length) {
+  int32_t status = check_window(token, window);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  WCHAR *expected = NULL;
+  int32_t expected_length = 0;
+  status = utf8_to_wide(title, title_length, &expected, &expected_length);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  WCHAR actual[512] = {0};
+  int actual_length = g_host.api.get_window_text_w(
+      g_host.hwnd, actual, (int)(sizeof(actual) / sizeof(actual[0])));
+  BOOL matches =
+      expected_length < (int32_t)(sizeof(actual) / sizeof(actual[0])) &&
+      actual_length == expected_length &&
+      memcmp(actual, expected,
+             (size_t)(expected_length + 1) * sizeof(WCHAR)) == 0;
+  free(expected);
+  return matches ? GPUI_WINDOWS_OK : GPUI_WINDOWS_NATIVE;
 }
 
 int32_t gpui_windows_size(int32_t token, int32_t window, int32_t width,
@@ -2565,6 +2665,49 @@ int32_t gpui_windows_readback(int32_t token, int32_t window, double *rgba) {
   return GPUI_WINDOWS_OK;
 }
 
+int32_t gpui_windows_frame_metrics_v1(int32_t token, int32_t window,
+                                      double *output) {
+  int32_t status = check_window(token, window);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  if (!native_e2e_enabled() || !g_host.readback_enabled)
+    return GPUI_WINDOWS_UNSUPPORTED;
+  if (!output)
+    return GPUI_WINDOWS_INVALID;
+  if (!g_host.frame_pixels)
+    return GPUI_WINDOWS_BUSY;
+  int64_t pixels = (int64_t)g_host.frame_width * g_host.frame_height;
+  if (g_host.frame_width == 0 || g_host.frame_height == 0 ||
+      g_host.frame_width > 16384 || g_host.frame_height > 16384 ||
+      pixels > 16 * 1024 * 1024)
+    return GPUI_WINDOWS_RESOURCE;
+  output[0] = g_host.frame_width;
+  output[1] = g_host.frame_height;
+  output[2] = g_host.frame_scale;
+  return GPUI_WINDOWS_OK;
+}
+
+int32_t gpui_windows_frame_copy_v1(int32_t token, int32_t window,
+                                   uint8_t *output, int32_t capacity) {
+  int32_t status = check_window(token, window);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  if (!native_e2e_enabled() || !g_host.readback_enabled)
+    return GPUI_WINDOWS_UNSUPPORTED;
+  if (!g_host.frame_pixels)
+    return GPUI_WINDOWS_BUSY;
+  int64_t pixels = (int64_t)g_host.frame_width * g_host.frame_height;
+  int64_t required = pixels * 4;
+  if (g_host.frame_width == 0 || g_host.frame_height == 0 ||
+      g_host.frame_width > 16384 || g_host.frame_height > 16384 ||
+      pixels > 16 * 1024 * 1024 || required > INT32_MAX)
+    return GPUI_WINDOWS_RESOURCE;
+  if (!output || capacity < 0 || capacity != required)
+    return GPUI_WINDOWS_INVALID;
+  memcpy(output, g_host.frame_pixels, (size_t)required);
+  return GPUI_WINDOWS_OK;
+}
+
 /* Test-only full-pixel scan through the same staging texture used by the
  * native readback gate. Coordinates are logical; output is total, nonzero
  * alpha, partial alpha, and exact expected-RGBA pixel counts. */
@@ -2796,6 +2939,10 @@ int32_t gpui_windows_stop(int32_t token) {
   }
   gpui_text_session_shutdown(&g_host);
   api_release(&g_host);
+  free(g_host.frame_pixels);
+  g_host.frame_pixels = NULL;
+  g_host.frame_width = g_host.frame_height = 0;
+  g_host.frame_scale = 0.0;
   InterlockedExchange(&g_host.state, 2);
   InterlockedExchange(&g_host_claimed, 0);
   ReleaseSRWLockExclusive(&g_host_lifecycle_lock);
@@ -3004,6 +3151,21 @@ int32_t gpui_windows_readback(int32_t host, int32_t window, double *rgba) {
   (void)rgba;
   return GPUI_WINDOWS_UNSUPPORTED;
 }
+int32_t gpui_windows_frame_metrics_v1(int32_t host, int32_t window,
+                                      double *output) {
+  (void)host;
+  (void)window;
+  (void)output;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_frame_copy_v1(int32_t host, int32_t window,
+                                   uint8_t *output, int32_t capacity) {
+  (void)host;
+  (void)window;
+  (void)output;
+  (void)capacity;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
 int32_t gpui_windows_test_readback_region(int32_t host, int32_t window,
                                           double x, double y, double width,
                                           double height,
@@ -3036,6 +3198,14 @@ int32_t gpui_windows_test_renderer_counts(int32_t host, int32_t window,
 int32_t gpui_windows_test_wrong_thread(int32_t host, int32_t window) {
   (void)host;
   (void)window;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_window_title(int32_t host, int32_t window,
+                                       const uint8_t *title, int32_t length) {
+  (void)host;
+  (void)window;
+  (void)title;
+  (void)length;
   return GPUI_WINDOWS_UNSUPPORTED;
 }
 int32_t gpui_windows_test_wake_stop_race(int32_t host) {

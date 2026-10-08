@@ -13,6 +13,7 @@ On macOS 13 or newer, install the pinned MoonBit toolchain from
 ./script/build_and_run.sh          # launch the interactive quad demo
 ./script/build_and_run.sh --build  # build _build/macos/GpuiNative.app
 ./script/build_and_run.sh --smoke  # MoonBit lifecycle + frame smoke
+./script/build_and_run.sh --test-hooks # build opt-in native E2E host hooks
 ./script/test_macos.sh             # native GPU/input/lifecycle E2E + smoke
 ```
 
@@ -47,7 +48,8 @@ scene, and application event values contain no OS or GPU pointers.
 | close / destroy | Close requests await application policy. Destruction drops pending callbacks for the token, releases the surface before the window, and enqueues a terminal event. Tokens are monotonic and never reused. |
 | next_event | Bounded 0–250 ms wait; per-window monotonic sequence, captured scale, logical pointer positions, focus/move/resize/backing-scale notifications and portable control/character keys. |
 | wake / request_exit | UI-owner wake event and quiescing transition; new windows are rejected after exit is requested. Cross-thread enqueue is still pending. |
-| present | SceneSnapshot v1 quads, affine transforms, opacity, ordered rectangle clip chains, paint order and alpha blending. Resources and unknown item kinds return UnsupportedCapability. |
+| present | SceneSnapshot v1 quads plus bounded single-line `text` and `text_run` items, affine transforms, opacity, ordered rectangle clip chains, paint order and alpha blending. Text uses CoreText system sans and CoreGraphics grayscale coverage at the drawable scale; font sizes are limited to 32 points, multiline, bidirectional, unsupported/color glyphs and unknown item kinds return typed errors. |
+| text measurement | `platform/macos_text.measure` copies CoreText logical/ink bounds, ascent and scalar caret geometry into `TextMeasurement`. Use the system sans family (`"sans"`) at the same logical size used for rendering. |
 | metrics | Current logical size and backing scale; sampled before presenting to avoid using old queued resize metadata for a current drawable. |
 | clipboard / cursor | UTF-8 string clipboard and arrow/pointing-hand/text cursors. Clipboard busy/conversion failures are typed. |
 | renderer recovery | Explicitly rebuilds the shared Metal device, queue and pipeline and rebinds every live `CAMetalLayer`, preserving logical window identities. Automatic recovery remains unimplemented. |
@@ -81,8 +83,9 @@ silently claiming success. Titles/scene/clipboard payloads are capped at 16 MiB;
 windows at 64, scene items at 65536, dimensions at 8192 logical points.
 
 Native runtime inventory: Apple AppKit (host/windows/input/services), QuartzCore
-(layer), and Metal (device/queue/GPU presentation), all owned by `platform/macos`
-and upgraded with the host OS/SDK. No third-party library is added. Implementation,
+(layer), Metal (device/queue/GPU presentation), CoreText (system font metrics and
+glyphs), and CoreGraphics (bounded grayscale masks), all owned by GPUI and
+upgraded with the host OS/SDK. No third-party library is added. Implementation,
 shaders, and fixtures are independently authored from local contracts and Apple
 API documentation; no GPUI source or assets were adapted.
 
@@ -92,11 +95,16 @@ The synchronous completion path uses [waitUntilCompleted](https://developer.appl
 ## Evidence and remaining gates
 
 `tests/native/macos_e2e.m` exercises actual AppKit windows, window-dispatched
-pointer and application-queued keyboard input, logical coordinates, resize,
-close policy, wrong-thread rejection, failed initialization payloads, restart
-and stale-host checks, stale callback rejection, and 32 create/destroy cycles.
-A test-only Metal blit reads frame pixels to verify transform/clip/alpha/paint
-order and backing-pixel dimensions. Fault injection verifies DeviceLost reporting.
+pointer and keyboard input, logical coordinates, resize, close policy,
+wrong-thread rejection, failed initialization payloads, restart and stale-host
+checks, stale callback rejection, and 32 create/destroy cycles. It renders
+CoreText grayscale text and text runs into Metal and checks non-background
+pixels. The opt-in `GPUI_NATIVE_E2E=1` frame seam copies the completed drawable
+as bounded top-left RGBA8. `Host::post_test_click` and
+`Host::post_test_escape` send scoped NSEvents through the owned NSWindow for
+autonomous app-loop validation; they require the `--test-hooks` dylib and are
+not physical hardware input. A test-only Metal blit also checks
+transform/clip/alpha/paint order and backing-pixel dimensions. Fault injection verifies DeviceLost reporting.
 The test source also removes device/queue/pipeline state, invokes explicit
 recovery and checks the following frame through pixel readback. Hosted execution
 of this path remains pending, so capability negotiation stays disabled. The
@@ -106,9 +114,9 @@ The MoonBit smoke executable uses the portable Backend interface and checks
 creation, two completed GPU frames, resize, close request, destruction and event
 sequence ordering. Headless tests verify portable key and error adapters on all
 four MoonBit targets. Clipboard/cursor smoke, real display movement, Japanese
-IME, accessibility, text shaping, cross-thread command completion, hosted
-automated renderer recovery, sustained resource growth and performance remain
-pending.
+IME, accessibility, shaping beyond bounded system-sans single lines,
+cross-thread command completion, hosted automated renderer recovery, sustained
+resource growth and performance remain pending.
 
 Hosted macOS CI builds the app/E2E runner and executes headless tests. The
 manual `macos-native-e2e.yml` workflow requires a logged-in self-hosted desktop

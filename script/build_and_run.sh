@@ -7,7 +7,7 @@ if [[ "$(uname -s)" != Darwin ]]; then
   echo 'The native macOS demo requires macOS and the Xcode command-line tools.' >&2
   exit 2
 fi
-case "$MODE" in run|--smoke|--build|--debug|--logs|--telemetry|--verify) ;; *) echo "usage: $0 [--build|--smoke|--debug|--logs|--telemetry|--verify]" >&2; exit 2;; esac
+case "$MODE" in run|--smoke|--build|--debug|--logs|--telemetry|--verify|--test-hooks) ;; *) echo "usage: $0 [--build|--smoke|--debug|--logs|--telemetry|--verify|--test-hooks]" >&2; exit 2;; esac
 APP_BUNDLE="$ROOT_DIR/_build/macos/GpuiNative.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/GpuiNative"
 # Stop only a process launched from this worktree, avoiding other checkouts.
@@ -18,9 +18,19 @@ if [[ -f _build/macos/demo.pid ]]; then
   fi
 fi
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Frameworks"
-xcrun clang -dynamiclib -fobjc-arc -Wall -Wextra -Werror \
-  platform/macos/native.m -framework AppKit -framework QuartzCore -framework Metal \
-  -o "$APP_BUNDLE/Contents/Frameworks/libgpui_macos.dylib"
+if [[ "$MODE" == --test-hooks ]]; then
+  xcrun clang -dynamiclib -DGPUI_TESTING -fobjc-arc -Wall -Wextra -Werror \
+    platform/macos/native.m platform/macos_text/core_text.c \
+    -framework AppKit -framework QuartzCore -framework Metal \
+    -framework CoreText -framework CoreGraphics -framework CoreFoundation \
+    -o "$APP_BUNDLE/Contents/Frameworks/libgpui_macos.dylib"
+else
+  xcrun clang -dynamiclib -fobjc-arc -Wall -Wextra -Werror \
+    platform/macos/native.m platform/macos_text/core_text.c \
+    -framework AppKit -framework QuartzCore -framework Metal \
+    -framework CoreText -framework CoreGraphics -framework CoreFoundation \
+    -o "$APP_BUNDLE/Contents/Frameworks/libgpui_macos.dylib"
+fi
 moon build --target native --deny-warn examples/native_macos
 cp _build/native/debug/build/examples/native_macos/native_macos.exe "$APP_BINARY"
 cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
@@ -38,6 +48,7 @@ PLIST
 export GPUI_MACOS_LIBRARY="$APP_BUNDLE/Contents/Frameworks/libgpui_macos.dylib"
 case "$MODE" in
   --build) echo "$APP_BUNDLE" ;;
+  --test-hooks) echo "$APP_BUNDLE" ;;
   --smoke) "$APP_BINARY" --smoke ;;
   --debug) lldb -- "$APP_BINARY" ;;
   run|--verify|--logs|--telemetry)

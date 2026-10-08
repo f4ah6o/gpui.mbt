@@ -123,6 +123,8 @@ struct host {
   GLuint program, mask_program;
   GLint color_uniform, mask_color_uniform, mask_sampler_uniform;
   int width, height, pending_width, pending_height, scale, configured, seq;
+  uint8_t *frame_pixels;
+  int frame_width, frame_height, frame_scale;
   double px, py;
   int modifiers;
   double queue[QUEUE_CAPACITY][10];
@@ -142,6 +144,10 @@ static void collect_source(struct clipboard_source *source);
 static void ime_invalidate(struct host *h, int emit_leave, int deactivate);
 static void ime_drop_proxy(struct host *h);
 static void ime_free_slot(struct host *h, int slot);
+static int native_e2e_enabled(void) {
+  const char *value = getenv("GPUI_NATIVE_E2E");
+  return value && strcmp(value, "1") == 0;
+}
 static void ime_raw_keyboard_key(struct host *h, uint32_t state,
                                   xkb_keysym_t symbol);
 static void remember_input_serial(struct host *h, uint32_t serial,
@@ -1432,6 +1438,9 @@ static void release_window(struct host *h) {
     xdg_surface_destroy(h->xdg);
   if (h->surface)
     wl_surface_destroy(h->surface);
+  free(h->frame_pixels);
+  h->frame_pixels = NULL;
+  h->frame_width = h->frame_height = h->frame_scale = 0;
   h->toplevel = NULL;
   h->xdg = NULL;
   h->surface = NULL;
@@ -1463,6 +1472,8 @@ static void release_host(struct host *h) {
     free(source);
   }
   free(h->clipboard_result);
+  free(h->frame_pixels);
+  h->frame_pixels = NULL;
   detach_seat_data_device(h);
   if (h->data_manager)
     wl_data_device_manager_destroy(h->data_manager);
@@ -2453,13 +2464,65 @@ static int32_t present_mixed(int32_t abi, int32_t expected_abi, int stride,
   release_staged_text(texts, staged, 1);
   if (glGetError() != GL_NO_ERROR)
     return GPUI_DEVICE_LOST;
+  uint8_t *captured = NULL;
+  int capture_width = 0;
+  int capture_height = 0;
+  int64_t capture_width64 = (int64_t)h->width * h->scale;
+  int64_t capture_height64 = (int64_t)h->height * h->scale;
+  if (native_e2e_enabled()) {
+    int64_t capture_pixels = capture_width64 * capture_height64;
+    if (capture_width64 <= 0 || capture_height64 <= 0 ||
+        capture_width64 > 16384 || capture_height64 > 16384 ||
+        capture_pixels > 16 * 1024 * 1024)
+      return GPUI_RESOURCE;
+    capture_width = (int)capture_width64;
+    capture_height = (int)capture_height64;
+    size_t capture_bytes = (size_t)capture_pixels * 4;
+    captured = malloc(capture_bytes);
+    uint8_t *row = malloc((size_t)capture_width * 4);
+    if (!captured || !row) {
+      free(captured);
+      free(row);
+      return GPUI_RESOURCE;
+    }
+    GLint old_pack_alignment = 4;
+    glGetIntegerv(GL_PACK_ALIGNMENT, &old_pack_alignment);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glFinish();
+    glReadPixels(0, 0, capture_width, capture_height, GL_RGBA,
+                 GL_UNSIGNED_BYTE, captured);
+    GLenum capture_error = glGetError();
+    glPixelStorei(GL_PACK_ALIGNMENT, old_pack_alignment);
+    if (capture_error != GL_NO_ERROR || glGetError() != GL_NO_ERROR) {
+      free(captured);
+      free(row);
+      return GPUI_DEVICE_LOST;
+    }
+    for (int y = 0; y < capture_height / 2; ++y) {
+      uint8_t *top = captured + (size_t)y * (size_t)capture_width * 4;
+      uint8_t *bottom = captured + (size_t)(capture_height - y - 1) *
+                                       (size_t)capture_width * 4;
+      memcpy(row, top, (size_t)capture_width * 4);
+      memcpy(top, bottom, (size_t)capture_width * 4);
+      memcpy(bottom, row, (size_t)capture_width * 4);
+    }
+    free(row);
+  }
   h->frame = wl_surface_frame(h->surface);
   wl_callback_add_listener(h->frame, &frame_listener, h);
   if (!eglSwapBuffers(h->egl, h->egl_surface)) {
+    free(captured);
     wl_callback_destroy(h->frame);
     h->frame = NULL;
     return eglGetError() == EGL_CONTEXT_LOST ? GPUI_DEVICE_LOST
                                              : GPUI_SURFACE_LOST;
+  }
+  if (captured) {
+    free(h->frame_pixels);
+    h->frame_pixels = captured;
+    h->frame_width = capture_width;
+    h->frame_height = capture_height;
+    h->frame_scale = h->scale;
   }
   return GPUI_OK;
 
@@ -2483,6 +2546,43 @@ int32_t gpui_present_v3(int32_t abi, int32_t token, int32_t window,
                         const uint8_t *text, int32_t text_length) {
   return present_mixed(abi, GPUI_ORIGIN_FRAME_ABI, GPUI_ORIGIN_STRIDE, 1,
       token, window, data, length, text, text_length);
+}
+
+int32_t gpui_test_frame_metrics_v1(int32_t token, int32_t window,
+                                   double *output) {
+  struct host *h;
+  int status = window_check(token, window, &h);
+  if (status)
+    return status;
+  if (!native_e2e_enabled())
+    return GPUI_UNSUPPORTED;
+  if (!output)
+    return GPUI_INVALID;
+  if (!h->frame_pixels || h->frame_width <= 0 || h->frame_height <= 0)
+    return GPUI_BUSY;
+  output[0] = h->frame_width;
+  output[1] = h->frame_height;
+  output[2] = h->frame_scale;
+  return GPUI_OK;
+}
+
+int32_t gpui_test_frame_copy_v1(int32_t token, int32_t window,
+                                uint8_t *output, int32_t capacity) {
+  struct host *h;
+  int status = window_check(token, window, &h);
+  if (status)
+    return status;
+  if (!native_e2e_enabled())
+    return GPUI_UNSUPPORTED;
+  if (!h->frame_pixels || h->frame_width <= 0 || h->frame_height <= 0)
+    return GPUI_BUSY;
+  int64_t required = (int64_t)h->frame_width * h->frame_height * 4;
+  if (required > 64 * 1024 * 1024)
+    return GPUI_RESOURCE;
+  if (!output || capacity < 0 || capacity != required)
+    return GPUI_INVALID;
+  memcpy(output, h->frame_pixels, (size_t)required);
+  return GPUI_OK;
 }
 
 int32_t gpui_present(int32_t token, int32_t window, const double *data,
