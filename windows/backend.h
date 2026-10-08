@@ -79,6 +79,11 @@ int32_t gpui_windows_clipboard_read(int32_t host, uint8_t *output,
 int32_t gpui_windows_clipboard_write(int32_t host, const uint8_t *text,
                                      int32_t length);
 int32_t gpui_windows_readback(int32_t host, int32_t window, double *rgba);
+/* Opt-in GPUI_NATIVE_E2E capture of the last completed native frame. */
+int32_t gpui_windows_frame_metrics_v1(int32_t host, int32_t window,
+                                      double *output);
+int32_t gpui_windows_frame_copy_v1(int32_t host, int32_t window,
+                                   uint8_t *output, int32_t capacity);
 /* CI-only scan of a logical region in the most recent staged GPU frame. */
 int32_t gpui_windows_test_readback_region(int32_t host, int32_t window,
                                           double x, double y, double width,

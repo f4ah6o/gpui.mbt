@@ -1,0 +1,31 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/platform/testing"
+
+import {
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/platform",
+}
+
+// Values
+pub fn[H : FrameReadback] capture_frame(H, @platform.WindowId) -> Result[FrameCapture, @diagnostics.FrameworkError]
+
+// Errors
+
+// Types and methods
+pub struct FrameCapture {
+  // private fields
+}
+pub fn FrameCapture::height(Self) -> Int
+pub fn FrameCapture::pixel_rgba8(Self, Int, Int) -> Result[(Int, Int, Int, Int), @diagnostics.FrameworkError]
+pub fn FrameCapture::rgba8_top_left(Self) -> Bytes
+pub fn FrameCapture::scale(Self) -> Double
+pub fn FrameCapture::width(Self) -> Int
+pub fn FrameCapture::write_ppm(Self, String) -> Result[Unit, @diagnostics.FrameworkError]
+
+// Type aliases
+
+// Traits
+pub(open) trait FrameReadback {
+  fn frame_metrics(Self, @platform.WindowId) -> Result[(Int, Int, Double), @diagnostics.FrameworkError]
+  fn copy_frame(Self, @platform.WindowId, FixedArray[Byte]) -> Result[Unit, @diagnostics.FrameworkError]
+}

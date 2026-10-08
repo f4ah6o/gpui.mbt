@@ -452,6 +452,61 @@ class RuntimeDependencyTests(unittest.TestCase):
         (self.root / "core/moon.pkg").write_text('import { "f4ah6o/gpui/platform/macos" }', encoding="utf-8")
         self.assertTrue(any("forbidden runtime package edge" in error for error in checker.validate_runtime_dependencies(self.root)))
 
+    def test_native_text_and_readback_seams_are_bounded_leaves(self) -> None:
+        manifests = {
+            "platform/testing": (
+                'import { "f4ah6o/gpui/platform", '
+                '"f4ah6o/gpui/diagnostics" }\n'
+            ),
+            "platform/macos_text": (
+                'import { "f4ah6o/gpui/primitives", "f4ah6o/gpui/text", '
+                '"f4ah6o/gpui/text_layout" }\n'
+            ),
+            "platform/macos": (
+                'import { "f4ah6o/gpui/platform", "f4ah6o/gpui/primitives", '
+                '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/scene", '
+                '"f4ah6o/gpui/platform/testing" }\n'
+            ),
+            "ubuntu": (
+                'import { "f4ah6o/gpui/platform", '
+                '"f4ah6o/gpui/platform/linux_text", '
+                '"f4ah6o/gpui/platform/testing", "f4ah6o/gpui/text", '
+                '"f4ah6o/gpui/primitives", "f4ah6o/gpui/diagnostics", '
+                '"f4ah6o/gpui/scene" }\n'
+            ),
+            "windows": (
+                'import { "f4ah6o/gpui/platform", '
+                '"f4ah6o/gpui/platform/windows_text", '
+                '"f4ah6o/gpui/platform/testing", "f4ah6o/gpui/text", '
+                '"f4ah6o/gpui/primitives", "f4ah6o/gpui/diagnostics", '
+                '"f4ah6o/gpui/scene" }\n'
+            ),
+        }
+        for package, content in manifests.items():
+            directory = self.root / package
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "moon.pkg").write_text(content, encoding="utf-8")
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+        (self.root / "platform/testing/moon.pkg").write_text(
+            'import { "f4ah6o/gpui/platform/macos" }\n', encoding="utf-8"
+        )
+        self.assertTrue(any(
+            "platform/testing/: forbidden runtime package edge" in error
+            for error in checker.validate_runtime_dependencies(self.root)
+        ))
+
+        (self.root / "platform/testing/moon.pkg").write_text(
+            manifests["platform/testing"], encoding="utf-8"
+        )
+        (self.root / "core/moon.pkg").write_text(
+            'import { "f4ah6o/gpui/platform/testing" }\n', encoding="utf-8"
+        )
+        self.assertTrue(any(
+            "core/: forbidden runtime package edge" in error
+            for error in checker.validate_runtime_dependencies(self.root)
+        ))
+
     def test_malformed_package_manifest_fails_cleanly(self) -> None:
         path = self.root / "primitives/moon.pkg"
         path.write_text('import { moonbitlang/core/quickcheck }\n', encoding="utf-8")

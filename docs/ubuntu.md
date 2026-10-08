@@ -129,7 +129,8 @@ unsupported result before presentation. The Linux text adapter exposes
 to admit only a linked private raster ABI with Pango >= 1.50 glyph-color
 metadata. An unavailable ABI/runtime returns `UnsupportedRaster` at the
 adapter boundary and maps to typed `UnsupportedCapability` for the host.
-macOS keeps its existing native text rejection behavior. Windows has a separate
+macOS has a separate bounded CoreText system-sans text subset and measurement
+adapter. Windows has a separate
 experimental D3D11 grayscale text subset, a focused single-line field, and
 private default-off IMM32 text-session ingress; see the [Windows native
 guide](windows-native.md). These experimental paths do not promote a platform
