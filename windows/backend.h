@@ -100,6 +100,9 @@ int32_t gpui_windows_test_renderer_counts(int32_t host, int32_t window,
                                           int64_t *counts);
 /* CI-only boundary probe; returns OK only when a worker is rejected as wrong-thread. */
 int32_t gpui_windows_test_wrong_thread(int32_t host, int32_t window);
+/* CI-only check of the initial CreateWindowExW caption via GetWindowTextW. */
+int32_t gpui_windows_test_window_title(int32_t host, int32_t window,
+                                      const uint8_t *title, int32_t length);
 /* CI-only race probe; a worker posts wakes while the owner stops the host. */
 int32_t gpui_windows_test_wake_stop_race(int32_t host);
 /* CI-only pure-data probe for malformed, unterminated UTF-16 clipboard data. */

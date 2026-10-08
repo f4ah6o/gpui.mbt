@@ -56,6 +56,7 @@ typedef LONG_PTR(WINAPI *fn_get_window_long_ptr_w)(HWND, int);
 typedef BOOL(WINAPI *fn_show_window)(HWND, int);
 typedef BOOL(WINAPI *fn_update_window)(HWND);
 typedef BOOL(WINAPI *fn_set_window_text_w)(HWND, LPCWSTR);
+typedef int(WINAPI *fn_get_window_text_w)(HWND, LPWSTR, int);
 typedef BOOL(WINAPI *fn_set_window_pos)(HWND, HWND, int, int, int, int, UINT);
 typedef BOOL(WINAPI *fn_get_client_rect)(HWND, LPRECT);
 typedef BOOL(WINAPI *fn_get_window_rect)(HWND, LPRECT);
@@ -119,6 +120,7 @@ typedef struct gpui_windows_api {
   fn_show_window show_window;
   fn_update_window update_window;
   fn_set_window_text_w set_window_text_w;
+  fn_get_window_text_w get_window_text_w;
   fn_set_window_pos set_window_pos;
   fn_get_client_rect get_client_rect;
   fn_get_window_rect get_window_rect;
@@ -442,6 +444,7 @@ static int32_t api_init(gpui_windows_host *host) {
   GPUI_LOAD(user32, show_window, fn_show_window, "ShowWindow");
   GPUI_LOAD(user32, update_window, fn_update_window, "UpdateWindow");
   GPUI_LOAD(user32, set_window_text_w, fn_set_window_text_w, "SetWindowTextW");
+  GPUI_LOAD(user32, get_window_text_w, fn_get_window_text_w, "GetWindowTextW");
   GPUI_LOAD(user32, set_window_pos, fn_set_window_pos, "SetWindowPos");
   GPUI_LOAD(user32, get_client_rect, fn_get_client_rect, "GetClientRect");
   GPUI_LOAD(user32, get_window_rect, fn_get_window_rect, "GetWindowRect");
@@ -1530,6 +1533,10 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
   }
   if (!host || host != &g_host || host->hwnd != hwnd ||
       host->window_id <= 0) {
+    /* Preserve the caption supplied through CREATESTRUCT during creation. */
+    if (message == WM_NCCREATE && host == &g_host && !host->hwnd &&
+        host->window_id > 0)
+      return host->api.def_window_proc_w(hwnd, message, wparam, lparam);
     if (message == WM_NCCREATE)
       return TRUE;
     return host ? host->api.def_window_proc_w(hwnd, message, wparam, lparam)
@@ -1993,6 +2000,31 @@ int32_t gpui_windows_title(int32_t token, int32_t window,
   BOOL ok = g_host.api.set_window_text_w(g_host.hwnd, wide_title);
   free(wide_title);
   return ok ? GPUI_WINDOWS_OK : GPUI_WINDOWS_NATIVE;
+}
+
+/* Verify the initial caption through Win32's public retrieval API. This is
+ * exercised immediately after CreateWindowExW by the native E2E test. */
+int32_t gpui_windows_test_window_title(int32_t token, int32_t window,
+                                       const uint8_t *title,
+                                       int32_t title_length) {
+  int32_t status = check_window(token, window);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  WCHAR *expected = NULL;
+  int32_t expected_length = 0;
+  status = utf8_to_wide(title, title_length, &expected, &expected_length);
+  if (status != GPUI_WINDOWS_OK)
+    return status;
+  WCHAR actual[512] = {0};
+  int actual_length = g_host.api.get_window_text_w(
+      g_host.hwnd, actual, (int)(sizeof(actual) / sizeof(actual[0])));
+  BOOL matches =
+      expected_length < (int32_t)(sizeof(actual) / sizeof(actual[0])) &&
+      actual_length == expected_length &&
+      memcmp(actual, expected,
+             (size_t)(expected_length + 1) * sizeof(WCHAR)) == 0;
+  free(expected);
+  return matches ? GPUI_WINDOWS_OK : GPUI_WINDOWS_NATIVE;
 }
 
 int32_t gpui_windows_size(int32_t token, int32_t window, int32_t width,
@@ -3166,6 +3198,14 @@ int32_t gpui_windows_test_renderer_counts(int32_t host, int32_t window,
 int32_t gpui_windows_test_wrong_thread(int32_t host, int32_t window) {
   (void)host;
   (void)window;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_window_title(int32_t host, int32_t window,
+                                       const uint8_t *title, int32_t length) {
+  (void)host;
+  (void)window;
+  (void)title;
+  (void)length;
   return GPUI_WINDOWS_UNSUPPORTED;
 }
 int32_t gpui_windows_test_wake_stop_race(int32_t host) {
