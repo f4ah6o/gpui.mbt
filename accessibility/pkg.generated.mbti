@@ -1,0 +1,140 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/accessibility"
+
+import {
+  "f4ah6o/gpui/primitives",
+}
+
+// Values
+pub let max_actions_per_node : Int
+
+pub let max_name_units : Int
+
+pub let max_node_count : Int
+
+pub let max_snapshot_name_units : Int
+
+pub let max_tree_depth : Int
+
+// Errors
+
+// Types and methods
+pub(all) enum AccessibilityAction {
+  Invoke
+} derive(Eq)
+pub fn AccessibilityAction::equal(Self, Self) -> Bool
+pub fn AccessibilityAction::not_equal(Self, Self) -> Bool
+
+pub(all) enum AccessibilityError {
+  OwnerIdentityExhausted
+  IdentityExhausted
+  RevisionExhausted
+  ModelClosed
+  InvalidNodeKey
+  DuplicateNodeKey
+  RootRequired
+  MultipleRoots
+  MissingParent
+  InvalidPreorder
+  TreeTooDeep
+  TooManyNodes
+  NameTooLong
+  SnapshotTextTooLong
+  DuplicateAction
+  TooManyActions
+  MultipleFocusedNodes
+  FocusedNodeDisabled
+} derive(Eq)
+pub fn AccessibilityError::equal(Self, Self) -> Bool
+pub fn AccessibilityError::not_equal(Self, Self) -> Bool
+
+pub struct AccessibilityModel {
+  // private fields
+}
+pub fn AccessibilityModel::close(Self) -> Unit
+pub fn AccessibilityModel::new() -> Result[Self, AccessibilityError]
+pub fn AccessibilityModel::publish(Self, Array[NodeSpec]) -> Result[AccessibilitySnapshot, AccessibilityError]
+pub fn AccessibilityModel::reset(Self) -> Result[AccessibilitySnapshot, AccessibilityError]
+pub fn AccessibilityModel::resolve_action(Self, ActionRequest) -> Result[ActionIntent, ActionError]
+pub fn AccessibilityModel::snapshot(Self) -> AccessibilitySnapshot
+
+pub(all) enum AccessibilityRole {
+  Window
+  Group
+  Button
+  Link
+  CheckBox
+  RadioButton
+  TextField
+  StaticText
+  List
+  ListItem
+  Slider
+  ProgressIndicator
+} derive(Eq)
+pub fn AccessibilityRole::equal(Self, Self) -> Bool
+pub fn AccessibilityRole::not_equal(Self, Self) -> Bool
+
+pub struct AccessibilitySnapshot {
+  // private fields
+}
+pub fn AccessibilitySnapshot::node(Self, NodeId) -> SemanticNode?
+pub fn AccessibilitySnapshot::nodes(Self) -> Array[SemanticNode]
+pub fn AccessibilitySnapshot::revision(Self) -> UInt64
+
+pub(all) enum ActionError {
+  ForeignOwner
+  StaleNode
+  UnsupportedAction
+  Disabled
+  Loading
+  ModelClosed
+} derive(Eq)
+pub fn ActionError::equal(Self, Self) -> Bool
+pub fn ActionError::not_equal(Self, Self) -> Bool
+
+pub struct ActionIntent {
+  // private fields
+}
+pub fn ActionIntent::action(Self) -> AccessibilityAction
+pub fn ActionIntent::node_id(Self) -> NodeId
+pub fn ActionIntent::revision(Self) -> UInt64
+
+pub struct ActionRequest {
+  // private fields
+}
+pub fn ActionRequest::new(NodeId, AccessibilityAction) -> Self
+
+pub struct NodeId {
+  // private fields
+} derive(Eq)
+pub fn NodeId::equal(Self, Self) -> Bool
+pub fn NodeId::key(Self) -> UInt64
+pub fn NodeId::not_equal(Self, Self) -> Bool
+
+pub struct NodeSpec {
+  // private fields
+}
+pub fn NodeSpec::new(UInt64, UInt64?, AccessibilityRole, String, @primitives.Rect) -> Self
+pub fn NodeSpec::with_actions(Self, Array[AccessibilityAction]) -> Result[Self, AccessibilityError]
+pub fn NodeSpec::with_enabled(Self, Bool) -> Self
+pub fn NodeSpec::with_focused(Self, Bool) -> Self
+pub fn NodeSpec::with_loading(Self, Bool) -> Self
+
+pub struct SemanticNode {
+  // private fields
+}
+pub fn SemanticNode::bounds(Self) -> @primitives.Rect
+pub fn SemanticNode::children(Self) -> Array[NodeId]
+pub fn SemanticNode::id(Self) -> NodeId
+pub fn SemanticNode::is_enabled(Self) -> Bool
+pub fn SemanticNode::is_focused(Self) -> Bool
+pub fn SemanticNode::is_loading(Self) -> Bool
+pub fn SemanticNode::name(Self) -> String
+pub fn SemanticNode::parent(Self) -> NodeId?
+pub fn SemanticNode::role(Self) -> AccessibilityRole
+pub fn SemanticNode::supported_actions(Self) -> Array[AccessibilityAction]
+
+// Type aliases
+
+// Traits

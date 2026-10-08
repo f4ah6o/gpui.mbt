@@ -257,6 +257,15 @@ core; stale or disabled targets return a rejected action result. If native
 exposure is unavailable, the backend reports that capability honestly while
 the semantic tree remains testable headlessly.
 
+The headless `accessibility/` package implements an initial bounded subset of
+this contract: owned generational node IDs, immutable committed snapshots,
+tree validation, focus/enabled/loading state, logical bounds, and `Invoke`
+request validation. It commits before returning a snapshot, so a future
+adapter can notify only after commit. Values, text ranges, notifications, and
+all native projections remain outside this slice; see
+[the shared accessibility contract](accessibility.md). No native accessibility
+support or screen-reader behavior is claimed.
+
 ## Conformance boundary
 
 The backend conformance suite will verify lifecycle transitions, identity

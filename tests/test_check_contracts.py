@@ -178,6 +178,7 @@ class RuntimeDependencyTests(unittest.TestCase):
         (self.root / "moon.mod").write_text('name = "f4ah6o/gpui"\n', encoding="utf-8")
         manifests = {
             "primitives": '',
+            "accessibility": 'import { "f4ah6o/gpui/primitives" }\n',
             "diagnostics": 'import { "f4ah6o/gpui/primitives" }\n',
             "core": 'import { "f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives" }\n',
             "layout": 'import { "f4ah6o/gpui/primitives" }\n',
@@ -257,6 +258,22 @@ class RuntimeDependencyTests(unittest.TestCase):
         manifest.write_text('import { "f4ah6o/gpui/scene" }\n', encoding="utf-8")
         errors = checker.validate_runtime_dependencies(self.root)
         self.assertTrue(any("text/: forbidden runtime package edge" in error for error in errors))
+
+    def test_accessibility_is_portable_and_cannot_import_native_or_action_leaves(self) -> None:
+        manifest = self.root / "accessibility/moon.pkg"
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+        for dependency in ("platform", "capability", "mcp"):
+            manifest.write_text(
+                f'import {{ "f4ah6o/gpui/{dependency}" }}\n',
+                encoding="utf-8",
+            )
+            errors = checker.validate_runtime_dependencies(self.root)
+            self.assertTrue(
+                any("accessibility/: forbidden runtime package edge" in error for error in errors),
+                msg=f"accessibility must not depend on {dependency}",
+            )
+        manifest.write_text('import { "f4ah6o/gpui/primitives" }\n', encoding="utf-8")
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
 
     def test_capability_and_mcp_edges_are_explicit_and_bounded(self) -> None:
         for package, content in {
