@@ -202,7 +202,7 @@ static BOOL valid_json_numeric_fields(NSDictionary *object, NSArray<NSString *> 
 static int text_native_status(int status) {
   if (status == 3 || status == 17) return 13;
   if (status == 7 || status == 11 || status == 12 || status == 15 || status == 16) return 5;
-  if (status == 14 || status == 8 || status == 10) return 9;
+  if (status == 14 || status == 8 || status == 10 || status == 2) return 9;
   return status ? 16 : 0;
 }
 static id<MTLTexture> text_mask_texture(NSString *text, double font_size, double scale,

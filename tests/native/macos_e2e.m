@@ -93,6 +93,10 @@ int main(void) {
     NSData *last_text_frame=[frame_pixels copy];
     assert(call_op(9,token,0,0,color_text)==9);
     assert([frame_pixels isEqualToData:last_text_frame]);
+    NSString *control_text=[NSString stringWithFormat:
+      @"{\"schema_version\":1,\"viewport\":{\"x\":0,\"y\":0,\"width\":320,\"height\":240},\"scale\":%g,\"resources\":[],\"clip_chains\":[],\"items\":[{\"kind\":\"text\",\"bounds\":{\"x\":20,\"y\":20,\"width\":100,\"height\":40},\"color\":{\"red\":255,\"green\":255,\"blue\":255,\"alpha\":255},\"transform\":{\"a\":1,\"b\":0,\"c\":0,\"d\":1,\"tx\":0,\"ty\":0},\"opacity\":1,\"clip_chain_id\":null,\"text\":\"Control\\tText\",\"font_size\":20}]}",w.scale];
+    assert(call_op(9,token,0,0,control_text)==9);
+    assert([frame_pixels isEqualToData:last_text_frame]);
     // Fractional clip regression: [0.2, 1.2) covers device pixel 0 at 1x,
     // and device pixels 0..1 at 2x. The next sample center must stay clear.
     for (int scale=1; scale<=2; scale++) {
@@ -179,7 +183,7 @@ int main(void) {
     assert(call_op(2,0,0,0,nil)==0); assert(call_op(2,0,0,0,nil)==0);
     assert(call_op(1,0,0,0,nil)==0); assert(call_op(0,epoch,0,0,nil)==10);
     assert(call_op(2,0,0,0,nil)==0);
-    puts("GPUI_MACOS_E2E {\"gpu_pixels\":true,\"grayscale_text\":true,\"frame_readback\":true,\"test_input\":true,\"logical_coordinates\":true,\"resize\":true,\"wrong_thread\":true,\"churn\":32,\"stale_callbacks\":true,\"device_loss\":true,\"device_recovery\":true}");
+    puts("GPUI_MACOS_E2E {\"gpu_pixels\":true,\"grayscale_text\":true,\"unsupported_control_text_preserves_frame\":true,\"frame_readback\":true,\"test_input\":true,\"logical_coordinates\":true,\"resize\":true,\"wrong_thread\":true,\"churn\":32,\"stale_callbacks\":true,\"device_loss\":true,\"device_recovery\":true}");
   }
   return 0;
 }
