@@ -18,6 +18,45 @@ static void drain(void) {
 static BOOL same_nullable_string(NSString *left, NSString *right) {
   return left == right || [left isEqualToString:right];
 }
+static void test_hid_transport_and_metadata(void) {
+  int pair[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
+  assert(!hid_peer(pair[0], 0, getpid())); // A user peer cannot impersonate root.
+  assert(hid_write(pair[0], @{@"kind":@"test"}));
+  BOOL valid = YES; NSMutableData *buffer = [NSMutableData new];
+  assert([hid_read(pair[1], buffer, &valid)[@"kind"] isEqual:@"test"] && valid);
+  uint32_t oversized = htonl(4097);
+  assert(write(pair[0], &oversized, 4) == 4);
+  assert(!hid_read(pair[1], buffer, &valid) && !valid);
+  close(pair[0]); close(pair[1]);
+
+  double now = hid_uptime_ms();
+  NSMutableDictionary *pending = [@{@"phase":@"down",@"key_code":@45,
+    @"report_uptime_ms":@(now),@"characters":@"n",@"ignoring":@"n"} mutableCopy];
+  NSEvent *event = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
+    modifierFlags:256 timestamp:now/1000 windowNumber:0 context:nil
+    characters:@"n" charactersIgnoringModifiers:@"n" isARepeat:NO keyCode:45];
+  CGEventRef cg = CGEventCreateCopy(event.CGEvent); assert(cg);
+  CGEventSetIntegerValueField(cg,kCGEventSourceUserData,0);
+  CGEventSetIntegerValueField(cg,kCGEventSourceUnixProcessID,0);
+  CGEventSetIntegerValueField(cg,kCGEventSourceStateID,1);
+  CGEventSetIntegerValueField(cg,kCGKeyboardEventKeyboardType,40);
+  assert(testing_hid_event_matches(pending,event,cg));
+  CGEventSetIntegerValueField(cg,kCGEventSourceUnixProcessID,getpid());
+  assert(!testing_hid_event_matches(pending,event,cg));
+  CGEventSetIntegerValueField(cg,kCGEventSourceUnixProcessID,0);
+  CGEventRef tagged = CGEventCreateKeyboardEvent(NULL,45,true);
+  CGEventSetIntegerValueField(tagged,kCGEventSourceUserData,9);
+  assert(CGEventGetIntegerValueField(tagged,kCGEventSourceUserData)==9);
+  assert(!testing_hid_event_matches(pending,event,tagged));
+  CFRelease(tagged);
+  pending[@"report_uptime_ms"] = @(now-501);
+  assert(!testing_hid_event_matches(pending,event,cg));
+  pending[@"report_uptime_ms"] = @(now); pending[@"phase"] = @"up";
+  assert(!testing_hid_event_matches(pending,event,cg));
+  pending[@"phase"] = @"down"; pending[@"characters"] = @"j";
+  assert(!testing_hid_event_matches(pending,event,cg));
+  CFRelease(cg);
+}
 static void test_app_local_key_event_constructor(void) {
   int status = 0;
   NSArray<NSEvent *> *events = create_app_local_key_events(45, 0, 1, @"n", @"n", &status);
@@ -87,6 +126,29 @@ static void test_testing_key_dispatch_identity(GPWindow *w) {
   CFRelease(stale_tagged);
   assert(stale_result == -1);
   assert(w.testingPostedKeys.count == 0);
+}
+static void test_hid_dispatch_guards(GPWindow *w) {
+  // Pure predicate facts: the native unit harness deliberately overrides focus,
+  // so it cannot establish real AppKit's current input context. Live routing
+  // supplies these facts from AppKit, never from a test override.
+  NSEvent *event=[NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint
+    modifierFlags:256 timestamp:hid_now_ms()/1000 windowNumber:w.window.windowNumber context:nil
+    characters:@"n" charactersIgnoringModifiers:@"n" isARepeat:NO keyCode:45];
+  NSMutableDictionary *pending=testing_key_dispatch_record(90,45,@"down",host_epoch,
+    w.sessionEpoch,w.directEpoch,w.sessionActive,w.directText);
+  NSString *source=@"com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese";
+  assert(testing_hid_owner_matches(w,event,pending,YES,YES,source));
+  assert(!testing_hid_owner_matches(w,event,pending,NO,YES,source));
+  assert(!testing_hid_owner_matches(w,event,pending,YES,NO,source));
+  assert(!testing_hid_owner_matches(w,event,pending,YES,YES,@"com.apple.keylayout.ABC"));
+  pending[@"host_epoch"]=@(host_epoch-1);
+  assert(!testing_hid_owner_matches(w,event,pending,YES,YES,source));
+  pending[@"host_epoch"]=@(host_epoch);pending[@"session_epoch"]=@(w.sessionEpoch+1);
+  assert(!testing_hid_owner_matches(w,event,pending,YES,YES,source));
+  [w.testingPostedKeys removeAllObjects];testing_hid_failed=NO;
+  assert(take_testing_hid_dispatch(w,event,event.CGEvent,@"down")==-1);
+  assert(testing_hid_failed && w.deferredTextError==5);
+  testing_hid_failed=NO;w.deferredTextError=0;
 }
 static void test_input_source_selection(GPWindow *w) {
   GPView *view = (GPView *)w.window.contentView;
@@ -348,6 +410,7 @@ static void native_text_session_bounds(GPWindow *w, NSString *snapshot) {
   assert_focus_event_once(w, 5);
   make_test_window_key(w);
   test_testing_key_dispatch_identity(w);
+  test_hid_dispatch_guards(w);
   GPView *view = (GPView *)w.window.contentView;
   NSString *boolean_cursor = @"{\"text\":\"ab\",\"cursor\":true,\"anchor\":1,\"utf16_length\":2,\"owner_revision\":1,\"rect\":{\"x\":20,\"y\":20,\"width\":1,\"height\":18}}";
   NSString *boolean_rect = @"{\"text\":\"ab\",\"cursor\":1,\"anchor\":1,\"utf16_length\":2,\"owner_revision\":1,\"rect\":{\"x\":true,\"y\":20,\"width\":1,\"height\":18}}";
@@ -658,6 +721,7 @@ int main(void) {
     assert(call_op(2,0,0,0,nil)==0);
     assert(call_op(3,0,320,240,@"before start")==1);
     assert(call_op(1,0,0,0,nil)==0);
+    test_hid_transport_and_metadata();
     test_app_local_key_event_constructor();
     assert(call_op(1,0,0,0,nil)==12);
     assert(call_op(3,0,NAN,240,@"invalid")==5);

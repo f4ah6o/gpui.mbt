@@ -1264,8 +1264,10 @@ static NSMutableDictionary *testing_key_dispatch_record(int64_t dispatch_id,
     @"direct_text": @(direct_text),
   } mutableCopy];
 }
+#include "testing_hid.h"
 static int64_t take_testing_key_dispatch_with_cg(GPWindow *w, NSEvent *event,
                                                  CGEventRef cg_event, NSString *phase) {
+  if (testing_hid_enabled()) return take_testing_hid_dispatch(w, event, cg_event, phase);
   if (!cg_event) return 0;
   int64_t event_nonce = CGEventGetIntegerValueField(cg_event, kCGEventSourceUserData);
   uint64_t nonce_bits = (uint64_t)event_nonce;
@@ -2701,8 +2703,18 @@ static int32_t native_call(int32_t op, int64_t token, double x, double y, const 
           ((int)y & 8 ? NSEventModifierFlagCommand : 0);
         int64_t dispatch_id = w.testingDispatchId + 1;
         int event_status = 0;
-        NSArray<NSEvent *> *events_to_post = create_app_local_key_events((unsigned short)x,
-          flags, dispatch_id, characters, ignoring, &event_status);
+        BOOL hid = testing_hid_enabled();
+        NSArray<NSEvent *> *events_to_post = nil;
+        if (hid) {
+          if (!testing_hid_queue(w, (int)x, flags, dispatch_id, characters, ignoring)) {
+            testing_hid_fail(w, @"producer could not queue key pair"); return 5;
+          }
+          ime_timing_end();
+          if ((int)x == 36) ime_timing_begin(dispatch_id);
+        } else {
+          events_to_post = create_app_local_key_events((unsigned short)x,
+            flags, dispatch_id, characters, ignoring, &event_status);
+        }
         if (event_status) return event_status;
         w.testingDispatchId = dispatch_id;
         NSMutableDictionary *receipt = [@{
@@ -2718,8 +2730,16 @@ static int32_t native_call(int32_t op, int64_t token, double x, double y, const 
           @"down", host_epoch, w.sessionEpoch, w.directEpoch, w.sessionActive, w.directText)];
         [w.testingPostedKeys addObject:testing_key_dispatch_record(dispatch_id, (int)x,
           @"up", host_epoch, w.sessionEpoch, w.directEpoch, w.sessionActive, w.directText)];
-        [NSApp postEvent:events_to_post[0] atStart:NO];
-        [NSApp postEvent:events_to_post[1] atStart:NO];
+        if (hid) {
+          for (NSMutableDictionary *pending in w.testingPostedKeys) {
+            pending[@"hid"] = @YES;
+            pending[@"characters"] = characters;
+            pending[@"ignoring"] = ignoring;
+          }
+        } else {
+          [NSApp postEvent:events_to_post[0] atStart:NO];
+          [NSApp postEvent:events_to_post[1] atStart:NO];
+        }
         return 0;
       }
       case 25: {
