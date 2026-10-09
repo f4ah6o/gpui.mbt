@@ -4,6 +4,8 @@ package "f4ah6o/gpui/platform/macos"
 import {
   "f4ah6o/gpui/diagnostics",
   "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/platform/testing",
+  "f4ah6o/gpui/primitives",
   "f4ah6o/gpui/scene",
 }
 
@@ -15,9 +17,13 @@ import {
 pub struct Host {
   // private fields
 }
+pub fn Host::copy_frame(Self, @platform.WindowId, FixedArray[Byte]) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::create_window(Self, String, Double, Double) -> Result[@platform.WindowId, @diagnostics.FrameworkError]
 pub fn Host::destroy_window(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::frame_metrics(Self, @platform.WindowId) -> Result[(Int, Int, Double), @diagnostics.FrameworkError]
 pub fn Host::next_event(Self, timeout_ms? : Int) -> Result[@platform.Event?, @diagnostics.FrameworkError]
+pub fn Host::post_test_click(Self, @platform.WindowId, @primitives.Point) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::post_test_escape(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::present(Self, @platform.WindowId, @scene.SceneSnapshot) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::read_clipboard(Self) -> Result[String, @diagnostics.FrameworkError]
 pub fn Host::recover_renderer(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
@@ -33,6 +39,7 @@ pub fn Host::wake(Self) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::window_metrics(Self, @platform.WindowId) -> Result[(Double, Double, Double), @diagnostics.FrameworkError]
 pub fn Host::write_clipboard(Self, String) -> Result[Unit, @diagnostics.FrameworkError]
 pub impl @platform.Backend for Host
+pub impl @testing.FrameReadback for Host
 
 // Type aliases
 

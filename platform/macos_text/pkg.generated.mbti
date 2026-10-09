@@ -1,0 +1,45 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/platform/macos_text"
+
+import {
+  "f4ah6o/gpui/text",
+  "f4ah6o/gpui/text_layout",
+}
+
+// Values
+pub let max_font_family_bytes : Int
+
+pub let max_font_size_px : Double
+
+pub let max_text_bytes : Int
+
+pub fn measure(@text.TextDocument, String, Double) -> Result[@text_layout.TextMeasurement, MacosTextError]
+
+pub fn require_grayscale_raster() -> Result[Unit, MacosTextError]
+
+// Errors
+
+// Types and methods
+pub enum MacosTextError {
+  InvalidFontFamily
+  InvalidFontSize
+  InvalidCoordinates
+  UnsupportedInput
+  UnsupportedBidi
+  UnsupportedMultiline
+  UnsupportedColor
+  UnsupportedGlyph
+  UnsupportedRaster
+  UnsupportedPlatform
+  ResourceLimit
+  InputTooLarge
+  BufferTooSmall
+  NativeFailure
+  InvalidNativeOutput
+} derive(Eq)
+pub fn MacosTextError::equal(Self, Self) -> Bool
+pub fn MacosTextError::not_equal(Self, Self) -> Bool
+
+// Type aliases
+
+// Traits

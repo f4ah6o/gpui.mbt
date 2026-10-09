@@ -124,6 +124,11 @@ int32_t gpui_present_v2(int32_t abi, int32_t host, int32_t window,
 int32_t gpui_present_v3(int32_t abi, int32_t host, int32_t window,
                         const double *data, int32_t length,
                         const uint8_t *text, int32_t text_length);
+/* Opt-in GPUI_NATIVE_E2E capture of the last completed native frame. */
+int32_t gpui_test_frame_metrics_v1(int32_t host, int32_t window,
+                                   double *output);
+int32_t gpui_test_frame_copy_v1(int32_t host, int32_t window,
+                                uint8_t *output, int32_t capacity);
 int32_t gpui_recover(int32_t host, int32_t window);
 int32_t gpui_capability(int32_t host, int32_t capability);
 int32_t gpui_read_clipboard(int32_t host);

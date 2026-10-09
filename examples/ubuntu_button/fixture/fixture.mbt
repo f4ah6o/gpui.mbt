@@ -60,8 +60,16 @@ fn demo_button_bounds(
   let top = if height >= 64.0 { 20.0 } else { 0.0 }
   let available_width = width - left * 2.0
   let available_height = height - top
-  let button_width = if available_width > 240.0 { 240.0 } else { available_width }
-  let button_height = if available_height > 48.0 { 48.0 } else { available_height }
+  let button_width = if available_width > 240.0 {
+    240.0
+  } else {
+    available_width
+  }
+  let button_height = if available_height > 48.0 {
+    48.0
+  } else {
+    available_height
+  }
   demo_rect(left, top, button_width, button_height)
 }
 
@@ -73,13 +81,14 @@ fn demo_tree(
   preserve_focus : Bool,
 ) -> Result[@element.ElementTree, ButtonDemoError] {
   let root = @element.ElementNode::new(1UL, None, viewport)
-  let next = match @element.ElementTree::new(
-    if button_visible {
-      [root, button.element_node(Some(1UL))]
-    } else {
-      [root]
-    },
-  ) {
+  let next = match
+    @element.ElementTree::new(
+      if button_visible {
+        [root, button.element_node(Some(1UL))]
+      } else {
+        [root]
+      },
+    ) {
     Ok(value) => value
     Err(error) => return Err(ElementError(error))
   }
@@ -452,10 +461,7 @@ pub fn ButtonDemo::reset_session(
 }
 
 ///|
-fn demo_effect_count(
-  activations : Int,
-  effect : @button.ButtonEffect,
-) -> Int {
+fn demo_effect_count(activations : Int, effect : @button.ButtonEffect) -> Int {
   match effect {
     @button.Activated if activations < 2147483647 => activations + 1
     _ => activations
@@ -501,10 +507,9 @@ pub fn ButtonDemo::handle_input(
   let mut button = next_button
   let mut tree = self.tree
   match event {
-    @primitives.PointerButtonPressed(
-      button=@primitives.Primary,
-      ..
-    ) if target == Some(self.button.id()) && result.consumed() =>
+    @primitives.PointerButtonPressed(button=@primitives.Primary, ..) if target ==
+      Some(self.button.id()) &&
+      result.consumed() =>
       if !button.is_focused() && button.is_enabled() {
         match tree.with_focus(button.id()) {
           Ok(next) => {
@@ -563,12 +568,7 @@ pub fn ButtonDemo::scene(
       let enabled = if self.button.is_enabled() { "on" } else { "off" }
       let loading = if self.button.is_loading() { "on" } else { "off" }
       let status_bounds = match
-        demo_rect(
-          8.0,
-          88.0,
-          self.viewport.size().width() - 16.0,
-          20.0,
-        ) {
+        demo_rect(8.0, 88.0, self.viewport.size().width() - 16.0, 20.0) {
         Ok(value) => value
         Err(error) => return Err(error)
       }
@@ -591,12 +591,7 @@ pub fn ButtonDemo::scene(
     if self.viewport.size().width() >= 400.0 &&
       self.viewport.size().height() >= 144.0 {
       let help_bounds = match
-        demo_rect(
-          8.0,
-          116.0,
-          self.viewport.size().width() - 16.0,
-          18.0,
-        ) {
+        demo_rect(8.0, 116.0, self.viewport.size().width() - 16.0, 18.0) {
         Ok(value) => value
         Err(error) => return Err(error)
       }
