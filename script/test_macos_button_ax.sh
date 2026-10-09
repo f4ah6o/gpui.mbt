@@ -9,12 +9,13 @@ while [[ "$#" -gt 0 ]]; do
     --all) MODE="all"; shift ;;
     --adapter-only) MODE="adapter"; shift ;;
     --mutation-probes) MODE="mutations"; shift ;;
+    --deadline-probe) MODE="deadline"; shift ;;
     --target-dir)
       [[ "$#" -ge 2 ]] || { echo '--target-dir requires a path.' >&2; exit 2; }
       TARGET_DIR="$2"
       shift 2
       ;;
-    *) echo 'usage: test_macos_button_ax.sh [--all|--adapter-only|--mutation-probes] [--target-dir PATH]' >&2; exit 2 ;;
+    *) echo 'usage: test_macos_button_ax.sh [--all|--adapter-only|--mutation-probes|--deadline-probe] [--target-dir PATH]' >&2; exit 2 ;;
   esac
 done
 
@@ -33,16 +34,45 @@ else
 fi
 
 APP_PID=""
+CLIENT_PID=""
+WATCHDOG_PID=""
+KEEP_TARGET=0
 cleanup() {
+  if [[ -n "$WATCHDOG_PID" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
+    kill -TERM "$WATCHDOG_PID" 2>/dev/null || true
+    wait "$WATCHDOG_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$CLIENT_PID" ]] && kill -0 "$CLIENT_PID" 2>/dev/null; then
+    kill -TERM "$CLIENT_PID" 2>/dev/null || true
+    wait "$CLIENT_PID" 2>/dev/null || true
+  fi
   if [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
     kill -TERM "$APP_PID" 2>/dev/null || true
     wait "$APP_PID" 2>/dev/null || true
   fi
-  if [[ "$CLEAN_TARGET" == 1 ]]; then rm -rf "$TARGET_DIR"; fi
+  if [[ "$CLEAN_TARGET" == 1 && "$KEEP_TARGET" == 0 ]]; then
+    rm -rf "$TARGET_DIR"
+  elif [[ "$CLEAN_TARGET" == 1 ]]; then
+    echo "Retained AX client evidence at $TARGET_DIR" >&2
+  fi
 }
 trap cleanup EXIT
 
 cd "$ROOT_DIR"
+CLIENT="$TARGET_DIR/macos_button_ax_client"
+compile_client_deadline_probe() {
+  xcrun clang -Wall -Wextra -Werror \
+    tests/native/macos_button_ax_client.m \
+    -framework AppKit -framework ApplicationServices -framework CoreFoundation \
+    -o "$CLIENT"
+  "$CLIENT" --deadline-probe
+}
+
+if [[ "$MODE" == deadline ]]; then
+  compile_client_deadline_probe
+  exit 0
+fi
+
 ADAPTER="$TARGET_DIR/macos_accessibility_adapter_test"
 xcrun clang -DGPUI_TESTING -fobjc-arc -Wall -Wextra -Werror \
   tests/native/macos_accessibility_adapter_test.m \
@@ -116,15 +146,10 @@ fi
 if [[ "$MODE" == adapter ]]; then exit 0; fi
 
 ./script/build_macos_button.sh --build --target-dir "$TARGET_DIR/bundle"
+compile_client_deadline_probe
 APP_BINARY="$TARGET_DIR/bundle/GpuiMacButton.app/Contents/MacOS/GpuiMacButton"
 APP_BUNDLE="$TARGET_DIR/bundle/GpuiMacButton.app"
 APP_LIBRARY="$TARGET_DIR/bundle/GpuiMacButton.app/Contents/Frameworks/libgpui_macos.dylib"
-CLIENT="$TARGET_DIR/macos_button_ax_client"
-xcrun clang -Wall -Wextra -Werror \
-  tests/native/macos_button_ax_client.m \
-  -framework AppKit -framework ApplicationServices -framework CoreFoundation \
-  -o "$CLIENT"
-
 # Keep LaunchServices/AX identity unique while leaving the production build
 # script's stable bundle identifier untouched. Other task-owned sample
 # processes may still be running with the regular example identifier.
@@ -140,16 +165,43 @@ printf '%s\n' "$APP_PID" >"$TARGET_DIR/app.pid"
 printf 'bundle_path=%s\nbundle_id=%s\npid=%s\n' \
   "$APP_BUNDLE" "$TEST_BUNDLE_ID" "$APP_PID" >"$TARGET_DIR/client-receipt.txt"
 echo "Launched $APP_BINARY (bundle $APP_BUNDLE, bundle id $TEST_BUNDLE_ID, pid $APP_PID)"
+CLIENT_RUN_ID="${APP_PID}-$$"
+CLIENT_LOG="$TARGET_DIR/client-$CLIENT_RUN_ID.log"
+CLIENT_DONE="$TARGET_DIR/client-complete-$CLIENT_RUN_ID"
+CLIENT_WATCHDOG_FIRED="$TARGET_DIR/client-watchdog-fired-$CLIENT_RUN_ID"
+printf 'client_log=%s\nwatchdog_marker=%s\n' \
+  "$CLIENT_LOG" "$CLIENT_WATCHDOG_FIRED" >>"$TARGET_DIR/client-receipt.txt"
 set +e
-"$CLIENT" --pid "$APP_PID" --bundle-id "$TEST_BUNDLE_ID"
+"$CLIENT" --pid "$APP_PID" --bundle-id "$TEST_BUNDLE_ID" \
+  >"$CLIENT_LOG" 2>&1 &
+CLIENT_PID="$!"
+CLIENT_WATCHDOG_SECONDS=35
+python3 script/watch_macos_button_ax_client.py \
+  --pid "$CLIENT_PID" --timeout-seconds "$CLIENT_WATCHDOG_SECONDS" \
+  --done "$CLIENT_DONE" --fired "$CLIENT_WATCHDOG_FIRED" &
+WATCHDOG_PID="$!"
+wait "$CLIENT_PID"
 CLIENT_STATUS=$?
 set -e
+: >"$CLIENT_DONE"
+CLIENT_PID=""
+wait "$WATCHDOG_PID" 2>/dev/null || true
+WATCHDOG_PID=""
+if [[ -e "$CLIENT_WATCHDOG_FIRED" ]]; then
+  CLIENT_STATUS=124
+  printf '%s\n' 'FAIL: shell watchdog stopped AX client after 35 seconds' \
+    >>"$CLIENT_LOG"
+  printf '%s\n' 'client_watchdog_fired=true' >>"$TARGET_DIR/client-receipt.txt"
+fi
 printf 'client_status=%s\n' "$CLIENT_STATUS" >>"$TARGET_DIR/client-receipt.txt"
+cat "$CLIENT_LOG"
 if [[ "$CLIENT_STATUS" -eq 77 ]]; then
+  KEEP_TARGET=1
   echo 'UNSUPPORTED: real AXUIElement client is blocked by current macOS accessibility authorization.' >&2
   exit 77
 fi
 if [[ "$CLIENT_STATUS" -ne 0 ]]; then
+  KEEP_TARGET=1
   cat "$TARGET_DIR/app.log" >&2
   exit "$CLIENT_STATUS"
 fi

@@ -201,6 +201,10 @@ and its `--e2e` mode for the retained GPU/input/lifecycle smoke. Add and run
 the bounded native AX client/adapter regression commands documented by the
 implementation. Include relevant portable Button/fixture targets, existing
 `./script/test_macos.sh`, Bash syntax, contract tests and changelog guards.
+The AX client also exposes `./script/test_macos_button_ax.sh --deadline-probe`
+to exercise its monotonic remaining-budget, IPC-timeout and bounded-sleep
+helpers without launching the regular example, creating a native window, or
+making AX calls.
 
 Run those required scoped gates under pinned local ActRun on the final source.
 Perform a separately launched regular GUI check using native AX observation/
@@ -249,3 +253,16 @@ macOS support claim.
   mutation, E2E, contract, and generated-interface results are in the task
   implementation report. The parent still owns final ActRun, visible GUI/input
   evidence, and independent review, so this issue remains open.
+- 2026-10-10: The parent-pinned ActRun `run-1` passed all five stages and 27
+  commands on candidate `ff48b53bad4894788a8f90399bd4317a60a46fda`. Independent
+  gpt-6.1-sol/xhigh review completed three passes/seven perspectives, with zero
+  blocking findings and two minor findings: numeric JSON coercion and missing
+  wall-clock bounds in the separate AX client. The current update adds strict
+  integer type/range checks and fractional/boolean/overflow vectors, plus
+  monotonic discovery/owner deadlines, remaining-budget AX IPC timeouts, a
+  desktop-independent deadline probe, and an owned-client watchdog retaining
+  failure evidence. ActRun and independent review must run again on this
+  updated source. The prior candidate's final-source AX client failed to find
+  an AXWindow; the post-unlock client and regular GUI/input/AX/pixel checks
+  remain blocked or unrun. Whole-task Green is false and no PR has been
+  published. Keep the issue open.

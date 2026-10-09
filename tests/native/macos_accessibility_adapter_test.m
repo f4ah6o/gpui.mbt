@@ -63,6 +63,69 @@ static const char *payload(BOOL enabled, BOOL loading, BOOL focused,
   return bytes;
 }
 
+static int32_t publish_raw_payload(NSWindow *window, int64_t existing,
+                                   const char *bytes, int64_t *binding_out) {
+  id delegate = window.delegate;
+  int64_t token = 0;
+  if ([delegate respondsToSelector:@selector(token)])
+    token = ((int64_t (*)(id, SEL))[delegate methodForSelector:@selector(token)])(
+        delegate, @selector(token));
+  return gpui_macos_ax_publish_v1(
+      token, existing, (const uint8_t *)bytes, (int32_t)strlen(bytes),
+      binding_out);
+}
+
+static void assert_numeric_rejected(NSWindow *window, const char *version,
+                                    const char *activations) {
+  char bytes[512];
+  snprintf(bytes, sizeof(bytes),
+           "{\"version\":%s,\"role\":\"button\","
+           "\"name\":\"Run action\",\"left\":20,\"top\":30,"
+           "\"width\":180,\"height\":48,\"enabled\":true,"
+           "\"loading\":false,\"focused\":false,\"activations\":%s,"
+           "\"actions\":[\"Invoke\"]}",
+           version, activations);
+  int64_t binding = 0;
+  int32_t status = publish_raw_payload(window, 0, bytes, &binding);
+  require(status == 5 && binding == 0,
+          "fractional, boolean, or out-of-range integer must be rejected");
+}
+
+static void test_integer_payload_validation(NSWindow *window) {
+  const char *invalid_versions[] = {
+      "1.0", "1.5", "4294967297", "true", "-1"};
+  for (size_t index = 0;
+       index < sizeof(invalid_versions) / sizeof(invalid_versions[0]); index++)
+    assert_numeric_rejected(window, invalid_versions[index], "0");
+
+  const char *invalid_activations[] = {
+      "0.0", "-0.5", "1.5", "2147483647.5", "2147483647.000000001",
+      "2147483648", "true", "-1"};
+  for (size_t index = 0;
+       index < sizeof(invalid_activations) / sizeof(invalid_activations[0]);
+       index++)
+    assert_numeric_rejected(window, "1", invalid_activations[index]);
+
+  const char *valid_activations[] = {"0", "2147483647"};
+  for (size_t index = 0;
+       index < sizeof(valid_activations) / sizeof(valid_activations[0]);
+       index++) {
+    char bytes[512];
+    snprintf(bytes, sizeof(bytes),
+             "{\"version\":1,\"role\":\"button\","
+             "\"name\":\"Run action\",\"left\":20,\"top\":30,"
+             "\"width\":180,\"height\":48,\"enabled\":true,"
+             "\"loading\":false,\"focused\":false,\"activations\":%s,"
+             "\"actions\":[\"Invoke\"]}",
+             valid_activations[index]);
+    int64_t binding = 0;
+    require(publish_raw_payload(window, 0, bytes, &binding) == 0 && binding > 0,
+            "valid integer count boundary should publish");
+    require(gpui_macos_ax_revoke_v1(401, binding) == 0,
+            "integer boundary fixture should revoke cleanly");
+  }
+}
+
 static int64_t publish(NSWindow *window, int64_t existing, BOOL enabled,
                        BOOL loading, BOOL focused, int activations) {
   id delegate = window.delegate;
@@ -210,12 +273,13 @@ int main(void) {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
     NSWindow *window = make_window(401);
+    test_integer_payload_validation(window);
     int64_t binding = 0;
     test_projection_and_press(window, &binding);
     test_queue_capacity_and_resize(window, binding);
     test_availability_update_purges_queue(window);
     test_close_and_reopen(window);
-    puts("PASS: macOS AX adapter queue, projection, revocation, and lifecycle");
+    puts("PASS: macOS AX projection, numeric schema, queue, revocation, and lifecycle");
   }
   return 0;
 }

@@ -1,23 +1,109 @@
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <CoreFoundation/CoreFoundation.h>
+#include <errno.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 enum { AX_CLIENT_UNSUPPORTED = 77, AX_MAX_DEPTH = 10, AX_MAX_NODES = 4096 };
+static const double AX_DISCOVERY_BUDGET_SECONDS = 15.0;
+static const double AX_OWNER_OBSERVATION_BUDGET_SECONDS = 15.0;
+static const double AX_MESSAGE_MAX_SECONDS = 0.25;
+static const double AX_MESSAGE_START_MARGIN_SECONDS = 0.005;
+static const double AX_POLL_MAX_SECONDS = 0.1;
+static double active_deadline = 0;
 
 static void fail(const char *message) {
   fprintf(stderr, "FAIL: %s\n", message);
   exit(1);
 }
 
+static void require(bool condition, const char *message) {
+  if (!condition) fail(message);
+}
+
+static double monotonic_seconds(void) {
+  struct timespec now = {0};
+  if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+    fail("CLOCK_MONOTONIC is unavailable");
+  return (double)now.tv_sec + (double)now.tv_nsec / 1000000000.0;
+}
+
+static double remaining_seconds(double deadline, double now) {
+  if (!isfinite(deadline) || !isfinite(now) || deadline <= now) return 0;
+  return deadline - now;
+}
+
+static float message_timeout_for_remaining(double remaining) {
+  if (!isfinite(remaining) || remaining <= AX_MESSAGE_START_MARGIN_SECONDS)
+    return 0;
+  double budget = remaining - AX_MESSAGE_START_MARGIN_SECONDS;
+  if (budget > AX_MESSAGE_MAX_SECONDS) budget = AX_MESSAGE_MAX_SECONDS;
+  return (float)budget;
+}
+
+static double poll_sleep_for_remaining(double remaining) {
+  if (!isfinite(remaining) || remaining <= 0) return 0;
+  return remaining < AX_POLL_MAX_SECONDS ? remaining : AX_POLL_MAX_SECONDS;
+}
+
+static void test_deadline_budget_helpers(void) {
+  require(fabs(remaining_seconds(20.0, 10.0) - 10.0) < 0.000001,
+          "remaining budget should use the monotonic deadline");
+  require(remaining_seconds(10.0, 10.0) == 0 &&
+              remaining_seconds(9.0, 10.0) == 0,
+          "expired deadline must not admit more work");
+  require(fabs(message_timeout_for_remaining(5.0) - 0.25f) < 0.000001,
+          "remote AX calls should use the short maximum timeout");
+  float constrained = message_timeout_for_remaining(0.2);
+  require(constrained > 0 && constrained < 0.2f,
+          "remote timeout must be below the remaining phase budget");
+  require(message_timeout_for_remaining(0.005) == 0 &&
+              message_timeout_for_remaining(0.0) == 0 &&
+              message_timeout_for_remaining(NAN) == 0,
+          "no remote AX call should start without finite remaining budget");
+  require(poll_sleep_for_remaining(1.0) == 0.1 &&
+              poll_sleep_for_remaining(0.03) <= 0.03 &&
+              poll_sleep_for_remaining(0.0) == 0,
+          "poll sleep must be capped by the remaining budget");
+}
+
+static bool prepare_message(AXUIElementRef element) {
+  double remaining = remaining_seconds(active_deadline, monotonic_seconds());
+  float timeout = message_timeout_for_remaining(remaining);
+  if (timeout <= 0 || !element) return false;
+  if (AXUIElementSetMessagingTimeout(element, timeout) != kAXErrorSuccess)
+    return false;
+  remaining = remaining_seconds(active_deadline, monotonic_seconds());
+  float adjusted_timeout = message_timeout_for_remaining(remaining);
+  if (adjusted_timeout <= 0) return false;
+  if (adjusted_timeout < timeout &&
+      AXUIElementSetMessagingTimeout(element, adjusted_timeout) !=
+          kAXErrorSuccess)
+    return false;
+  return remaining_seconds(active_deadline, monotonic_seconds()) > 0;
+}
+
+static void bounded_poll_sleep(void) {
+  double remaining = remaining_seconds(active_deadline, monotonic_seconds());
+  double duration = poll_sleep_for_remaining(remaining);
+  if (duration <= 0) return;
+  struct timespec request = {
+      .tv_sec = (time_t)duration,
+      .tv_nsec = (long)((duration - floor(duration)) * 1000000000.0),
+  };
+  while (nanosleep(&request, &request) != 0 && errno == EINTR) {}
+}
+
 static CFTypeRef attribute(AXUIElementRef element, CFStringRef name) {
+  if (!prepare_message(element)) return NULL;
   CFTypeRef value = NULL;
   AXError error = AXUIElementCopyAttributeValue(element, name, &value);
   return error == kAXErrorSuccess ? value : NULL;
@@ -36,11 +122,18 @@ static bool has_role(AXUIElementRef element, CFStringRef expected) {
   return matches;
 }
 
+static bool element_pid(AXUIElementRef element, pid_t *pid) {
+  return prepare_message(element) &&
+         AXUIElementGetPid(element, pid) == kAXErrorSuccess;
+}
+
 static AXUIElementRef find_button(AXUIElementRef root, int depth,
                                   int *visited,
                                   AXUIElementRef current_window,
                                   AXUIElementRef *found_window) {
-  if (!root || depth > AX_MAX_DEPTH || *visited >= AX_MAX_NODES) return NULL;
+  if (!root || depth > AX_MAX_DEPTH || *visited >= AX_MAX_NODES ||
+      remaining_seconds(active_deadline, monotonic_seconds()) <= 0)
+    return NULL;
   *visited += 1;
   CFTypeRef role = attribute(root, kAXRoleAttribute);
   CFTypeRef title = attribute(root, kAXTitleAttribute);
@@ -61,7 +154,10 @@ static AXUIElementRef find_button(AXUIElementRef root, int depth,
   }
   AXUIElementRef result = NULL;
   CFArrayRef array = (CFArrayRef)children;
-  for (CFIndex index = 0; index < CFArrayGetCount(array) && !result; index++) {
+  for (CFIndex index = 0;
+       index < CFArrayGetCount(array) && !result &&
+       remaining_seconds(active_deadline, monotonic_seconds()) > 0;
+       index++) {
     CFTypeRef child = CFArrayGetValueAtIndex(array, index);
     if (child && CFGetTypeID(child) == AXUIElementGetTypeID())
       result = find_button((AXUIElementRef)child, depth + 1, visited,
@@ -76,11 +172,14 @@ static AXUIElementRef search_windows(CFArrayRef windows, pid_t pid,
                                      bool *window_seen) {
   AXUIElementRef result = NULL;
   int visited = 0;
-  for (CFIndex index = 0; index < CFArrayGetCount(windows) && !result; index++) {
+  for (CFIndex index = 0;
+       index < CFArrayGetCount(windows) && !result &&
+       remaining_seconds(active_deadline, monotonic_seconds()) > 0;
+       index++) {
     CFTypeRef window = CFArrayGetValueAtIndex(windows, index);
     pid_t owner = 0;
     if (!window || CFGetTypeID(window) != AXUIElementGetTypeID() ||
-        AXUIElementGetPid((AXUIElementRef)window, &owner) != kAXErrorSuccess ||
+        !element_pid((AXUIElementRef)window, &owner) ||
         owner != pid ||
         !has_role((AXUIElementRef)window, kAXWindowRole))
       continue;
@@ -148,7 +247,10 @@ static void dump_element(AXUIElementRef element, int depth, int *visited) {
     return;
   }
   CFArrayRef array = (CFArrayRef)children;
-  for (CFIndex index = 0; index < CFArrayGetCount(array); index++) {
+  for (CFIndex index = 0;
+       index < CFArrayGetCount(array) &&
+       remaining_seconds(active_deadline, monotonic_seconds()) > 0;
+       index++) {
     CFTypeRef child = CFArrayGetValueAtIndex(array, index);
     if (child && CFGetTypeID(child) == AXUIElementGetTypeID())
       dump_element((AXUIElementRef)child, depth + 1, visited);
@@ -163,10 +265,9 @@ static void dump_application(pid_t pid) {
             pid);
     return;
   }
-  CFTypeRef windows = NULL;
-  AXError window_error =
-      AXUIElementCopyAttributeValue(application, kAXWindowsAttribute, &windows);
-  fprintf(stderr, "AXWindows query status=%d", (int)window_error);
+  CFTypeRef windows = attribute(application, kAXWindowsAttribute);
+  fprintf(stderr, "AXWindows query status=%s",
+          windows ? "success" : "unavailable within remaining deadline");
   if (!windows || CFGetTypeID(windows) != CFArrayGetTypeID()) {
     fprintf(stderr, "; AX tree unavailable: app windows attribute missing\n");
     if (windows) CFRelease(windows);
@@ -176,7 +277,10 @@ static void dump_application(pid_t pid) {
   CFArrayRef array = (CFArrayRef)windows;
   fprintf(stderr, "; window array count=%ld\n", (long)CFArrayGetCount(array));
   int visited = 0;
-  for (CFIndex index = 0; index < CFArrayGetCount(array); index++) {
+  for (CFIndex index = 0;
+       index < CFArrayGetCount(array) &&
+       remaining_seconds(active_deadline, monotonic_seconds()) > 0;
+       index++) {
     CFTypeRef window = CFArrayGetValueAtIndex(array, index);
     if (window && CFGetTypeID(window) == AXUIElementGetTypeID())
       dump_element((AXUIElementRef)window, 0, &visited);
@@ -187,11 +291,15 @@ static void dump_application(pid_t pid) {
 
 static bool has_action(AXUIElementRef element) {
   CFArrayRef actions = NULL;
-  if (AXUIElementCopyActionNames(element, &actions) != kAXErrorSuccess ||
+  if (!prepare_message(element) ||
+      AXUIElementCopyActionNames(element, &actions) != kAXErrorSuccess ||
       !actions)
     return false;
   bool found = false;
-  for (CFIndex index = 0; index < CFArrayGetCount(actions); index++) {
+  for (CFIndex index = 0;
+       index < CFArrayGetCount(actions) && index < AX_MAX_NODES &&
+       remaining_seconds(active_deadline, monotonic_seconds()) > 0;
+       index++) {
     CFTypeRef action = CFArrayGetValueAtIndex(actions, index);
     if (string_equals(action, kAXPressAction)) found = true;
   }
@@ -266,6 +374,11 @@ static bool observable_state(AXUIElementRef button, AXUIElementRef window,
 }
 
 int main(int argc, char **argv) {
+  if (argc == 2 && strcmp(argv[1], "--deadline-probe") == 0) {
+    test_deadline_budget_helpers();
+    puts("PASS: AX monotonic deadline, remaining-budget IPC, and poll helpers");
+    return 0;
+  }
   if (argc != 5 || strcmp(argv[1], "--pid") != 0 ||
       strcmp(argv[3], "--bundle-id") != 0) {
     fprintf(stderr,
@@ -300,28 +413,34 @@ int main(int argc, char **argv) {
   AXUIElementRef button = NULL;
   AXUIElementRef window = NULL;
   bool window_seen = false;
-  for (int attempt = 0; attempt < 150 && !button; attempt++) {
+  active_deadline = monotonic_seconds() + AX_DISCOVERY_BUDGET_SECONDS;
+  while (!button && remaining_seconds(active_deadline, monotonic_seconds()) > 0) {
     button = named_button(pid, &window, &window_seen);
-    if (!button) usleep(100000);
+    if (!button) bounded_poll_sleep();
   }
   if (!button) {
     dump_application(pid);
-    if (!window_seen)
+    if (!window_seen) {
       fail("native AX client did not observe an AXWindow within 15 seconds");
-    fail("native AX client did not find the named Run action button in AXWindow");
+    } else {
+      fail("native AX client did not find the named Run action button in AXWindow");
+    }
   }
+  active_deadline = monotonic_seconds() + AX_OWNER_OBSERVATION_BUDGET_SECONDS;
   if (!window || !observable_state(button, window, 0))
     fail("role, name, exact screen bounds, enabled/focus state, action, or initial help failed");
 
-  AXError first = AXUIElementPerformAction(button, kAXPressAction);
-  AXError second = AXUIElementPerformAction(button, kAXPressAction);
-  if (first != kAXErrorSuccess || second != kAXErrorSuccess)
+  if (!prepare_message(button) ||
+      AXUIElementPerformAction(button, kAXPressAction) != kAXErrorSuccess ||
+      !prepare_message(button) ||
+      AXUIElementPerformAction(button, kAXPressAction) != kAXErrorSuccess)
     fail("two separate AXPress requests were not accepted");
 
   bool observed_two = false;
-  for (int attempt = 0; attempt < 80 && !observed_two; attempt++) {
+  while (!observed_two &&
+         remaining_seconds(active_deadline, monotonic_seconds()) > 0) {
     observed_two = observable_state(button, window, 2);
-    if (!observed_two) usleep(100000);
+    if (!observed_two) bounded_poll_sleep();
   }
   if (!observed_two)
     fail("two accepted AX requests did not produce exactly two owner activations");

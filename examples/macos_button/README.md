@@ -77,10 +77,17 @@ its pending work.
 `test_macos_button_ax.sh --adapter-only` covers the AppKit projection, bounded
 queue, stale token rejection, and lifecycle. `--all` builds the regular app
 without `GPUI_TESTING`, gives only the test bundle a unique bundle identifier,
-and launches a separate `AXUIElement` client. The client waits up to 15 seconds
-for an AXWindow, then checks the named 240×48 control at logical left 24/top 20,
-enabled and unfocused, with `Ready` and the exact activation count in help. It
-invokes AXPress twice and requires the owner-reported count to be exactly two.
+and launches a separate `AXUIElement` client. Monotonic deadlines bound
+discovery to 15 seconds and initial-state/action/owner-count observation to a
+separate 15 seconds. Before each synchronous AX query or action, the client
+sets `AXUIElementSetMessagingTimeout` to at most 250 ms and less than the
+remaining phase budget; tree traversal and poll sleeps also stop at that
+deadline. The shell harness has a separate 35-second watchdog for the client,
+retains its receipt and logs on timeout, then stops only the client and app PIDs
+it launched. The client checks the named 240×48 control at screen bounds
+corresponding to logical left 24/top 20, enabled and unfocused, with `Ready` and
+the exact activation count in help. It invokes AXPress twice and requires the
+owner-reported count to be exactly two.
 `--mutation-probes` deliberately breaks the enabled-Invoke guard and keyboard
 routing; each probe must fail at its relevant assertion. Each `--all` run keeps
 a receipt with the absolute bundle path, unique bundle ID, launched PID, and
@@ -104,6 +111,7 @@ moon test --target native --deny-warn examples/macos_button
 ./script/build_macos_button.sh --e2e --target-dir "$RUN_DIR/e2e"
 ./script/build_macos_button.sh --run --target-dir "$RUN_DIR/gui"
 ./script/test_macos_button_ax.sh --adapter-only --target-dir "$RUN_DIR/mac-ax-adapter"
+./script/test_macos_button_ax.sh --deadline-probe --target-dir "$RUN_DIR/mac-ax-deadline"
 ./script/test_macos_button_ax.sh --mutation-probes --target-dir "$RUN_DIR/mac-ax-mutations"
 ./script/test_macos_button_ax.sh --all --target-dir "$RUN_DIR/mac-ax"
 ```
@@ -126,9 +134,30 @@ the minimum viewport and restore it, then Escape to close. Read the same count
 and state in the GUI log with `tail -f "$RUN_DIR/gui/button.log"`. Record this
 manual native-input result separately from `--e2e` synthetic input/readback.
 
+`--deadline-probe` compiles the external client and tests its monotonic
+remaining-budget, per-IPC timeout, and bounded-sleep helpers without launching
+the regular example bundle, creating a native window, or making AX calls.
+`--all` runs that probe before its separate client lane. The client uses
+separate 15-second discovery and owner-observation
+budgets, with at most 250 ms per remote AX call and a 5 ms dispatch margin;
+the 35-second process watchdog preserves the failure receipt/log and permits
+the harness cleanup to run if a synchronous call still stalls.
+
 Record model tests, AX adapter tests, the separately launched AXUIElement
 client, native build/smoke, visible GUI input, and pixel readback as separate
 PASS/FAIL/UNRUN results, with the exact source SHA and macOS, Xcode, SDK,
 MoonBit, GPU, font, and display-scale profile. The Stage B result covers only
 this sample button; it does not qualify VoiceOver, Japanese IME, other
 platforms, or a macOS support tier.
+
+## Current qualification status
+
+The parent-pinned ActRun `run-1` passed five stages and 27 commands on
+candidate `ff48b53bad4894788a8f90399bd4317a60a46fda`. An independent
+gpt-6.1-sol/xhigh review completed three passes across seven perspectives with
+zero blocking findings and two minor findings. The current source addresses
+those findings; ActRun and independent review must be rerun on this update.
+The latest external AX attempt on the prior candidate failed to discover an
+AXWindow; the post-unlock client and regular GUI input/AX/pixel gates remain
+blocked or unrun. Whole-task Green is false and no PR is published. Keep
+Stage B open until the final-source desktop gates and fresh review pass.

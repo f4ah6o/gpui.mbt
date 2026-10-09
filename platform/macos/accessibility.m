@@ -249,6 +249,22 @@ static BOOL gpui_ax_number(NSDictionary *dictionary, NSString *key,
   return YES;
 }
 
+static BOOL gpui_ax_integer(NSDictionary *dictionary, NSString *key,
+                            double minimum, double maximum, int64_t *value) {
+  id candidate = dictionary[key];
+  if (![candidate isKindOfClass:NSNumber.class] ||
+      CFGetTypeID((__bridge CFTypeRef)candidate) == CFBooleanGetTypeID() ||
+      CFGetTypeID((__bridge CFTypeRef)candidate) != CFNumberGetTypeID() ||
+      CFNumberIsFloatType((__bridge CFNumberRef)candidate))
+    return NO;
+  double number = [candidate doubleValue];
+  if (!isfinite(number) || trunc(number) != number ||
+      number < minimum || number > maximum)
+    return NO;
+  if (value) *value = (int64_t)number;
+  return YES;
+}
+
 static NSDictionary *gpui_ax_decode_payload(const uint8_t *bytes,
                                             int32_t length) {
   if (!bytes || length <= 0 || length > GPUI_AX_PAYLOAD_LIMIT) return nil;
@@ -264,18 +280,16 @@ static NSDictionary *gpui_ax_decode_payload(const uint8_t *bytes,
     @"enabled", @"loading", @"focused", @"activations", @"actions",
   ]];
   if (![[NSSet setWithArray:dictionary.allKeys] isEqualToSet:expected]) return nil;
-  NSNumber *version = dictionary[@"version"];
-  NSNumber *activations = dictionary[@"activations"];
+  int64_t version = 0, activations = 0;
   NSString *role = dictionary[@"role"];
   NSString *name = dictionary[@"name"];
   NSArray *actions = dictionary[@"actions"];
-  if (![version isKindOfClass:NSNumber.class] || version.intValue != 1 ||
-      CFGetTypeID((__bridge CFTypeRef)version) == CFBooleanGetTypeID() ||
+  if (!gpui_ax_integer(dictionary, @"version", 1, 1, &version) ||
+      version != 1 ||
       ![role isKindOfClass:NSString.class] || ![role isEqualToString:@"button"] ||
       ![name isKindOfClass:NSString.class] || name.length > 4096 ||
-      ![activations isKindOfClass:NSNumber.class] ||
-      CFGetTypeID((__bridge CFTypeRef)activations) == CFBooleanGetTypeID() ||
-      activations.longLongValue < 0 || activations.longLongValue > INT32_MAX ||
+      !gpui_ax_integer(dictionary, @"activations", 0, INT32_MAX,
+                       &activations) ||
       ![actions isKindOfClass:NSArray.class] || actions.count != 1 ||
       ![actions[0] isKindOfClass:NSString.class] ||
       ![actions[0] isEqualToString:@"Invoke"])
