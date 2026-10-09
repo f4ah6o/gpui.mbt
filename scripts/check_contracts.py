@@ -664,9 +664,10 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "examples/ubuntu": {
             "ubuntu", "platform", "platform/linux_text", "text", "primitives", "diagnostics", "scene",
         },
-        # The native button executable is a leaf above its headless fixture.
+        # The Ubuntu button fixture owns its portable semantic projection; its
+        # native executable remains a leaf above that headless fixture.
         "examples/ubuntu_button/fixture": {
-            "controls/button", "element", "primitives", "scene",
+            "accessibility", "controls/button", "element", "primitives", "scene",
         },
         "examples/ubuntu_button": {
             "ubuntu", "platform", "diagnostics", "primitives", "examples/ubuntu_button/fixture",

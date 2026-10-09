@@ -10,15 +10,20 @@ Parent: [macOS native backend roadmap](../../issues/open/0006-macos-native-backe
 
 ## Scope and dependencies
 
-The implementation base is `48ca4ec0bc7862cbe3f4a6e6fc1f30af27fa3fa9`.
+The final integration base is `008b3c73d50108d6ed1e6c02ad9e12e930e843ec`.
+The implementation branch started from `48ca4ec0bc7862cbe3f4a6e6fc1f30af27fa3fa9`.
 The reusable Button model and portable fixture are integrated from PR #47
-(`4ee7bd48482db16fd6757265d7d1f3decd352bd7`). CoreText/Metal text rendering
-and opt-in frame readback are integrated from PR #49
+(`4ee7bd48482db16fd6757265d7d1f3decd352bd7`); the fixture's latest
+freshness checks and portable semantic projection arrive with PR #51
+(`008b3c73d50108d6ed1e6c02ad9e12e930e843ec`). The Mac adapter uses the
+fixture's Button state, event, and scene APIs; it does not consume semantic
+snapshots or invoke semantic actions. CoreText/Metal text rendering and opt-in
+frame readback are integrated from PR #49
 (`2c6e9a3df469922f79d7b2b8eb977a0524086486`, renderer slice
 `816596187af35a8fcea3f6e7587df4f5ffed6532`). The current AppKit/Metal host
 is already part of the base. Stage A does not depend on PR #40's text-field/IME
-work, PR #42's documentation update, or the Stage B shared semantics/AX
-contract.
+work, PR #42's documentation update, or the Stage B shared native
+semantics/accessibility contract.
 
 Only this macOS example, its build/test support, its narrow architecture
 contract registration and regression, this guide, and the changelog are in
@@ -58,6 +63,7 @@ On Apple Silicon macOS with the pinned repository toolchain:
 ```sh
 RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/gpui-macos-button.XXXXXX")"
 moon fmt --check
+python3 tests/test_check_contracts.py
 moon test --target native --deny-warn controls/button
 moon test --target native --deny-warn examples/ubuntu_button/fixture
 moon test --target native --deny-warn examples/macos_button
