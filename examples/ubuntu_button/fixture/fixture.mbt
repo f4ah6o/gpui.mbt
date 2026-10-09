@@ -378,6 +378,7 @@ pub fn ButtonDemo::close(self : ButtonDemo) -> Unit {
       self.fixture_revision_source.val is None &&
       self.fixture_revision == DEMO_MAX_FIXTURE_REVISION
     ) {
+    self.fixture_revision_source.val = None
     self.accessibility_model.close()
   }
 }

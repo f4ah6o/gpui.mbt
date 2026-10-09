@@ -483,6 +483,11 @@ test "fixture close and reopen reject old owner requests" {
   let demo = ButtonDemo::new(640.0, 240.0).unwrap()
   let old_request = ubuntu_button_semantic_request(demo)
   demo.close()
+  assert_true(demo.fixture_revision_source.val is None)
+  match demo.with_loading(true) {
+    Err(StaleFixtureState) => ()
+    _ => assert_true(false)
+  }
 
   assert_true(
     ubuntu_button_semantic_action_is_error(
