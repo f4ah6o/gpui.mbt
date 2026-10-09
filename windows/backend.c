@@ -7,14 +7,6 @@ int32_t gpui_windows_test_clipboard_diagnostics(void) {
                                           : GPUI_WINDOWS_NATIVE;
 }
 
-static int32_t gpui_windows_key_repeat_from_lparam(uintptr_t lparam) {
-  return (int32_t)((lparam >> 30) & (uintptr_t)1);
-}
-
-int32_t gpui_windows_test_key_repeat_from_lparam(int32_t lparam) {
-  return gpui_windows_key_repeat_from_lparam((uintptr_t)(uint32_t)lparam);
-}
-
 #if defined(_WIN32)
 
 #define COBJMACROS
@@ -29,6 +21,10 @@ int32_t gpui_windows_test_key_repeat_from_lparam(int32_t lparam) {
 #include <stdlib.h>
 #include <string.h>
 #include "clipboard_diagnostics_win32.inc"
+
+static int32_t gpui_windows_key_repeat_from_lparam(uintptr_t lparam) {
+  return (int32_t)((lparam >> 30) & (uintptr_t)1);
+}
 
 int32_t gpui_windows_test_clipboard_diagnostics_disabled(void) {
   return gpui_clipboard_diag_is_enabled() ? GPUI_WINDOWS_NATIVE
@@ -3475,8 +3471,10 @@ int32_t gpui_windows_test_mouse_destroy_reset(int32_t host, int32_t window) {
   (void)window;
   return GPUI_WINDOWS_UNSUPPORTED;
 }
-int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage) {
+int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage,
+                                              double *repeat_event) {
   (void)failed_stage;
+  (void)repeat_event;
   return GPUI_WINDOWS_UNSUPPORTED;
 }
 

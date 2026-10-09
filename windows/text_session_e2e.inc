@@ -103,6 +103,8 @@ static int32_t gpui_text_review_ime_release_calls;
 static int32_t gpui_text_review_ime_candidate_calls;
 static int32_t gpui_text_review_ime_set_open_calls;
 static int32_t gpui_text_review_ime_set_conversion_calls;
+static WCHAR gpui_text_review_result_text[8];
+static int32_t gpui_text_review_result_units;
 
 static LONG_PTR WINAPI gpui_text_review_get_window_long_ptr(HWND hwnd,
                                                             int32_t index) {
@@ -277,10 +279,16 @@ static HIMC WINAPI gpui_text_review_associate_context(HWND hwnd,
 static LONG WINAPI gpui_text_review_get_composition_string(
     HIMC context, DWORD index, LPVOID buffer, DWORD bytes) {
   (void)context;
-  (void)index;
-  (void)buffer;
-  (void)bytes;
-  return 0;
+  if (index != GCS_RESULTSTR || gpui_text_review_result_units <= 0)
+    return 0;
+  DWORD required =
+      (DWORD)gpui_text_review_result_units * (DWORD)sizeof(WCHAR);
+  if (!buffer)
+    return (LONG)required;
+  if (bytes < required)
+    return -1;
+  memcpy(buffer, gpui_text_review_result_text, required);
+  return (LONG)required;
 }
 
 static BOOL WINAPI gpui_text_review_set_composition_window(
@@ -350,6 +358,9 @@ static void gpui_text_review_setup_host(void) {
   gpui_text_review_ime_candidate_calls = 0;
   gpui_text_review_ime_set_open_calls = 0;
   gpui_text_review_ime_set_conversion_calls = 0;
+  ZeroMemory(gpui_text_review_result_text,
+             sizeof(gpui_text_review_result_text));
+  gpui_text_review_result_units = 0;
 }
 
 static BOOL gpui_text_review_queue(UINT message, WPARAM wparam) {
@@ -489,7 +500,11 @@ reentrant_cleanup:
 
 /* Exercise begin failures and the mixed platform/text pump through the real
  * host entry points and WndProc. The fake APIs replace only OS boundaries. */
-static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
+static int32_t gpui_text_review_regressions(int32_t *failed_stage,
+                                            double *repeat_event) {
+  if (!repeat_event)
+    return GPUI_WINDOWS_INVALID;
+  ZeroMemory(repeat_event, 10 * sizeof(double));
   gpui_windows_host *saved_host =
       (gpui_windows_host *)malloc(sizeof(gpui_windows_host));
   if (!saved_host)
@@ -534,6 +549,49 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
       goto review_cleanup;                                                     \
     }                                                                          \
   } while (0)
+
+  {
+    const uint8_t original[] = {'a'};
+    gpui_text_test_clear_ring(&g_host);
+    gpui_text_review_result_text[0] = L'日';
+    gpui_text_review_result_units = 1;
+    int32_t epoch = gpui_windows_session_begin(
+        77, 5, 701, original, sizeof(original), 1, 1,
+        8.0, 9.0, 1.0, 18.0);
+    GPUI_REVIEW_REQUIRE(epoch > 0, 12);
+    gpui_window_proc(g_host.hwnd, WM_IME_STARTCOMPOSITION, 0, 0);
+    GPUI_REVIEW_REQUIRE(g_gpui_text_session.composing, 13);
+    gpui_window_proc(g_host.hwnd, WM_IME_COMPOSITION, 0, GCS_RESULTSTR);
+    GPUI_REVIEW_REQUIRE(!g_gpui_text_session.composing &&
+                            g_gpui_text_session.commit_waiting_end,
+                        14);
+    int32_t second = (g_host.event_read + 1) % GPUI_EVENT_CAPACITY;
+    GPUI_REVIEW_REQUIRE(g_host.event_count == 2 &&
+                            g_host.editor_events[g_host.event_read] &&
+                            g_host.editor_events[second] &&
+                            (int32_t)g_host.events[g_host.event_read][0] ==
+                                GPUI_TEXT_EVENT_STARTED &&
+                            (int32_t)g_host.events[second][0] ==
+                                GPUI_TEXT_EVENT_INSERTED,
+                        15);
+    /* IMM consumed the original Return; only its still-held repeat arrives. */
+    gpui_window_proc(g_host.hwnd, WM_KEYDOWN, VK_RETURN,
+                     (LPARAM)(uintptr_t)0x40000000u);
+    int32_t at = (g_host.event_read + g_host.event_count - 1) %
+                 GPUI_EVENT_CAPACITY;
+    GPUI_REVIEW_REQUIRE(g_host.event_count >= 3 &&
+                            !g_host.editor_events[at] &&
+                            (int32_t)g_host.events[at][0] == 11 &&
+                            (int32_t)g_host.events[at][8] == 0xff0d &&
+                            g_host.events[at][7] == 1.0,
+                        16);
+    memcpy(repeat_event, g_host.events[at], 10 * sizeof(double));
+    gpui_text_review_result_units = 0;
+    GPUI_REVIEW_REQUIRE(gpui_windows_session_end(77, 5, epoch, 701) ==
+                            GPUI_WINDOWS_OK,
+                        17);
+    gpui_text_test_clear_ring(&g_host);
+  }
 
   for (int32_t failure = 1; failure <= 2; ++failure) {
     gpui_text_review_failed_form = failure;
@@ -1151,10 +1209,12 @@ review_cleanup:
 }
 
 /* Returns OK on pass and writes the numbered failing stage for CI logs. */
-int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage) {
-  if (!failed_stage)
+int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage,
+                                              double *repeat_event) {
+  if (!failed_stage || !repeat_event)
     return GPUI_WINDOWS_INVALID;
   *failed_stage = 0;
+  ZeroMemory(repeat_event, 10 * sizeof(double));
   if (InterlockedCompareExchange(&g_host_claimed, 0, 0) != 0)
     return GPUI_WINDOWS_BUSY;
   gpui_windows_host *host =
@@ -1473,7 +1533,8 @@ int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage) {
 
   {
     int32_t review_stage = 0;
-    int32_t review_status = gpui_text_review_regressions(&review_stage);
+    int32_t review_status =
+        gpui_text_review_regressions(&review_stage, repeat_event);
     if (review_status != GPUI_WINDOWS_OK) {
       *failed_stage = 100 + review_stage;
       result = review_status;

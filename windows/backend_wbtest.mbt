@@ -57,9 +57,6 @@ extern "C" fn native_clipboard_diagnostics() -> Int = "gpui_windows_test_clipboa
 extern "C" fn native_clipboard_diagnostics_disabled() -> Int = "gpui_windows_test_clipboard_diagnostics_disabled"
 
 ///|
-extern "C" fn native_test_key_repeat_from_lparam(lparam : Int) -> Int = "gpui_windows_test_key_repeat_from_lparam"
-
-///|
 extern "C" fn native_clipboard_fixture_read(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_read"
 
 ///|
@@ -98,9 +95,10 @@ extern "C" fn native_mouse_arm_destroy(host : Int, window : Int) -> Int = "gpui_
 extern "C" fn native_mouse_destroy_reset(host : Int, window : Int) -> Int = "gpui_windows_test_mouse_destroy_reset"
 
 ///|
-#borrow(failed_stage)
+#borrow(failed_stage, repeat_event)
 extern "C" fn native_text_session_staging(
   failed_stage : FixedArray[Int],
+  repeat_event : FixedArray[Double],
 ) -> Int = "gpui_windows_test_text_session_staging"
 
 ///|
@@ -260,33 +258,6 @@ test "Win32 event translation keeps logical input and portable key values" {
   data[0] = 6.0
   data[8] = 1.0
   assert_true(decode_event(data) is Some(@platform.FocusChanged(true)))
-}
-
-///|
-test "Win32 virtual-key events preserve the native autorepeat bit" {
-  let data = FixedArray::make(10, 0.0)
-  data[0] = 11.0
-  data[8] = 0xff0d.0
-  assert_eq(native_test_key_repeat_from_lparam(0), 0)
-  data[7] = native_test_key_repeat_from_lparam(0).to_double()
-  assert_true(
-    decode_event(data)
-    is Some(
-      @platform.Input(
-        @primitives.KeyPressed(key=@primitives.Enter, repeat=false, ..)
-      )
-    ),
-  )
-  assert_eq(native_test_key_repeat_from_lparam(0x40000000), 1)
-  data[7] = native_test_key_repeat_from_lparam(0x40000000).to_double()
-  assert_true(
-    decode_event(data)
-    is Some(
-      @platform.Input(
-        @primitives.KeyPressed(key=@primitives.Enter, repeat=true, ..)
-      )
-    ),
-  )
 }
 
 ///|
@@ -462,9 +433,10 @@ test "non-Windows native stub never claims a real host" {
 }
 
 ///|
-test "Win32 production IMM session staging preserves message ordering" {
+test "Win32 committed composition repeat travels through WndProc and decoder" {
   let failed_stage = FixedArray::make(1, -1)
-  let status = native_text_session_staging(failed_stage)
+  let repeat_event = FixedArray::make(10, 0.0)
+  let status = native_text_session_staging(failed_stage, repeat_event)
   if status == 1 {
     // The portable non-Windows backend keeps the experimental native path
     // explicitly unavailable.
@@ -473,6 +445,14 @@ test "Win32 production IMM session staging preserves message ordering" {
   }
   assert_eq(failed_stage[0], 0)
   assert_eq(status, 0)
+  assert_true(
+    decode_event(repeat_event)
+    is Some(
+      @platform.Input(
+        @primitives.KeyPressed(key=@primitives.Enter, repeat=true, ..)
+      )
+    ),
+  )
 }
 
 ///|

@@ -1,7 +1,4 @@
 ///|
-extern "C" fn palette_test_key_repeat_from_lparam(lparam : Int) -> Int = "gpui_windows_test_key_repeat_from_lparam"
-
-///|
 struct PaletteNativeSnapshot {
   document : String
   anchor : Int
@@ -174,14 +171,12 @@ test "committed native composition Enter repeat cannot activate before release" 
 
   // IMM consumed the initial Enter. Its still-held key sends a repeat after
   // the result clears composition; that repeat must not select a command.
-  let repeat = palette_test_key_repeat_from_lparam(0x40000000) == 1
-  assert_true(repeat)
   let outcome = palette_handle_input(
     fixture,
     @primitives.KeyPressed(
       key=@primitives.Enter,
       modifiers=@primitives.Modifiers::none(),
-      repeat~,
+      repeat=true,
     ),
   ).unwrap()
   assert_true(outcome.consumed)
