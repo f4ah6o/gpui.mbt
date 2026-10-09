@@ -342,8 +342,10 @@ fn run(
   let mut initial_frame : @testing.FrameCapture? = None
   let mut last_error : @diagnostics.FrameworkError? = None
 
-  while !done && ticks < 1500 {
-    ticks += 1
+  while !done && (!e2e || ticks < 1500) {
+    if e2e {
+      ticks += 1
+    }
     match host.next_event(timeout_ms=16) {
       Err(error) => {
         last_error = Some(error)
