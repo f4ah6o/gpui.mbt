@@ -57,6 +57,9 @@ extern "C" fn native_clipboard_diagnostics() -> Int = "gpui_windows_test_clipboa
 extern "C" fn native_clipboard_diagnostics_disabled() -> Int = "gpui_windows_test_clipboard_diagnostics_disabled"
 
 ///|
+extern "C" fn native_test_key_repeat_from_lparam(lparam : Int) -> Int = "gpui_windows_test_key_repeat_from_lparam"
+
+///|
 extern "C" fn native_clipboard_fixture_read(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_read"
 
 ///|
@@ -257,6 +260,33 @@ test "Win32 event translation keeps logical input and portable key values" {
   data[0] = 6.0
   data[8] = 1.0
   assert_true(decode_event(data) is Some(@platform.FocusChanged(true)))
+}
+
+///|
+test "Win32 virtual-key events preserve the native autorepeat bit" {
+  let data = FixedArray::make(10, 0.0)
+  data[0] = 11.0
+  data[8] = 0xff0d.0
+  assert_eq(native_test_key_repeat_from_lparam(0), 0)
+  data[7] = native_test_key_repeat_from_lparam(0).to_double()
+  assert_true(
+    decode_event(data)
+    is Some(
+      @platform.Input(
+        @primitives.KeyPressed(key=@primitives.Enter, repeat=false, ..)
+      )
+    ),
+  )
+  assert_eq(native_test_key_repeat_from_lparam(0x40000000), 1)
+  data[7] = native_test_key_repeat_from_lparam(0x40000000).to_double()
+  assert_true(
+    decode_event(data)
+    is Some(
+      @platform.Input(
+        @primitives.KeyPressed(key=@primitives.Enter, repeat=true, ..)
+      )
+    ),
+  )
 }
 
 ///|

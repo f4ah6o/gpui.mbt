@@ -1,4 +1,7 @@
 ///|
+extern "C" fn palette_test_key_repeat_from_lparam(lparam : Int) -> Int = "gpui_windows_test_key_repeat_from_lparam"
+
+///|
 struct PaletteNativeSnapshot {
   document : String
   anchor : Int
@@ -145,6 +148,46 @@ test "native empty composition keeps Enter quarantined until release across end 
   assert_true(palette.is_open())
   assert_eq(fixture.actions.val, 0)
   assert_eq(fixture.background_releases.val, 0)
+}
+
+///|
+test "committed native composition Enter repeat cannot activate before release" {
+  let fixture = palette_fixture()
+  let palette = fixture.palette
+  palette.open(fixture.tree).unwrap()
+  let replacement = palette.field().selection().normalized_range()
+  let owner = palette_native_start_composition(
+    palette_native_owner(2, palette.open_epoch(), 12),
+    palette.field(),
+    replacement,
+  ).unwrap()
+  let (committed, ended_owner) = palette_native_append_result(
+    owner,
+    palette.field(),
+    "日本",
+    replacement,
+  ).unwrap()
+  assert_true(ended_owner.composition is None)
+  palette.install_field_at(palette.open_epoch(), committed).unwrap()
+  assert_eq(palette.picker().query(), "日本")
+  assert_true(palette.picker().match_count() > 0)
+
+  // IMM consumed the initial Enter. Its still-held key sends a repeat after
+  // the result clears composition; that repeat must not select a command.
+  let repeat = palette_test_key_repeat_from_lparam(0x40000000) == 1
+  assert_true(repeat)
+  let outcome = palette_handle_input(
+    fixture,
+    @primitives.KeyPressed(
+      key=@primitives.Enter,
+      modifiers=@primitives.Modifiers::none(),
+      repeat~,
+    ),
+  ).unwrap()
+  assert_true(outcome.consumed)
+  assert_true(outcome.effect is None)
+  assert_true(palette.is_open())
+  assert_eq(fixture.actions.val, 0)
 }
 
 ///|

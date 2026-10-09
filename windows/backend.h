@@ -113,6 +113,8 @@ int32_t gpui_windows_test_window_title(int32_t host, int32_t window,
 int32_t gpui_windows_test_wake_stop_race(int32_t host);
 /* CI-only pure-data probe for malformed, unterminated UTF-16 clipboard data. */
 int32_t gpui_windows_test_clipboard_validation(void);
+/* Pure LPARAM bit-30 regression; it never creates a window or uses clipboard. */
+int32_t gpui_windows_test_key_repeat_from_lparam(int32_t lparam);
 /* Pure formatter/order regression; it never calls the clipboard API. */
 int32_t gpui_windows_test_clipboard_diagnostics(void);
 /* Checks that the opt-in diagnostics sink stays disabled when no path is set. */

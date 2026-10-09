@@ -7,6 +7,14 @@ int32_t gpui_windows_test_clipboard_diagnostics(void) {
                                           : GPUI_WINDOWS_NATIVE;
 }
 
+static int32_t gpui_windows_key_repeat_from_lparam(uintptr_t lparam) {
+  return (int32_t)((lparam >> 30) & (uintptr_t)1);
+}
+
+int32_t gpui_windows_test_key_repeat_from_lparam(int32_t lparam) {
+  return gpui_windows_key_repeat_from_lparam((uintptr_t)(uint32_t)lparam);
+}
+
 #if defined(_WIN32)
 
 #define COBJMACROS
@@ -1739,11 +1747,20 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
   case WM_KEYUP:
   case WM_SYSKEYUP: {
     int32_t symbol = key_symbol_from_vk(wparam);
-    if (symbol != 0)
+    if (symbol != 0) {
+      int32_t previous_event_count = host->event_count;
       emit_event(host,
                  (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) ? 11 : 12,
                  0, 0, symbol,
                  modifiers_from_message(host, 0));
+      if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
+          host->event_count > previous_event_count) {
+        int32_t at = (host->event_read + host->event_count - 1) %
+                     GPUI_EVENT_CAPACITY;
+        host->events[at][7] = (double)gpui_windows_key_repeat_from_lparam(
+            (uintptr_t)lparam);
+      }
+    }
     if (message == WM_SYSKEYDOWN || message == WM_SYSKEYUP)
       return host->api.def_window_proc_w(hwnd, message, wparam, lparam);
     return 0;
