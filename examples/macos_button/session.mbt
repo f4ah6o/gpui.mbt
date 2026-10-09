@@ -63,6 +63,46 @@ fn MacButtonSession::is_presentable(self : MacButtonSession) -> Bool {
 }
 
 ///|
+/// Reconcile a pending draw with the host's authoritative current metrics.
+/// Exact matches are a no-op so polling cannot cancel an armed gesture.
+fn MacButtonSession::sync_metrics(
+  self : MacButtonSession,
+  width : Double,
+  height : Double,
+  scale : Double,
+) -> (MacButtonSession, Bool) {
+  if width.is_nan() ||
+    width.is_inf() ||
+    width <= 0.0 ||
+    height.is_nan() ||
+    height.is_inf() ||
+    height <= 0.0 ||
+    !mac_button_valid_scale(scale) {
+    return (
+      { demo: self.demo.blur(), width, height, scale, presentable: false, },
+      false,
+    )
+  }
+  if self.presentable &&
+    self.width == width &&
+    self.height == height &&
+    self.scale == scale {
+    return (self, false)
+  }
+  if self.presentable && self.width == width && self.height == height {
+    return ({ ..self, scale, }, true)
+  }
+  match self.demo.resize(width, height) {
+    Ok(demo) => ({ demo, width, height, scale, presentable: true, }, true)
+    Err(_) =>
+      (
+        { demo: self.demo.blur(), width, height, scale, presentable: false, },
+        false,
+      )
+  }
+}
+
+///|
 fn MacButtonSession::scene(
   self : MacButtonSession,
 ) -> Result[@scene.SceneSnapshot, MacButtonSessionError] {

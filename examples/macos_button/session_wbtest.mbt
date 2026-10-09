@@ -274,3 +274,90 @@ test "disabled loading reset and undersized resize keep fixture state bounded" {
   assert_eq(session.demo().activations(), 0)
   let _ = session
 }
+
+///|
+test "macOS adapter syncs queued resize and scale history to current metrics" {
+  let mut session = MacButtonSession::new(640.0, 240.0, 1.0).unwrap()
+  let (focused, _) = session
+    .handle_event(mac_button_test_key_down(1, @primitives.Tab, false))
+    .unwrap()
+  session = focused
+  let (space_held, _) = session
+    .handle_event(mac_button_test_key_down(2, @primitives.Space, false))
+    .unwrap()
+  session = space_held
+  assert_true(session.demo().button().is_pressed())
+
+  let (undersized, _) = session
+    .handle_event(
+      mac_button_test_event(3, @platform.Resized(width=80.0, height=30.0)),
+    )
+    .unwrap()
+  session = undersized
+  let (scale_changed, _) = session
+    .handle_event(
+      mac_button_test_event_at_scale(4, 1.5, @platform.ScaleChanged),
+    )
+    .unwrap()
+  session = scale_changed
+  let (middle_size, _) = session
+    .handle_event(
+      mac_button_test_event_at_scale(
+        5,
+        1.5,
+        @platform.Resized(width=480.0, height=180.0),
+      ),
+    )
+    .unwrap()
+  session = middle_size
+  let (old_scale, _) = session
+    .handle_event(
+      mac_button_test_event_at_scale(6, 1.0, @platform.ScaleChanged),
+    )
+    .unwrap()
+  session = old_scale
+  let (last_queued_size, _) = session
+    .handle_event(
+      mac_button_test_event(7, @platform.Resized(width=550.0, height=220.0)),
+    )
+    .unwrap()
+  session = last_queued_size
+
+  let (current, repaint) = session.sync_metrics(600.0, 240.0, 2.0)
+  session = current
+  assert_true(repaint)
+  assert_true(session.is_presentable())
+  assert_eq(session.width, 600.0)
+  assert_eq(session.height, 240.0)
+  assert_eq(session.scale, 2.0)
+  let snapshot = session.scene().unwrap()
+  assert_eq(snapshot.viewport().size().width(), 600.0)
+  assert_eq(snapshot.viewport().size().height(), 240.0)
+  assert_eq(snapshot.scale(), 2.0)
+  assert_true(!session.demo().button().is_focused())
+  assert_true(!session.demo().button().is_pressed())
+  let (after_release, _) = session
+    .handle_event(mac_button_test_key_up(8, @primitives.Space))
+    .unwrap()
+  assert_eq(after_release.demo().activations(), 0)
+}
+
+///|
+test "macOS same-metrics sync preserves focused pressed input" {
+  let mut session = MacButtonSession::new(640.0, 240.0, 1.0).unwrap()
+  let (focused, _) = session
+    .handle_event(mac_button_test_key_down(1, @primitives.Tab, false))
+    .unwrap()
+  session = focused
+  let (space_held, _) = session
+    .handle_event(mac_button_test_key_down(2, @primitives.Space, false))
+    .unwrap()
+  session = space_held
+
+  let (synced, repaint) = session.sync_metrics(640.0, 240.0, 1.0)
+  session = synced
+  assert_true(!repaint)
+  assert_true(session.demo().button().is_focused())
+  assert_true(session.demo().button().is_pressed())
+  assert_eq(session.demo().activations(), 0)
+}

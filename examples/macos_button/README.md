@@ -50,8 +50,11 @@ activation semantics.
 - The finite opt-in native smoke uses the existing window-scoped synthetic
   click/Escape and FrameReadback hooks. It checks one pointer activation, the
   rendered status change, close/reopen with a reset app-owned count, and
-  orderly cleanup. It is synthetic host-event and pixel evidence; it is not
-  human-input, accessibility, or IME evidence.
+  orderly cleanup. It also queues three content-size changes before polling
+  and verifies the final-size frame, covering stale resize events. Before each
+  dirty presentation the adapter reconciles its scene with the host's current
+  logical size and backing scale. This is synthetic host-event and pixel
+  evidence; it is not human-input, accessibility, or IME evidence.
 - A separately launched GUI run is manually checked with Tab, Enter, Space,
   pointer input, state toggles, resize, and close. Report this separately from
   the synthetic smoke; do not claim it when the desktop is unavailable.

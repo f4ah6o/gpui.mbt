@@ -42,6 +42,9 @@
 
 ### Fixed
 
+- Synchronize the macOS Button sample with the host's current logical size and
+  backing scale before rendering, so queued resize events cannot submit a
+  stale viewport. The adapter and native smoke cover resize bursts.
 - Balance browser pointer and key presses across renderer loss, including a
   press queued before the cancelled frame. The first restored drain receives
   matching releases, and later native releases cannot release the same hold

@@ -306,6 +306,57 @@ fn mac_button_e2e_failure(stage : Int) -> @diagnostics.FrameworkError {
 }
 
 ///|
+fn mac_button_queue_resize_burst(
+  host : @macos.Host,
+  window : @platform.WindowId,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  match host.set_size(window, 80.0, 30.0) {
+    Err(error) => return Err(error)
+    Ok(_) => ()
+  }
+  match host.set_size(window, 480.0, 180.0) {
+    Err(error) => return Err(error)
+    Ok(_) => ()
+  }
+  host.set_size(window, 600.0, 240.0)
+}
+
+///|
+fn mac_button_check_resize_burst(
+  host : @macos.Host,
+  window : @platform.WindowId,
+) -> Result[@testing.FrameCapture, @diagnostics.FrameworkError] {
+  let (width, height, _) = match host.window_metrics(window) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  if width != 600.0 || height != 240.0 {
+    return Err(
+      mac_button_failure(
+        "button_resize_burst", "host did not retain the final queued content size",
+      ),
+    )
+  }
+  mac_button_check_initial_pixels(host, window)
+}
+
+///|
+fn mac_button_post_test_click(
+  host : @macos.Host,
+  window : @platform.WindowId,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  match @primitives.Point::new(MAC_BUTTON_ACTION_X, MAC_BUTTON_ACTION_Y) {
+    Err(_) =>
+      Err(
+        mac_button_failure(
+          "button_test_click", "fixed in-bounds smoke coordinate was rejected",
+        ),
+      )
+    Ok(point) => host.post_test_click(window, point)
+  }
+}
+
+///|
 fn mac_button_is_escape(kind : @platform.EventKind) -> Bool {
   match kind {
     @platform.Input(
@@ -339,6 +390,7 @@ fn run(
   let mut last_sequence : Int64 = 0
   let mut dirty = true
   let mut e2e_stage = if e2e { 0 } else { -1 }
+  let mut e2e_resize_events = 0
   let mut initial_frame : @testing.FrameCapture? = None
   let mut last_error : @diagnostics.FrameworkError? = None
 
@@ -365,6 +417,12 @@ fn run(
             done = true
           } else {
             last_sequence = event.sequence()
+            if e2e && e2e_stage == 8 {
+              match kind {
+                @platform.Resized(..) => e2e_resize_events += 1
+                _ => ()
+              }
+            }
             let (next_session, repaint) = match session.handle_event(event) {
               Ok(value) => value
               Err(error) => {
@@ -437,6 +495,22 @@ fn run(
               }
             }
 
+            if !done && dirty {
+              match host.window_metrics(window) {
+                Err(error) => {
+                  last_error = Some(error)
+                  done = true
+                }
+                Ok((width, height, scale)) => {
+                  let (next_session, repaint) = session.sync_metrics(
+                    width, height, scale,
+                  )
+                  session = next_session
+                  dirty = dirty || repaint
+                }
+              }
+            }
+
             if !done && dirty && session.is_presentable() {
               let snapshot = match session.scene() {
                 Ok(value) => value
@@ -459,28 +533,31 @@ fn run(
                         }
                         Ok(frame) => {
                           initial_frame = Some(frame)
-                          e2e_stage = 1
-                          match
-                            @primitives.Point::new(
-                              MAC_BUTTON_ACTION_X,
-                              MAC_BUTTON_ACTION_Y,
-                            ) {
-                            Err(_) => {
-                              last_error = Some(
-                                mac_button_failure(
-                                  "button_test_click", "fixed in-bounds smoke coordinate was rejected",
-                                ),
-                              )
+                          e2e_stage = 8
+                          match mac_button_queue_resize_burst(host, window) {
+                            Ok(_) => ()
+                            Err(error) => {
+                              last_error = Some(error)
                               done = true
                             }
-                            Ok(point) =>
-                              match host.post_test_click(window, point) {
-                                Ok(_) => ()
-                                Err(error) => {
-                                  last_error = Some(error)
-                                  done = true
-                                }
-                              }
+                          }
+                        }
+                      }
+                    } else if e2e_stage == 8 && e2e_resize_events >= 2 {
+                      match mac_button_check_resize_burst(host, window) {
+                        Err(error) => {
+                          last_error = Some(error)
+                          done = true
+                        }
+                        Ok(frame) => {
+                          initial_frame = Some(frame)
+                          e2e_stage = 1
+                          match mac_button_post_test_click(host, window) {
+                            Ok(_) => ()
+                            Err(error) => {
+                              last_error = Some(error)
+                              done = true
+                            }
                           }
                         }
                       }
