@@ -58,9 +58,11 @@ if ($IsWindows) {
     "/Fe$clipboardFixture", "user32.lib"
   ) -LogName "clipboard-fixture-build.log"
   $ownerIdTest = Join-Path $evidence "accessibility-owner-id-test.exe"
+  $ownerIdTestObject = Join-Path $evidence "accessibility_owner_id_allocator_test.obj"
   Invoke-CheckedCommand -Program "cl" -Arguments @(
     "/nologo", "/std:c11", "/utf-8", "/W4",
     "tests/native/accessibility_owner_id_allocator_test.c",
+    "/Fo$ownerIdTestObject",
     "/Fe$ownerIdTest"
   ) -LogName "accessibility-owner-id-build.log"
   Invoke-CheckedCommand -Program $ownerIdTest -Arguments @() -LogName "accessibility-owner-id-test.log"
