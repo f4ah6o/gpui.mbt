@@ -163,7 +163,10 @@ test "disabled focus transition and loading cancel pending activation" {
   )
   assert_eq(stale_up.activations(), 0)
 
-  let pointer_base = ButtonDemo::new(640.0, 240.0).unwrap().focus_button().unwrap()
+  let pointer_base = ButtonDemo::new(640.0, 240.0)
+    .unwrap()
+    .focus_button()
+    .unwrap()
   let pointer = pointer_base.handle_input(
     ubuntu_button_test_pointer(
       true,
@@ -253,12 +256,16 @@ test "fixture scene includes label and status as copied snapshot text" {
 }
 
 ///|
-fn ubuntu_button_semantic_node(demo : ButtonDemo) -> @accessibility.SemanticNode {
+fn ubuntu_button_semantic_node(
+  demo : ButtonDemo,
+) -> @accessibility.SemanticNode {
   demo.accessibility_snapshot().nodes()[1]
 }
 
 ///|
-fn ubuntu_button_semantic_request(demo : ButtonDemo) -> @accessibility.ActionRequest {
+fn ubuntu_button_semantic_request(
+  demo : ButtonDemo,
+) -> @accessibility.ActionRequest {
   @accessibility.ActionRequest::new(
     ubuntu_button_semantic_node(demo).id(),
     @accessibility.Invoke,
@@ -307,7 +314,10 @@ test "fixture publishes button identity name geometry and state" {
 test "fixture ordinary updates preserve identity and revalidate latest state" {
   let demo = ButtonDemo::new(640.0, 240.0).unwrap()
   let original_id = ubuntu_button_semantic_node(demo).id()
-  let request = @accessibility.ActionRequest::new(original_id, @accessibility.Invoke)
+  let request = @accessibility.ActionRequest::new(
+    original_id,
+    @accessibility.Invoke,
+  )
 
   let focused = demo.focus_button().unwrap()
   let focused_button = ubuntu_button_semantic_node(focused)
@@ -328,7 +338,10 @@ test "fixture ordinary updates preserve identity and revalidate latest state" {
     ),
   )
 
-  let disabled_base = ButtonDemo::new(640.0, 240.0).unwrap().focus_button().unwrap()
+  let disabled_base = ButtonDemo::new(640.0, 240.0)
+    .unwrap()
+    .focus_button()
+    .unwrap()
   let disabled_id = ubuntu_button_semantic_node(disabled_base).id()
   let disabled_request = ubuntu_button_semantic_request(disabled_base)
   let disabled = disabled_base.with_enabled(false).unwrap()
@@ -344,7 +357,9 @@ test "fixture ordinary updates preserve identity and revalidate latest state" {
       @accessibility.Disabled,
     ),
   )
-  assert_true(disabled.dispatch_accessibility_request(disabled_request) is Err(_))
+  assert_true(
+    disabled.dispatch_accessibility_request(disabled_request) is Err(_),
+  )
   assert_eq(disabled.activations(), 0)
 }
 
@@ -352,12 +367,19 @@ test "fixture ordinary updates preserve identity and revalidate latest state" {
 test "fixture removal and restoration allocate a fresh semantic generation" {
   let demo = ButtonDemo::new(640.0, 240.0).unwrap()
   let original = ubuntu_button_semantic_node(demo).id()
-  let request = @accessibility.ActionRequest::new(original, @accessibility.Invoke)
+  let request = @accessibility.ActionRequest::new(
+    original,
+    @accessibility.Invoke,
+  )
 
   let small = demo.resize(80.0, 30.0).unwrap()
   assert_eq(small.accessibility_snapshot().nodes().length(), 1)
   assert_true(
-    ubuntu_button_semantic_action_is_error(small, request, @accessibility.StaleNode),
+    ubuntu_button_semantic_action_is_error(
+      small,
+      request,
+      @accessibility.StaleNode,
+    ),
   )
 
   let restored = small.resize(640.0, 240.0).unwrap()
@@ -378,7 +400,10 @@ test "fixture removal and restoration allocate a fresh semantic generation" {
 test "fixture resets the model before reusing its button key" {
   let demo = ButtonDemo::new(640.0, 240.0).unwrap()
   let original = ubuntu_button_semantic_node(demo).id()
-  let request = @accessibility.ActionRequest::new(original, @accessibility.Invoke)
+  let request = @accessibility.ActionRequest::new(
+    original,
+    @accessibility.Invoke,
+  )
   let reset = demo.reset_session().unwrap()
   let replacement = ubuntu_button_semantic_node(reset).id()
 
@@ -427,7 +452,9 @@ test "fixture rejects current requests and updates through stale value copies" {
       @accessibility.StaleNode,
     ),
   )
-  assert_true(disabled.dispatch_accessibility_request(current_request) is Err(_))
+  assert_true(
+    disabled.dispatch_accessibility_request(current_request) is Err(_),
+  )
   match disabled.with_loading(true) {
     Err(StaleFixtureState) => ()
     _ => assert_true(false)
@@ -436,8 +463,16 @@ test "fixture rejects current requests and updates through stale value copies" {
     Err(StaleFixtureState) => ()
     _ => assert_true(false)
   }
-  assert_true(reenabled.validate_accessibility_request(current_request) is Ok(_))
-  assert_eq(reenabled.dispatch_accessibility_request(current_request).unwrap().activations(), 1)
+  assert_true(
+    reenabled.validate_accessibility_request(current_request) is Ok(_),
+  )
+  assert_eq(
+    reenabled
+    .dispatch_accessibility_request(current_request)
+    .unwrap()
+    .activations(),
+    1,
+  )
 }
 
 ///|

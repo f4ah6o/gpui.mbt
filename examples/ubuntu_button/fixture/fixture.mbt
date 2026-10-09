@@ -139,15 +139,15 @@ fn demo_accessibility_specs(
     return Ok([root])
   }
   let button_spec = @accessibility.NodeSpec::new(
-    button.id(),
-    Some(1UL),
-    @accessibility.Button,
-    button.label(),
-    button.bounds(),
-  )
-  .with_enabled(button.is_enabled())
-  .with_loading(button.is_loading())
-  .with_focused(button.is_focused())
+      button.id(),
+      Some(1UL),
+      @accessibility.Button,
+      button.label(),
+      button.bounds(),
+    )
+    .with_enabled(button.is_enabled())
+    .with_loading(button.is_loading())
+    .with_focused(button.is_focused())
   let button_spec = match button_spec.with_actions([@accessibility.Invoke]) {
     Ok(value) => value
     Err(error) => return Err(AccessibilityError(error))
@@ -219,10 +219,7 @@ fn demo_new_with_model(
   }
   let accessibility_snapshot = match
     demo_publish_accessibility(
-      accessibility_model,
-      button,
-      viewport,
-      button_visible,
+      accessibility_model, button, viewport, button_visible,
     ) {
     Ok(value) => value
     Err(error) => return Err(error)
@@ -296,13 +293,12 @@ pub fn ButtonDemo::validate_accessibility_request(
 ) -> Result[@accessibility.ActionIntent, @accessibility.ActionError] {
   match self.accessibility_model.resolve_action(request) {
     Err(error) => Err(error)
-    Ok(intent) => {
+    Ok(intent) =>
       if intent.revision() == self.accessibility_snapshot.revision() {
         Ok(intent)
       } else {
         Err(@accessibility.StaleNode)
       }
-    }
   }
 }
 
@@ -315,14 +311,14 @@ pub fn ButtonDemo::dispatch_accessibility_request(
 ) -> Result[ButtonDemo, @accessibility.ActionError] {
   match self.validate_accessibility_request(request) {
     Err(error) => Err(error)
-    Ok(intent) => {
+    Ok(intent) =>
       if intent.action() == @accessibility.Invoke &&
-        intent.node_id().key() == self.button.id() && self.button_visible {
+        intent.node_id().key() == self.button.id() &&
+        self.button_visible {
         Ok(ButtonDemo::apply_effect(self, @button.Activated))
       } else {
         Err(@accessibility.StaleNode)
       }
-    }
   }
 }
 
@@ -338,10 +334,7 @@ pub fn ButtonDemo::close(self : ButtonDemo) -> Unit {
 pub fn ButtonDemo::reopen(
   self : ButtonDemo,
 ) -> Result[ButtonDemo, ButtonDemoError] {
-  ButtonDemo::new(
-    self.viewport.size().width(),
-    self.viewport.size().height(),
-  )
+  ButtonDemo::new(self.viewport.size().width(), self.viewport.size().height())
 }
 
 ///|
@@ -564,11 +557,7 @@ pub fn ButtonDemo::handle_input(
       }
     _ => ()
   }
-  let next = {
-    ..self,
-    button,
-    tree,
-  }
+  let next = { ..self, button, tree, }
   let next = ButtonDemo::apply_effect(next, result.effect())
   if next.button.is_focused() != self.button.is_focused() {
     demo_sync_accessibility_or_abort(next)

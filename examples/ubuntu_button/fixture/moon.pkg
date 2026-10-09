@@ -2,7 +2,7 @@ import {
   "f4ah6o/gpui/primitives",
   "f4ah6o/gpui/scene",
   "f4ah6o/gpui/element",
-  "f4ah6o/gpui/controls/button" @button,
+  "f4ah6o/gpui/controls/button",
   "f4ah6o/gpui/accessibility",
 }
 
