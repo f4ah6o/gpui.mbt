@@ -327,6 +327,58 @@ class RuntimeDependencyTests(unittest.TestCase):
         )
         self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
 
+    def test_ubuntu_button_fixture_stays_above_portable_button(self) -> None:
+        manifests = {
+            "controls/button": (
+                'import { "f4ah6o/gpui/primitives", '
+                '"f4ah6o/gpui/element", "f4ah6o/gpui/scene" }\n'
+            ),
+            "examples/ubuntu_button/fixture": (
+                'import { "f4ah6o/gpui/controls/button", '
+                '"f4ah6o/gpui/element", "f4ah6o/gpui/primitives", '
+                '"f4ah6o/gpui/scene" }\n'
+            ),
+            "examples/ubuntu_button": (
+                'import { "f4ah6o/gpui/ubuntu", "f4ah6o/gpui/platform", '
+                '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives", '
+                '"f4ah6o/gpui/examples/ubuntu_button/fixture", '
+                '"moonbitlang/core/env" }\n'
+            ),
+        }
+        for package, content in manifests.items():
+            directory = self.root / package
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "moon.pkg").write_text(content, encoding="utf-8")
+
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+        fixture_manifest = self.root / "examples/ubuntu_button/fixture/moon.pkg"
+        fixture_manifest.write_text(
+            'import { "f4ah6o/gpui/controls/button", '
+            '"f4ah6o/gpui/platform" }\n',
+            encoding="utf-8",
+        )
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(
+            any(
+                "examples/ubuntu_button/fixture/: forbidden runtime package edge" in error
+                for error in errors
+            )
+        )
+
+        app_manifest = self.root / "examples/ubuntu_button/moon.pkg"
+        app_manifest.write_text(
+            'import { "f4ah6o/gpui/controls/button" }\n',
+            encoding="utf-8",
+        )
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(
+            any(
+                "examples/ubuntu_button/: forbidden runtime package edge" in error
+                for error in errors
+            )
+        )
+
     def test_browser_host_is_a_leaf_above_the_portable_app_fixture(self) -> None:
         browser_app = self.root / "examples/browser_app"
         browser_app.mkdir(parents=True)
