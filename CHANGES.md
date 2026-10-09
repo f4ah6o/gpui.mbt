@@ -46,6 +46,7 @@
 
 ### Fixed
 
+- Fixed macOS app-bundle builds on Bash 3.2 when test hooks are omitted. ([issue 0006](issues/open/0006-macos-native-backend.md), [PR #46](https://github.com/gpui-mbt/gpui.mbt/pull/46))
 - Balance browser pointer and key presses across renderer loss, including a
   press queued before the cancelled frame. The first restored drain receives
   matching releases, and later native releases cannot release the same hold
