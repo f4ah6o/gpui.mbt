@@ -644,19 +644,32 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         # Reusable editing/paint state consumes portable layout results; native
         # shaping, raster admission and clipboard ownership remain in leaves.
         "controls/text_field": {"text", "text_layout", "primitives", "scene", "element"},
+        # Reusable button state stays portable above hit-testing and scene data.
+        "controls/button": {"primitives", "element", "scene"},
         "controls/command_palette": {"text", "text_layout", "primitives", "element", "controls/text_field", "capability", "diagnostics", "scene"},
         "diagnostics": {"primitives"},
         "core": {"primitives", "diagnostics"},
         "layout": {"primitives"},
         "scene": {"primitives"},
         "platform": {"primitives", "diagnostics", "scene"},
-        "platform/macos": {"platform", "primitives", "diagnostics", "scene"},
+        "platform/macos": {"platform", "primitives", "diagnostics", "scene", "platform/testing"},
         "platform/linux_text": {"text_layout", "text", "primitives"},
         "platform/windows_text": {"text", "text_layout", "primitives"},
+        # Native text measurers are platform leaves. The frame-readback seam is
+        # portable in shape and depends only on the shared platform contract.
+        "platform/macos_text": {"text_layout", "text", "primitives"},
+        "platform/testing": {"platform", "diagnostics"},
         "examples/native_macos": {"platform/macos", "platform", "primitives", "diagnostics", "scene"},
-        "ubuntu": {"platform", "platform/linux_text", "text", "primitives", "diagnostics", "scene"},
+        "ubuntu": {"platform", "platform/linux_text", "platform/testing", "text", "primitives", "diagnostics", "scene"},
         "examples/ubuntu": {
             "ubuntu", "platform", "platform/linux_text", "text", "primitives", "diagnostics", "scene",
+        },
+        # The native button executable is a leaf above its headless fixture.
+        "examples/ubuntu_button/fixture": {
+            "controls/button", "element", "primitives", "scene",
+        },
+        "examples/ubuntu_button": {
+            "ubuntu", "platform", "diagnostics", "primitives", "examples/ubuntu_button/fixture",
         },
         "examples/linux_text_field": {
             "ubuntu", "platform", "platform/linux_text", "controls/text_field",
@@ -664,7 +677,7 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         },
         "windows": {
             "platform", "primitives", "diagnostics", "scene", "text",
-            "platform/windows_text",
+            "platform/windows_text", "platform/testing",
         },
         "examples/windows": {"windows", "platform", "primitives", "diagnostics", "scene"},
         "examples/windows_text_field": {
