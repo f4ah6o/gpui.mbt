@@ -98,19 +98,22 @@ test "fixture rejects outside origin, outside release, and secondary pointer" {
   )
   assert_eq(inside_release.activations(), 0)
 
-  let pressed = demo.handle_input(
+  let pressed = inside_release.handle_input(
     ubuntu_button_test_pointer(true, inside.x(), inside.y(), true),
   )
+  assert_true(pressed.button().is_pressed())
   let outside_release = pressed.handle_input(
     ubuntu_button_test_pointer(false, outside.x(), outside.y(), true),
   )
+  assert_true(!outside_release.button().is_pressed())
   let later_inside = outside_release.handle_input(
     ubuntu_button_test_pointer(false, inside.x(), inside.y(), true),
   )
   assert_eq(later_inside.activations(), 0)
   assert_true(!later_inside.button().is_pressed())
 
-  let secondary = demo
+  let secondary = ButtonDemo::new(640.0, 240.0)
+    .unwrap()
     .handle_input(
       ubuntu_button_test_pointer(true, inside.x(), inside.y(), false),
     )
@@ -522,4 +525,97 @@ test "fixture validation is inert and owner delivery uses shared counter" {
   // owner’s action path.
   let repeated = delivered.dispatch_accessibility_request(request).unwrap()
   assert_eq(repeated.activations(), 2)
+}
+
+///|
+test "fixture transitions fence retained action and physical-input copies" {
+  let old = ButtonDemo::new(640.0, 240.0).unwrap()
+  let request = ubuntu_button_semantic_request(old)
+  let current = old.dispatch_accessibility_request(request).unwrap()
+  assert_eq(current.activations(), 1)
+  let repeated = current.dispatch_accessibility_request(request).unwrap()
+  assert_eq(repeated.activations(), 2)
+  assert_true(repeated.validate_accessibility_request(request) is Ok(_))
+  old.close()
+  assert_true(repeated.validate_accessibility_request(request) is Ok(_))
+  match old.with_loading(true) {
+    Err(StaleFixtureState) => ()
+    _ => assert_true(false)
+  }
+  assert_true(old.dispatch_accessibility_request(request) is Err(_))
+
+  let focused = ButtonDemo::new(640.0, 240.0).unwrap().focus_button().unwrap()
+  let space_armed = focused.handle_input(
+    ubuntu_button_test_key_down(@primitives.Space, false),
+  )
+  let space_done = space_armed.handle_input(
+    ubuntu_button_test_key_up(@primitives.Space),
+  )
+  assert_eq(space_done.activations(), 1)
+  assert_true(!space_done.button().is_pressed())
+  match focused.with_loading(true) {
+    Err(StaleFixtureState) => ()
+    _ => assert_true(false)
+  }
+  match space_armed.with_loading(false) {
+    Err(StaleFixtureState) => ()
+    _ => assert_true(false)
+  }
+
+  let pointer_base = ButtonDemo::new(640.0, 240.0)
+    .unwrap()
+    .focus_button()
+    .unwrap()
+  let bounds = pointer_base.button().bounds()
+  let inside = ubuntu_button_test_input_point(
+    bounds.left() + 8.0,
+    bounds.top() + 8.0,
+  )
+  let pointer_armed = pointer_base.handle_input(
+    ubuntu_button_test_pointer(true, inside.x(), inside.y(), true),
+  )
+  let pointer_done = pointer_armed.handle_input(
+    ubuntu_button_test_pointer(false, inside.x(), inside.y(), true),
+  )
+  assert_eq(pointer_done.activations(), 1)
+  assert_true(!pointer_done.button().is_pressed())
+  match pointer_base.with_enabled(false) {
+    Err(StaleFixtureState) => ()
+    _ => assert_true(false)
+  }
+  match pointer_armed.with_loading(true) {
+    Err(StaleFixtureState) => ()
+    _ => assert_true(false)
+  }
+}
+
+///|
+test "fixture revision exhaustion fences mutations but preserves close" {
+  let demo = ButtonDemo::new(640.0, 240.0).unwrap()
+  let request = ubuntu_button_semantic_request(demo)
+  let at_max = {
+    ..demo,
+    fixture_revision: DEMO_MAX_FIXTURE_REVISION,
+    fixture_revision_source: Ref(Some(DEMO_MAX_FIXTURE_REVISION)),
+  }
+  let older = { ..at_max, fixture_revision: DEMO_MAX_FIXTURE_REVISION - 1UL, }
+
+  assert_true(at_max.dispatch_accessibility_request(request) is Err(_))
+  assert_true(older.validate_accessibility_request(request) is Err(_))
+  older.close()
+  assert_true(
+    ubuntu_button_semantic_action_is_error(
+      at_max,
+      request,
+      @accessibility.StaleNode,
+    ),
+  )
+  at_max.close()
+  assert_true(
+    ubuntu_button_semantic_action_is_error(
+      at_max,
+      request,
+      @accessibility.ModelClosed,
+    ),
+  )
 }

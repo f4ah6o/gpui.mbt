@@ -14,8 +14,9 @@ pub(all) enum ButtonDemoError {
 pub extend ButtonDemoError with Eq::{not_equal, equal}
 
 ///|
-/// App-owned state for the Ubuntu button example. The framework Button emits
-/// an action; the fixture owns the count and recreates the control on reset.
+/// App-owned state for the Ubuntu button example. Earlier immutable copies
+/// share a freshness fence; the latest returned value owns future transitions.
+/// The framework Button emits an action; the fixture owns the count and reset.
 pub struct ButtonDemo {
   priv button : @button.Button
   priv tree : @element.ElementTree
@@ -24,10 +25,13 @@ pub struct ButtonDemo {
   priv button_visible : Bool
   priv accessibility_model : @accessibility.AccessibilityModel
   priv accessibility_snapshot : @accessibility.AccessibilitySnapshot
+  priv fixture_revision : UInt64
+  priv fixture_revision_source : Ref[UInt64?]
 }
 
 ///|
 fn demo_is_current(demo : ButtonDemo) -> Bool {
+  demo.fixture_revision_source.val == Some(demo.fixture_revision) &&
   demo.accessibility_model.snapshot().revision() ==
   demo.accessibility_snapshot.revision()
 }
@@ -46,6 +50,36 @@ const DEMO_MIN_BUTTON_WIDTH : Double = 160.0
 
 ///|
 const DEMO_MIN_BUTTON_HEIGHT : Double = 68.0
+
+///|
+const DEMO_MAX_FIXTURE_REVISION : UInt64 = 0xffff_ffff_ffff_ffff
+
+///|
+/// Advance the shared fixture freshness fence. Immutable ButtonDemo copies
+/// share this source so an earlier copy cannot overwrite newer app/control
+/// state. Exhaustion invalidates the source instead of reviving an old value.
+fn demo_advance_fixture_revision(demo : ButtonDemo) -> ButtonDemo? {
+  match demo.fixture_revision_source.val {
+    Some(current) if current == demo.fixture_revision =>
+      if current == DEMO_MAX_FIXTURE_REVISION {
+        demo.fixture_revision_source.val = None
+        None
+      } else {
+        let next = current + 1UL
+        demo.fixture_revision_source.val = Some(next)
+        Some({ ..demo, fixture_revision: next, })
+      }
+    _ => None
+  }
+}
+
+///|
+fn demo_advance_fixture_revision_or_stale(demo : ButtonDemo) -> ButtonDemo {
+  match demo_advance_fixture_revision(demo) {
+    Some(next) => next
+    None => demo
+  }
+}
 
 ///|
 fn demo_button_fits(width : Double, height : Double) -> Bool {
@@ -181,7 +215,11 @@ fn demo_sync_accessibility_or_abort(demo : ButtonDemo) -> ButtonDemo {
       demo.viewport,
       demo.button_visible,
     ) {
-    Ok(snapshot) => { ..demo, accessibility_snapshot: snapshot, }
+    Ok(snapshot) =>
+      demo_advance_fixture_revision_or_stale({
+        ..demo,
+        accessibility_snapshot: snapshot,
+      })
     Err(AccessibilityError(@accessibility.ModelClosed)) => demo
     Err(_) => abort("Ubuntu button semantic fixture invariant")
   }
@@ -232,6 +270,8 @@ fn demo_new_with_model(
     button_visible,
     accessibility_model,
     accessibility_snapshot,
+    fixture_revision: 1UL,
+    fixture_revision_source: Ref(Some(1UL)),
   }
   Ok(demo)
 }
@@ -294,7 +334,8 @@ pub fn ButtonDemo::validate_accessibility_request(
   match self.accessibility_model.resolve_action(request) {
     Err(error) => Err(error)
     Ok(intent) =>
-      if intent.revision() == self.accessibility_snapshot.revision() {
+      if demo_is_current(self) &&
+        intent.revision() == self.accessibility_snapshot.revision() {
         Ok(intent)
       } else {
         Err(@accessibility.StaleNode)
@@ -315,7 +356,13 @@ pub fn ButtonDemo::dispatch_accessibility_request(
       if intent.action() == @accessibility.Invoke &&
         intent.node_id().key() == self.button.id() &&
         self.button_visible {
-        Ok(ButtonDemo::apply_effect(self, @button.Activated))
+        match
+          demo_advance_fixture_revision(
+            ButtonDemo::apply_effect(self, @button.Activated),
+          ) {
+          Some(next) => Ok(next)
+          None => Err(@accessibility.StaleNode)
+        }
       } else {
         Err(@accessibility.StaleNode)
       }
@@ -326,7 +373,13 @@ pub fn ButtonDemo::dispatch_accessibility_request(
 /// Revoke the current live semantic tree. A later reopen receives a distinct
 /// owner, so IDs from this session remain foreign to the replacement.
 pub fn ButtonDemo::close(self : ButtonDemo) -> Unit {
-  self.accessibility_model.close()
+  if demo_is_current(self) ||
+    (
+      self.fixture_revision_source.val is None &&
+      self.fixture_revision == DEMO_MAX_FIXTURE_REVISION
+    ) {
+    self.accessibility_model.close()
+  }
 }
 
 ///|
@@ -398,7 +451,15 @@ fn demo_publish_fixture(
       demo.viewport,
       demo.button_visible,
     ) {
-    Ok(snapshot) => Ok({ ..demo, accessibility_snapshot: snapshot, })
+    Ok(snapshot) =>
+      match
+        demo_advance_fixture_revision({
+          ..demo,
+          accessibility_snapshot: snapshot,
+        }) {
+        Some(next) => Ok(next)
+        None => Err(StaleFixtureState)
+      }
     Err(error) => Err(error)
   }
 }
@@ -562,7 +623,7 @@ pub fn ButtonDemo::handle_input(
   if next.button.is_focused() != self.button.is_focused() {
     demo_sync_accessibility_or_abort(next)
   } else {
-    next
+    demo_advance_fixture_revision_or_stale(next)
   }
 }
 

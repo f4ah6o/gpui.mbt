@@ -7,6 +7,13 @@ whose continuity key, label, logical bounds, enabled/loading/focused state and
 `Invoke` request synchronously before routing the accepted effect to its
 app-owned activation counter.
 
+Fixture values also share a freshness fence. Inputs handled by the button
+control path and delivered `Invoke` actions advance that fence even when the
+semantic tree is unchanged, so further transitions must use the returned value
+rather than an earlier copy. The fence is separate from the semantic-snapshot
+revision, preserving repeatable request validation without allowing an old
+copy to roll back button or count state.
+
 `ActionIntent` is a repeatable validation receipt, not a one-shot token and not
 an action executor. This fixture deliberately does not deduplicate repeated
 requests; application-specific idempotency belongs in the owner’s action path.
