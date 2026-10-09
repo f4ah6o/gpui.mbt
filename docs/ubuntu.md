@@ -88,11 +88,14 @@ measurement contract, raster scope, and separate headless test command.
   remain pending. A separate opt-in [experimental v1 transport](ubuntu-ime.md)
   now exposes Ubuntu-local text sessions; owner integration and GPUI native IME
   acceptance are still pending.
-- Output enter/leave and maximum entered-output integer buffer scale. Scale is
-  queued before later input/frame events and EGL buffers resize to physical
-  pixels. Fractional scale, public display metadata and multi-display E2E are
-  pending. Output tracking is bounded to 16 outputs; this slice targets one CI
-  output and does not claim broader desktop coverage.
+- Output enter/leave and maximum entered-output integer buffer scale. Numeric
+  geometry fields, current-mode values, and scale callbacks are staged per
+  `wl_output` and become committed only at that output's `done` event;
+  enter/leave and EGL sizing read committed scale. Scale is queued before later
+  input/frame events and EGL buffers resize to physical pixels. Fractional
+  scale, public display metadata and multi-display E2E are pending. Output
+  tracking is bounded to 16 outputs; this slice targets one CI output and does
+  not claim broader desktop coverage.
 - Bounded 1024-event FIFO. Overflow returns `ResourceExhausted` and quiesces the
   host instead of silently losing input. Sequence exhaustion also fails closed.
 - Clipboard uses the core Wayland data-device protocol for UTF-8 plain text.
