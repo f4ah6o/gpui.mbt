@@ -1,8 +1,8 @@
 # Apple Silicon macOS reusable Button integration and qualification
 
-Status: open — fixture implementation and native acceptance pending  
-Updated: 2026-10-08 (JST); inspected 2026-10-08 16:20 JST  
-Parent: [Apple Silicon macOS backend](0006-macos-native-backend.md)  
+Status: open — fixture implementation and native acceptance pending\
+Updated: 2026-10-09 (JST); inspected 2026-10-09 23:41 JST\
+Parent: [Apple Silicon macOS backend](0006-macos-native-backend.md)\
 Related: [palette and shared dependency handoff](0022-apple-silicon-macos-command-palette-parity.md)
 
 ## Ownership and exact inputs
@@ -12,26 +12,21 @@ The Linux/shared-component coordinator owns reusable Button corrections and the
 common API. This issue does not authorize changes to another platform's scope
 or promote a support tier.
 
-Current main is `87d3e46ff35429ad747595f312798aec429ddcce`.
-[Button #47](https://github.com/gpui-mbt/gpui.mbt/pull/47) is **draft/open**, head
-`c9fefddaf0e925c9a20bdab10496e569e9652c95`, tree
-`51158f54771fabf31c258f7f6775dec1b2243613`. Its reviewed portable model/paint
-and Ubuntu fixture passed 19 tests on each of four targets and a native build
-with generated-C warnings. No Ubuntu window was launched; this is not live
-input, pixel, accessibility, or other-OS qualification. It has not merged.
+Current main is `008b3c73d50108d6ed1e6c02ad9e12e930e843ec`.
+[Button #47](https://github.com/gpui-mbt/gpui.mbt/pull/47) is merged as
+`4ee7bd48482db16fd6757265d7d1f3decd352bd7`; the reusable Button is available
+on current main. This merge supplies a shared control, not macOS fixture or
+native-runtime qualification. Pin and revalidate the final integrated source
+before claiming any platform acceptance; do not copy or fork the model.
 
-Stacking work on that exact reviewed source is possible now. Final acceptance
-must recheck and pin the final reviewed integrated source, not just this snapshot. Record the pin and
-reconcile changes before landing when #47 changes or merges. Do not copy or fork
-the model into an OS widget implementation.
-
-This packet is arm64/Apple Silicon only. Button painting emits `TextItem`,
-so the macOS example needs the CoreText/Metal text-rendering slice currently in
-open [#40](https://github.com/gpui-mbt/gpui.mbt/pull/40), head
-`7232061f83769214843a2ccfa18f1e1a4d989031`. Start portable tests and adapter
-planning now; native rendering depends on that reviewed compatible slice.
-Button is not a text editor and does not depend on Japanese IME completion.
-The palette's AppKit field/ownership/IME gates remain in 0022, separately.
+This packet is arm64/Apple Silicon only. Button painting emits `TextItem`; the
+bounded CoreText/Metal scene-text renderer from merged
+[#49](https://github.com/gpui-mbt/gpui.mbt/pull/49), merge
+`2c6e9a3df469922f79d7b2b8eb977a0524086486`, is available to the Button
+fixture without waiting for [#40](https://github.com/gpui-mbt/gpui.mbt/pull/40).
+#49 does not provide the palette field, AppKit ownership, or live Japanese IME
+acceptance. Those separate palette gates remain in 0022; Button itself is not a
+text editor and does not depend on Japanese IME completion.
 
 ## Stage A — reusable fixture and native runtime
 
@@ -59,31 +54,37 @@ external automation driver, and passing it does not imply Stage B is complete.
 
 ## Stage B — shared semantics and AX projection
 
-`docs/platform.md` describes a future generational NodeId/tree/action model;
-it is not an implemented common native accessibility tree. Palette semantics
-are copied DTOs, and #47 Button has neither native accessibility nor semantic
-activation. A Button's caller-owned `UInt64` is not a native AX identity.
+`docs/accessibility.md`, merged through [#48](https://github.com/gpui-mbt/gpui.mbt/pull/48),
+defines the shared headless owner/generation, snapshot, action-validation, and
+application-effect boundary. [#51](https://github.com/gpui-mbt/gpui.mbt/pull/51)
+adds a fixture-specific Ubuntu projection, app-owned dispatch, and freshness
+fence. It does not supply a general automatic Button action system or macOS AX,
+Windows UIA, or AT-SPI adapter. A caller-owned Button `UInt64` remains a mapping
+key, not a native AX identity.
 
-OS role/name/state/action/coordinate mapping and headless vectors can begin now.
-Before native bridge implementation, agree one shared tree/action contract with
-the Linux/shared coordinator: ownership/generation, reset/reuse/removal,
-focus, loading versus disabled state, semantic activation, and stale-target
-rejection. Do not independently invent incompatible AX and other-OS trees.
+The macOS fixture must map its role, name, bounds, focus/enabled/loading state,
+and supported action to the existing contract; it must preserve live-target
+validation and leave the application effect with its owner.
 
-- [ ] Headless vectors describe button role, name, bounds, focused/enabled/loading
-  states, supported action, generation changes and stale/reused ID rejection.
-- [ ] The approved shared tree/action contract defines semantic activation and
-  its application-effect boundary; mapping does not synthesize physical input.
-- [ ] A real native AX client can observe the named control and invoke an
-  allowed semantic action once; disabled/loading/stale targets fail closed.
+- [ ] Headless macOS vectors map button role/name/bounds/state and verify the
+  shared owner, generation, snapshot, and stale-target rules.
+- [ ] Fixture wiring conforms to the shared action/effect boundary without
+  synthesizing physical input or treating an ActionIntent as an executor,
+  one-shot token, or exactly-once capability.
+- [ ] A real native AX client can observe the named control and request an
+  allowed semantic action. Each accepted Invoke delivered by the client causes
+  exactly one owner-side effect; disabled/loading/stale rejections cause zero.
+  Repeated accepted requests are separate events; this checks the app dispatch
+  path and does not imply framework-level deduplication.
 - [ ] Semantic invocation, physical keyboard input, physical pointer input,
   application activation count and pixel presentation each have separate
   evidence and qualification results.
-- [ ] Deliberately broken fixtures/regressions fail the corresponding checks;
+- [ ] Deliberately broken fixture regressions fail their corresponding checks;
   a visible label or successful semantic invoke cannot mask broken keyboard input.
 
-The native bridge depends on the shared contract, not completion of Linux AT-SPI.
-Report unsupported native accessibility honestly until this stage passes.
+The shared contract exists, but native AX support remains open until this
+Apple-specific adapter and real-client acceptance pass. Linux AT-SPI completion
+is not a prerequisite. Report unsupported native accessibility honestly.
 
 ## External conformance and handoff
 
@@ -93,8 +94,11 @@ contracts; Yami owns scenario-level conformance evidence. Follow the current
 [Yami web/native conformance packet](https://github.com/f4ah6o/Yami-kumo/blob/772ab942fa94443cc48b48472cd7fdc494b99018/issues/open/20261008-vlmkit-web-native-conformance.md),
 whose order is macOS first. Recheck its final reviewed source before execution.
 
-[vlmkit #2](https://github.com/f4ah6o/vlmkit/pull/2) remains draft at
-`5583afe207456ca0d0a74ab0a85ac2c8a3fc6a96`, with unresolved live/safety gates;
+[vlmkit #2](https://github.com/f4ah6o/vlmkit/pull/2) remains open/draft at
+current head `8a6ada8e0609a36b189032e6ca3b222a1fd4f187` (verified 2026-10-09).
+Its PR body reports the Linux live scan-to-judge lane as UNRUN and macOS,
+real-GPUI, and multi-display acceptance plus additional qualification gates as
+unresolved;
 [#7](https://github.com/f4ah6o/vlmkit/pull/7) qualifies only the named GTK/X11
 observer profile. Neither is acceptance of this gpui.mbt fixture. The separate
 Windows-driver scheduling gate in [vlmkit #6](https://github.com/f4ah6o/vlmkit/pull/6),
