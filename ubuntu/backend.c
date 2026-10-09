@@ -1143,10 +1143,11 @@ static void pointer_axis(void *d, struct wl_pointer *p, uint32_t time,
   struct host *h = d;
   if (p != h->pointer)
     return;
+  int slot = (h->read + h->count) % QUEUE_CAPACITY;
+  int prior = h->count;
   event(h, 10, axis, h->px, h->py);
-  if (h->count)
-    h->queue[(h->read + h->count - 1) % QUEUE_CAPACITY][4] =
-        wl_fixed_to_double(value);
+  if (h->count != prior)
+    h->queue[slot][4] = wl_fixed_to_double(value);
 }
 static const struct wl_pointer_listener pointer_listener = {
     .enter = pointer_enter,
