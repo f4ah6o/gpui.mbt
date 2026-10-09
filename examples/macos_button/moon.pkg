@@ -1,0 +1,14 @@
+import {
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/examples/ubuntu_button/fixture",
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/platform/macos",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/platform/testing",
+  "f4ah6o/gpui/scene",
+  "moonbitlang/core/env",
+}
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")

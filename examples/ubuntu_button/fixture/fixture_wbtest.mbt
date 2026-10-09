@@ -259,6 +259,121 @@ test "fixture scene includes label and status as copied snapshot text" {
 }
 
 ///|
+fn ubuntu_button_fixture_quad_color(
+  items : Array[@scene.SceneItem],
+  index : Int,
+) -> @primitives.Color {
+  match items[index] {
+    @scene.QuadItem(color~, ..) => color
+    _ => abort("button state scene item should be a quad")
+  }
+}
+
+///|
+fn ubuntu_button_fixture_has_rgb(
+  color : @primitives.Color,
+  red : Int,
+  green : Int,
+  blue : Int,
+) -> Bool {
+  color.red() == red &&
+  color.green() == green &&
+  color.blue() == blue &&
+  color.alpha() == 255
+}
+
+///|
+test "fixture scenes retain deterministic button colors across control states" {
+  let idle = ButtonDemo::new(640.0, 240.0).unwrap()
+  let idle_items = idle.scene(1.0).unwrap().items()
+  assert_true(
+    ubuntu_button_fixture_has_rgb(
+      ubuntu_button_fixture_quad_color(idle_items, 1),
+      102,
+      126,
+      150,
+    ),
+  )
+  assert_true(
+    ubuntu_button_fixture_has_rgb(
+      ubuntu_button_fixture_quad_color(idle_items, 2),
+      42,
+      71,
+      101,
+    ),
+  )
+
+  let focused = ButtonDemo::new(640.0, 240.0).unwrap().focus_button().unwrap()
+  let focused_items = focused.scene(1.0).unwrap().items()
+  assert_true(
+    ubuntu_button_fixture_has_rgb(
+      ubuntu_button_fixture_quad_color(focused_items, 1),
+      98,
+      170,
+      255,
+    ),
+  )
+
+  let pressed = focused.handle_input(
+    ubuntu_button_test_key_down(@primitives.Space, false),
+  )
+  let pressed_items = pressed.scene(1.0).unwrap().items()
+  assert_true(
+    ubuntu_button_fixture_has_rgb(
+      ubuntu_button_fixture_quad_color(pressed_items, 2),
+      35,
+      77,
+      119,
+    ),
+  )
+
+  let disabled = ButtonDemo::new(640.0, 240.0)
+    .unwrap()
+    .with_enabled(false)
+    .unwrap()
+  let disabled_items = disabled.scene(1.0).unwrap().items()
+  assert_true(
+    ubuntu_button_fixture_has_rgb(
+      ubuntu_button_fixture_quad_color(disabled_items, 1),
+      100,
+      106,
+      114,
+    ),
+  )
+  assert_true(
+    ubuntu_button_fixture_has_rgb(
+      ubuntu_button_fixture_quad_color(disabled_items, 2),
+      47,
+      52,
+      60,
+    ),
+  )
+
+  let loading = ButtonDemo::new(640.0, 240.0)
+    .unwrap()
+    .with_loading(true)
+    .unwrap()
+  let loading_items = loading.scene(1.0).unwrap().items()
+  assert_true(
+    ubuntu_button_fixture_has_rgb(
+      ubuntu_button_fixture_quad_color(loading_items, 2),
+      55,
+      70,
+      88,
+    ),
+  )
+
+  let undersized = ButtonDemo::new(640.0, 240.0)
+    .unwrap()
+    .resize(80.0, 30.0)
+    .unwrap()
+  assert_eq(undersized.scene(1.0).unwrap().items().length(), 1)
+  let restored = undersized.resize(640.0, 240.0).unwrap()
+  assert_eq(restored.scene(1.0).unwrap().items().length(), 6)
+  assert_true(!restored.button().is_pressed())
+}
+
+///|
 fn ubuntu_button_semantic_node(
   demo : ButtonDemo,
 ) -> @accessibility.SemanticNode {

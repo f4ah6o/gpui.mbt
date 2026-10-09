@@ -269,9 +269,9 @@ typing history or qualification of desktop repeat accuracy. See the
 [field repeat contract](linux-text-field.md#bounded-direct-keyboard-repeat).
 
 The bounded experimental field now paints visible caret/selection and scrolls,
-but it is not a general control. Public TextInput/IME, semantic accessibility, menus,
-background enqueue, timers, fractional scaling, and broader service capability
-negotiation remain roadmap work. Native clipboard
+but it is not a general control. Public TextInput/IME, native/OS accessibility
+integration, menus, background enqueue, timers, fractional scaling, and broader
+service capability negotiation remain roadmap work. Native clipboard
 and cursor protocols are implemented, while a
 cross-client clipboard roundtrip and visible cursor smoke under an input-capable
 desktop remain unverified. Native handles and borrowed buffers do not escape

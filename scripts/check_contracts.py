@@ -660,7 +660,10 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "platform/macos_text": {"text_layout", "text", "primitives"},
         "platform/testing": {"platform", "diagnostics"},
         "examples/native_macos": {"platform/macos", "platform", "primitives", "diagnostics", "scene"},
-        "ubuntu": {"platform", "platform/linux_text", "platform/testing", "text", "primitives", "diagnostics", "scene"},
+        "ubuntu": {
+            "accessibility", "platform", "platform/linux_text", "platform/testing",
+            "text", "primitives", "diagnostics", "scene",
+        },
         "examples/ubuntu": {
             "ubuntu", "platform", "platform/linux_text", "text", "primitives", "diagnostics", "scene",
         },
@@ -671,6 +674,11 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         },
         "examples/ubuntu_button": {
             "ubuntu", "platform", "diagnostics", "primitives", "examples/ubuntu_button/fixture",
+        },
+        # The native macOS sample is a leaf above the portable Button fixture.
+        "examples/macos_button": {
+            "diagnostics", "examples/ubuntu_button/fixture", "platform",
+            "platform/macos", "platform/testing", "primitives", "scene",
         },
         "examples/linux_text_field": {
             "ubuntu", "platform", "platform/linux_text", "controls/text_field",

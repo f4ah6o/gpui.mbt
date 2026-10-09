@@ -52,10 +52,13 @@ pub struct AccessibilityModel {
   // private fields
 }
 pub fn AccessibilityModel::close(Self) -> Unit
+pub fn AccessibilityModel::is_closed(Self) -> Bool
+pub fn AccessibilityModel::is_current_snapshot(Self, AccessibilitySnapshot) -> Bool
 pub fn AccessibilityModel::new() -> Result[Self, AccessibilityError]
 pub fn AccessibilityModel::publish(Self, Array[NodeSpec]) -> Result[AccessibilitySnapshot, AccessibilityError]
 pub fn AccessibilityModel::reset(Self) -> Result[AccessibilitySnapshot, AccessibilityError]
 pub fn AccessibilityModel::resolve_action(Self, ActionRequest) -> Result[ActionIntent, ActionError]
+pub fn AccessibilityModel::same_owner(Self, Self) -> Bool
 pub fn AccessibilityModel::snapshot(Self) -> AccessibilitySnapshot
 
 pub(all) enum AccessibilityRole {

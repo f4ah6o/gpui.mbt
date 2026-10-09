@@ -32,7 +32,11 @@ exhausted revision blocks further ordinary commits and reset;
 terminal `close` still revokes all handles and clears the tree, and a future
 adapter must treat that as teardown rather than an ordinary commit at a
 saturated revision. Owner identity prevents a token from one model from
-targeting a node in another model.
+targeting a node in another model. Adapters can use `same_owner` to bind copied
+model handles even when both trees are empty, `is_current_snapshot` to reject
+foreign or stale copied snapshots, and `is_closed` to observe terminal
+teardown. These synchronous queries do not expose owner tokens and remain
+confined to the UI-owner thread.
 
 This tree is semantic state, separate from `element.ElementTree`. The latter
 owns layout/hit-test records and an opaque `FocusOwner` for one focus acquisition
