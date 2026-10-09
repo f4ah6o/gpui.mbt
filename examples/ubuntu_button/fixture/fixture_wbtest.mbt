@@ -432,6 +432,10 @@ test "fixture rejects current requests and updates through stale value copies" {
     Err(StaleFixtureState) => ()
     _ => assert_true(false)
   }
+  match disabled.with_enabled(false) {
+    Err(StaleFixtureState) => ()
+    _ => assert_true(false)
+  }
   assert_true(reenabled.validate_accessibility_request(current_request) is Ok(_))
   assert_eq(reenabled.dispatch_accessibility_request(current_request).unwrap().activations(), 1)
 }

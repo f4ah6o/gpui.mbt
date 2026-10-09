@@ -415,6 +415,10 @@ pub fn ButtonDemo::with_enabled(
   self : ButtonDemo,
   enabled : Bool,
 ) -> Result[ButtonDemo, ButtonDemoError] {
+  match demo_require_current(self) {
+    Ok(_) => ()
+    Err(error) => return Err(error)
+  }
   if self.button.is_enabled() == enabled {
     return Ok(self)
   }
