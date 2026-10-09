@@ -3,7 +3,7 @@
 Status: open
 Model: gpt-6-luna max
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-06
+Updated: 2026-10-09
 
 ## Current-head acceptance triage — 2026-10-04
 
@@ -153,6 +153,48 @@ Add:
 - native E2E runner
 - failure artifacts/logs
 - release-gate evidence hooks
+
+#### Scoped Bash 3.2 app-bundle build entrypoint fix — PR #46
+
+The macOS system Bash 3.2.57 raises an unbound-variable error when
+`set -u` expands an empty optional array. Keep the common clang arguments in
+a non-empty array, then append `-DGPUI_TESTING` only for the text-field test
+build. This packet is limited to `script/build_and_run.sh` and its mocked
+entrypoint regression test in `infra/macos-desktop/tests/test_build_entrypoint.py`.
+
+Acceptance:
+
+- Quad and text-field app bundles build without test hooks under `/bin/bash`
+  3.2; the text-field test build still passes `-DGPUI_TESTING`.
+- Quad rejects `--test-hooks` before invoking the compiler.
+- The regression test invokes the actual entrypoint with mocked tools and
+  checks compiler/build arguments and app-bundle output, including paths with
+  spaces. It does not claim native compilation, GUI behavior, rendering, or
+  IME evidence.
+- Warning-denied native checks, model tests, fresh quad and text-field builds,
+  quad app smoke, native E2E, and the scoped local ActRun fast workflow pass.
+
+Dependencies and limits:
+
+- PR #46 is the existing draft for this packet and is based on PR #40's
+  macOS-native backend. It must be reviewed and merged with that dependency;
+  this packet does not reimplement PR #40 or PR #45's evidence work.
+- The fix changes build-shell argument handling only. Japanese IME remains an
+  unresolved PR #40 gate; passing this packet's build and fast checks is not
+  Product Green and does not change the macOS support tier.
+
+Validation commands on the pinned macOS profile:
+
+1. `/bin/bash --version` and `/bin/bash -n script/build_and_run.sh`.
+2. `python3 -m unittest discover -s infra/macos-desktop/tests -p test_build_entrypoint.py -v`.
+3. `moon fmt --check`, then
+   `python3 infra/macos-desktop/actrun-feedback.py --root "$GPUI_MACOS_PROFILE_ROOT" --mode fast --run-dir "$RUN_DIR/fast"`.
+   The fast workflow runs repository and macOS runner tests, warning-denied
+   native/all-target checks, and text-field model tests; it is not the full
+   native or IME gate.
+4. Build fresh quad and text-field bundles without hooks, smoke the quad app,
+   and run `./script/test_macos.sh all --target-dir "$RUN_DIR/native-e2e"`
+   for native E2E, package tests, and the text-field test-hook build.
 
 Do not promote macOS above Tier 0/2 until the evidence required by
 `docs/platform.md` and issue 0005 exists. Tier 1 requires IME,
