@@ -178,6 +178,7 @@ class RuntimeDependencyTests(unittest.TestCase):
         (self.root / "moon.mod").write_text('name = "f4ah6o/gpui"\n', encoding="utf-8")
         manifests = {
             "primitives": '',
+            "accessibility": 'import { "f4ah6o/gpui/primitives" }\n',
             "diagnostics": 'import { "f4ah6o/gpui/primitives" }\n',
             "core": 'import { "f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives" }\n',
             "layout": 'import { "f4ah6o/gpui/primitives" }\n',
@@ -258,6 +259,22 @@ class RuntimeDependencyTests(unittest.TestCase):
         errors = checker.validate_runtime_dependencies(self.root)
         self.assertTrue(any("text/: forbidden runtime package edge" in error for error in errors))
 
+    def test_accessibility_is_portable_and_cannot_import_native_or_action_leaves(self) -> None:
+        manifest = self.root / "accessibility/moon.pkg"
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+        for dependency in ("platform", "capability", "mcp"):
+            manifest.write_text(
+                f'import {{ "f4ah6o/gpui/{dependency}" }}\n',
+                encoding="utf-8",
+            )
+            errors = checker.validate_runtime_dependencies(self.root)
+            self.assertTrue(
+                any("accessibility/: forbidden runtime package edge" in error for error in errors),
+                msg=f"accessibility must not depend on {dependency}",
+            )
+        manifest.write_text('import { "f4ah6o/gpui/primitives" }\n', encoding="utf-8")
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
     def test_capability_and_mcp_edges_are_explicit_and_bounded(self) -> None:
         for package, content in {
             "capability": 'import { "f4ah6o/gpui/core", "f4ah6o/gpui/diagnostics" }\n',
@@ -326,6 +343,110 @@ class RuntimeDependencyTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+    def test_ubuntu_button_fixture_stays_above_portable_button(self) -> None:
+        manifests = {
+            "controls/button": (
+                'import { "f4ah6o/gpui/primitives", '
+                '"f4ah6o/gpui/element", "f4ah6o/gpui/scene" }\n'
+            ),
+            "examples/ubuntu_button/fixture": (
+                'import { "f4ah6o/gpui/controls/button", '
+                '"f4ah6o/gpui/element", "f4ah6o/gpui/primitives", '
+                '"f4ah6o/gpui/scene" }\n'
+            ),
+            "examples/ubuntu_button": (
+                'import { "f4ah6o/gpui/ubuntu", "f4ah6o/gpui/platform", '
+                '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives", '
+                '"f4ah6o/gpui/examples/ubuntu_button/fixture", '
+                '"moonbitlang/core/env" }\n'
+            ),
+        }
+        for package, content in manifests.items():
+            directory = self.root / package
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "moon.pkg").write_text(content, encoding="utf-8")
+
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+        fixture_manifest = self.root / "examples/ubuntu_button/fixture/moon.pkg"
+        fixture_manifest.write_text(
+            'import { "f4ah6o/gpui/controls/button", '
+            '"f4ah6o/gpui/platform" }\n',
+            encoding="utf-8",
+        )
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(
+            any(
+                "examples/ubuntu_button/fixture/: forbidden runtime package edge" in error
+                for error in errors
+            )
+        )
+
+        app_manifest = self.root / "examples/ubuntu_button/moon.pkg"
+        app_manifest.write_text(
+            'import { "f4ah6o/gpui/controls/button" }\n',
+            encoding="utf-8",
+        )
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(
+            any(
+                "examples/ubuntu_button/: forbidden runtime package edge" in error
+                for error in errors
+            )
+        )
+
+    def test_ubuntu_button_semantics_stay_in_the_headless_fixture_layer(self) -> None:
+        manifests = {
+            "controls/button": (
+                'import { "f4ah6o/gpui/primitives", '
+                '"f4ah6o/gpui/element", "f4ah6o/gpui/scene" }\n'
+            ),
+            "examples/ubuntu_button/fixture": (
+                'import { "f4ah6o/gpui/accessibility", '
+                '"f4ah6o/gpui/controls/button", "f4ah6o/gpui/element", '
+                '"f4ah6o/gpui/primitives", "f4ah6o/gpui/scene" }\n'
+            ),
+            "examples/ubuntu_button": (
+                'import { "f4ah6o/gpui/ubuntu", "f4ah6o/gpui/platform", '
+                '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives", '
+                '"f4ah6o/gpui/examples/ubuntu_button/fixture", '
+                '"moonbitlang/core/env" }\n'
+            ),
+        }
+        for package, content in manifests.items():
+            directory = self.root / package
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "moon.pkg").write_text(content, encoding="utf-8")
+
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+        fixture_manifest = self.root / "examples/ubuntu_button/fixture/moon.pkg"
+        fixture_manifest.write_text(
+            'import { "f4ah6o/gpui/accessibility", '
+            '"f4ah6o/gpui/platform" }\n',
+            encoding="utf-8",
+        )
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(
+            any(
+                "examples/ubuntu_button/fixture/: forbidden runtime package edge" in error
+                for error in errors
+            )
+        )
+
+        app_manifest = self.root / "examples/ubuntu_button/moon.pkg"
+        app_manifest.write_text(
+            'import { "f4ah6o/gpui/accessibility" }\n',
+            encoding="utf-8",
+        )
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(
+            any(
+                "examples/ubuntu_button/: forbidden runtime package edge" in error
+                for error in errors
+            )
+        )
 
     def test_browser_host_is_a_leaf_above_the_portable_app_fixture(self) -> None:
         browser_app = self.root / "examples/browser_app"
@@ -451,6 +572,61 @@ class RuntimeDependencyTests(unittest.TestCase):
         self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
         (self.root / "core/moon.pkg").write_text('import { "f4ah6o/gpui/platform/macos" }', encoding="utf-8")
         self.assertTrue(any("forbidden runtime package edge" in error for error in checker.validate_runtime_dependencies(self.root)))
+
+    def test_native_text_and_readback_seams_are_bounded_leaves(self) -> None:
+        manifests = {
+            "platform/testing": (
+                'import { "f4ah6o/gpui/platform", '
+                '"f4ah6o/gpui/diagnostics" }\n'
+            ),
+            "platform/macos_text": (
+                'import { "f4ah6o/gpui/primitives", "f4ah6o/gpui/text", '
+                '"f4ah6o/gpui/text_layout" }\n'
+            ),
+            "platform/macos": (
+                'import { "f4ah6o/gpui/platform", "f4ah6o/gpui/primitives", '
+                '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/scene", '
+                '"f4ah6o/gpui/platform/testing" }\n'
+            ),
+            "ubuntu": (
+                'import { "f4ah6o/gpui/platform", '
+                '"f4ah6o/gpui/platform/linux_text", '
+                '"f4ah6o/gpui/platform/testing", "f4ah6o/gpui/text", '
+                '"f4ah6o/gpui/primitives", "f4ah6o/gpui/diagnostics", '
+                '"f4ah6o/gpui/scene" }\n'
+            ),
+            "windows": (
+                'import { "f4ah6o/gpui/platform", '
+                '"f4ah6o/gpui/platform/windows_text", '
+                '"f4ah6o/gpui/platform/testing", "f4ah6o/gpui/text", '
+                '"f4ah6o/gpui/primitives", "f4ah6o/gpui/diagnostics", '
+                '"f4ah6o/gpui/scene" }\n'
+            ),
+        }
+        for package, content in manifests.items():
+            directory = self.root / package
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "moon.pkg").write_text(content, encoding="utf-8")
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+        (self.root / "platform/testing/moon.pkg").write_text(
+            'import { "f4ah6o/gpui/platform/macos" }\n', encoding="utf-8"
+        )
+        self.assertTrue(any(
+            "platform/testing/: forbidden runtime package edge" in error
+            for error in checker.validate_runtime_dependencies(self.root)
+        ))
+
+        (self.root / "platform/testing/moon.pkg").write_text(
+            manifests["platform/testing"], encoding="utf-8"
+        )
+        (self.root / "core/moon.pkg").write_text(
+            'import { "f4ah6o/gpui/platform/testing" }\n', encoding="utf-8"
+        )
+        self.assertTrue(any(
+            "core/: forbidden runtime package edge" in error
+            for error in checker.validate_runtime_dependencies(self.root)
+        ))
 
     def test_malformed_package_manifest_fails_cleanly(self) -> None:
         path = self.root / "primitives/moon.pkg"

@@ -3,6 +3,8 @@ import {
   "f4ah6o/gpui/platform",
   "f4ah6o/gpui/platform/linux_text",
   "f4ah6o/gpui/controls/text_field",
+  "f4ah6o/gpui/controls/command_palette" @palette,
+  "f4ah6o/gpui/capability",
   "f4ah6o/gpui/text",
   "f4ah6o/gpui/text_layout",
   "f4ah6o/gpui/element",

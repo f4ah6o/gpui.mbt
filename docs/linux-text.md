@@ -211,8 +211,10 @@ selection UI, composition, or IME. Per-frame unsupported checks remain active.
 Windows has a separate experimental D3D11 grayscale subset and focused
 single-line field; its private default-off IMM32 session ingress does not
 promote a support tier, and real Japanese IME qualification remains open.
-macOS retains its existing text rejection behavior. The public
-`SceneSnapshot` envelope version remains v1, and browser behavior is unchanged.
+macOS has a separate CoreText system-sans measurement and bounded single-line
+grayscale renderer; it does not use the Linux Pango adapter or add text input
+and IME. The public `SceneSnapshot` envelope version remains v1, and browser
+behavior is unchanged.
 No atlas, retained
 raster cache, or persistent Pango raster handle is introduced.
 

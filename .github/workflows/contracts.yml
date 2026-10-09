@@ -83,6 +83,8 @@ jobs:
           mkdir -p _build/macos
           set -o pipefail
           moon version --all | tee _build/macos/toolchain.log
+          moon test --package f4ah6o/gpui/accessibility --target native --deny-warn --no-parallelize 2>&1 | tee _build/macos/accessibility.log
+          python3 -m unittest tests.test_accessibility_owner_id_allocator
           moon test --package f4ah6o/gpui/platform/macos --target native --deny-warn 2>&1 | tee _build/macos/headless.log
           ./script/build_and_run.sh --build 2>&1 | tee _build/macos/build.log
           ./script/test_macos.sh --build-only 2>&1 | tee _build/macos/e2e-build.log

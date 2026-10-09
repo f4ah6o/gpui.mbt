@@ -1,0 +1,17 @@
+import {
+  "f4ah6o/gpui/primitives",
+}
+
+import {
+  "f4ah6o/gpui/accessibility",
+  "f4ah6o/gpui/primitives",
+} for "test"
+
+options(
+  "native-stub": [ "owner_id.c" ],
+  targets: {
+    "owner_native.mbt": [ "native" ],
+    "owner_portable.mbt": [ "not", "native" ],
+    "owner_portable_wbtest.mbt": [ "not", "native" ],
+  },
+)

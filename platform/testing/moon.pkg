@@ -1,0 +1,11 @@
+import {
+  "f4ah6o/gpui/diagnostics",
+  "f4ah6o/gpui/platform",
+  "moonbitlang/core/env",
+  "moonbitlang/core/encoding/utf8",
+}
+
+options(
+  "native-stub": [ "testing.c" ],
+  targets: { "ffi.mbt": [ "native" ], "unsupported.mbt": [ "not", "native" ] },
+)

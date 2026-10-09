@@ -5,6 +5,9 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import sys
+
+sys.dont_write_bytecode = True
 
 QUOTE = r'"(?:[^"\\]|\\.)*"'
 KEYS = {'n': (110, 49), 'i': (105, 23), 'h': (104, 35), 'o': (111, 24),

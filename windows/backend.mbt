@@ -73,6 +73,23 @@ extern "C" fn native_metrics(
 ) -> Int = "gpui_windows_metrics"
 
 ///|
+#borrow(metrics)
+extern "C" fn native_frame_metrics(
+  host : Int,
+  window : Int,
+  metrics : FixedArray[Double],
+) -> Int = "gpui_windows_frame_metrics_v1"
+
+///|
+#borrow(output)
+extern "C" fn native_frame_copy(
+  host : Int,
+  window : Int,
+  output : FixedArray[Byte],
+  capacity : Int,
+) -> Int = "gpui_windows_frame_copy_v1"
+
+///|
 extern "C" fn native_dispatch(host : Int, timeout : Int) -> Int = "gpui_windows_dispatch"
 
 ///|

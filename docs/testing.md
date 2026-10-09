@@ -62,6 +62,12 @@ snapshots remain unchanged. The strict text offset bridge property
 builds independent UTF-16 and UTF-8 boundary tables from generated scalar
 fragments, then checks every boundary, round trip, surrogate interior, and
 UTF-8 byte interior. These exact counts and seeds are active.
+The command-palette property `command-palette.reference-filter-selection-v1`
+uses derived seed `8367235218704275144` (`0x741e6419930196c8`), 256 cases,
+`max_size=32`, and `max_shrinks=500`. Generated enabled-row arrays and operation
+traces are checked after every filter/navigation step against an independent
+index/viewport model. QuickCheck is imported only with `for "wbtest"`.
+
 The larger nightly and stress budgets below are policy targets and are not
 scheduled jobs yet.
 
@@ -98,7 +104,14 @@ is an explicit bounded deterministic exception: it records literal `Int` seeds
 characters, and checks an independent journal plus retained snapshot branches.
 It does not derive unsigned-64-bit suite/case seeds or shrink failures. Replay
 uses the recorded literal seed and source revision; this regression is not the
-general generated-model runner or a nightly/stress qualification. The seed
+general generated-model runner or a nightly/stress qualification. The fixed-sequence palette viewport regression in
+[`command_palette_pbt_wbtest.mbt`](../controls/command_palette/command_palette_pbt_wbtest.mbt)
+is another explicit bounded deterministic exception: literal `Int` seeds `1`,
+`1777`, `4242`, and `65535`, six catalog sizes (0, 1, 8, 9, 32, 128), and 256
+operations per pair yield 6,144 reproducible intermediate states. Failures show
+catalog size, literal seed, operation index, and step. This boundary regression
+does not shrink or claim general generated-model qualification; the separate
+QuickCheck suite above follows the derived seed policy. The seed
 policy above remains the requirement for new general property/model suites.
 
 | Job | Seeds | Cases per property | Max model commands | Shrink candidates | Wall-clock cap |

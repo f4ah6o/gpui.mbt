@@ -1,8 +1,10 @@
 #import <AppKit/AppKit.h>
 #import <QuartzCore/CAMetalLayer.h>
 #import <Metal/Metal.h>
+#include <CoreFoundation/CoreFoundation.h>
 #include <math.h>
 #include "abi.h"
+#include "../macos_text/macos_text.h"
 
 @interface GPWindow : NSObject <NSWindowDelegate>
 @property NSWindow *window;
@@ -20,6 +22,7 @@ static NSDictionary *current;
 static id<MTLDevice> device;
 static id<MTLCommandQueue> queue;
 static id<MTLRenderPipelineState> pipeline;
+static id<MTLTexture> white_mask_texture;
 static int64_t next_token, result_token, host_epoch;
 static NSData *text_result;
 static int state; // 0 uninitialized/stopped, 1 running, 2 quiescing
@@ -27,6 +30,8 @@ static BOOL overflow;
 #ifdef GPUI_TESTING
 static NSData *frame_pixels;
 static NSUInteger frame_width, frame_height, frame_stride;
+static int64_t frame_window_token;
+static double frame_scale;
 static double test_scale_override;
 #endif
 static void emit(GPWindow *w, int kind, double x, double y, int mods, int code, int repeat) {
@@ -130,10 +135,11 @@ static void destroy(GPWindow *w) {
   w.window = nil;
 }
 static int setup_gpu(void) {
+  white_mask_texture = nil;
   device = MTLCreateSystemDefaultDevice();
   if (!device) return 16;
   queue = [device newCommandQueue];
-  NSString *source = @"#include <metal_stdlib>\nusing namespace metal;\nstruct V { float4 p; float4 c; };\nstruct O { float4 p [[position]]; float4 c; };\nvertex O vmain(const device V *v [[buffer(0)]], uint i [[vertex_id]]) { O o; o.p=v[i].p; o.c=v[i].c; return o; }\nfragment float4 fmain(O o [[stage_in]]) { return o.c; }";
+  NSString *source = @"#include <metal_stdlib>\nusing namespace metal;\nstruct V { float4 p; float4 c; float2 uv; uint textured; uint padding; };\nstruct O { float4 p [[position]]; float4 c; float2 uv; uint textured [[flat]]; };\nvertex O vmain(const device V *v [[buffer(0)]], uint i [[vertex_id]]) { O o; o.p=v[i].p; o.c=v[i].c; o.uv=v[i].uv; o.textured=v[i].textured; return o; }\nfragment float4 fmain(O o [[stage_in]], texture2d<float> mask [[texture(0)]]) { constexpr sampler s(coord::normalized,address::clamp_to_edge,filter::linear); float coverage=o.textured ? mask.sample(s,o.uv).r : 1.0; return float4(o.c.rgb,o.c.a*coverage); }";
   NSError *error = nil;
   id<MTLLibrary> library = [device newLibraryWithSource:source options:nil error:&error];
   if (!library || !queue) return 16;
@@ -148,7 +154,15 @@ static int setup_gpu(void) {
   color.sourceAlphaBlendFactor = MTLBlendFactorOne;
   color.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
   pipeline = [device newRenderPipelineStateWithDescriptor:desc error:&error];
-  return pipeline ? 0 : 16;
+  if (!pipeline) return 16;
+  MTLTextureDescriptor *white_desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm width:1 height:1 mipmapped:NO];
+  white_desc.usage = MTLTextureUsageShaderRead;
+  white_desc.storageMode = MTLStorageModeShared;
+  white_mask_texture = [device newTextureWithDescriptor:white_desc];
+  if (!white_mask_texture) return 16;
+  const uint8_t white = 255;
+  [white_mask_texture replaceRegion:MTLRegionMake2D(0,0,1,1) mipmapLevel:0 withBytes:&white bytesPerRow:1];
+  return 0;
 }
 static int recover_renderer(void) {
   /* Frames are submitted synchronously, so no command buffer retains a layer
@@ -157,11 +171,13 @@ static int recover_renderer(void) {
   pipeline = nil;
   queue = nil;
   device = nil;
+  white_mask_texture = nil;
   int status = setup_gpu();
   if (status) {
     pipeline = nil;
     queue = nil;
     device = nil;
+    white_mask_texture = nil;
     return status;
   }
   for (GPWindow *window in windows.allValues) {
@@ -170,10 +186,80 @@ static int recover_renderer(void) {
   }
   return 0;
 }
-typedef struct { float position[4], color[4]; } Vertex;
-typedef struct { Vertex v[6]; MTLScissorRect clip; } Draw;
+typedef struct { float position[4], color[4], uv[2]; uint32_t textured, padding; } Vertex;
+_Static_assert(sizeof(Vertex) == 48, "Metal vertex layout must be 48 bytes");
+typedef struct { Vertex v[6]; MTLScissorRect clip; NSUInteger texture_index; } Draw;
 static double n(NSDictionary *d, NSString *key) { return [d[key] doubleValue]; }
 static CGRect rect(NSDictionary *d) { return CGRectMake(n(d,@"x"), n(d,@"y"), n(d,@"width"), n(d,@"height")); }
+static BOOL valid_json_number(id value) {
+  return [value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID() && isfinite([value doubleValue]);
+}
+static BOOL valid_json_numeric_fields(NSDictionary *object, NSArray<NSString *> *keys) {
+  if (![object isKindOfClass:NSDictionary.class]) return NO;
+  for (NSString *key in keys) if (!valid_json_number(object[key])) return NO;
+  return YES;
+}
+static int text_native_status(int status) {
+  if (status == 3 || status == 17) return 13;
+  if (status == 7 || status == 11 || status == 12 || status == 15 || status == 16) return 5;
+  if (status == 14 || status == 8 || status == 10 || status == 2) return 9;
+  return status ? 16 : 0;
+}
+static id<MTLTexture> text_mask_texture(NSString *text, double font_size, double scale,
+                                        CGRect bounds, NSPoint origin, CGRect *draw_bounds,
+                                        float uv[4], BOOL *empty, int *error) {
+  NSData *utf8 = nil;
+  *empty = NO;
+  *error = 0;
+  if (![text isKindOfClass:NSString.class] || text.length > 4096 ||
+      !isfinite(font_size) || font_size <= 0 || font_size > 32 ||
+      !isfinite(scale) || scale < 1 || scale > 8) {
+    *error = 5; return nil;
+  }
+  utf8 = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
+  if (!utf8 || utf8.length > 4096) { *error = 5; return nil; }
+  GpuiMacosTextMask mask = {0};
+  int native_status = gpui_macos_text_raster_v1(utf8.bytes, (int32_t)utf8.length, font_size, scale, &mask);
+  if (native_status) { *error = text_native_status(native_status); gpui_macos_text_raster_free(&mask); return nil; }
+  if (!mask.width || !mask.height || !mask.pixels) {
+    *empty = YES; gpui_macos_text_raster_free(&mask); return nil;
+  }
+  if (mask.width > 16384 || mask.height > 2048 || (int64_t)mask.width * mask.height > 8 * 1024 * 1024 || mask.stride < mask.width) {
+    *error = 13; gpui_macos_text_raster_free(&mask); return nil;
+  }
+  double left = origin.x + mask.left, top = origin.y + mask.top;
+  double right = left + (double)mask.width / scale, bottom = top + (double)mask.height / scale;
+  if (!isfinite(left) || !isfinite(top) || !isfinite(right) || !isfinite(bottom)) {
+    *error = 5; gpui_macos_text_raster_free(&mask); return nil;
+  }
+  double crop_left = MAX(0, ceil((CGRectGetMinX(bounds) - left) * scale - 0.5));
+  double crop_top = MAX(0, ceil((CGRectGetMinY(bounds) - top) * scale - 0.5));
+  double crop_right = MIN(mask.width, ceil((CGRectGetMaxX(bounds) - left) * scale - 0.5));
+  double crop_bottom = MIN(mask.height, ceil((CGRectGetMaxY(bounds) - top) * scale - 0.5));
+  if (crop_right <= crop_left || crop_bottom <= crop_top) {
+    *empty = YES; gpui_macos_text_raster_free(&mask); return nil;
+  }
+  NSUInteger x0 = (NSUInteger)crop_left, y0 = (NSUInteger)crop_top;
+  NSUInteger width = (NSUInteger)(crop_right - crop_left), height = (NSUInteger)(crop_bottom - crop_top);
+  if ((int64_t)width * height > 8 * 1024 * 1024) { *error = 13; gpui_macos_text_raster_free(&mask); return nil; }
+  NSMutableData *cropped = [NSMutableData dataWithLength:width * height];
+  if (!cropped) { *error = 13; gpui_macos_text_raster_free(&mask); return nil; }
+  const uint8_t *source = mask.pixels;
+  uint8_t *destination = cropped.mutableBytes;
+  for (NSUInteger y = 0; y < height; y++)
+    memcpy(destination + y * width, source + (y0 + y) * (NSUInteger)mask.stride + x0, width);
+  MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm width:width height:height mipmapped:NO];
+  descriptor.usage = MTLTextureUsageShaderRead;
+  descriptor.storageMode = MTLStorageModeShared;
+  id<MTLTexture> texture = [device newTextureWithDescriptor:descriptor];
+  if (!texture) { *error = 13; gpui_macos_text_raster_free(&mask); return nil; }
+  [texture replaceRegion:MTLRegionMake2D(0,0,width,height) mipmapLevel:0 withBytes:cropped.bytes bytesPerRow:width];
+  *draw_bounds = CGRectMake(left + (double)x0 / scale, top + (double)y0 / scale,
+                            (double)width / scale, (double)height / scale);
+  uv[0] = 0; uv[1] = 0; uv[2] = 1; uv[3] = 1;
+  gpui_macos_text_raster_free(&mask);
+  return texture;
+}
 static int present(GPWindow *w, const uint8_t *bytes, int32_t len) {
   if (!device || !queue || !pipeline) return 16;
   NSDictionary *scene = [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:bytes length:len] options:0 error:nil];
@@ -189,10 +275,54 @@ static int present(GPWindow *w, const uint8_t *bytes, int32_t len) {
   NSMutableData *data = [NSMutableData dataWithLength:sizeof(Draw) * items.count];
   if (!data) return 13;
   Draw *draws = data.mutableBytes;
+  NSMutableArray<id<MTLTexture>> *textures = [NSMutableArray new];
+  if (!white_mask_texture) return 16;
+  [textures addObject:white_mask_texture];
   NSUInteger count = 0;
+  NSUInteger text_allocation = 0;
   for (NSDictionary *item in items) {
-    if (![item[@"kind"] isEqual:@"quad"]) return 9;
-    CGRect bounds = rect(item[@"bounds"]), clip = viewport;
+    if (![item isKindOfClass:NSDictionary.class]) return 5;
+    NSString *kind = item[@"kind"];
+    if (![kind isKindOfClass:NSString.class]) return 5;
+    BOOL is_text_run = [kind isEqual:@"text_run"];
+    BOOL is_text = is_text_run || [kind isEqual:@"text"];
+    if (!is_text && ![kind isEqual:@"quad"]) return 9;
+    NSDictionary *bounds_value = item[@"bounds"];
+    if (!valid_json_numeric_fields(bounds_value, @[@"x", @"y", @"width", @"height"])) return 5;
+    CGRect item_bounds = rect(bounds_value), bounds = item_bounds, clip = viewport;
+    if (CGRectGetWidth(item_bounds) < 0 || CGRectGetHeight(item_bounds) < 0 ||
+        CGRectGetWidth(item_bounds) > 1e9 || CGRectGetHeight(item_bounds) > 1e9 ||
+        fabs(CGRectGetMinX(item_bounds)) > 1e9 || fabs(CGRectGetMinY(item_bounds)) > 1e9) return 5;
+    NSDictionary *transform = item[@"transform"], *color = item[@"color"];
+    if (!valid_json_numeric_fields(transform, @[@"a", @"b", @"c", @"d", @"tx", @"ty"]) ||
+        !valid_json_numeric_fields(color, @[@"red", @"green", @"blue", @"alpha"]) ||
+        !valid_json_number(item[@"opacity"])) return 5;
+    float uv[4] = {0, 0, 1, 1};
+    NSUInteger texture_index = 0;
+    if (is_text) {
+      NSDictionary *origin_value = is_text_run ? item[@"text_origin"] : nil;
+      if ((is_text_run && !valid_json_numeric_fields(origin_value, @[@"x", @"y"])) ||
+          ![item[@"text"] isKindOfClass:NSString.class] || !valid_json_number(item[@"font_size"])) return 5;
+      double origin_x = is_text_run ? n(origin_value, @"x") : CGRectGetMinX(item_bounds);
+      double origin_y = is_text_run ? n(origin_value, @"y") : CGRectGetMinY(item_bounds);
+      if (!isfinite(origin_x) || !isfinite(origin_y) || fabs(origin_x) > 1e9 || fabs(origin_y) > 1e9 ||
+          CGRectGetWidth(item_bounds) > 2048 || CGRectGetHeight(item_bounds) > 128) return 13;
+      double font_size = n(item, @"font_size");
+      if (font_size <= 0 || font_size > 32) return 5;
+      CGRect text_bounds = item_bounds;
+      BOOL empty = NO;
+      int text_error = 0;
+      id<MTLTexture> texture = text_mask_texture(item[@"text"], font_size, w.scale,
+          item_bounds, NSMakePoint(origin_x, origin_y), &text_bounds, uv, &empty, &text_error);
+      if (text_error) return text_error;
+      if (empty) continue;
+      NSUInteger allocation = (NSUInteger)texture.width * texture.height;
+      if (allocation > 8 * 1024 * 1024 - text_allocation) return 13;
+      text_allocation += allocation;
+      bounds = text_bounds;
+      [textures addObject:texture];
+      texture_index = textures.count - 1;
+    }
     if (item[@"clip_chain_id"] != NSNull.null) {
       BOOL found = NO;
       for (NSDictionary *chain in scene[@"clip_chains"]) {
@@ -223,15 +353,23 @@ static int present(GPWindow *w, const uint8_t *bytes, int32_t len) {
     NSUInteger right = (NSUInteger)right_i, bottom = (NSUInteger)bottom_i;
     Draw *draw = &draws[count++];
     draw->clip = (MTLScissorRect){left,top,right-left,bottom-top};
-    NSDictionary *t = item[@"transform"], *c = item[@"color"];
+    draw->texture_index = texture_index;
+    NSDictionary *t = transform, *c = color;
+    double opacity = n(item, @"opacity");
+    double red = n(c, @"red"), green = n(c, @"green");
+    double blue = n(c, @"blue"), alpha = n(c, @"alpha");
+    if (opacity < 0 || opacity > 1 || red < 0 || red > 255 || green < 0 || green > 255 ||
+        blue < 0 || blue > 255 || alpha < 0 || alpha > 255) return 5;
     double xs[] = {CGRectGetMinX(bounds),CGRectGetMaxX(bounds),CGRectGetMinX(bounds),CGRectGetMinX(bounds),CGRectGetMaxX(bounds),CGRectGetMaxX(bounds)};
     double ys[] = {CGRectGetMinY(bounds),CGRectGetMinY(bounds),CGRectGetMaxY(bounds),CGRectGetMaxY(bounds),CGRectGetMinY(bounds),CGRectGetMaxY(bounds)};
+    float us[] = {uv[0], uv[2], uv[0], uv[0], uv[2], uv[2]};
+    float vs[] = {uv[1], uv[1], uv[3], uv[3], uv[1], uv[3]};
     for (int i = 0; i < 6; i++) {
       double x = n(t,@"a")*xs[i] + n(t,@"c")*ys[i] + n(t,@"tx");
       double y = n(t,@"b")*xs[i] + n(t,@"d")*ys[i] + n(t,@"ty");
       double px = 2*x/viewport.size.width-1, py = 1-2*y/viewport.size.height;
       if (!isfinite(px) || !isfinite(py) || fabs(px)>1e20 || fabs(py)>1e20) return 5;
-      draw->v[i] = (Vertex){{(float)px,(float)py,0,1}, {(float)(n(c,@"red")/255),(float)(n(c,@"green")/255),(float)(n(c,@"blue")/255),(float)(n(c,@"alpha")/255*n(item,@"opacity"))}};
+      draw->v[i] = (Vertex){{(float)px,(float)py,0,1}, {(float)(red/255),(float)(green/255),(float)(blue/255),(float)(alpha/255*opacity)}, {us[i],vs[i]}, is_text ? 1u : 0u, 0};
     }
   }
   id<CAMetalDrawable> drawable = [w.surface nextDrawable];
@@ -248,18 +386,21 @@ static int present(GPWindow *w, const uint8_t *bytes, int32_t len) {
   for (NSUInteger i = 0; i < count; i++) {
     [encoder setScissorRect:draws[i].clip];
     [encoder setVertexBytes:draws[i].v length:sizeof(draws[i].v) atIndex:0];
+    [encoder setFragmentTexture:textures[draws[i].texture_index] atIndex:0];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
   }
   [encoder endEncoding];
 #ifdef GPUI_TESTING
-  frame_width=drawable.texture.width; frame_height=drawable.texture.height;
-  frame_stride=((frame_width*4+255)/256)*256;
-  id<MTLBuffer> readback=[device newBufferWithLength:frame_stride*frame_height options:MTLResourceStorageModeShared];
+  NSUInteger readback_width=drawable.texture.width, readback_height=drawable.texture.height;
+  NSUInteger readback_stride=((readback_width*4+255)/256)*256;
+  if (!readback_width || !readback_height || readback_width > 16384 || readback_height > 16384 ||
+      readback_width * readback_height > 16 * 1024 * 1024) return 13;
+  id<MTLBuffer> readback=[device newBufferWithLength:readback_stride*readback_height options:MTLResourceStorageModeShared];
   if (!readback) return 13;
   id<MTLBlitCommandEncoder> blit=[command blitCommandEncoder];
   [blit copyFromTexture:drawable.texture sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0,0,0)
-    sourceSize:MTLSizeMake(frame_width,frame_height,1) toBuffer:readback destinationOffset:0
-    destinationBytesPerRow:frame_stride destinationBytesPerImage:frame_stride*frame_height];
+    sourceSize:MTLSizeMake(readback_width,readback_height,1) toBuffer:readback destinationOffset:0
+    destinationBytesPerRow:readback_stride destinationBytesPerImage:readback_stride*readback_height];
   [blit endEncoding];
 #endif
   [command presentDrawable:drawable];
@@ -268,7 +409,11 @@ static int present(GPWindow *w, const uint8_t *bytes, int32_t len) {
   // retains MoonBit memory; teardown cannot race frame completion.
   [command waitUntilCompleted];
 #ifdef GPUI_TESTING
-  frame_pixels=[NSData dataWithBytes:readback.contents length:frame_stride*frame_height];
+  if (command.status == MTLCommandBufferStatusCompleted) {
+    frame_width=readback_width; frame_height=readback_height; frame_stride=readback_stride;
+    frame_pixels=[NSData dataWithBytes:readback.contents length:frame_stride*frame_height];
+    frame_window_token=w.token; frame_scale=w.scale;
+  }
 #endif
   return command.status == MTLCommandBufferStatusCompleted ? 0 : 16;
 }
@@ -291,7 +436,7 @@ static int32_t native_call(int32_t op, int64_t token, double x, double y, const 
     if (op == 2) {
       if (!state) return 0;
       for (GPWindow *w in windows.allValues) destroy(w);
-      events=nil; current=nil; text_result=nil; windows=nil; pipeline=nil; queue=nil; device=nil;
+      events=nil; current=nil; text_result=nil; windows=nil; white_mask_texture=nil; pipeline=nil; queue=nil; device=nil;
       NSApp.delegate=nil; app_delegate=nil; state=0;
       return 0;
     }
@@ -403,4 +548,120 @@ static double native_number(int32_t field) {
 const GpuiApi *gpui_macos_api_v1(void) {
   static const GpuiApi api={1,sizeof(GpuiApi),native_call,native_integer,native_number};
   return &api;
+}
+
+/* Opt-in E2E access to the last completed native Metal frame. Pixel copying
+ * canonicalizes the private BGRA drawable bytes to top-left RGBA8. */
+int32_t gpui_macos_test_frame_meta_v1(int64_t window, double *output) {
+#ifdef GPUI_TESTING
+  if (![NSThread isMainThread]) return 18;
+  const char *enabled = getenv("GPUI_NATIVE_E2E");
+  if (!enabled || strcmp(enabled, "1") != 0) return 9;
+  if (!output) return 5;
+  GPWindow *target = windows[@(window)];
+  if (!target || !target.window) return 10;
+  if (!frame_pixels || frame_window_token != window) return 12;
+  if (!frame_width || !frame_height || frame_width > 16384 || frame_height > 16384 ||
+      frame_width * frame_height > 16 * 1024 * 1024 || frame_stride < frame_width * 4 ||
+      frame_pixels.length < frame_stride * frame_height) return 13;
+  output[0] = (double)frame_width;
+  output[1] = (double)frame_height;
+  output[2] = frame_scale;
+  return 0;
+#else
+  (void)window; (void)output;
+  return 9;
+#endif
+}
+
+int32_t gpui_macos_test_frame_copy_v1(int64_t window, uint8_t *output,
+                                      int32_t capacity) {
+#ifdef GPUI_TESTING
+  if (![NSThread isMainThread]) return 18;
+  const char *enabled = getenv("GPUI_NATIVE_E2E");
+  if (!enabled || strcmp(enabled, "1") != 0) return 9;
+  GPWindow *target = windows[@(window)];
+  if (!target || !target.window) return 10;
+  if (!frame_pixels || frame_window_token != window) return 12;
+  NSUInteger pixels = frame_width * frame_height;
+  if (!frame_width || !frame_height || frame_width > 16384 || frame_height > 16384 ||
+      pixels > 16 * 1024 * 1024 || frame_stride < frame_width * 4 ||
+      frame_pixels.length < frame_stride * frame_height || pixels * 4 > INT32_MAX) return 13;
+  NSUInteger required = pixels * 4;
+  if (!output || capacity < 0 || (NSUInteger)capacity != required) return 5;
+  const uint8_t *source = frame_pixels.bytes;
+  for (NSUInteger y = 0; y < frame_height; ++y) {
+    for (NSUInteger x = 0; x < frame_width; ++x) {
+      NSUInteger src = y * frame_stride + x * 4;
+      NSUInteger dst = (y * frame_width + x) * 4;
+      output[dst] = source[src + 2];
+      output[dst + 1] = source[src + 1];
+      output[dst + 2] = source[src];
+      output[dst + 3] = source[src + 3];
+    }
+  }
+  return 0;
+#else
+  (void)window; (void)output; (void)capacity;
+  return 9;
+#endif
+}
+
+/* Opt-in, window-scoped E2E events. They travel through NSWindow's normal
+ * dispatch path and cannot target arbitrary desktop windows. */
+int32_t gpui_macos_test_post_click_v1(int64_t token, double x, double y) {
+#ifdef GPUI_TESTING
+  if (![NSThread isMainThread]) return 18;
+  const char *enabled = getenv("GPUI_NATIVE_E2E");
+  if (!enabled || strcmp(enabled, "1") != 0) return 9;
+  GPWindow *target = windows[@(token)];
+  if (!target || !target.window || target.closing) return 10;
+  NSView *content = target.window.contentView;
+  if (!isfinite(x) || !isfinite(y) || x < 0 || y < 0 ||
+      x >= content.bounds.size.width || y >= content.bounds.size.height)
+    return 5;
+  NSPoint location = [content convertPoint:NSMakePoint(x, y) toView:nil];
+  NSTimeInterval timestamp = NSProcessInfo.processInfo.systemUptime;
+  NSEvent *down = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDown
+      location:location modifierFlags:0 timestamp:timestamp
+      windowNumber:target.window.windowNumber context:nil eventNumber:1
+      clickCount:1 pressure:1.0];
+  NSEvent *up = [NSEvent mouseEventWithType:NSEventTypeLeftMouseUp
+      location:location modifierFlags:0 timestamp:timestamp + 0.001
+      windowNumber:target.window.windowNumber context:nil eventNumber:1
+      clickCount:1 pressure:0.0];
+  if (!down || !up) return 16;
+  [target.window sendEvent:down];
+  [target.window sendEvent:up];
+  return 0;
+#else
+  (void)token; (void)x; (void)y;
+  return 9;
+#endif
+}
+
+int32_t gpui_macos_test_post_escape_v1(int64_t token) {
+#ifdef GPUI_TESTING
+  if (![NSThread isMainThread]) return 18;
+  const char *enabled = getenv("GPUI_NATIVE_E2E");
+  if (!enabled || strcmp(enabled, "1") != 0) return 9;
+  GPWindow *target = windows[@(token)];
+  if (!target || !target.window || target.closing) return 10;
+  NSTimeInterval timestamp = NSProcessInfo.processInfo.systemUptime;
+  NSEvent *down = [NSEvent keyEventWithType:NSEventTypeKeyDown
+      location:NSZeroPoint modifierFlags:0 timestamp:timestamp
+      windowNumber:target.window.windowNumber context:nil characters:@"\e"
+      charactersIgnoringModifiers:@"\e" isARepeat:NO keyCode:53];
+  NSEvent *up = [NSEvent keyEventWithType:NSEventTypeKeyUp
+      location:NSZeroPoint modifierFlags:0 timestamp:timestamp + 0.001
+      windowNumber:target.window.windowNumber context:nil characters:@"\e"
+      charactersIgnoringModifiers:@"\e" isARepeat:NO keyCode:53];
+  if (!down || !up) return 16;
+  [target.window sendEvent:down];
+  [target.window sendEvent:up];
+  return 0;
+#else
+  (void)token;
+  return 9;
+#endif
 }

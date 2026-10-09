@@ -1,0 +1,68 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "f4ah6o/gpui/controls/button"
+
+import {
+  "f4ah6o/gpui/element",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/scene",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct Button {
+  // private fields
+}
+pub fn Button::bounds(Self) -> @primitives.Rect
+pub fn Button::can_activate(Self) -> Bool
+pub fn Button::cancel_press(Self) -> Self
+pub fn Button::element_node(Self, UInt64?) -> @element.ElementNode
+pub fn Button::handle_input(Self, @primitives.InputEvent) -> (Self, ButtonInput)
+pub fn Button::id(Self) -> UInt64
+pub fn Button::is_enabled(Self) -> Bool
+pub fn Button::is_focused(Self) -> Bool
+pub fn Button::is_hovered(Self) -> Bool
+pub fn Button::is_loading(Self) -> Bool
+pub fn Button::is_pressed(Self) -> Bool
+pub fn Button::label(Self) -> String
+pub fn Button::new(UInt64, @primitives.Rect, String) -> Result[Self, ButtonError]
+pub fn Button::paint_items(Self, UInt64) -> Result[Array[@scene.SceneItem], ButtonPaintError]
+pub fn Button::with_bounds(Self, @primitives.Rect) -> Result[Self, ButtonError]
+pub fn Button::with_enabled(Self, Bool) -> Self
+pub fn Button::with_focus(Self, Bool) -> Self
+pub fn Button::with_loading(Self, Bool) -> Self
+
+pub(all) enum ButtonEffect {
+  None
+  Activated
+} derive(Eq)
+pub fn ButtonEffect::equal(Self, Self) -> Bool
+pub fn ButtonEffect::not_equal(Self, Self) -> Bool
+
+pub(all) enum ButtonError {
+  InvalidId
+  InvalidBounds
+} derive(Eq)
+pub fn ButtonError::equal(Self, Self) -> Bool
+pub fn ButtonError::not_equal(Self, Self) -> Bool
+
+pub struct ButtonInput {
+  consumed : Bool
+  effect : ButtonEffect
+}
+pub fn ButtonInput::consumed(Self) -> Bool
+pub fn ButtonInput::effect(Self) -> ButtonEffect
+
+pub(all) enum ButtonPaintError {
+  InvalidItemId
+  InvalidBounds
+  SceneFailure(@scene.SnapshotError)
+} derive(Eq)
+pub fn ButtonPaintError::equal(Self, Self) -> Bool
+pub fn ButtonPaintError::not_equal(Self, Self) -> Bool
+
+// Type aliases
+
+// Traits

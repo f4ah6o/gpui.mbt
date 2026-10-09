@@ -4,6 +4,10 @@
 
 ### Added
 
+- Added CoreText measurement and grayscale Metal rendering for bounded macOS
+  single-line scene text, plus opt-in native frame readback and host-scoped
+  AppKit input hooks for E2E evidence. See [macOS native support](docs/macos-native.md).
+
 - Added bounded immutable undo/redo to the experimental single-line text field,
   with original directional selections, private copy-safe history, independent
   entry/UTF-8 payload caps and current-style admission on restoration. Clipboard

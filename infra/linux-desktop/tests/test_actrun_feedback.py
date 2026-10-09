@@ -161,6 +161,32 @@ class ActrunFeedbackTests(unittest.TestCase):
         self.assertIn("case_runner.py --candidate", wider)
         self.assertIn("--all", wider)
 
+    def test_palette_modes_are_focused_and_keep_fifteen_foundation_quality_stages(self):
+        self.assertEqual(len(feedback.steps_for("quality")), 15)
+        self.assertEqual([row[0] for row in feedback.steps_for("palette")], ["palette-wasm", "palette-native"])
+        self.assertEqual([row[0] for row in feedback.steps_for("palette-quality")],
+                         ["palette-wasm", "palette-native", "palette-mutation", "palette-hotpath"])
+        quick = feedback.workflow_text("palette")
+        final = feedback.workflow_text("palette-quality")
+        self.assertNotIn("turtles", quick)
+        self.assertNotIn("hotpath", quick)
+        self.assertIn("palette-mutation.py", final)
+        self.assertIn("palette-hotpath.py", final)
+        self.assertNotIn("composition-proof", final)
+        self.assertNotIn("uses:", final)
+        self.assertNotIn("install", final)
+        empty = [row for row in feedback.coverage_for("palette-quality", []) if "scope" in row]
+        self.assertEqual(len(empty), 4)
+        self.assertTrue(all(row["status"] == "not-run" for row in empty))
+
+    def test_palette_evidence_missing_stage_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(RuntimeError, "no regular audited summary"):
+                feedback.palette_mutation_evidence(root)
+            with self.assertRaisesRegex(RuntimeError, "no regular measured summary"):
+                feedback.hotpath_evidence(root, artifact_name="palette-hotpath")
+
     def test_mutation_is_a_real_named_opt_in_step_and_not_a_fast_default(self):
         scoped = feedback.workflow_text("mutation")
         quality = feedback.workflow_text("quality")

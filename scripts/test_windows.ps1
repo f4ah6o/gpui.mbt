@@ -11,6 +11,7 @@ $env:MOONBIT_NEW_NATIVE = "0"
 function Invoke-CheckedCommand {
   param(
     [Parameter(Mandatory = $true)][string]$Program,
+    [AllowEmptyCollection()]
     [Parameter(Mandatory = $true)][string[]]$Arguments,
     [Parameter(Mandatory = $true)][string]$LogName
   )
@@ -40,6 +41,20 @@ if ($IsWindows) {
     "/nologo", "/Bv", "/std:c11", "/utf-8", "/W4", "/c",
     "windows/backend.c", "/Fo$backendObject"
   ) -LogName "msvc-c-compile.log"
+  $clipboardFixture = Join-Path $evidence "clipboard-fixture.exe"
+  $clipboardFixtureObject = Join-Path $evidence "clipboard_fixture.obj"
+  Invoke-CheckedCommand -Program "cl" -Arguments @(
+    "/nologo", "/std:c11", "/utf-8", "/W4",
+    "tests/windows/clipboard_fixture.c", "/Fo$clipboardFixtureObject",
+    "/Fe$clipboardFixture", "user32.lib"
+  ) -LogName "clipboard-fixture-build.log"
+  $ownerIdTest = Join-Path $evidence "accessibility-owner-id-test.exe"
+  Invoke-CheckedCommand -Program "cl" -Arguments @(
+    "/nologo", "/std:c11", "/utf-8", "/W4",
+    "tests/native/accessibility_owner_id_allocator_test.c",
+    "/Fe$ownerIdTest"
+  ) -LogName "accessibility-owner-id-build.log"
+  Invoke-CheckedCommand -Program $ownerIdTest -Arguments @() -LogName "accessibility-owner-id-test.log"
 }
 
 Invoke-CheckedCommand -Program "moon" -Arguments @("fmt", "--check", "windows", "platform/windows_text", "examples/windows", "examples/windows_text_field") -LogName "format.log"
@@ -51,6 +66,7 @@ Invoke-CheckedCommand -Program "moon" -Arguments @("check", "--package-path", "e
 Remove-Item Env:GPUI_WINDOWS_E2E -ErrorAction SilentlyContinue
 Remove-Item Env:GPUI_WINDOWS_READBACK -ErrorAction SilentlyContinue
 Invoke-CheckedCommand -Program "moon" -Arguments @("test", "--package", "f4ah6o/gpui/windows", "--target", "native", "--deny-warn", "--no-parallelize") -LogName "portable-tests.log"
+Invoke-CheckedCommand -Program "moon" -Arguments @("test", "--package", "f4ah6o/gpui/accessibility", "--target", "native", "--deny-warn", "--no-parallelize") -LogName "accessibility-tests.log"
 Invoke-CheckedCommand -Program "moon" -Arguments @("test", "--package", "f4ah6o/gpui/platform/windows_text", "--target", "native", "--deny-warn", "--no-parallelize") -LogName "text-adapter-tests.log"
 Invoke-CheckedCommand -Program "moon" -Arguments @("test", "--package", "f4ah6o/gpui/examples/windows_text_field", "--target", "native", "--deny-warn", "--no-parallelize") -LogName "text-field-tests.log"
 
@@ -63,6 +79,12 @@ if (-not $IsWindows) {
 
 $env:GPUI_WINDOWS_E2E = "1"
 $env:GPUI_WINDOWS_READBACK = "1"
+$env:GPUI_WINDOWS_CLIPBOARD_FIXTURE = (Resolve-Path $clipboardFixture).Path
+Invoke-CheckedCommand -Program "moon" -Arguments @(
+  "test", "--package", "f4ah6o/gpui/windows", "--target", "native",
+  "--deny-warn", "--no-parallelize", "--filter",
+  "Windows clipboard fixture line reader drains buffered exit response"
+) -LogName "clipboard-line-reader-regression.log"
 Invoke-CheckedCommand -Program "moon" -Arguments @(
   "test", "--package", "f4ah6o/gpui/windows", "--target", "native",
   "--deny-warn", "--no-parallelize", "--filter",
@@ -76,6 +98,7 @@ Invoke-CheckedCommand -Program "moon" -Arguments @(
 
 Remove-Item Env:GPUI_WINDOWS_E2E -ErrorAction SilentlyContinue
 Remove-Item Env:GPUI_WINDOWS_READBACK -ErrorAction SilentlyContinue
+Remove-Item Env:GPUI_WINDOWS_CLIPBOARD_FIXTURE -ErrorAction SilentlyContinue
 $env:GPUI_WINDOWS_SMOKE = "1"
 Invoke-CheckedCommand -Program "moon" -Arguments @("run", "examples/windows", "--target", "native") -LogName "app-smoke.log"
 

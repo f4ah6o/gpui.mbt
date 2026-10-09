@@ -56,6 +56,15 @@ PERFORMANCE_STEPS = [
     ("input-hotpath", "Pinned hotpath input timing workload", 'python3 infra/linux-desktop/input-hotpath.py --hotpath-root "$GPUI_HOTPATH_ROOT" --output "$GPUI_ACTRUN_RUN_DIR/input-hotpath"'),
 ]
 
+PALETTE_STEPS = [
+    ("palette-wasm", "Reusable palette reference and lifecycle regression traces", 'moon test controls/command_palette --target wasm --deny-warn --target-dir "$GPUI_ACTRUN_BUILD_DIR/palette-wasm"'),
+    ("palette-native", "Reusable palette traces on the native target", 'env -u DISPLAY -u WAYLAND_DISPLAY moon test controls/command_palette --target native --deny-warn --no-parallelize --target-dir "$GPUI_ACTRUN_BUILD_DIR/palette-native"'),
+]
+PALETTE_OBSERVATION_STEPS = [
+    ("palette-mutation", "Fresh real filter/selection/terminal-state mutation observation", 'python3 infra/linux-desktop/palette-mutation.py --turtles-bin "$GPUI_TURTLES_BIN" --output "$GPUI_ACTRUN_RUN_DIR/palette-mutation"'),
+    ("palette-hotpath", "Paired shared palette CPU-span observation", 'python3 infra/linux-desktop/palette-hotpath.py --hotpath-root "$GPUI_HOTPATH_ROOT" --output "$GPUI_ACTRUN_RUN_DIR/palette-hotpath"'),
+]
+
 
 def steps_for(mode):
     if mode == "headless":
@@ -72,6 +81,10 @@ def steps_for(mode):
         return VERIFICATION_STEPS
     if mode == "performance":
         return PERFORMANCE_STEPS
+    if mode == "palette":
+        return PALETTE_STEPS
+    if mode == "palette-quality":
+        return PALETTE_STEPS + PALETTE_OBSERVATION_STEPS
     if mode == "quality":
         return FAST_STEPS + MUTATION_STEPS + PROOF_STEPS + VERIFICATION_STEPS + PERFORMANCE_STEPS
     raise ValueError("unknown local gate mode")
@@ -167,6 +180,50 @@ def mutation_evidence(output):
             "reviewed_survivors", "mutation_seconds", "total_seconds")}
 
 
+def palette_mutation_evidence(output):
+    directory = output / "palette-mutation"
+    path = directory / "summary.json"
+    if not path.is_file() or path.is_symlink():
+        raise RuntimeError("palette mutation produced no regular audited summary")
+    report = json.loads(path.read_text())
+    module = load_quality_module("gate_palette_mutation", "palette-mutation.py")
+    current = module.source_state(REPO)
+    if report.get("ok") is not True or report.get("source_stable") is not True or \
+       report.get("source_before") != current or report.get("source_after") != current or \
+       report.get("turtles_exit_code") != 0 or report.get("target") != "wasm":
+        raise RuntimeError("palette mutation observation is unsuccessful or stale")
+    audited = module.audit(json.loads((directory / "report.json").read_text()), directory / "source",
+                           directory / "turtles/survivors", module.parse_discovery((directory / "discovery.log").read_text()))
+    for key, value in audited.items():
+        if report.get(key) != value:
+            raise RuntimeError("palette mutation retained evidence differs from summary: " + key)
+    diagnostics = report.get("unviable_diagnostics")
+    if not isinstance(diagnostics, dict) or set(diagnostics.get("counts", {})) != {"warning_only", "compiler_error", "other_check_failure"}:
+        raise RuntimeError("palette mutation lacks separate retained UNVIABLE diagnostics")
+    expected = {row["id"] for row in audited["unviable_candidates"]}
+    rows = diagnostics.get("candidates")
+    if not isinstance(rows, list) or len(rows) != len(expected) or {row.get("id") for row in rows} != expected:
+        raise RuntimeError("palette mutation UNVIABLE diagnostics do not match actual candidates")
+    counts = {key: 0 for key in diagnostics["counts"]}
+    for row in rows:
+        name = "unviable-check-logs/" + row["id"] + ".log"
+        if row.get("log_file") != name or type(row.get("check_exit_code")) is not int or row["check_exit_code"] == 0:
+            raise RuntimeError("palette mutation UNVIABLE check identity is invalid")
+        path = directory / name
+        if path.is_symlink() or digest(path) != row.get("log_sha256"):
+            raise RuntimeError("palette mutation UNVIABLE compiler log is missing or stale")
+        text = path.read_text()
+        errors = re.findall(r"(?m)^Error: \[([0-9]+)\]", text)
+        warnings = re.findall(r"(?m)^Warning: \[([0-9]+)\]", text)
+        kind = "compiler_error" if errors else "warning_only" if warnings else "other_check_failure"
+        if row.get("error_codes") != errors or row.get("warning_codes") != warnings or row.get("diagnostic_kind") != kind:
+            raise RuntimeError("palette mutation UNVIABLE diagnostic summary differs from raw log")
+        counts[kind] += 1
+    if counts != diagnostics["counts"]:
+        raise RuntimeError("palette mutation UNVIABLE diagnostic counts are inconsistent")
+    return {**audited, "unviable_diagnostics": diagnostics}
+
+
 def load_quality_module(name, filename):
     spec = importlib.util.spec_from_file_location(name, HERE / filename)
     module = importlib.util.module_from_spec(spec)
@@ -189,8 +246,10 @@ def verification_evidence(output, environment, expected_workflow):
     return audited
 
 
-def hotpath_evidence(output, environment=None):
-    directory = output / "input-hotpath"
+def hotpath_evidence(output, environment=None, artifact_name="input-hotpath"):
+    if artifact_name not in {"input-hotpath", "palette-hotpath"}:
+        raise RuntimeError("unsupported hotpath artifact scope")
+    directory = output / artifact_name
     path = directory / "summary.json"
     if not path.is_file() or path.is_symlink():
         raise RuntimeError("hotpath workload produced no regular measured summary")
@@ -199,7 +258,9 @@ def hotpath_evidence(output, environment=None):
        type(report.get("repeats")) is not int or report["repeats"] != 7 or \
        report.get("performance_policy") != "observe-only: no universal timing gate":
         raise RuntimeError("hotpath current gate requires fresh schema2, seven pairs and observe-only policy")
-    workload = load_quality_module("gate_hotpath", "input-hotpath.py")
+    workload = load_quality_module("gate_hotpath", artifact_name + ".py")
+    if artifact_name == "palette-hotpath":
+        workload = workload.profile
     report = workload.validate_evidence(report, directory)
     current = source_snapshot(REPO)
     if report["source_before"] != current or report["source_after"] != current:
@@ -348,10 +409,10 @@ def execute(root, cli, output, mode="fast", turtles=None, hotpath=None, solver=N
                                                 hashlib.sha256(str(REPO).encode()).hexdigest()[:16])
         env["GPUI_ACTRUN_BUILD_DIR"] = env["GPUI_LINUX_TEXT_BUILD_DIR"]
         env["GPUI_ACTRUN_RUN_DIR"] = str(output)
-        if mode in {"mutation", "quality"}:
+        if mode in {"mutation", "quality", "palette-quality"}:
             binary = Path(turtles) if turtles else root / "tools/turtles/turtles"
             env["GPUI_TURTLES_BIN"] = str(binary.expanduser().resolve())
-        if mode in {"performance", "quality"}:
+        if mode in {"performance", "quality", "palette-quality"}:
             checkout = Path(hotpath) if hotpath else root / "tools/hotpath"
             env["GPUI_HOTPATH_ROOT"] = str(checkout.expanduser().resolve())
         if solver:
@@ -412,6 +473,9 @@ def execute(root, cli, output, mode="fast", turtles=None, hotpath=None, solver=N
                 report["verification_evidence"] = verification_evidence(output, env, expected_workflow)
             if mode in {"performance", "quality"}:
                 report["hotpath_evidence"] = hotpath_evidence(output, env)
+            if mode == "palette-quality":
+                report["palette_mutation_evidence"] = palette_mutation_evidence(output)
+                report["palette_hotpath_evidence"] = hotpath_evidence(output, env, "palette-hotpath")
         report["ok"] = True
     except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         report["error"] = str(error)
@@ -437,7 +501,7 @@ def main(argv=None):
     parser.add_argument("--root", required=True, help="already-bootstrapped exact desktop profile")
     parser.add_argument("--actrun-cli", help="pinned npm package's dist/actrun.js")
     parser.add_argument("--run-dir", help="new external directory for this run's logs and timing")
-    parser.add_argument("--mode", choices=("fast", "headless", "acceptance", "mutation", "proof", "verification", "performance", "quality"), default="fast",
+    parser.add_argument("--mode", choices=("fast", "headless", "acceptance", "mutation", "proof", "verification", "performance", "quality", "palette", "palette-quality"), default="fast",
                         help="fast Linux gate (default), text subset, native acceptance, mutation, proof, real-mutant verification, performance, or combined quality")
     parser.add_argument("--turtles-bin", help="already-installed official turtles 0.3.0 executable for mutation/quality")
     parser.add_argument("--hotpath-root", help="explicit pinned hotpath source checkout for performance/quality")

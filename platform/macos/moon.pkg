@@ -3,10 +3,16 @@ import {
   "f4ah6o/gpui/primitives",
   "f4ah6o/gpui/diagnostics",
   "f4ah6o/gpui/scene",
+  "f4ah6o/gpui/platform/testing",
   "moonbitlang/core/encoding/utf8",
 }
 
 options(
   "native-stub": [ "loader.c" ],
-  targets: { "ffi.mbt": [ "native" ], "unsupported.mbt": [ "not", "native" ] },
+  targets: {
+    "ffi.mbt": [ "native" ],
+    "testing.mbt": [ "native" ],
+    "unsupported.mbt": [ "not", "native" ],
+    "unsupported_testing.mbt": [ "not", "native" ],
+  },
 )

@@ -68,6 +68,7 @@ pub fn Host::require_capability(
   match capability {
     @platform.NativeWindow
     | @platform.QuadFrames
+    | @platform.GrayscaleTextFrames
     | @platform.PointerKeyboard
     | @platform.Clipboard
     | @platform.Cursor => Ok(())
