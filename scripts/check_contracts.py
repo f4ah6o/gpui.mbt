@@ -634,6 +634,8 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
 
     allowed_internal_edges = {
         "primitives": set(),
+        # Shared semantics stay independent from layout, capabilities, and OS leaves.
+        "accessibility": {"primitives"},
         # Text editing semantics stay portable and depend only on core values.
         "text": set(),
         # Intrinsic layout results are portable values layered over text and
@@ -710,6 +712,7 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
     }
     required_runtime_packages = {
         "primitives",
+        "accessibility",
         "diagnostics",
         "core",
         "layout",
