@@ -674,7 +674,7 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         },
         # The native macOS sample is a leaf above the portable Button fixture.
         "examples/macos_button": {
-            "diagnostics", "examples/ubuntu_button/fixture", "platform",
+            "accessibility", "diagnostics", "examples/ubuntu_button/fixture", "platform",
             "platform/macos", "platform/testing", "primitives", "scene",
         },
         "examples/linux_text_field": {

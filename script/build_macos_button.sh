@@ -63,13 +63,13 @@ fi
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Frameworks"
 if [[ "$MODE" == e2e ]]; then
   xcrun clang -dynamiclib -DGPUI_TESTING -fobjc-arc -Wall -Wextra -Werror \
-    platform/macos/native.m platform/macos_text/core_text.c \
+    platform/macos/native.m platform/macos/accessibility.m platform/macos_text/core_text.c \
     -framework AppKit -framework QuartzCore -framework Metal \
     -framework CoreText -framework CoreGraphics -framework CoreFoundation \
     -o "$APP_LIBRARY"
 else
   xcrun clang -dynamiclib -fobjc-arc -Wall -Wextra -Werror \
-    platform/macos/native.m platform/macos_text/core_text.c \
+    platform/macos/native.m platform/macos/accessibility.m platform/macos_text/core_text.c \
     -framework AppKit -framework QuartzCore -framework Metal \
     -framework CoreText -framework CoreGraphics -framework CoreFoundation \
     -o "$APP_LIBRARY"
