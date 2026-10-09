@@ -396,6 +396,75 @@ class RuntimeDependencyTests(unittest.TestCase):
             )
         )
 
+    def test_macos_button_host_stays_above_portable_fixture(self) -> None:
+        button = self.root / "controls/button"
+        button.mkdir(parents=True)
+        (button / "moon.pkg").write_text(
+            'import { "f4ah6o/gpui/primitives", "f4ah6o/gpui/element", '
+            '"f4ah6o/gpui/scene" }\n',
+            encoding="utf-8",
+        )
+        fixture = self.root / "examples/ubuntu_button/fixture"
+        fixture.mkdir(parents=True)
+        fixture_manifest = fixture / "moon.pkg"
+        fixture_manifest.write_text(
+            'import { "f4ah6o/gpui/controls/button", '
+            '"f4ah6o/gpui/element", "f4ah6o/gpui/primitives", '
+            '"f4ah6o/gpui/scene" }\n',
+            encoding="utf-8",
+        )
+        macos_button = self.root / "examples/macos_button"
+        macos_button.mkdir(parents=True)
+        macos_manifest = macos_button / "moon.pkg"
+        approved_imports = (
+            'import { "f4ah6o/gpui/diagnostics", '
+            '"f4ah6o/gpui/examples/ubuntu_button/fixture", '
+            '"f4ah6o/gpui/platform", "f4ah6o/gpui/platform/macos", '
+            '"f4ah6o/gpui/platform/testing", "f4ah6o/gpui/primitives", '
+            '"f4ah6o/gpui/scene", "moonbitlang/core/env" }\n'
+        )
+        macos_manifest.write_text(approved_imports, encoding="utf-8")
+
+        self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+
+        for dependency in (
+            "controls/button",
+            "ubuntu",
+            "windows",
+            "platform/linux_text",
+        ):
+            macos_manifest.write_text(
+                approved_imports.replace(
+                    '"f4ah6o/gpui/scene"',
+                    f'"f4ah6o/gpui/scene", "f4ah6o/gpui/{dependency}"',
+                ),
+                encoding="utf-8",
+            )
+            errors = checker.validate_runtime_dependencies(self.root)
+            self.assertTrue(
+                any(
+                    "examples/macos_button/: forbidden runtime package edge" in error
+                    for error in errors
+                ),
+                msg=f"macOS Button must not depend on {dependency}",
+            )
+
+        macos_manifest.write_text(approved_imports, encoding="utf-8")
+        fixture_manifest.write_text(
+            'import { "f4ah6o/gpui/controls/button", '
+            '"f4ah6o/gpui/element", "f4ah6o/gpui/platform/macos", '
+            '"f4ah6o/gpui/primitives", "f4ah6o/gpui/scene" }\n',
+            encoding="utf-8",
+        )
+        errors = checker.validate_runtime_dependencies(self.root)
+        self.assertTrue(
+            any(
+                "examples/ubuntu_button/fixture/: forbidden runtime package edge" in error
+                for error in errors
+            ),
+            msg="portable Button fixture must not depend on the native macOS host",
+        )
+
     def test_browser_host_is_a_leaf_above_the_portable_app_fixture(self) -> None:
         browser_app = self.root / "examples/browser_app"
         browser_app.mkdir(parents=True)

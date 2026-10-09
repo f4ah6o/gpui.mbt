@@ -20,8 +20,9 @@ is already part of the base. Stage A does not depend on PR #40's text-field/IME
 work, PR #42's documentation update, or the Stage B shared semantics/AX
 contract.
 
-Only this macOS example, its build/test support, this guide, and the changelog
-are in scope. Do not change `controls/button`, the portable fixture, the shared
+Only this macOS example, its build/test support, its narrow architecture
+contract registration and regression, this guide, and the changelog are in
+scope. Do not change `controls/button`, the portable fixture, the shared
 platform API, accessibility projection, other OS samples, or support-tier
 claims. The model and Ubuntu fixture remain the source of portable state and
 activation semantics.
