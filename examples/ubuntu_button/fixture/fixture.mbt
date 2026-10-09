@@ -7,6 +7,7 @@ pub(all) enum ButtonDemoError {
   PaintError(@button.ButtonPaintError)
   SceneError(@scene.SnapshotError)
   AccessibilityError(@accessibility.AccessibilityError)
+  StaleFixtureState
 } derive(Eq)
 
 ///|
@@ -22,6 +23,22 @@ pub struct ButtonDemo {
   priv activations : Int
   priv button_visible : Bool
   priv accessibility_model : @accessibility.AccessibilityModel
+  priv accessibility_snapshot : @accessibility.AccessibilitySnapshot
+}
+
+///|
+fn demo_is_current(demo : ButtonDemo) -> Bool {
+  demo.accessibility_model.snapshot().revision() ==
+  demo.accessibility_snapshot.revision()
+}
+
+///|
+fn demo_require_current(demo : ButtonDemo) -> Result[Unit, ButtonDemoError] {
+  if demo_is_current(demo) {
+    Ok(())
+  } else {
+    Err(StaleFixtureState)
+  }
 }
 
 ///|
@@ -164,7 +181,7 @@ fn demo_sync_accessibility_or_abort(demo : ButtonDemo) -> ButtonDemo {
       demo.viewport,
       demo.button_visible,
     ) {
-    Ok(_) => demo
+    Ok(snapshot) => { ..demo, accessibility_snapshot: snapshot, }
     Err(AccessibilityError(@accessibility.ModelClosed)) => demo
     Err(_) => abort("Ubuntu button semantic fixture invariant")
   }
@@ -200,6 +217,16 @@ fn demo_new_with_model(
     Ok(value) => value
     Err(error) => return Err(error)
   }
+  let accessibility_snapshot = match
+    demo_publish_accessibility(
+      accessibility_model,
+      button,
+      viewport,
+      button_visible,
+    ) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
   let demo = {
     button,
     tree,
@@ -207,17 +234,9 @@ fn demo_new_with_model(
     activations: 0,
     button_visible,
     accessibility_model,
+    accessibility_snapshot,
   }
-  match
-    demo_publish_accessibility(
-      demo.accessibility_model,
-      demo.button,
-      demo.viewport,
-      demo.button_visible,
-    ) {
-    Ok(_) => Ok(demo)
-    Err(error) => Err(error)
-  }
+  Ok(demo)
 }
 
 ///|
@@ -259,12 +278,12 @@ pub fn ButtonDemo::is_button_visible(self : ButtonDemo) -> Bool {
 }
 
 ///|
-/// Return the latest immutable semantic snapshot for this fixture. This is a
-/// headless projection, not an operating-system accessibility object.
+/// Return this fixture value's immutable semantic snapshot. This is a headless
+/// projection, not an operating-system accessibility object.
 pub fn ButtonDemo::accessibility_snapshot(
   self : ButtonDemo,
 ) -> @accessibility.AccessibilitySnapshot {
-  self.accessibility_model.snapshot()
+  self.accessibility_snapshot
 }
 
 ///|
@@ -275,7 +294,16 @@ pub fn ButtonDemo::validate_accessibility_request(
   self : ButtonDemo,
   request : @accessibility.ActionRequest,
 ) -> Result[@accessibility.ActionIntent, @accessibility.ActionError] {
-  self.accessibility_model.resolve_action(request)
+  match self.accessibility_model.resolve_action(request) {
+    Err(error) => Err(error)
+    Ok(intent) => {
+      if intent.revision() == self.accessibility_snapshot.revision() {
+        Ok(intent)
+      } else {
+        Err(@accessibility.StaleNode)
+      }
+    }
+  }
 }
 
 ///|
@@ -285,7 +313,7 @@ pub fn ButtonDemo::dispatch_accessibility_request(
   self : ButtonDemo,
   request : @accessibility.ActionRequest,
 ) -> Result[ButtonDemo, @accessibility.ActionError] {
-  match self.accessibility_model.resolve_action(request) {
+  match self.validate_accessibility_request(request) {
     Err(error) => Err(error)
     Ok(intent) => {
       if intent.action() == @accessibility.Invoke &&
@@ -320,6 +348,10 @@ pub fn ButtonDemo::reopen(
 pub fn ButtonDemo::focus_button(
   self : ButtonDemo,
 ) -> Result[ButtonDemo, ButtonDemoError] {
+  match demo_require_current(self) {
+    Ok(_) => ()
+    Err(error) => return Err(error)
+  }
   if !self.button_visible || !self.button.is_enabled() {
     return Ok(self)
   }
@@ -328,20 +360,14 @@ pub fn ButtonDemo::focus_button(
     Err(error) => return Err(ElementError(error))
   }
   let next = { ..self, button: self.button.with_focus(true), tree, }
-  match
-    demo_publish_accessibility(
-      next.accessibility_model,
-      next.button,
-      next.viewport,
-      next.button_visible,
-    ) {
-    Ok(_) => Ok(next)
-    Err(error) => Err(error)
-  }
+  demo_publish_fixture(next)
 }
 
 ///|
 pub fn ButtonDemo::blur(self : ButtonDemo) -> ButtonDemo {
+  if !demo_is_current(self) {
+    return self
+  }
   demo_sync_accessibility_or_abort({
     ..self,
     button: self.button.with_focus(false).cancel_press(),
@@ -355,20 +381,31 @@ fn ButtonDemo::replace_button(
   button : @button.Button,
   preserve_focus : Bool,
 ) -> Result[ButtonDemo, ButtonDemoError] {
+  match demo_require_current(self) {
+    Ok(_) => ()
+    Err(error) => return Err(error)
+  }
   let tree = match
     demo_tree(button, self.viewport, self.button_visible, preserve_focus) {
     Ok(value) => value
     Err(error) => return Err(error)
   }
   let next = { ..self, button, tree, }
+  demo_publish_fixture(next)
+}
+
+///|
+fn demo_publish_fixture(
+  demo : ButtonDemo,
+) -> Result[ButtonDemo, ButtonDemoError] {
   match
     demo_publish_accessibility(
-      next.accessibility_model,
-      next.button,
-      next.viewport,
-      next.button_visible,
+      demo.accessibility_model,
+      demo.button,
+      demo.viewport,
+      demo.button_visible,
     ) {
-    Ok(_) => Ok(next)
+    Ok(snapshot) => Ok({ ..demo, accessibility_snapshot: snapshot, })
     Err(error) => Err(error)
   }
 }
@@ -403,6 +440,10 @@ pub fn ButtonDemo::resize(
   width : Double,
   height : Double,
 ) -> Result[ButtonDemo, ButtonDemoError] {
+  match demo_require_current(self) {
+    Ok(_) => ()
+    Err(error) => return Err(error)
+  }
   let viewport = match demo_rect(0.0, 0.0, width, height) {
     Ok(value) => value
     Err(error) => return Err(error)
@@ -431,16 +472,7 @@ pub fn ButtonDemo::resize(
     Err(error) => return Err(error)
   }
   let next = { ..self, button, tree, viewport, button_visible, }
-  match
-    demo_publish_accessibility(
-      next.accessibility_model,
-      next.button,
-      next.viewport,
-      next.button_visible,
-    ) {
-    Ok(_) => Ok(next)
-    Err(error) => Err(error)
-  }
+  demo_publish_fixture(next)
 }
 
 ///|
@@ -449,6 +481,10 @@ pub fn ButtonDemo::resize(
 pub fn ButtonDemo::reset_session(
   self : ButtonDemo,
 ) -> Result[ButtonDemo, ButtonDemoError] {
+  match demo_require_current(self) {
+    Ok(_) => ()
+    Err(error) => return Err(error)
+  }
   match self.accessibility_model.reset() {
     Ok(_) => ()
     Err(error) => return Err(AccessibilityError(error))
@@ -486,6 +522,9 @@ pub fn ButtonDemo::handle_input(
   self : ButtonDemo,
   event : @primitives.InputEvent,
 ) -> ButtonDemo {
+  if !demo_is_current(self) {
+    return self
+  }
   if !self.button_visible {
     return self
   }

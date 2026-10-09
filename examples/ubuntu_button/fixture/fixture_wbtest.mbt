@@ -163,11 +163,12 @@ test "disabled focus transition and loading cancel pending activation" {
   )
   assert_eq(stale_up.activations(), 0)
 
-  let pointer = focused.handle_input(
+  let pointer_base = ButtonDemo::new(640.0, 240.0).unwrap().focus_button().unwrap()
+  let pointer = pointer_base.handle_input(
     ubuntu_button_test_pointer(
       true,
-      focused.button().bounds().left() + 8.0,
-      focused.button().bounds().top() + 8.0,
+      pointer_base.button().bounds().left() + 8.0,
+      pointer_base.button().bounds().top() + 8.0,
       true,
     ),
   )
@@ -327,20 +328,23 @@ test "fixture ordinary updates preserve identity and revalidate latest state" {
     ),
   )
 
-  let disabled = focused.with_enabled(false).unwrap()
+  let disabled_base = ButtonDemo::new(640.0, 240.0).unwrap().focus_button().unwrap()
+  let disabled_id = ubuntu_button_semantic_node(disabled_base).id()
+  let disabled_request = ubuntu_button_semantic_request(disabled_base)
+  let disabled = disabled_base.with_enabled(false).unwrap()
   let disabled_button = ubuntu_button_semantic_node(disabled)
-  assert_true(disabled_button.id() == original_id)
+  assert_true(disabled_button.id() == disabled_id)
   assert_true(!disabled_button.is_enabled())
   assert_true(!disabled_button.is_focused())
   assert_eq(disabled_button.supported_actions().length(), 1)
   assert_true(
     ubuntu_button_semantic_action_is_error(
       disabled,
-      request,
+      disabled_request,
       @accessibility.Disabled,
     ),
   )
-  assert_true(disabled.dispatch_accessibility_request(request) is Err(_))
+  assert_true(disabled.dispatch_accessibility_request(disabled_request) is Err(_))
   assert_eq(disabled.activations(), 0)
 }
 
@@ -388,6 +392,48 @@ test "fixture resets the model before reusing its button key" {
       @accessibility.StaleNode,
     ),
   )
+}
+
+///|
+test "fixture rejects current requests and updates through stale value copies" {
+  let old = ButtonDemo::new(640.0, 240.0).unwrap()
+  let fresh = old.reset_session().unwrap()
+  let fresh_request = ubuntu_button_semantic_request(fresh)
+
+  assert_true(
+    ubuntu_button_semantic_action_is_error(
+      old,
+      fresh_request,
+      @accessibility.StaleNode,
+    ),
+  )
+  assert_true(old.dispatch_accessibility_request(fresh_request) is Err(_))
+  assert_eq(old.activations(), 0)
+  assert_eq(fresh.activations(), 0)
+
+  let focused = ButtonDemo::new(640.0, 240.0).unwrap().focus_button().unwrap()
+  let disabled = focused.with_enabled(false).unwrap()
+  let reenabled = disabled.with_enabled(true).unwrap()
+  let current_request = ubuntu_button_semantic_request(reenabled)
+
+  assert_true(!disabled.button().is_enabled())
+  assert_true(!ubuntu_button_semantic_node(disabled).is_enabled())
+  assert_true(reenabled.button().is_enabled())
+  assert_true(ubuntu_button_semantic_node(reenabled).is_enabled())
+  assert_true(
+    ubuntu_button_semantic_action_is_error(
+      disabled,
+      current_request,
+      @accessibility.StaleNode,
+    ),
+  )
+  assert_true(disabled.dispatch_accessibility_request(current_request) is Err(_))
+  match disabled.with_loading(true) {
+    Err(StaleFixtureState) => ()
+    _ => assert_true(false)
+  }
+  assert_true(reenabled.validate_accessibility_request(current_request) is Ok(_))
+  assert_eq(reenabled.dispatch_accessibility_request(current_request).unwrap().activations(), 1)
 }
 
 ///|
