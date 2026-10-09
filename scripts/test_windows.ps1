@@ -11,6 +11,7 @@ $env:MOONBIT_NEW_NATIVE = "0"
 function Invoke-CheckedCommand {
   param(
     [Parameter(Mandatory = $true)][string]$Program,
+    [AllowEmptyCollection()]
     [Parameter(Mandatory = $true)][string[]]$Arguments,
     [Parameter(Mandatory = $true)][string]$LogName
   )
