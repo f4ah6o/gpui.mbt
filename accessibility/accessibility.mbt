@@ -340,40 +340,6 @@ pub struct AccessibilityModel {
 }
 
 ///|
-priv struct OwnerSequence {
-  next : UInt64
-  exhausted : Bool
-}
-
-///|
-let accessibility_owner_sequence : Ref[OwnerSequence] = Ref({
-  next: 1UL,
-  exhausted: false,
-})
-
-///|
-fn next_owner_id() -> UInt64? {
-  let (next_sequence, owner) = advance_owner_sequence(
-    accessibility_owner_sequence.val,
-  )
-  accessibility_owner_sequence.val = next_sequence
-  owner
-}
-
-///|
-fn advance_owner_sequence(sequence : OwnerSequence) -> (OwnerSequence, UInt64?) {
-  if sequence.exhausted {
-    return (sequence, None)
-  }
-  let owner = sequence.next
-  if owner == MAX_UINT64 {
-    ({ next: owner, exhausted: true, }, Some(owner))
-  } else {
-    ({ next: owner + 1UL, exhausted: false, }, Some(owner))
-  }
-}
-
-///|
 /// Limits are part of the portable contract so adapters can size their own
 /// bounded native maps without changing core semantics.
 pub let max_node_count : Int = 4096
@@ -399,6 +365,9 @@ fn empty_snapshot(owner : UInt64, revision : UInt64) -> AccessibilitySnapshot {
 }
 
 ///|
+/// Owner identities are unique only within this target's allocator scope:
+/// one linked native module image, or one non-native runtime instance. Do not
+/// exchange IDs across worker or module instances, whose counters may overlap.
 pub fn AccessibilityModel::new() -> Result[
   AccessibilityModel,
   AccessibilityError,

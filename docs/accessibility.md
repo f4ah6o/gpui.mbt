@@ -9,8 +9,13 @@ accessibility bridge.
 
 `AccessibilityModel` owns the live semantic tree and is confined to one UI-owner
 thread. Its copied handle values share one revocable `Ref`-backed owner state.
-Every model receives an opaque process-local owner identity; every newly
-admitted node receives a monotonically increasing generation token. A
+Every model receives an opaque owner identity from its target's allocator
+scope: one linked native module image, or one non-native runtime instance.
+Native allocation is atomic across model constructors. The `wasm`, `wasm-gc`,
+and JavaScript allocators are local to one runtime instance; IDs may overlap
+between separate workers or module instances, so do not exchange or compare
+IDs across those boundaries. Every newly admitted node receives a monotonically
+increasing generation token. A
 caller-owned `NodeSpec.key` is only a continuity lookup key. It is never
 treated as a generation, native handle, pointer, or authority by itself.
 `NodeId::key()` is a read-only convenience for mapping a live semantic node
