@@ -54,6 +54,8 @@ fn ubuntu_button_scene_error(error : @fixture.ButtonDemoError) -> String {
     @fixture.ElementError(_) => "element tree rejected"
     @fixture.PaintError(_) => "button paint rejected"
     @fixture.SceneError(_) => "scene snapshot rejected"
+    @fixture.AccessibilityError(_) => "accessibility model rejected"
+    @fixture.StaleFixtureState => "fixture state is stale"
   }
 }
 
