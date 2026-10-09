@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT_DIR"
 MODE="run"
 TARGET_DIR="$ROOT_DIR/_build/macos-button"
 
