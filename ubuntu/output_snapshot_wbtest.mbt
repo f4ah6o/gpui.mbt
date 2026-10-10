@@ -94,6 +94,13 @@ test "output snapshot decoder rejects malformed and stale metadata" {
   records[2] = 0.0
   records[9] = 0.0
   records[10] = 0.0
+  records[1] = 1.0
+  records[8] = 0.0
+  match decode_output_snapshot(records, 1) {
+    Ok(outputs) => assert_eq(outputs.length(), 1)
+    Err(_) => fail("valid geometry fixture rejected")
+  }
+
   records[4] = 1.5
   match decode_output_snapshot(records, 1) {
     Err(error) => assert_eq(error.code().label(), "conversion_failed")
