@@ -13,7 +13,15 @@ static void test_output_destroy(struct wl_output *output) {
 
 /* Keep global_remove on the real reset path without a compositor proxy. */
 #define wl_output_destroy(output) test_output_destroy(output)
+static int callback_destroy_calls;
+static struct wl_callback *last_destroyed_callback;
+static void test_callback_destroy(struct wl_callback *callback) {
+  ++callback_destroy_calls;
+  last_destroyed_callback = callback;
+}
+#define wl_callback_destroy(callback) test_callback_destroy(callback)
 #include "../../ubuntu/backend.c"
+#undef wl_callback_destroy
 #undef wl_output_destroy
 
 static struct host new_host(void) {
@@ -82,6 +90,59 @@ static void test_batch_is_invisible_until_done_and_commits_together(void) {
   output_done(&h, proxy);
   assert(h.outputs[0].committed.scale == 1);
   assert(h.scale == 1);
+}
+
+static void test_scale_event_precedes_following_input_and_frame(void) {
+  struct host h = new_host();
+  struct wl_output *proxy = fake_output(0x181);
+  struct wl_pointer *pointer = (struct wl_pointer *)(uintptr_t)0x182;
+  h.window = 97; /* event() requires a live window to queue notifications. */
+  h.pointer = pointer;
+  init_output(&h.outputs[0], proxy, 18);
+  h.outputs[0].entered = 1;
+
+  output_scale(&h, proxy, 2);
+  assert(h.outputs[0].committed.scale == 1);
+  assert(h.outputs[0].pending.scale == 2);
+  assert(h.scale == 1 && h.count == 0 && h.seq == 0);
+
+  output_done(&h, proxy);
+  assert(h.outputs[0].committed.scale == 2);
+  assert(h.scale == 2 && h.count == 1 && h.seq == 1 && h.error == 0);
+  int scale_slot = h.read;
+  assert(h.queue[scale_slot][0] == 2);
+  assert(h.queue[scale_slot][1] == h.window);
+  assert(h.queue[scale_slot][2] == 1);
+  assert(h.queue[scale_slot][3] == 2);
+  assert(h.queue[scale_slot][4] == h.width);
+  assert(h.queue[scale_slot][5] == h.height);
+
+  pointer_motion(&h, pointer, 0, wl_fixed_from_double(15.5),
+                 wl_fixed_from_double(25.25));
+  assert(h.count == 2 && h.seq == 2);
+  int input_slot = (h.read + 1) % QUEUE_CAPACITY;
+  assert(h.queue[input_slot][0] == 7);
+  assert(h.queue[input_slot][2] == 2);
+  assert(h.queue[input_slot][3] == 2);
+  assert(h.queue[input_slot][6] == 15.5);
+  assert(h.queue[input_slot][7] == 25.25);
+
+  struct wl_callback *callback = (struct wl_callback *)(uintptr_t)0x701;
+  h.frame = callback;
+  callback_destroy_calls = 0;
+  last_destroyed_callback = NULL;
+  frame_done(&h, callback, 0);
+  assert(callback_destroy_calls == 1);
+  assert(last_destroyed_callback == callback);
+  assert(h.frame == NULL && h.count == 3 && h.seq == 3);
+  int frame_slot = (h.read + 2) % QUEUE_CAPACITY;
+  assert(h.queue[frame_slot][0] == 5);
+  assert(h.queue[frame_slot][2] == 3);
+  assert(h.queue[frame_slot][3] == 2);
+
+  /* An unchanged commit must not emit a duplicate scale notification. */
+  output_done(&h, proxy);
+  assert(h.count == 3 && h.seq == 3 && h.scale == 2);
 }
 
 static void test_callback_permutations_and_unknown_proxy(void) {
@@ -180,6 +241,7 @@ static void test_global_remove_resets_slot_before_reuse(void) {
 
 int main(void) {
   test_batch_is_invisible_until_done_and_commits_together();
+  test_scale_event_precedes_following_input_and_frame();
   test_callback_permutations_and_unknown_proxy();
   test_enter_leave_uses_only_committed_scale();
   test_global_remove_resets_slot_before_reuse();

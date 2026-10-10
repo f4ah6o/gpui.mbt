@@ -180,9 +180,49 @@ static void test_absent_window_and_wrong_proxy_leave_residual_queue_untouched(vo
   finish_host();
 }
 
+static void test_rejected_axis_then_pointer_motion_drains_without_stale_payload(void) {
+  struct host h;
+  init_host(&h, TEST_WINDOW);
+  h.read = QUEUE_CAPACITY - 2;
+  h.count = QUEUE_CAPACITY;
+  h.seq = QUEUE_CAPACITY;
+  for (int i = 0; i < QUEUE_CAPACITY; ++i) {
+    int slot = (h.read + i) % QUEUE_CAPACITY;
+    seed_event(&h, slot, 7, i + 1);
+  }
+  int tail = (h.read + h.count - 1) % QUEUE_CAPACITY;
+  double tail_before[10];
+  memcpy(tail_before, h.queue[tail], sizeof(tail_before));
+
+  pointer_axis(&h, h.pointer, 7, WL_POINTER_AXIS_VERTICAL_SCROLL,
+               wl_fixed_from_double(7.0));
+  assert(h.error == GPUI_RESOURCE && h.count == QUEUE_CAPACITY);
+  assert(h.seq == QUEUE_CAPACITY);
+  assert(memcmp(h.queue[tail], tail_before, sizeof(tail_before)) == 0);
+
+  /* A later pointer callback must also fail closed without adding stale data. */
+  pointer_motion(&h, h.pointer, 8, wl_fixed_from_double(99.0),
+                 wl_fixed_from_double(101.0));
+  assert(h.error == GPUI_RESOURCE && h.count == QUEUE_CAPACITY);
+  assert(h.seq == QUEUE_CAPACITY);
+  assert(memcmp(h.queue[tail], tail_before, sizeof(tail_before)) == 0);
+
+  double out[10];
+  for (int i = 0; i < QUEUE_CAPACITY; ++i) {
+    assert(gpui_next(h.token, out) == 1);
+    assert(out[2] == i + 1);
+    if (i == QUEUE_CAPACITY - 1)
+      assert(memcmp(out, tail_before, sizeof(tail_before)) == 0);
+  }
+  assert(gpui_next(h.token, out) == 0);
+  assert(h.error == GPUI_RESOURCE);
+  finish_host();
+}
+
 int main(void) {
   test_accepted_axes_wrap_and_keep_v1_v2_order();
   test_full_wrapped_queue_rejection_preserves_tail_and_metadata();
+  test_rejected_axis_then_pointer_motion_drains_without_stale_payload();
   test_sequence_exhaustion_preserves_pending_tail();
   test_absent_window_and_wrong_proxy_leave_residual_queue_untouched();
   puts("Ubuntu pointer ingress tests passed");
