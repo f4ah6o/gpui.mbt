@@ -29,7 +29,7 @@ test "output snapshot decoding is copied, committed and readiness-aware" {
   assert_eq(first[0].refresh_millihz, 59940)
   assert_true(first[0].is_entered)
 
-  /* Decoded values do not alias the borrowed native records. */
+  // Decoded values do not alias the borrowed native records.
   records[3] = 4.0
   let second = match decode_output_snapshot(records, 1) {
     Ok(outputs) => outputs
@@ -38,7 +38,7 @@ test "output snapshot decoding is copied, committed and readiness-aware" {
   assert_eq(first[0].scale, 2)
   assert_eq(second[0].scale, 4)
 
-  /* A bound output is visible as not-ready until its first done commit. */
+  // A bound output is visible as not-ready until its first done commit.
   for field = 0; field < OUTPUT_INFO_FIELDS; field = field + 1 {
     records[field] = 0.0
   }

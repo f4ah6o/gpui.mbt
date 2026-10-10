@@ -599,33 +599,34 @@ fn decode_output_snapshot(
       mode_width < 0 ||
       mode_height < 0 ||
       refresh < 0 ||
-      (!geometry &&
-        (physical_width != 0 ||
+      (
+        !geometry &&
+        (
+          physical_width != 0 ||
           physical_height != 0 ||
           subpixel != 0 ||
-          transform != 0)) ||
-      (!current_mode &&
-        (mode_width != 0 || mode_height != 0 || refresh != 0)) ||
+          transform != 0
+        )
+      ) ||
+      (!current_mode && (mode_width != 0 || mode_height != 0 || refresh != 0)) ||
       (current_mode && (mode_width <= 0 || mode_height <= 0)) ||
       (!ready && (geometry || current_mode || scale != 1)) {
       return Err(output_snapshot_decode_error("inconsistent output metadata"))
     }
-    outputs.push(
-      OutputInfo::{
-        is_ready: ready,
-        has_geometry: geometry,
-        has_current_mode: current_mode,
-        scale,
-        physical_width_mm: physical_width,
-        physical_height_mm: physical_height,
-        subpixel,
-        transform,
-        mode_width_px: mode_width,
-        mode_height_px: mode_height,
-        refresh_millihz: refresh,
-        is_entered: entered,
-      },
-    )
+    outputs.push(OutputInfo::{
+      is_ready: ready,
+      has_geometry: geometry,
+      has_current_mode: current_mode,
+      scale,
+      physical_width_mm: physical_width,
+      physical_height_mm: physical_height,
+      subpixel,
+      transform,
+      mode_width_px: mode_width,
+      mode_height_px: mode_height,
+      refresh_millihz: refresh,
+      is_entered: entered,
+    })
   }
   Ok(outputs)
 }
