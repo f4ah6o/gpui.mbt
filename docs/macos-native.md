@@ -17,6 +17,11 @@ On macOS 13 or newer, install the pinned MoonBit toolchain from
 ./script/test_macos.sh             # native GPU/input/lifecycle E2E + smoke
 ```
 
+Moon runs the module pre-build configuration for native and LLVM builds, so
+Python 3 is required to build GPUI for either backend. The hook emits CoreText
+framework link flags only for macOS native builds; built executables do not
+depend on Python at runtime.
+
 Click the quad or press Space to toggle its color; Escape requests close.
 The window's close button emits `CloseRequested`; application policy then calls
 `destroy_window`, which emits exactly one terminal `Destroyed` event. The demo
@@ -28,8 +33,9 @@ The bundle contains both the MoonBit executable and shim dylib. The C loader
 resolves the bundled library relative to the executable, or uses the explicit
 `GPUI_MACOS_LIBRARY` development override. It verifies ABI version and function
 table size before calling native code. No Rust, JavaScript, browser, or external
-runtime dependency is needed. Non-native MoonBit targets and non-macOS native
-builds return `UnsupportedCapability`; portable tests do not load AppKit.
+runtime dependency is needed at runtime. Non-native MoonBit targets and
+non-macOS native builds return `UnsupportedCapability`; portable tests do not
+load AppKit.
 
 ## Implemented boundary
 
