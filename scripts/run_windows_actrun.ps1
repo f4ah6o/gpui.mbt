@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
-  [string]$PythonPath = $env:GPUI_WINDOWS_PYTHON
+  [string]$PythonPath = $env:GPUI_WINDOWS_PYTHON,
+  [string]$ActrunToolRoot = $env:GPUI_WINDOWS_ACTRUN_TOOL_ROOT,
+  [string]$MoonHome = $env:MOON_HOME,
+  [string]$NodeHome = $env:GPUI_WINDOWS_NODE_HOME
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,7 +16,11 @@ New-Item -ItemType Directory -Force (Join-Path $build 'records'), $logs | Out-Nu
 
 $lockPath = Join-Path $repo 'infra/linux-desktop/actrun-runner.lock.json'
 $lock = Get-Content -Raw $lockPath | ConvertFrom-Json
-$toolRoot = Join-Path $repo '_build/tools/actrun-windows'
+$toolRoot = if ([string]::IsNullOrWhiteSpace($ActrunToolRoot)) {
+  Join-Path $repo '_build/tools/actrun-windows'
+} else {
+  [IO.Path]::GetFullPath($ActrunToolRoot)
+}
 $cli = Join-Path $toolRoot 'node_modules/@mizchi/actrun/dist/actrun.js'
 $packageJson = Join-Path $toolRoot 'node_modules/@mizchi/actrun/package.json'
 $packageLock = Join-Path $toolRoot 'package-lock.json'
@@ -49,13 +56,31 @@ if ($nodeMajor -lt $lock.node_minimum_major) {
   throw "Node.js $nodeVersion is below the pinned actrun minimum."
 }
 
-$moonHome = Join-Path $repo '_build/tools/moonbit'
+$localMoonHome = Join-Path $repo '_build/tools/moonbit'
+if ([string]::IsNullOrWhiteSpace($MoonHome)) {
+  $moonHome = $localMoonHome
+} else {
+  $moonHome = [IO.Path]::GetFullPath($MoonHome)
+}
 $moonBin = Join-Path $moonHome 'bin'
 if (-not (Test-Path (Join-Path $moonBin 'moon.exe'))) {
   throw "Pinned MoonBit toolchain is missing at $moonBin."
 }
 $env:MOON_HOME = $moonHome
 $env:PATH = "$moonBin;$env:PATH"
+
+if ([string]::IsNullOrWhiteSpace($NodeHome)) {
+  if (Test-Path (Join-Path (Split-Path $moonHome -Parent) 'node.exe')) {
+    $NodeHome = Split-Path $moonHome -Parent
+  } else {
+    $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
+    if ($nodeCommand) { $NodeHome = Split-Path $nodeCommand.Source -Parent }
+  }
+}
+if (-not [string]::IsNullOrWhiteSpace($NodeHome)) {
+  $NodeHome = [IO.Path]::GetFullPath($NodeHome)
+  $env:PATH = "$NodeHome;$env:PATH"
+}
 
 if (-not $PythonPath) {
   $pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue

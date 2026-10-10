@@ -13,7 +13,7 @@ Build GPUI-style user interfaces in MoonBit.
 - **Semantic capabilities** — one typed operation can be bound to GUI actions, direct MoonBit calls, and optional MCP dispatch with shared domain validation. A checked JavaScript stdio fixture exercises the pinned stateless MCP wire adapter.
 - **macOS** — an AppKit + Metal native host with windows, input, clipboard/cursors, scale/resize events, quad and bounded single-line grayscale text presentation, CoreText measurement, and an experimental renderer-recovery path.
 - **Ubuntu / Wayland** — a Wayland + EGL/OpenGL ES 2 native host with window lifecycle, input, clipboard/cursor services, scale handling, quad presentation, and bounded grayscale text frames.
-- **Windows** — an experimental one-window Win32/D3D11 hardware-or-WARP slice with basic input, quad presentation, bounded grayscale text, and a focused single-line text field. The private IMM32 text-session ingress is opt-in and default-off; real Japanese IME qualification remains open. Prior hosted Windows runs cover earlier slices and do not establish a Windows support tier or production claim; see the [Windows native guide](docs/windows-native.md).
+- **Windows** — an experimental one-window Win32/D3D11 hardware-or-WARP slice with basic input, quad presentation, bounded grayscale text, a focused single-line text field, and a native fixture that reuses the shared Button model. The private IMM32 text-session ingress is opt-in and default-off; real Japanese IME and Button physical-input qualification remain open. See the [Windows native guide](docs/windows-native.md) and [Button fixture guide](docs/windows-button.md).
 - **Browser** — Weekboard, a small website-launch task board using the shared MoonBit app/layout/event/scene model and a Canvas 2D host, plus the retained interaction lab for service and lifecycle proofs.
 - **Headless testing** — portable model, layout, event, focus, and scene behavior can be exercised without a window system.
 
@@ -121,6 +121,7 @@ Subscriptions are explicitly canceled with `unsubscribe`. Deterministic timer te
 | `platform/linux_text/` | Linux-only PangoFT2 implementation of copied measurement geometry and a private grayscale-mask raster boundary; native handles stay behind the FFI boundary |
 | `layout/` | Deterministic flex layout and recursive layout trees |
 | `element/` | Element trees, hit testing, event routing, focus, scroll state, drag gestures, and element-to-scene bridging |
+| `controls/button/` | Shared enabled, loading, focus, keyboard/pointer activation, and scene-paint semantics |
 | `scene/` | Quad paint commands, bounded text snapshot items, validation, canonical snapshots, transforms, opacity, and clips |
 | `platform/` | Portable backend/window/event contracts plus the macOS backend |
 | `ubuntu/` | Ubuntu Wayland/EGL/GLES2 native backend |
@@ -140,6 +141,7 @@ Subscriptions are explicitly canceled with `unsubscribe`. Deterministic timer te
 - [GPUI compatibility matrix](docs/compatibility.md)
 - [macOS native host](docs/macos-native.md)
 - [Ubuntu / Wayland host](docs/ubuntu.md)
+- [Windows reusable Button fixture](docs/windows-button.md)
 - [Reproducible Debian cloud desktop](infra/linux-desktop/README.md)
 - [Browser demos and interaction lab](docs/browser-demo.md)
 - [MCP adapter and stdio fixture](docs/mcp-adapter.md)

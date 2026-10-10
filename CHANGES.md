@@ -16,6 +16,18 @@
 
 ### Migration
 
+## 0.2.1 - 2026-10-10
+
+### Added
+
+- Added a Windows-native fixture that reuses the portable Button model, exposes
+  completed-frame D3D11 pixel evidence, and provides a separately gated
+  SendInput runner. The current interactive desktop blocked input acceptance;
+  physical input, window lifecycle, UI Automation and Japanese IME remain open.
+  See the [Windows Button guide](docs/windows-button.md).
+
+### Changed
+
 ## 0.2.0 - 2026-10-10
 
 ### Added

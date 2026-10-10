@@ -25,6 +25,11 @@ Linux or macOS; those tests verify translation, snapshot serialization, error
 mapping, and the explicit non-Windows `UnsupportedCapability` stub. They do
 not simulate a Windows window or GPU.
 
+The matrix also checks the reusable shared Button adapter and runs its
+completed-frame pixel smoke. See the [Button fixture guide](windows-button.md)
+for its demo controls, evidence boundary, and the separately gated visible
+SendInput runner.
+
 The Windows workflow initializes the MSVC environment and pins MoonBit and its
 core library. MoonBit selects the Windows native compiler from that environment.
 The script also compiles the C shim and standalone clipboard fixture against
