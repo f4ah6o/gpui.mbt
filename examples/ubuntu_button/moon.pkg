@@ -1,5 +1,5 @@
 import {
-  "f4ah6o/gpui/accessibility" @accessibility,
+  "f4ah6o/gpui/accessibility",
   "f4ah6o/gpui/ubuntu" @native,
   "f4ah6o/gpui/platform",
   "f4ah6o/gpui/diagnostics",
@@ -9,9 +9,9 @@ import {
 }
 
 import {
-  "f4ah6o/gpui/accessibility" @accessibility,
+  "f4ah6o/gpui/accessibility",
   "f4ah6o/gpui/ubuntu" @native,
-  "f4ah6o/gpui/examples/ubuntu_button/fixture" @fixture,
+  "f4ah6o/gpui/examples/ubuntu_button/fixture",
   "moonbitlang/core/env",
 } for "wbtest"
 

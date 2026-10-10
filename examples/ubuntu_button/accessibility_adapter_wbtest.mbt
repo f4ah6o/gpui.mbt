@@ -35,16 +35,21 @@ test "Ubuntu button adapter resolves live Invoke and retains the new demo" {
     }
     assert_eq(button_count, 1)
 
-    let loading_demo = session.current_demo().unwrap().with_loading(true).unwrap()
+    let loading_demo = session
+      .current_demo()
+      .unwrap()
+      .with_loading(true)
+      .unwrap()
     let loading_snapshot = session.publish(loading_demo).unwrap()
     assert_true(ubuntu_button_accessibility_token(loading_snapshot) == button)
     assert_true(
-      session.invoke(button)
-      is Err(
-        ProjectionError(@native.ActionRejected(@accessibility.Loading)),
-      ),
+      session.invoke(button) is Err(ProjectionError(@native.ActionRejected(@accessibility.Loading))),
     )
-    let ready_demo = session.current_demo().unwrap().with_loading(false).unwrap()
+    let ready_demo = session
+      .current_demo()
+      .unwrap()
+      .with_loading(false)
+      .unwrap()
     let ready_snapshot = session.publish(ready_demo).unwrap()
     assert_true(ubuntu_button_accessibility_token(ready_snapshot) == button)
     let preinvoke_demo = session.current_demo().unwrap()
@@ -105,11 +110,20 @@ test "Ubuntu button adapter fails closed instead of reusing exhausted tokens" {
     let final_token = ubuntu_button_accessibility_token(last_available)
     assert_true(final_token != first)
 
-    let hidden_again = session.current_demo().unwrap().resize(100.0, 64.0).unwrap()
+    let hidden_again = session
+      .current_demo()
+      .unwrap()
+      .resize(100.0, 64.0)
+      .unwrap()
     let _ = session.publish(hidden_again).unwrap()
-    let restored_again = session.current_demo().unwrap().resize(640.0, 240.0).unwrap()
-    let (source_model, source_snapshot) =
-      restored_again.accessibility_source().unwrap()
+    let restored_again = session
+      .current_demo()
+      .unwrap()
+      .resize(640.0, 240.0)
+      .unwrap()
+    let (source_model, source_snapshot) = restored_again
+      .accessibility_source()
+      .unwrap()
     let source_button = source_snapshot.nodes()[1]
     let retained_request = @accessibility.ActionRequest::new(
       source_button.id(),
@@ -140,8 +154,7 @@ test "Ubuntu button adapter rejects a token from another session" {
     ).unwrap()
     let foreign_demo = second.current_demo().unwrap()
     assert_true(
-      first.publish(foreign_demo)
-      is Err(ProjectionError(@native.ForeignOwner)),
+      first.publish(foreign_demo) is Err(ProjectionError(@native.ForeignOwner)),
     )
     assert_true(foreign_demo.with_loading(true) is Ok(_))
     let foreign = ubuntu_button_accessibility_token(first.snapshot().unwrap())
@@ -159,7 +172,9 @@ test "Ubuntu button adapter revokes a same-owner source after projection failure
     let demo = @fixture.ButtonDemo::new(640.0, 240.0).unwrap()
     let session = UbuntuButtonAccessibilitySession::new(host, demo).unwrap()
     let current = session.current_demo().unwrap()
-    let (source_model, source_snapshot) = current.accessibility_source().unwrap()
+    let (source_model, source_snapshot) = current
+      .accessibility_source()
+      .unwrap()
     let retained_request = @accessibility.ActionRequest::new(
       source_snapshot.nodes()[1].id(),
       @accessibility.Invoke,
@@ -167,8 +182,7 @@ test "Ubuntu button adapter revokes a same-owner source after projection failure
     let latest = current.with_loading(true).unwrap()
     session.projection.close()
     assert_true(
-      session.publish(latest)
-      is Err(ProjectionError(@native.ProjectionClosed)),
+      session.publish(latest) is Err(ProjectionError(@native.ProjectionClosed)),
     )
     assert_true(session.current_demo() is Err(SessionClosed))
     assert_true(

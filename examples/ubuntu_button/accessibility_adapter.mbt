@@ -10,10 +10,7 @@ pub(all) enum UbuntuButtonAccessibilityError {
   ProjectionError(@native.AccessibilityProjectionError)
   FixtureError(@fixture.ButtonDemoError)
   ActionError(@accessibility.ActionError)
-} derive(Eq)
-
-///|
-pub extend UbuntuButtonAccessibilityError with Eq::{not_equal, equal}
+}
 
 ///|
 /// Opaque callback handle for one continuously exported projection node.
