@@ -15,7 +15,8 @@ The Linux/shared-component coordinator owns reusable Button corrections and the
 common API. This issue does not authorize changes to another platform's scope
 or promote a support tier.
 
-Current main is `008b3c73d50108d6ed1e6c02ad9e12e930e843ec`.
+Current main at the 2026-10-10 audit is
+`691edaf5012a9ae032dfe5d7721544818873717d` (merged Stage A #52).
 [Button #47](https://github.com/gpui-mbt/gpui.mbt/pull/47) is merged as
 `4ee7bd48482db16fd6757265d7d1f3decd352bd7`; the reusable Button is available
 on current main. This merge supplies a shared control, not macOS fixture or
@@ -244,7 +245,7 @@ macOS support claim.
   The first real-client attempt exposed that the visible name was published
   only as `AXDescription`; adding the AppKit AX title mapping resolved that
   lookup, and two retained-bundle runs passed before the later session-suspend
-  gate. On the final source, the bounded client did not observe an AXWindow
+  gate. On candidate `ff48b53`, the bounded client did not observe an AXWindow
   within 15 seconds. A test-only unique bundle ID and PID-to-bundle identity
   check were added; the client still saw only an AXApplication. CUA observed
   the Mac locked during this final attempt; this correlation does not establish
@@ -266,3 +267,34 @@ macOS support claim.
   an AXWindow; the post-unlock client and regular GUI/input/AX/pixel checks
   remain blocked or unrun. Whole-task Green is false and no PR has been
   published. Keep the issue open.
+- 2026-10-10: The two minor review findings are fixed in code commit
+  `4ab16de6dae5ad73712e3e69b639994e2135dc05`. Pinned local ActRun `run-2`
+  passed all five scoped stages/30 commands on that unchanged source: format,
+  contracts, 107 Python tests, all-target warning-denied check, four-target
+  Button/fixture tests, native Mac/semantics vectors, regular arm64 build,
+  native synthetic input/frame/lifecycle E2E and existing Mac smoke, AX adapter,
+  deliberate mutations, desktop-independent deadline and owned-child watchdog
+  probes. This is local Apple M4/macOS 26.5.2 (25F84), Xcode 26.6 (17F113),
+  SDK 26.5, Moon 0.1.20260920, Node 26.8.2 and ActRun 0.32.0; it is not the
+  hosted CI matrix or regular desktop qualification.
+- 2026-10-10: Independent `gpt-6.1-sol/xhigh` re-review completed three
+  passes/seven perspectives on `4ab16de`: approve, zero findings, both
+  previous minors resolved. Separate reviewer probes passed 35 numeric cases,
+  mock AX IPC deadline/failure paths and watchdog TERM-to-KILL, completion,
+  exited-PID and untouched-sentinel branches. The reviewer did not launch
+  desktop apps or a real AX client.
+- 2026-10-10: The final desktop inventory still explicitly reports the Mac
+  locked. Real-client AX and regular GUI keyboard/pointer/AX/pixels on the
+  repaired source are **UNRUN/BLOCKED**, not failed or Green. The previous
+  `ff48b53` AX discovery attempt completed FAIL; the cause remains unproved
+  and historical earlier passes do not qualify this final source. No push,
+  draft PR or public SHA exists for Stage B. The hourly task's state/memory
+  retain the source, evidence and blocker. Resume the same
+  `feat/20261010-macos-button-ax` branch and dedicated
+  `mac-button-ax-stage-b/gpui.mbt` worktree after manual unlock; do not pick a
+  new issue. Run `script/test_macos_button_ax.sh --all --target-dir <evidence>`
+  and the separate final regular-bundle OS input/pixel/lifecycle checks with
+  exact source/binary receipts. Correct any failures, revalidate and re-review
+  as needed, then refresh main/duplicate-work checks. Push/create a draft PR
+  only when all required gates pass and blocking findings are absent. The
+  issue stays in `issues/open`.
