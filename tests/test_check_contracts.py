@@ -737,5 +737,19 @@ class WorkflowContractTests(unittest.TestCase):
         )
 
 
+    def test_generated_interface_gate_requires_copying_moon_info_output(self) -> None:
+        workflow = ROOT / ".github/workflows/contracts.yml"
+        workflow_text = workflow.read_text(encoding="utf-8")
+        copy_command = "cp _build/native/debug/check/ubuntu/ubuntu.mbti ubuntu/pkg.generated.mbti"
+        self.assertIn(copy_command, workflow_text)
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "contracts.yml"
+            path.write_text(workflow_text.replace(copy_command + "\n", "", 1), encoding="utf-8")
+            errors = checker._validate_workflow(path)
+        self.assertIn(
+            f".github/workflows/contracts.yml: missing required command {copy_command!r}",
+            errors,
+        )
+
 if __name__ == "__main__":
     unittest.main()

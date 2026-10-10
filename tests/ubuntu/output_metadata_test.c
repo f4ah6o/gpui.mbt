@@ -239,12 +239,138 @@ static void test_global_remove_resets_slot_before_reuse(void) {
   assert(h.outputs[0].pending.mode_width == 0);
 }
 
+static void test_public_snapshot_readiness_copy_enter_remove_and_reuse(void) {
+  struct host h = new_host();
+  struct wl_output *first = fake_output(0x801);
+  struct wl_output *second = fake_output(0x802);
+  struct wl_output *replacement = fake_output(0x803);
+  struct wl_surface *surface = (struct wl_surface *)(uintptr_t)0x804;
+  h.token = 701;
+  h.owner = pthread_self();
+  h.window = 97;
+  active = &h;
+  init_output(&h.outputs[0], first, 71);
+  init_output(&h.outputs[1], second, 72);
+
+  double early[GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS] = {0};
+  double pending[GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS] = {0};
+  double committed[GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS] = {0};
+  double changed[GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS] = {0};
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, early,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) == 2);
+  assert(early[0] == 0 && early[1] == 0 && early[2] == 0);
+  assert(early[3] == 1 && early[11] == 0);
+  assert(early[GPUI_OUTPUT_INFO_FIELDS] == 0);
+
+  output_geometry(&h, first, 0, 0, 600, 340, 2, "Make", "Model",
+                  WL_OUTPUT_TRANSFORM_90);
+  output_mode(&h, first, WL_OUTPUT_MODE_PREFERRED, 3840, 2160, 60000);
+  output_scale(&h, first, 2);
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, pending,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) == 2);
+  assert(pending[0] == 0 && pending[1] == 0 && pending[2] == 0);
+  assert(pending[3] == 1 && pending[4] == 0 && pending[8] == 0);
+
+  output_mode(&h, first, WL_OUTPUT_MODE_CURRENT, 2560, 1440, 59940);
+  output_done(&h, first);
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, committed,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) == 2);
+  assert(committed[0] == 1 && committed[1] == 1 && committed[2] == 1);
+  assert(committed[3] == 2 && committed[4] == 600 && committed[5] == 340);
+  assert(committed[6] == 2 && committed[7] == WL_OUTPUT_TRANSFORM_90);
+  assert(committed[8] == 2560 && committed[9] == 1440);
+  assert(committed[10] == 59940 && committed[11] == 0);
+  assert(committed[GPUI_OUTPUT_INFO_FIELDS] == 0);
+  assert(committed[GPUI_OUTPUT_INFO_FIELDS + 3] == 1);
+  /* Earlier call-owned arrays remain unchanged after later native updates. */
+  assert(early[0] == 0 && early[3] == 1);
+  assert(pending[0] == 0 && pending[3] == 1);
+
+  surface_enter(&h, surface, first);
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, changed,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) == 2);
+  assert(changed[0] == 1 && changed[3] == 2 && changed[11] == 1);
+  surface_leave(&h, surface, first);
+  memset(changed, 0, sizeof(changed));
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, changed,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) == 2);
+  assert(changed[11] == 0);
+
+  output_scale(&h, first, 4);
+  memset(changed, 0, sizeof(changed));
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, changed,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) == 2);
+  assert(changed[3] == 2); /* pending scale is not public before done */
+  output_done(&h, first);
+  memset(changed, 0, sizeof(changed));
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, changed,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) == 2);
+  assert(changed[3] == 4);
+  assert(committed[3] == 2); /* copied data does not alias native state */
+
+  double untouched[GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS];
+  for (int i = 0; i < GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS; ++i)
+    untouched[i] = 99.0;
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, untouched,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS - 1) ==
+         -GPUI_INVALID);
+  for (int i = 0; i < GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS; ++i)
+    assert(untouched[i] == 99.0);
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, NULL,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) ==
+         -GPUI_INVALID);
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI + 1, h.token, changed,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) ==
+         -GPUI_UNSUPPORTED);
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token + 1, changed,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) ==
+         -GPUI_STALE);
+
+  global_remove(&h, NULL, 71);
+  memset(changed, 0, sizeof(changed));
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, changed,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) == 1);
+  assert(changed[0] == 0 && changed[3] == 1);
+  assert(changed[4] == 0 && changed[8] == 0);
+
+  init_output(&h.outputs[0], replacement, 73);
+  memset(changed, 0, sizeof(changed));
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, changed,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) == 2);
+  assert(changed[0] == 0 && changed[1] == 0 && changed[2] == 0);
+  assert(changed[3] == 1 && changed[4] == 0 && changed[8] == 0);
+  output_geometry(&h, replacement, 0, 0, 500, 300, 1, "New", "Display",
+                  WL_OUTPUT_TRANSFORM_NORMAL);
+  output_mode(&h, replacement, WL_OUTPUT_MODE_CURRENT, 1920, 1080, 60000);
+  output_done(&h, replacement);
+  memset(changed, 0, sizeof(changed));
+  assert(gpui_output_snapshot_v1(
+             GPUI_OUTPUT_SNAPSHOT_ABI, h.token, changed,
+             GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS) == 2);
+  assert(changed[0] == 1 && changed[4] == 500 && changed[8] == 1920);
+  active = NULL;
+}
+
 int main(void) {
   test_batch_is_invisible_until_done_and_commits_together();
   test_scale_event_precedes_following_input_and_frame();
   test_callback_permutations_and_unknown_proxy();
   test_enter_leave_uses_only_committed_scale();
   test_global_remove_resets_slot_before_reuse();
+  test_public_snapshot_readiness_copy_enter_remove_and_reuse();
   puts("Ubuntu output metadata tests passed");
   return 0;
 }

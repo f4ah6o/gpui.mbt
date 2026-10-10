@@ -38,6 +38,11 @@ jobs:
           sh scripts/prepare_ubuntu.sh
       - name: Show pinned toolchain
         run: moon version --all
+      - name: Verify generated Ubuntu public interface
+        run: |
+          moon info --target native --package f4ah6o/gpui/ubuntu
+          cp _build/native/debug/check/ubuntu/ubuntu.mbti ubuntu/pkg.generated.mbti
+          git diff --exit-code -- ubuntu/pkg.generated.mbti
       - name: Check formatting
         run: moon fmt --check
       - name: Check all targets with warnings denied
