@@ -40,6 +40,8 @@ jobs:
         run: moon version --all
       - name: Generate Ubuntu public interface snapshot
         run: moon info --target native --package f4ah6o/gpui/ubuntu
+      - name: Copy generated Ubuntu public interface snapshot
+        run: cp _build/native/debug/check/ubuntu/ubuntu.mbti ubuntu/pkg.generated.mbti
       - name: Upload generated Ubuntu interface candidate
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

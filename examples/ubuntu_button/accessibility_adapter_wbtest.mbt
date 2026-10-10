@@ -43,7 +43,8 @@ test "Ubuntu button adapter resolves live Invoke and retains the new demo" {
     let loading_snapshot = session.publish(loading_demo).unwrap()
     assert_true(ubuntu_button_accessibility_token(loading_snapshot) == button)
     assert_true(
-      session.invoke(button) is Err(ProjectionError(@native.ActionRejected(@accessibility.Loading))),
+      session.invoke(button)
+      is Err(ProjectionError(@native.ActionRejected(@accessibility.Loading))),
     )
     let ready_demo = session
       .current_demo()

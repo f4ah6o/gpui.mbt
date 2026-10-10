@@ -798,6 +798,7 @@ def _validate_workflow(path: Path) -> list[str]:
         "python3 scripts/check_contracts.py",
         "moon version --all",
         "moon info --target native --package f4ah6o/gpui/ubuntu",
+        "cp _build/native/debug/check/ubuntu/ubuntu.mbti ubuntu/pkg.generated.mbti",
         "git diff --exit-code -- ubuntu/pkg.generated.mbti",
         "moon fmt --check",
         "moon check --target all --deny-warn",
