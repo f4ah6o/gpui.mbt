@@ -63,6 +63,18 @@ pub fn Host::next_event(
         },
       )
     }
+    16 =>
+      match
+        decode_scroll_event(
+          number(1),
+          number(2),
+          number(3),
+          number(4),
+          modifiers,
+        ) {
+        Ok(kind) => kind
+        Err(error) => return Err(error)
+      }
     12 => @platform.CloseRequested
     13 => @platform.Destroyed
     14 => @platform.Wake
@@ -77,6 +89,27 @@ pub fn Host::next_event(
       kind,
     }),
   )
+}
+
+///|
+/// Decodes AppKit scroll-wheel values without imposing a cross-platform unit
+/// conversion. Precise deltas are points; non-precise deltas are lines/rows.
+fn decode_scroll_event(
+  x : Double,
+  y : Double,
+  delta_x : Double,
+  delta_y : Double,
+  modifiers : @primitives.Modifiers,
+) -> Result[@platform.EventKind, @diagnostics.FrameworkError] {
+  let position = match @primitives.Point::new(x, y) {
+    Ok(value) => value
+    Err(_) => return Err(error(@diagnostics.InvalidInput, "next_event"))
+  }
+  let delta = match @primitives.Point::new(delta_x, delta_y) {
+    Ok(value) => value
+    Err(_) => return Err(error(@diagnostics.InvalidInput, "next_event"))
+  }
+  Ok(@platform.Input(@primitives.Scroll(position~, delta~, modifiers~)))
 }
 
 ///|

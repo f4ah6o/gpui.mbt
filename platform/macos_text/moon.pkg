@@ -12,9 +12,7 @@ options(
   "native-stub": [ "core_text.c" ],
   link: {
     "native": {
-      "cc": "script/macos_text_cc.py",
       "cc-flags": "-O2 -std=c11 -Wall -Wextra",
-      "stub-cc": "script/macos_text_cc.py",
       "stub-cc-flags": "-std=c11 -Wall -Wextra",
     },
   },

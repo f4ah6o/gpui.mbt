@@ -1,4 +1,5 @@
 #include "abi.h"
+#include "accessibility_abi.h"
 #ifdef __APPLE__
 #include <dlfcn.h>
 #include <stdlib.h>
@@ -38,6 +39,29 @@ int32_t gpui_call(int32_t op, int64_t token, double x, double y, const uint8_t *
   int status = load();
   return status ? status : api->call(op, token, x, y, bytes, length);
 }
+int32_t gpui_macos_ax_publish(int64_t window, int64_t binding,
+                              const uint8_t *bytes, int32_t length,
+                              int64_t *output) {
+  int status = load();
+  if (status) return status;
+  int32_t (*publish)(int64_t, int64_t, const uint8_t *, int32_t, int64_t *) =
+      dlsym(library, "gpui_macos_ax_publish_v1");
+  return publish ? publish(window, binding, bytes, length, output) : 9;
+}
+int32_t gpui_macos_ax_revoke(int64_t window, int64_t binding) {
+  int status = load();
+  if (status) return status;
+  int32_t (*revoke)(int64_t, int64_t) =
+      dlsym(library, "gpui_macos_ax_revoke_v1");
+  return revoke ? revoke(window, binding) : 9;
+}
+int32_t gpui_macos_ax_take_request(int64_t window, int64_t *output) {
+  int status = load();
+  if (status) return status;
+  int32_t (*take)(int64_t, int64_t *) =
+      dlsym(library, "gpui_macos_ax_take_request_v1");
+  return take ? take(window, output) : 9;
+}
 int64_t gpui_integer(int32_t field) { return api && pthread_main_np() ? api->integer(field) : 0; }
 double gpui_number(int32_t field) { return api && pthread_main_np() ? api->number(field) : 0; }
 int32_t gpui_macos_frame_metrics(int64_t window, double *output) {
@@ -70,6 +94,18 @@ int32_t gpui_call(int32_t op, int64_t token, double x, double y, const uint8_t *
 }
 int64_t gpui_integer(int32_t field) { (void)field; return 0; }
 double gpui_number(int32_t field) { (void)field; return 0; }
+int32_t gpui_macos_ax_publish(int64_t window, int64_t binding,
+                              const uint8_t *bytes, int32_t length,
+                              int64_t *output) {
+  (void)window; (void)binding; (void)bytes; (void)length; (void)output;
+  return 9;
+}
+int32_t gpui_macos_ax_revoke(int64_t window, int64_t binding) {
+  (void)window; (void)binding; return 9;
+}
+int32_t gpui_macos_ax_take_request(int64_t window, int64_t *output) {
+  (void)window; (void)output; return 9;
+}
 int32_t gpui_macos_frame_metrics(int64_t window, double *output) { (void)window; (void)output; return 9; }
 int32_t gpui_macos_frame_copy(int64_t window, uint8_t *output, int32_t capacity) { (void)window; (void)output; (void)capacity; return 9; }
 int32_t gpui_macos_test_post_click(int64_t window, double x, double y) { (void)window; (void)x; (void)y; return 9; }

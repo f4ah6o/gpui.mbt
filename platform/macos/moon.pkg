@@ -5,6 +5,7 @@ import {
   "f4ah6o/gpui/scene",
   "f4ah6o/gpui/platform/testing",
   "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/json",
 }
 
 options(

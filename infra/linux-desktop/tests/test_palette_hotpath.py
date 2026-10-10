@@ -23,7 +23,7 @@ class PaletteHotpathTests(unittest.TestCase):
         self.assertIn("hardware input-to-display latency", profile.EXCLUDED)
 
     def test_fixture_uses_reusable_painter_and_no_input_content_metrics(self):
-        text = (palette.profile.WORKLOAD / "main.mbt").read_text()
+        text = (palette.profile.WORKLOAD / "main.mbt").read_text(encoding="utf-8")
         self.assertIn(".paint_items(", text)
         self.assertIn("install_field_at", text)
         self.assertIn("SceneSnapshot::new", text)

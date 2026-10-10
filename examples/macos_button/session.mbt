@@ -7,6 +7,7 @@ struct MacButtonSession {
   height : Double
   scale : Double
   presentable : Bool
+  accessibility_binding : MacButtonAXBinding?
 }
 
 ///|
@@ -47,7 +48,15 @@ fn MacButtonSession::new(
     return Err(InvalidMetrics)
   }
   match @fixture.ButtonDemo::new(width, height) {
-    Ok(demo) => Ok({ demo, width, height, scale, presentable: true, })
+    Ok(demo) =>
+      Ok({
+        demo,
+        width,
+        height,
+        scale,
+        presentable: true,
+        accessibility_binding: None,
+      })
     Err(_) => Err(FixtureFailure)
   }
 }
@@ -79,7 +88,14 @@ fn MacButtonSession::sync_metrics(
     height <= 0.0 ||
     !mac_button_valid_scale(scale) {
     return (
-      { demo: self.demo.blur(), width, height, scale, presentable: false, },
+      {
+        demo: self.demo.blur(),
+        width,
+        height,
+        scale,
+        presentable: false,
+        accessibility_binding: self.accessibility_binding,
+      },
       false,
     )
   }
@@ -93,10 +109,28 @@ fn MacButtonSession::sync_metrics(
     return ({ ..self, scale, }, true)
   }
   match self.demo.resize(width, height) {
-    Ok(demo) => ({ demo, width, height, scale, presentable: true, }, true)
+    Ok(demo) =>
+      (
+        {
+          demo,
+          width,
+          height,
+          scale,
+          presentable: true,
+          accessibility_binding: self.accessibility_binding,
+        },
+        true,
+      )
     Err(_) =>
       (
-        { demo: self.demo.blur(), width, height, scale, presentable: false, },
+        {
+          demo: self.demo.blur(),
+          width,
+          height,
+          scale,
+          presentable: false,
+          accessibility_binding: self.accessibility_binding,
+        },
         false,
       )
   }

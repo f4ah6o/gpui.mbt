@@ -367,6 +367,42 @@ fn mac_button_is_escape(kind : @platform.EventKind) -> Bool {
 }
 
 ///|
+/// Drain no more than the native adapter's fixed 64-request queue capacity.
+/// Each transport token is resolved to the retained full ActionRequest and
+/// dispatched before the next token is taken.
+fn mac_button_consume_accessibility_requests(
+  host : @macos.Host,
+  window : @platform.WindowId,
+  session : MacButtonSession,
+) -> Result[(MacButtonSession, Bool), @diagnostics.FrameworkError] {
+  let mut next_session = session
+  let mut repaint = false
+  let mut drained = false
+  let mut consumed = 0
+  while consumed < 64 && !drained {
+    match host.take_button_accessibility_request(window) {
+      Err(error) => return Err(error)
+      Ok(None) => drained = true
+      Ok(Some(token)) => {
+        consumed += 1
+        let (after_dispatch, accepted) = next_session.dispatch_accessibility_token(
+          token,
+        )
+        next_session = after_dispatch
+        if accepted {
+          repaint = true
+          next_session = match next_session.sync_accessibility(host, window) {
+            Ok(value) => value
+            Err(error) => return Err(error)
+          }
+        }
+      }
+    }
+  }
+  Ok((next_session, repaint))
+}
+
+///|
 fn run(
   host : @macos.Host,
   e2e : Bool,
@@ -384,7 +420,10 @@ fn run(
     Err(error) => return Err(error)
   }
   let mut window = initial_window
-  let mut session = initial_session
+  let mut session = match initial_session.sync_accessibility(host, window) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
   let mut done = false
   let mut ticks = 0
   let mut last_sequence : Int64 = 0
@@ -403,7 +442,48 @@ fn run(
         last_error = Some(error)
         done = true
       }
-      Ok(None) => ()
+      Ok(None) => {
+        session = match session.sync_accessibility(host, window) {
+          Ok(value) => value
+          Err(error) => {
+            last_error = Some(error)
+            done = true
+            session
+          }
+        }
+        if !done {
+          match
+            mac_button_consume_accessibility_requests(host, window, session) {
+            Err(error) => {
+              last_error = Some(error)
+              done = true
+            }
+            Ok((next_session, repaint)) => {
+              session = next_session
+              dirty = dirty || repaint
+            }
+          }
+        }
+        if !e2e && !done && dirty && session.is_presentable() {
+          let snapshot = match session.scene() {
+            Ok(value) => value
+            Err(error) =>
+              return Err(mac_button_session_failure("button_scene", error))
+          }
+          match host.present(window, snapshot) {
+            Err(error) => {
+              last_error = Some(error)
+              done = true
+            }
+            Ok(_) => {
+              dirty = false
+              println(
+                "macOS Button: activations=\{session.demo().activations()} enabled=\{session.demo().button().is_enabled()} loading=\{session.demo().button().is_loading()} focused=\{session.demo().button().is_focused()} hovered=\{session.demo().button().is_hovered()} pressed=\{session.demo().button().is_pressed()}",
+              )
+            }
+          }
+        }
+      }
       Ok(Some(event)) => {
         let event_window = event.window()
         let kind = event.kind()
@@ -447,6 +527,14 @@ fn run(
             } else {
               match kind {
                 @platform.CloseRequested => {
+                  session = match session.revoke_accessibility(host, window) {
+                    Ok(value) => value
+                    Err(error) => {
+                      last_error = Some(error)
+                      done = true
+                      session
+                    }
+                  }
                   match host.destroy_window(window) {
                     Ok(_) =>
                       if e2e && e2e_stage == 3 {
@@ -483,7 +571,15 @@ fn run(
                   } else {
                     done = true
                   }
-                @platform.ExitRequested =>
+                @platform.ExitRequested => {
+                  session = match session.revoke_accessibility(host, window) {
+                    Ok(value) => value
+                    Err(error) => {
+                      last_error = Some(error)
+                      done = true
+                      session
+                    }
+                  }
                   match host.destroy_window(window) {
                     Ok(_) => done = false
                     Err(error) => {
@@ -491,6 +587,7 @@ fn run(
                       done = true
                     }
                   }
+                }
                 _ => ()
               }
             }
@@ -505,6 +602,31 @@ fn run(
                   let (next_session, repaint) = session.sync_metrics(
                     width, height, scale,
                   )
+                  session = next_session
+                  dirty = dirty || repaint
+                }
+              }
+            }
+
+            if !done {
+              session = match session.sync_accessibility(host, window) {
+                Ok(value) => value
+                Err(error) => {
+                  last_error = Some(error)
+                  done = true
+                  session
+                }
+              }
+            }
+
+            if !done {
+              match
+                mac_button_consume_accessibility_requests(host, window, session) {
+                Err(error) => {
+                  last_error = Some(error)
+                  done = true
+                }
+                Ok((next_session, repaint)) => {
                   session = next_session
                   dirty = dirty || repaint
                 }
@@ -632,6 +754,14 @@ fn run(
             }
           }
         } else if kind is @platform.ExitRequested {
+          session = match session.revoke_accessibility(host, window) {
+            Ok(value) => value
+            Err(error) => {
+              last_error = Some(error)
+              done = true
+              session
+            }
+          }
           match host.destroy_window(window) {
             Ok(_) => done = false
             Err(error) => {

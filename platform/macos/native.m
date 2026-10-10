@@ -33,14 +33,25 @@ static NSUInteger frame_width, frame_height, frame_stride;
 static int64_t frame_window_token;
 static double frame_scale;
 static double test_scale_override;
+static NSPasteboard *test_clipboard;
 #endif
-static void emit(GPWindow *w, int kind, double x, double y, int mods, int code, int repeat) {
+static void append_event(GPWindow *w, int kind, double x, double y, int mods,
+                         int code, int repeat, double width, double height) {
   if (w.closing && kind != 13) return;
   if (events.count >= 4096) { overflow = YES; return; }
   int64_t sequence = w ? ++w.sequence : 0;
   [events addObject:@{@"kind":@(kind), @"token":@(w ? w.token : 0), @"seq":@(sequence),
     @"scale":@(w ? w.scale : 1), @"x":@(x), @"y":@(y), @"mods":@(mods), @"code":@(code), @"repeat":@(repeat),
-    @"width":@(w ? w.window.contentView.bounds.size.width : 0), @"height":@(w ? w.window.contentView.bounds.size.height : 0)}];
+    @"width":@(width), @"height":@(height)}];
+}
+static void emit(GPWindow *w, int kind, double x, double y, int mods, int code, int repeat) {
+  append_event(w, kind, x, y, mods, code, repeat,
+      w ? w.window.contentView.bounds.size.width : 0,
+      w ? w.window.contentView.bounds.size.height : 0);
+}
+static void emit_scroll(GPWindow *w, double x, double y, double delta_x,
+                        double delta_y, int mods) {
+  append_event(w, 16, x, y, mods, 0, 0, delta_x, delta_y);
 }
 static void resize_surface(GPWindow *w) {
   double scale = w.window.backingScaleFactor;
@@ -93,6 +104,14 @@ static int modifiers(NSEvent *event) {
 - (void)mouseUp:(NSEvent *)e { [self pointer:e kind:9]; }
 - (void)rightMouseUp:(NSEvent *)e { [self pointer:e kind:9]; }
 - (void)otherMouseUp:(NSEvent *)e { [self pointer:e kind:9]; }
+- (void)scrollWheel:(NSEvent *)e {
+  GPWindow *owner = self.owner;
+  if (!owner || owner.closing) return;
+  resize_surface(owner);
+  NSPoint p = [self convertPoint:e.locationInWindow fromView:nil];
+  emit_scroll(owner, p.x, p.y, e.scrollingDeltaX, e.scrollingDeltaY,
+              modifiers(e));
+}
 - (void)keyDown:(NSEvent *)e { [self key:e kind:10]; }
 - (void)keyUp:(NSEvent *)e { [self key:e kind:11]; }
 - (void)key:(NSEvent *)e kind:(int)kind {
@@ -118,6 +137,12 @@ static int modifiers(NSEvent *event) {
 }
 @end
 static GPApplicationDelegate *app_delegate;
+static NSPasteboard *clipboard_pasteboard(void) {
+#ifdef GPUI_TESTING
+  if (test_clipboard) return test_clipboard;
+#endif
+  return NSPasteboard.generalPasteboard;
+}
 static void destroy(GPWindow *w) {
   w.closing = YES;
   // Drop queued callbacks for this generation before the terminal notification.
@@ -437,6 +462,9 @@ static int32_t native_call(int32_t op, int64_t token, double x, double y, const 
       if (!state) return 0;
       for (GPWindow *w in windows.allValues) destroy(w);
       events=nil; current=nil; text_result=nil; windows=nil; white_mask_texture=nil; pipeline=nil; queue=nil; device=nil;
+#ifdef GPUI_TESTING
+      [test_clipboard releaseGlobally]; test_clipboard=nil;
+#endif
       NSApp.delegate=nil; app_delegate=nil; state=0;
       return 0;
     }
@@ -489,15 +517,16 @@ static int32_t native_call(int32_t op, int64_t token, double x, double y, const 
     }
     if (op == 13) {
       current=nil;
-      NSString *text = [NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString] ?: @"";
+      NSString *text = [clipboard_pasteboard() stringForType:NSPasteboardTypeString] ?: @"";
       text_result = [text dataUsingEncoding:NSUTF8StringEncoding];
       return text_result.length <= 16*1024*1024 ? 0 : 13;
     }
     if (op == 14) {
       NSString *text = [[NSString alloc] initWithBytes:bytes length:len encoding:NSUTF8StringEncoding];
       if (!text) return 17;
-      [NSPasteboard.generalPasteboard clearContents];
-      return [NSPasteboard.generalPasteboard setString:text forType:NSPasteboardTypeString] ? 0 : 12;
+      NSPasteboard *pasteboard = clipboard_pasteboard();
+      [pasteboard clearContents];
+      return [pasteboard setString:text forType:NSPasteboardTypeString] ? 0 : 12;
     }
     if (op == 11) { if (state == 1) { state=2; emit(nil,15,0,0,0,0,0); } return 0; }
     GPWindow *w=windows[@(token)];
