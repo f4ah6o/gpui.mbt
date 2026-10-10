@@ -43,9 +43,50 @@ jobs:
           pkg-config --modversion pangoft2 fontconfig
           moon version --all
       - name: Native E2E and recovery-to-first-frame timing diagnostic
+        id: native-e2e-timing
         env:
           GPUI_BENCH_RUNNER_CLASS: ubuntu-24.04-github-hosted
         run: python3 scripts/benchmark_ubuntu.py --output _build/ubuntu-bench/report.json
+
+      # Keep the existing benchmark result authoritative. Only after that step
+      # fails, run one isolated, line-buffered E2E pass with numeric stage tracing enabled.
+      - name: Capture bounded first-frame trace after E2E failure
+        if: ${{ failure() && steps.native-e2e-timing.outcome == 'failure' }}
+        env:
+          GPUI_UBUNTU_E2E_STAGE_TRACE: "1"
+        run: |
+          workspace="$PWD"
+          diagnostic_worktree="$RUNNER_TEMP/gpui-first-frame-trace-worktree"
+          diagnostic_stdout="$RUNNER_TEMP/gpui-first-frame-trace.stdout"
+          diagnostic_stderr="$RUNNER_TEMP/gpui-first-frame-trace.stderr"
+          mkdir -p "$workspace/_build/ubuntu-e2e"
+          cleanup() {
+            git -C "$workspace" worktree remove --force "$diagnostic_worktree" >/dev/null 2>&1 || true
+            rm -f "$diagnostic_stdout" "$diagnostic_stderr"
+          }
+          trap cleanup EXIT
+          git -C "$workspace" worktree add --quiet --detach "$diagnostic_worktree" HEAD
+          set +e
+          (cd "$diagnostic_worktree" && stdbuf -oL sh scripts/test_ubuntu.sh) \
+            >"$diagnostic_stdout" 2>"$diagnostic_stderr"
+          diagnostic_exit=$?
+          set -e
+          awk '
+            /^GPUI_UBUNTU_E2E_STAGE stage=[0-9]+ iteration=[0-9]+ scale=[0-9]+([.][0-9]+)? generation=[0-9]+$/ {
+              if (count < 3984) print
+              count++
+            }
+            END {
+              printf "records=%d\n", count
+              if (count > 3984) print "truncated=true"
+            }
+          ' "$diagnostic_stdout" > "$workspace/_build/ubuntu-e2e/first-frame-stage-trace.log"
+          printf 'test_ubuntu_exit=%d\n' "$diagnostic_exit" \
+            > "$workspace/_build/ubuntu-e2e/first-frame-stage-trace.status"
+          printf 'test_ubuntu_exit=%d\n' "$diagnostic_exit"
+          cat "$workspace/_build/ubuntu-e2e/first-frame-stage-trace.log"
+          cleanup
+          trap - EXIT
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
