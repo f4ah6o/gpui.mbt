@@ -23,6 +23,7 @@ Run the Windows matrix from x64 PowerShell with the pinned MoonBit
 pwsh -NoProfile -File scripts/test_windows.ps1 -PortableOnly
 pwsh -NoProfile -File scripts/test_windows.ps1
 pwsh -NoProfile -File scripts/run_windows_button_e2e.ps1
+pwsh -NoProfile -File scripts/run_windows_button_e2e.ps1 -TestCleanupFailure
 ```
 
 The portable command checks the Win32 package and shared Button model tests.
@@ -54,7 +55,10 @@ HWND. Physical keyboard/pointer interaction and GUI close/reopen are therefore
 `UNRUN`; the runner does not substitute posted messages or model tests for
 physical input. `scripts/run_windows_button_e2e.ps1` preserves that status in
 `result.json` and can be rerun from an interactive session with access to the
-Default input desktop. The six Windows session adapter tests and 16 shared
+Default input desktop. `-TestCleanupFailure` runs a deterministic child-process
+self-test that exits nonzero and writes stderr; it checks that cleanup records
+the exit code and error text, without launching the Button window or attempting
+input. The six Windows session adapter tests and 16 shared
 Button fixture tests cover model-level repeat suppression, activation counts,
 enabled/loading/reset transitions, semantic snapshot freshness, close/blur,
 resize cancellation and stale releases. They do not qualify physical input or

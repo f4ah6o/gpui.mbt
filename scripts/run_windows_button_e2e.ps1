@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
   [string]$OutputDirectory,
-  [ValidateRange(5, 120)][int]$TimeoutSeconds = 20
+  [ValidateRange(5, 120)][int]$TimeoutSeconds = 20,
+  [switch]$TestCleanupFailure
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,6 +49,7 @@ $script:result = [ordered]@{
   processes = @()
   inputs = @()
   checkpoints = @()
+  cleanup_failures = @()
   limitation = "UI Automation transport is unsupported; evidence covers the shared headless semantic snapshot, SendInput delivery, D3D11 completed-frame readback and same-process lifecycle only."
   failure = $null
 }
@@ -183,6 +185,8 @@ function Start-ButtonProcess {
     dpi = $null
     stdout = $stdout
     stderr = $stderr
+    exit_code = $null
+    stderr_text = $null
   }
   Save-Result
   Wait-Window $owner
@@ -274,7 +278,30 @@ function Close-ButtonProcess {
   $Owner.process.Refresh()
   if (-not $Owner.process.HasExited) { throw "Owned Button process $($Owner.pid) did not exit during bounded cleanup." }
   $processEvidence = $script:result.processes | Where-Object { $_.pid -eq $Owner.pid } | Select-Object -First 1
-  if ($null -ne $processEvidence) { $processEvidence.exit_code = $Owner.process.ExitCode }
+  $exitCode = [int]$Owner.process.ExitCode
+  $stderrText = if (Test-Path -LiteralPath $Owner.stderr) {
+    [IO.File]::ReadAllText($Owner.stderr)
+  } else { "" }
+  if ($null -ne $processEvidence) {
+    $processEvidence.exit_code = $exitCode
+    $processEvidence.stderr_text = $stderrText
+  }
+  if ($exitCode -ne 0) {
+    $priorFailure = $script:result.cleanup_failures |
+      Where-Object { $_.pid -eq $Owner.pid -and $_.exit_code -eq $exitCode } |
+      Select-Object -First 1
+    if ($null -eq $priorFailure) {
+      $script:result.cleanup_failures += [ordered]@{
+        name = $Owner.name
+        pid = $Owner.pid
+        exit_code = $exitCode
+        stderr = $stderrText
+        at_utc = [DateTime]::UtcNow.ToString("o")
+      }
+    }
+    Save-Result
+    throw "Owned Button process $($Owner.pid) failed during close with exit code $exitCode. stderr: $stderrText"
+  }
   Save-Result
 }
 
@@ -299,6 +326,59 @@ function Initialize-Msvc {
 }
 
 try {
+  if ($TestCleanupFailure) {
+    $stdout = Join-Path $runDir "cleanup-failure.stdout.log"
+    $stderr = Join-Path $runDir "cleanup-failure.stderr.log"
+    $childScript = Join-Path $runDir "cleanup-failure-exit-7.cmd"
+    $childContents = "@echo off`r`necho cleanup_failure_fixture 1>&2`r`nexit /b 7`r`n"
+    [IO.File]::WriteAllText($childScript, $childContents, [Text.Encoding]::ASCII)
+    $process = Start-Process -FilePath $env:ComSpec -ArgumentList "/d /c `"$childScript`"" -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $process.Refresh()
+    $owner = [pscustomobject]@{
+      name = "cleanup-failure-fixture"
+      pid = [int]$process.Id
+      start_ticks = [long]$process.StartTime.ToUniversalTime().Ticks
+      hwnd = 0L
+      stdout = $stdout
+      stderr = $stderr
+      process = $process
+    }
+    $script:owners.Add($owner)
+    $script:result.processes += [ordered]@{
+      name = $owner.name
+      pid = $owner.pid
+      start_time_utc = $process.StartTime.ToUniversalTime().ToString("o")
+      hwnd = $null
+      window_class = $null
+      dpi = $null
+      stdout = $stdout
+      stderr = $stderr
+      exit_code = $null
+      stderr_text = $null
+    }
+    Save-Result
+    $caught = $false
+    try { Close-ButtonProcess $owner } catch {
+      $caught = $_.Exception.Message.Contains("exit code 7")
+    }
+    $processEvidence = $script:result.processes | Where-Object { $_.pid -eq $owner.pid } | Select-Object -First 1
+    if (-not $caught -or
+        $null -eq $processEvidence -or
+        $processEvidence.exit_code -ne 7 -or
+        $processEvidence.stderr_text -notmatch "cleanup_failure_fixture" -or
+        $script:result.cleanup_failures.Count -ne 1) {
+      throw "Nonzero child cleanup regression was not captured with its exit code and stderr."
+    }
+    [void]$script:owners.Remove($owner)
+    $script:result.limitation = "Cleanup failure self-test only. No interactive desktop, native input, Button pixel, or GUI lifecycle acceptance was attempted."
+    $script:result.status = "SELF_TEST_PASS"
+    Add-Checkpoint "cleanup_failure_regression" "PASS" ([ordered]@{
+      child_exit_code = $processEvidence.exit_code
+      stderr_captured = $processEvidence.stderr_text
+      failure_recorded = $script:result.cleanup_failures[0]
+    })
+    return
+  }
   if (-not (Test-Path -LiteralPath $moon)) {
     $moonCommand = Get-Command moon.exe -ErrorAction SilentlyContinue
     if ($null -eq $moonCommand) { throw "Pinned MoonBit executable not found: $moon" }
