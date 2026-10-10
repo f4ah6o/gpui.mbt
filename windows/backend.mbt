@@ -125,11 +125,19 @@ extern "C" fn native_cursor(host : Int, cursor : Int) -> Int = "gpui_windows_cur
 
 ///|
 #borrow(output)
-extern "C" fn native_clipboard_read(
+extern "C" fn native_clipboard_read_size(
   host : Int,
   output : Bytes,
   capacity : Int,
-) -> Int = "gpui_windows_clipboard_read"
+) -> Int = "gpui_windows_clipboard_read_size"
+
+///|
+#borrow(output)
+extern "C" fn native_clipboard_read_data(
+  host : Int,
+  output : Bytes,
+  capacity : Int,
+) -> Int = "gpui_windows_clipboard_read_data"
 
 ///|
 #borrow(text)
@@ -138,6 +146,14 @@ extern "C" fn native_clipboard_write(
   text : Bytes,
   length : Int,
 ) -> Int = "gpui_windows_clipboard_write"
+
+///|
+#borrow(rgba)
+extern "C" fn native_readback_samples(
+  host : Int,
+  window : Int,
+  rgba : FixedArray[Double],
+) -> Int = "gpui_windows_readback"
 
 ///|
 fn backend_error(
@@ -801,7 +817,7 @@ pub fn Host::read_clipboard(
   self : Host,
 ) -> Result[String, @diagnostics.FrameworkError] {
   let empty = b""
-  let size = native_clipboard_read(self.token, empty, 0)
+  let size = native_clipboard_read_size(self.token, empty, 0)
   if size < 0 {
     return Err(backend_error(-size, "read_clipboard"))
   }
@@ -810,7 +826,7 @@ pub fn Host::read_clipboard(
   }
   let zero : Int = 0
   let output = Bytes::makei(size, _ => zero.to_byte())
-  let result = native_clipboard_read(self.token, output, size)
+  let result = native_clipboard_read_data(self.token, output, size)
   if result < 0 {
     return Err(backend_error(-result, "read_clipboard"))
   }
@@ -834,6 +850,32 @@ pub fn Host::write_clipboard(
     native_clipboard_write(self.token, bytes, bytes.length()),
     "write_clipboard",
   )
+}
+
+///|
+/// Read the opt-in native D3D11 staging samples from the most recent present.
+/// The returned 12 values are RGBA for pixels (1,1), (width/4,height/3), and
+/// (width-2,height-2), in that order. Enable GPUI_WINDOWS_READBACK=1 before
+/// starting the host. Call after the corresponding FrameCompleted event.
+pub fn Host::readback_samples(
+  self : Host,
+  window : @platform.WindowId,
+) -> Result[Array[Double], @diagnostics.FrameworkError] {
+  let values = FixedArray::make(12, 0.0)
+  match
+    outcome(
+      native_readback_samples(self.token, window.value().to_int(), values),
+      "readback_samples",
+    ) {
+    Err(error) => Err(error)
+    Ok(_) => {
+      let output : Array[Double] = []
+      for value in values {
+        output.push(value)
+      }
+      Ok(output)
+    }
+  }
 }
 
 ///|

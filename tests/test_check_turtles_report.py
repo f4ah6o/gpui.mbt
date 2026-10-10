@@ -347,13 +347,13 @@ class TurtlesReportAuditTests(unittest.TestCase):
             config_path = Path(temporary) / "capability.toml"
             config = ('include = ["capability/"]\n'
                       'operators = ["comparison", "boolean", "arithmetic", "literal", "condition"]\n')
-            config_path.write_text(config)
+            config_path.write_bytes(config.encode("utf-8"))
             report = valid_report()
             report["files"]["turtles.toml"] = checker._fnv1a64_hex(config.encode())
             checker.validate_scope_configuration(config_path, report, "capability/")
             with self.assertRaisesRegex(ValueError, "include"):
                 checker.validate_scope_configuration(config_path, report, "mcp/")
-            config_path.write_text(config + 'exclude = ["registry.mbt"]\n')
+            config_path.write_bytes((config + 'exclude = ["registry.mbt"]\n').encode("utf-8"))
             report["files"]["turtles.toml"] = checker._fnv1a64_hex(config_path.read_bytes())
             with self.assertRaisesRegex(ValueError, "only include and operators"):
                 checker.validate_scope_configuration(config_path, report, "capability/")
