@@ -80,6 +80,7 @@ pub fn Host::create_window(Self, Int, Int, String) -> Result[@platform.WindowId,
 pub fn Host::destroy_window(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::direct_keyboard_text_epoch(Self, @platform.WindowId) -> Result[Int, @diagnostics.FrameworkError]
 pub fn Host::dispatch(Self, Int) -> Result[Array[@platform.Event], @diagnostics.FrameworkError]
+pub fn Host::display_snapshot(Self) -> Result[Array[OutputInfo], @diagnostics.FrameworkError]
 pub fn Host::end_text_session(Self, @platform.WindowId, Int) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::frame_metrics(Self, @platform.WindowId) -> Result[(Int, Int, Double), @diagnostics.FrameworkError]
 pub fn Host::next_editor_event(Self, timeout_ms? : Int) -> Result[EditorEvent?, @diagnostics.FrameworkError]
@@ -113,6 +114,23 @@ pub(all) enum HostState {
 } derive(Eq)
 pub fn HostState::equal(Self, Self) -> Bool
 pub fn HostState::not_equal(Self, Self) -> Bool
+
+pub(all) struct OutputInfo {
+  is_ready : Bool
+  has_geometry : Bool
+  has_current_mode : Bool
+  scale : Int
+  physical_width_mm : Int
+  physical_height_mm : Int
+  subpixel : Int
+  transform : Int
+  mode_width_px : Int
+  mode_height_px : Int
+  refresh_millihz : Int
+  is_entered : Bool
+} derive(Eq)
+pub fn OutputInfo::equal(Self, Self) -> Bool
+pub fn OutputInfo::not_equal(Self, Self) -> Bool
 
 pub(all) struct TextSessionDeletion {
   index_bytes : Int

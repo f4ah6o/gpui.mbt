@@ -28,7 +28,7 @@
 #include <xkbcommon/xkbcommon-compose.h>
 
 #define QUEUE_CAPACITY 1024
-#define OUTPUT_CAPACITY 16
+#define OUTPUT_CAPACITY GPUI_OUTPUT_CAPACITY
 #define CLIPBOARD_LIMIT (16 * 1024 * 1024)
 #define CLIPBOARD_TIMEOUT_MS 3000
 #define SOURCE_TRANSFER_CAPACITY 8
@@ -49,6 +49,7 @@ struct source_transfer {
 };
 struct output_metadata {
   int32_t x, y, physical_width, physical_height, subpixel, transform;
+  int32_t geometry_valid;
   uint32_t mode_flags;
   int32_t mode_width, mode_height, mode_refresh;
   int32_t scale;
@@ -57,7 +58,7 @@ struct output {
   struct wl_output *proxy;
   uint32_t name;
   struct output_metadata committed, pending;
-  int entered;
+  int entered, ready;
 };
 struct direct_event_meta {
   int epoch, direct_origin, text_length, revoked;
@@ -990,6 +991,7 @@ static void output_geometry(void *d, struct wl_output *o, int32_t x, int32_t y,
   output->pending.physical_height = ph;
   output->pending.subpixel = sub;
   output->pending.transform = tr;
+  output->pending.geometry_valid = 1;
   /* Manufacturer/model strings are not retained by this private snapshot. */
   UNUSED(make);
   UNUSED(model);
@@ -1015,6 +1017,7 @@ static void output_done(void *d, struct wl_output *o) {
   if (!output)
     return;
   output->committed = output->pending;
+  output->ready = 1;
   update_scale(h);
 }
 static void output_scale(void *d, struct wl_output *o, int32_t scale) {
@@ -2041,6 +2044,43 @@ int32_t gpui_metrics(int32_t token, int32_t window, double *metrics) {
   metrics[1] = h->height;
   metrics[2] = h->scale;
   return GPUI_OK;
+}
+int32_t gpui_output_snapshot_v1(int32_t abi, int32_t token,
+                                double *records, int32_t capacity) {
+  if (abi != GPUI_OUTPUT_SNAPSHOT_ABI)
+    return -GPUI_UNSUPPORTED;
+  struct host *h;
+  int s = check(token, &h);
+  if (s)
+    return -s;
+  if (!records ||
+      capacity < GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS)
+    return -GPUI_INVALID;
+
+  int count = 0;
+  for (int i = 0; i < OUTPUT_CAPACITY; ++i) {
+    const struct output *output = &h->outputs[i];
+    if (!output->proxy)
+      continue;
+    const struct output_metadata *metadata = &output->committed;
+    int has_current_mode =
+        (metadata->mode_flags & WL_OUTPUT_MODE_CURRENT) != 0;
+    double *record = records + count * GPUI_OUTPUT_INFO_FIELDS;
+    record[0] = output->ready ? 1.0 : 0.0;
+    record[1] = metadata->geometry_valid ? 1.0 : 0.0;
+    record[2] = has_current_mode ? 1.0 : 0.0;
+    record[3] = metadata->scale;
+    record[4] = metadata->geometry_valid ? metadata->physical_width : 0;
+    record[5] = metadata->geometry_valid ? metadata->physical_height : 0;
+    record[6] = metadata->geometry_valid ? metadata->subpixel : 0;
+    record[7] = metadata->geometry_valid ? metadata->transform : 0;
+    record[8] = has_current_mode ? metadata->mode_width : 0;
+    record[9] = has_current_mode ? metadata->mode_height : 0;
+    record[10] = has_current_mode ? metadata->mode_refresh : 0;
+    record[11] = output->entered ? 1.0 : 0.0;
+    ++count;
+  }
+  return count;
 }
 int32_t gpui_dispatch(int32_t token, int32_t timeout) {
   struct host *h;
