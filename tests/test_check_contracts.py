@@ -367,6 +367,7 @@ class RuntimeDependencyTests(unittest.TestCase):
                 '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives", '
                 '"f4ah6o/gpui/examples/ubuntu_button/fixture", '
                 '"moonbitlang/core/env" }\n'
+                'import { "f4ah6o/gpui/platform/linux_text" } for "wbtest"\n'
             ),
         }
         for package, content in manifests.items():
