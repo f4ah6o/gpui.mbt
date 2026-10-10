@@ -70,6 +70,12 @@ static BOOL gpui_text_test_record(gpui_windows_host *host, int32_t offset,
   return host->editor_events[slot] &&
          (int32_t)host->events[slot][0] == kind &&
          (int64_t)host->events[slot][2] == sequence &&
+         host->events[slot][4] == 0.0 &&
+         host->events[slot][5] == 0.0 &&
+         host->events[slot][6] == 0.0 &&
+         host->events[slot][7] == 0.0 &&
+         host->events[slot][8] == 0.0 &&
+         host->events[slot][9] == 0.0 &&
          (int32_t)host->editor_fields[slot][0] ==
              g_gpui_text_session.owner_generation &&
          (int32_t)host->editor_fields[slot][1] == g_gpui_text_session.epoch &&
@@ -81,10 +87,24 @@ static BOOL gpui_text_test_record(gpui_windows_host *host, int32_t offset,
 static MSG gpui_text_review_messages[8];
 static int32_t gpui_text_review_message_count;
 static HIMC gpui_text_review_associated_context;
+static HWND gpui_text_review_focus_hwnd;
 static int32_t gpui_text_review_failed_form;
 static int32_t gpui_text_review_def_calls;
 static int32_t gpui_text_review_reenter_mode;
 static BOOL gpui_text_review_reentered;
+static BOOL gpui_text_review_ime_open;
+static BOOL gpui_text_review_ime_conversion_valid;
+static BOOL gpui_text_review_candidate_query_failure;
+static DWORD gpui_text_review_ime_conversion;
+static DWORD gpui_text_review_ime_sentence;
+static CANDIDATEFORM gpui_text_review_candidate;
+static int32_t gpui_text_review_ime_get_context_calls;
+static int32_t gpui_text_review_ime_release_calls;
+static int32_t gpui_text_review_ime_candidate_calls;
+static int32_t gpui_text_review_ime_set_open_calls;
+static int32_t gpui_text_review_ime_set_conversion_calls;
+static WCHAR gpui_text_review_result_text[8];
+static int32_t gpui_text_review_result_units;
 
 static LONG_PTR WINAPI gpui_text_review_get_window_long_ptr(HWND hwnd,
                                                             int32_t index) {
@@ -93,7 +113,9 @@ static LONG_PTR WINAPI gpui_text_review_get_window_long_ptr(HWND hwnd,
   return (LONG_PTR)&g_host;
 }
 
-static HWND WINAPI gpui_text_review_get_focus(void) { return g_host.hwnd; }
+static HWND WINAPI gpui_text_review_get_focus(void) {
+  return gpui_text_review_focus_hwnd;
+}
 
 static SHORT WINAPI gpui_text_review_get_key_state(int key) {
   (void)key;
@@ -170,7 +192,80 @@ static HIMC WINAPI gpui_text_review_get_context(HWND hwnd) {
 static BOOL WINAPI gpui_text_review_release_context(HWND hwnd, HIMC context) {
   (void)hwnd;
   (void)context;
+  gpui_text_review_ime_release_calls++;
   return TRUE;
+}
+
+static HIMC WINAPI gpui_text_review_ime_get_context(HWND hwnd) {
+  gpui_text_review_ime_get_context_calls++;
+  return gpui_text_review_get_context(hwnd);
+}
+
+static BOOL WINAPI gpui_text_review_ime_get_open(HIMC context) {
+  return context == gpui_text_review_associated_context &&
+         gpui_text_review_ime_open;
+}
+
+static BOOL WINAPI gpui_text_review_ime_set_open(HIMC context, BOOL open) {
+  if (context != gpui_text_review_associated_context)
+    return FALSE;
+  gpui_text_review_ime_set_open_calls++;
+  gpui_text_review_ime_open = open;
+  return TRUE;
+}
+
+static BOOL WINAPI gpui_text_review_ime_get_conversion(
+    HIMC context, LPDWORD conversion, LPDWORD sentence) {
+  if (context != gpui_text_review_associated_context || !conversion ||
+      !sentence)
+    return FALSE;
+  if (!gpui_text_review_ime_conversion_valid) {
+    SetLastError(ERROR_GEN_FAILURE);
+    return FALSE;
+  }
+  *conversion = gpui_text_review_ime_conversion;
+  *sentence = gpui_text_review_ime_sentence;
+  return TRUE;
+}
+
+static BOOL WINAPI gpui_text_review_ime_set_conversion(
+    HIMC context, DWORD conversion, DWORD sentence) {
+  if (context != gpui_text_review_associated_context)
+    return FALSE;
+  gpui_text_review_ime_set_conversion_calls++;
+  gpui_text_review_ime_conversion = conversion;
+  gpui_text_review_ime_sentence = sentence;
+  gpui_text_review_ime_conversion_valid = TRUE;
+  return TRUE;
+}
+
+static BOOL WINAPI gpui_text_review_ime_get_candidate(
+    HIMC context, DWORD index, LPCANDIDATEFORM output) {
+  gpui_text_review_ime_candidate_calls++;
+  if (gpui_text_review_candidate_query_failure) {
+    SetLastError(ERROR_INVALID_PARAMETER);
+    return FALSE;
+  }
+  if (context != gpui_text_review_associated_context || !output ||
+      index != gpui_text_review_candidate.dwIndex)
+    return FALSE;
+  *(CANDIDATEFORM *)output = gpui_text_review_candidate;
+  return TRUE;
+}
+
+static LRESULT gpui_text_review_ime_bridge_call(uint32_t operation,
+                                                 uint32_t field,
+                                                 LPARAM argument) {
+  WPARAM packed = (WPARAM)(((ULONG_PTR)g_host.ime_bridge_nonce << 32) |
+                           operation | ((ULONG_PTR)field << 16));
+  return gpui_window_proc(g_host.hwnd, GPUI_IME_BRIDGE_MESSAGE, packed,
+                          argument);
+}
+
+static LRESULT gpui_text_review_ime_bridge_raw(uintptr_t wparam,
+                                                LPARAM argument) {
+  return gpui_window_proc(g_host.hwnd, GPUI_IME_BRIDGE_MESSAGE,
+                          (WPARAM)wparam, argument);
 }
 
 static HIMC WINAPI gpui_text_review_associate_context(HWND hwnd,
@@ -184,10 +279,16 @@ static HIMC WINAPI gpui_text_review_associate_context(HWND hwnd,
 static LONG WINAPI gpui_text_review_get_composition_string(
     HIMC context, DWORD index, LPVOID buffer, DWORD bytes) {
   (void)context;
-  (void)index;
-  (void)buffer;
-  (void)bytes;
-  return 0;
+  if (index != GCS_RESULTSTR || gpui_text_review_result_units <= 0)
+    return 0;
+  DWORD required =
+      (DWORD)gpui_text_review_result_units * (DWORD)sizeof(WCHAR);
+  if (!buffer)
+    return (LONG)required;
+  if (bytes < required)
+    return -1;
+  memcpy(buffer, gpui_text_review_result_text, required);
+  return (LONG)required;
 }
 
 static BOOL WINAPI gpui_text_review_set_composition_window(
@@ -220,6 +321,7 @@ static void gpui_text_review_setup_host(void) {
   g_host.owner_thread = GetCurrentThreadId();
   g_host.state = 0;
   g_host.hwnd = (HWND)(uintptr_t)1;
+  gpui_text_review_focus_hwnd = g_host.hwnd;
   g_host.scale = 1.0;
   g_host.logical_width = 640.0;
   g_host.logical_height = 240.0;
@@ -237,6 +339,28 @@ static void gpui_text_review_setup_host(void) {
   gpui_text_review_associated_context = (HIMC)(uintptr_t)0x1234;
   gpui_text_review_failed_form = 0;
   gpui_text_review_def_calls = 0;
+  gpui_text_review_ime_open = FALSE;
+  gpui_text_review_ime_conversion_valid = TRUE;
+  gpui_text_review_candidate_query_failure = FALSE;
+  gpui_text_review_ime_conversion = 0x12345678u;
+  gpui_text_review_ime_sentence = 0x87654321u;
+  ZeroMemory(&gpui_text_review_candidate, sizeof(gpui_text_review_candidate));
+  gpui_text_review_candidate.dwIndex = 0;
+  gpui_text_review_candidate.dwStyle = CFS_CANDIDATEPOS;
+  gpui_text_review_candidate.ptCurrentPos.x = 61;
+  gpui_text_review_candidate.ptCurrentPos.y = 73;
+  gpui_text_review_candidate.rcArea.left = 2;
+  gpui_text_review_candidate.rcArea.top = 3;
+  gpui_text_review_candidate.rcArea.right = 120;
+  gpui_text_review_candidate.rcArea.bottom = 96;
+  gpui_text_review_ime_get_context_calls = 0;
+  gpui_text_review_ime_release_calls = 0;
+  gpui_text_review_ime_candidate_calls = 0;
+  gpui_text_review_ime_set_open_calls = 0;
+  gpui_text_review_ime_set_conversion_calls = 0;
+  ZeroMemory(gpui_text_review_result_text,
+             sizeof(gpui_text_review_result_text));
+  gpui_text_review_result_units = 0;
 }
 
 static BOOL gpui_text_review_queue(UINT message, WPARAM wparam) {
@@ -376,7 +500,11 @@ reentrant_cleanup:
 
 /* Exercise begin failures and the mixed platform/text pump through the real
  * host entry points and WndProc. The fake APIs replace only OS boundaries. */
-static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
+static int32_t gpui_text_review_regressions(int32_t *failed_stage,
+                                            double *repeat_event) {
+  if (!repeat_event)
+    return GPUI_WINDOWS_INVALID;
+  ZeroMemory(repeat_event, 10 * sizeof(double));
   gpui_windows_host *saved_host =
       (gpui_windows_host *)malloc(sizeof(gpui_windows_host));
   if (!saved_host)
@@ -384,6 +512,7 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
   memcpy(saved_host, &g_host, sizeof(g_host));
   gpui_text_session_state saved_session = g_gpui_text_session;
   gpui_imm_api saved_imm = g_gpui_imm;
+  HWND saved_focus_hwnd = gpui_text_review_focus_hwnd;
   LONG saved_claimed = InterlockedCompareExchange(&g_host_claimed, 0, 0);
   InterlockedExchange(&g_host_claimed, 1);
   ZeroMemory(&g_gpui_text_session, sizeof(g_gpui_text_session));
@@ -399,6 +528,13 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
       gpui_text_review_set_composition_window;
   g_gpui_imm.set_candidate_window = gpui_text_review_set_candidate_window;
   g_gpui_imm.notify_ime = gpui_text_review_notify_ime;
+  g_gpui_imm.get_context = gpui_text_review_ime_get_context;
+  g_gpui_imm.release_context = gpui_text_review_release_context;
+  g_gpui_imm.get_open_status = gpui_text_review_ime_get_open;
+  g_gpui_imm.set_open_status = gpui_text_review_ime_set_open;
+  g_gpui_imm.get_conversion_status = gpui_text_review_ime_get_conversion;
+  g_gpui_imm.set_conversion_status = gpui_text_review_ime_set_conversion;
+  g_gpui_imm.get_candidate_window = gpui_text_review_ime_get_candidate;
   g_gpui_text_session.epoch_counter = 200;
   int32_t result = GPUI_WINDOWS_OK;
   double event[20];
@@ -413,6 +549,49 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
       goto review_cleanup;                                                     \
     }                                                                          \
   } while (0)
+
+  {
+    const uint8_t original[] = {'a'};
+    gpui_text_test_clear_ring(&g_host);
+    gpui_text_review_result_text[0] = L'日';
+    gpui_text_review_result_units = 1;
+    int32_t epoch = gpui_windows_session_begin(
+        77, 5, 701, original, sizeof(original), 1, 1,
+        8.0, 9.0, 1.0, 18.0);
+    GPUI_REVIEW_REQUIRE(epoch > 0, 12);
+    gpui_window_proc(g_host.hwnd, WM_IME_STARTCOMPOSITION, 0, 0);
+    GPUI_REVIEW_REQUIRE(g_gpui_text_session.composing, 13);
+    gpui_window_proc(g_host.hwnd, WM_IME_COMPOSITION, 0, GCS_RESULTSTR);
+    GPUI_REVIEW_REQUIRE(!g_gpui_text_session.composing &&
+                            g_gpui_text_session.commit_waiting_end,
+                        14);
+    int32_t second = (g_host.event_read + 1) % GPUI_EVENT_CAPACITY;
+    GPUI_REVIEW_REQUIRE(g_host.event_count == 2 &&
+                            g_host.editor_events[g_host.event_read] &&
+                            g_host.editor_events[second] &&
+                            (int32_t)g_host.events[g_host.event_read][0] ==
+                                GPUI_TEXT_EVENT_STARTED &&
+                            (int32_t)g_host.events[second][0] ==
+                                GPUI_TEXT_EVENT_INSERTED,
+                        15);
+    /* IMM consumed the original Return; only its still-held repeat arrives. */
+    gpui_window_proc(g_host.hwnd, WM_KEYDOWN, VK_RETURN,
+                     (LPARAM)(uintptr_t)0x40000000u);
+    int32_t at = (g_host.event_read + g_host.event_count - 1) %
+                 GPUI_EVENT_CAPACITY;
+    GPUI_REVIEW_REQUIRE(g_host.event_count >= 3 &&
+                            !g_host.editor_events[at] &&
+                            (int32_t)g_host.events[at][0] == 11 &&
+                            (int32_t)g_host.events[at][8] == 0xff0d &&
+                            g_host.events[at][7] == 1.0,
+                        16);
+    memcpy(repeat_event, g_host.events[at], 10 * sizeof(double));
+    gpui_text_review_result_units = 0;
+    GPUI_REVIEW_REQUIRE(gpui_windows_session_end(77, 5, epoch, 701) ==
+                            GPUI_WINDOWS_OK,
+                        17);
+    gpui_text_test_clear_ring(&g_host);
+  }
 
   for (int32_t failure = 1; failure <= 2; ++failure) {
     gpui_text_review_failed_form = failure;
@@ -544,11 +723,481 @@ static int32_t gpui_text_review_regressions(int32_t *failed_stage) {
     }
   }
 
+  {
+    const uint8_t original[] = {'a', 'b'};
+    WCHAR rejected_result[] = {L'X'};
+    WCHAR next_result[] = {L'Y'};
+    WCHAR rejected_snapshot[] = {L'X'};
+    WCHAR restored_snapshot[] = {L'a', L'b'};
+    WCHAR next_snapshot[] = {L'Y'};
+    gpui_text_test_clear_ring(&g_host);
+    int32_t initial_epoch = gpui_windows_session_begin(
+        77, 5, 705, original, sizeof(original), 2, 0,
+        8.0, 9.0, 1.0, 18.0);
+    GPUI_REVIEW_REQUIRE(initial_epoch > 0 &&
+                            gpui_text_test_document_is(restored_snapshot, 2) &&
+                            g_gpui_text_session.anchor_utf16 == 2 &&
+                            g_gpui_text_session.head_utf16 == 0,
+                        60);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_start_record(&g_host) ==
+                            GPUI_WINDOWS_OK &&
+                            gpui_text_session_process_composition(
+                                &g_host, TRUE, rejected_result, 1, FALSE,
+                                NULL, 0, FALSE, 0, NULL, 0) ==
+                                GPUI_WINDOWS_OK &&
+                            gpui_text_test_document_is(rejected_snapshot, 1) &&
+                            g_gpui_text_session.anchor_utf16 == 1 &&
+                            g_gpui_text_session.head_utf16 == 1,
+                        61);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_pop(
+                            &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_STARTED &&
+                            gpui_text_session_pop(
+                                &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_INSERTED &&
+                            (int32_t)event[16] == 0 &&
+                            (int32_t)event[17] == 2 && payload[0] == 'X',
+                        62);
+
+    int32_t cancelled_epoch = gpui_windows_session_cancel(
+        77, 5, initial_epoch, 705);
+    GPUI_REVIEW_REQUIRE(cancelled_epoch > initial_epoch &&
+                            g_gpui_text_session.armed &&
+                            gpui_text_test_document_is(rejected_snapshot, 1) &&
+                            g_gpui_text_session.anchor_utf16 == 1 &&
+                            g_gpui_text_session.head_utf16 == 1,
+                        63);
+
+    int32_t rebased_epoch = gpui_windows_session_update(
+        77, 5, cancelled_epoch, 705, original, sizeof(original), 2, 0,
+        8.0, 9.0, 1.0, 18.0, 1);
+    GPUI_REVIEW_REQUIRE(rebased_epoch > cancelled_epoch &&
+                            g_gpui_text_session.armed &&
+                            g_gpui_text_session.awaiting_fresh_start &&
+                            gpui_text_test_document_is(restored_snapshot, 2) &&
+                            g_gpui_text_session.anchor_utf16 == 2 &&
+                            g_gpui_text_session.head_utf16 == 0,
+                        64);
+    int32_t next_start_status = gpui_text_session_start_record(&g_host);
+    if (next_start_status != GPUI_WINDOWS_OK) {
+      *failed_stage = 700 + next_start_status;
+      result = GPUI_WINDOWS_NATIVE;
+      goto review_cleanup;
+    }
+    GPUI_REVIEW_REQUIRE(gpui_text_test_record(
+                            &g_host, 0, GPUI_TEXT_EVENT_STARTED, 0, 2, 3),
+                        651);
+    GPUI_REVIEW_REQUIRE((int32_t)g_host.editor_fields[
+                            g_host.event_read][1] == rebased_epoch,
+                        652);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_process_composition(
+                            &g_host, TRUE, next_result, 1, FALSE,
+                            NULL, 0, FALSE, 0, NULL, 0) == GPUI_WINDOWS_OK &&
+                            gpui_text_test_document_is(next_snapshot, 1) &&
+                            g_gpui_text_session.anchor_utf16 == 1 &&
+                            g_gpui_text_session.head_utf16 == 1 &&
+                            gpui_text_test_record(
+                                &g_host, 1, GPUI_TEXT_EVENT_INSERTED, 0, 2, 4) &&
+                            (int32_t)g_host.editor_fields[
+                                (g_host.event_read + 1) % GPUI_EVENT_CAPACITY][1] ==
+                                rebased_epoch,
+                        66);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_pop(
+                            &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_STARTED &&
+                            gpui_text_session_pop(
+                                &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_INSERTED &&
+                            (int32_t)event[16] == 0 &&
+                            (int32_t)event[17] == 2 && payload[0] == 'Y',
+                        67);
+    GPUI_REVIEW_REQUIRE(gpui_windows_session_end(
+                            77, 5, rebased_epoch, 705) == GPUI_WINDOWS_OK,
+                        68);
+  }
+
+  {
+    const uint8_t original[] = {'a', 'b'};
+    WCHAR marked_text[] = {L'X'};
+    gpui_text_test_clear_ring(&g_host);
+    int32_t focus_epoch = gpui_windows_session_begin(
+        77, 5, 706, original, sizeof(original), 1, 2,
+        8.0, 9.0, 1.0, 18.0);
+    GPUI_REVIEW_REQUIRE(focus_epoch > 0 &&
+                            gpui_windows_window_has_keyboard_focus(77, 5) == 1 &&
+                            gpui_windows_session_is_current(
+                                77, 5, focus_epoch, 706) == 1,
+                        70);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_start_record(&g_host) ==
+                            GPUI_WINDOWS_OK &&
+                            gpui_text_session_process_composition(
+                                &g_host, FALSE, NULL, 0, TRUE,
+                                marked_text, 1, TRUE, 1, NULL, 0) ==
+                                GPUI_WINDOWS_OK &&
+                            g_gpui_text_session.composing,
+                        71);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_pop(
+                            &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_STARTED &&
+                            gpui_text_session_pop(
+                                &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_MARKED &&
+                            payload[0] == 'X',
+                        72);
+
+    /* WM_KILLFOCUS emits the old-epoch Cancelled record before the platform
+     * focus event, while GetFocus already reports the new owner. */
+    gpui_text_review_focus_hwnd = (HWND)(uintptr_t)2;
+    gpui_window_proc(g_host.hwnd, WM_KILLFOCUS, 0, 0);
+    int32_t cancel_slot = g_host.event_read;
+    int32_t focus_slot = (cancel_slot + 1) % GPUI_EVENT_CAPACITY;
+    GPUI_REVIEW_REQUIRE(g_host.event_count == 2 &&
+                            gpui_text_session_head_is_editor(&g_host) &&
+                            (int32_t)g_host.events[cancel_slot][0] ==
+                                GPUI_TEXT_EVENT_CANCELLED &&
+                            (int32_t)g_host.editor_fields[cancel_slot][0] ==
+                                706 &&
+                            (int32_t)g_host.editor_fields[cancel_slot][1] ==
+                                focus_epoch &&
+                            !g_host.editor_events[focus_slot] &&
+                            (int32_t)g_host.events[focus_slot][0] == 6 &&
+                            (int32_t)g_host.events[focus_slot][8] == 0,
+                        73);
+    GPUI_REVIEW_REQUIRE(!g_gpui_text_session.armed &&
+                            !g_gpui_text_session.composing &&
+                            g_gpui_text_session.epoch > focus_epoch &&
+                            gpui_windows_window_has_keyboard_focus(77, 5) == 0 &&
+                            gpui_windows_session_is_current(
+                                77, 5, focus_epoch, 706) == 0,
+                        74);
+    GPUI_REVIEW_REQUIRE(gpui_windows_session_update(
+                            77, 5, focus_epoch, 706, original,
+                            sizeof(original), 1, 2,
+                            8.0, 9.0, 1.0, 18.0, 0) ==
+                            -GPUI_WINDOWS_STALE,
+                        75);
+    gpui_text_review_focus_hwnd = g_host.hwnd;
+    gpui_window_proc(g_host.hwnd, WM_SETFOCUS, 0, 0);
+    GPUI_REVIEW_REQUIRE(
+        gpui_windows_window_has_keyboard_focus(77, 5) == 1 &&
+            gpui_windows_session_is_current(77, 5, focus_epoch, 706) == 0 &&
+            g_host.event_count == 3,
+        78);
+    GPUI_REVIEW_REQUIRE(gpui_windows_session_end(
+                            77, 5, focus_epoch, 706) == GPUI_WINDOWS_OK,
+                        79);
+    GPUI_REVIEW_REQUIRE(gpui_text_session_pop(
+                            &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == GPUI_TEXT_EVENT_CANCELLED &&
+                            (int32_t)event[11] == focus_epoch &&
+                            gpui_text_session_pop(
+                                &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == 6 &&
+                            (int32_t)event[8] == 0 &&
+                            gpui_text_session_pop(
+                                &g_host, event, payload, sizeof(payload)) == 1 &&
+                            (int32_t)event[0] == 6 &&
+                            (int32_t)event[8] == 1,
+                        77);
+  }
+
+  /* Exercise the same owner-thread scalar bridge the CLI E2E driver calls. */
+  {
+    int32_t context_calls = gpui_text_review_ime_get_context_calls;
+    LRESULT disabled = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_IME, 0, 0);
+    GPUI_REVIEW_REQUIRE(disabled == (LRESULT)0x5151 &&
+                            gpui_text_review_ime_get_context_calls ==
+                                context_calls,
+                        80);
+    g_host.ime_bridge_nonce = 0x6a31d4b9u;
+    g_host.ime_bridge_enabled = TRUE;
+    gpui_text_review_focus_hwnd = g_host.hwnd;
+    gpui_text_review_associated_context = (HIMC)(uintptr_t)0x1234;
+    g_host.owner_thread = GetCurrentThreadId();
+    g_host.ime_bridge_next_id = 0;
+    context_calls = gpui_text_review_ime_get_context_calls;
+    LRESULT unauthenticated_query = gpui_text_review_ime_bridge_raw(
+        ((uintptr_t)(g_host.ime_bridge_nonce ^ 0xffffffffu) << 32) |
+            GPUI_IME_BRIDGE_QUERY_IME,
+        0);
+    int32_t unauthorized_set_calls =
+        gpui_text_review_ime_set_open_calls;
+    LRESULT unauthenticated_set = gpui_text_review_ime_bridge_raw(
+        ((uintptr_t)(g_host.ime_bridge_nonce ^ 0xffffffffu) << 32) |
+            GPUI_IME_BRIDGE_SET_OPEN,
+        TRUE);
+    GPUI_REVIEW_REQUIRE(unauthenticated_query == -9 &&
+                            unauthenticated_set == -9 &&
+                            gpui_text_review_ime_get_context_calls ==
+                                context_calls &&
+                            gpui_text_review_ime_set_open_calls ==
+                                unauthorized_set_calls,
+                        90);
+    LRESULT malformed_query = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_IME, 0, 1);
+    GPUI_REVIEW_REQUIRE(malformed_query == -4 &&
+                            gpui_text_review_ime_get_context_calls ==
+                                context_calls,
+                        91);
+    int32_t malformed_set_calls = gpui_text_review_ime_set_open_calls;
+    LRESULT malformed_set = gpui_text_review_ime_bridge_raw(
+        ((uintptr_t)g_host.ime_bridge_nonce << 32) |
+            ((uintptr_t)1 << 16) | GPUI_IME_BRIDGE_SET_OPEN,
+        TRUE);
+    LRESULT invalid_open_value = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_SET_OPEN, 0, 2);
+    GPUI_REVIEW_REQUIRE(malformed_set == -4 && invalid_open_value == -4 &&
+                            gpui_text_review_ime_set_open_calls ==
+                                malformed_set_calls,
+                        92);
+    LRESULT ime_id = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_IME, 0, 0);
+    GPUI_REVIEW_REQUIRE(ime_id == 1 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_STATUS, ime_id) == 0 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_HAS_CONTEXT, ime_id) == 1 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_OPEN, ime_id) == 0 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_CONVERSION_VALID,
+                                ime_id) == 1 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_CONVERSION_MODE,
+                                ime_id) == (LRESULT)0x12345678u &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_SENTENCE_MODE,
+                                ime_id) == (LRESULT)0x87654321u &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_PROCESS_ID,
+                                ime_id) == GetCurrentProcessId() &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_THREAD_ID,
+                                ime_id) == GetCurrentThreadId() &&
+                            gpui_text_review_ime_release_calls > 0,
+                        81);
+    gpui_text_review_ime_conversion_valid = FALSE;
+    LRESULT query_failure_id = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_IME, 0, 0);
+    GPUI_REVIEW_REQUIRE(query_failure_id > ime_id &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_STATUS,
+                                query_failure_id) == 3 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_ERROR,
+                                query_failure_id) == ERROR_GEN_FAILURE &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_HAS_CONTEXT,
+                                query_failure_id) == 1,
+                        93);
+    gpui_text_review_ime_conversion_valid = TRUE;
+    GPUI_REVIEW_REQUIRE(gpui_text_review_ime_bridge_call(
+                            GPUI_IME_BRIDGE_GET_IME_FIELD,
+                            GPUI_IME_BRIDGE_IME_STATUS, ime_id) == -5,
+                        82);
+
+    g_host.ime_bridge_next_id = 0;
+    ime_id = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_IME, 0, 0);
+    gpui_text_review_candidate_query_failure = TRUE;
+    LRESULT candidate_failure_id = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_CANDIDATE, 0, 0);
+    GPUI_REVIEW_REQUIRE(candidate_failure_id > ime_id &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_STATUS,
+                                candidate_failure_id) == 3 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_ERROR,
+                                candidate_failure_id) == ERROR_INVALID_PARAMETER,
+                        94);
+    gpui_text_review_candidate_query_failure = FALSE;
+    LRESULT candidate_id = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_CANDIDATE, 0, 0);
+    GPUI_REVIEW_REQUIRE(ime_id > 0 && candidate_id > ime_id &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_STATUS,
+                                candidate_id) == 0 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_HAS_CONTEXT,
+                                candidate_id) == 1 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_INDEX,
+                                candidate_id) == 0 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_STYLE,
+                                candidate_id) == CFS_CANDIDATEPOS &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_X,
+                                candidate_id) == 61 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_Y,
+                                candidate_id) == 73 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_RIGHT,
+                                candidate_id) == 120 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_BOTTOM,
+                                candidate_id) == 96 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_PROCESS_ID,
+                                candidate_id) == GetCurrentProcessId() &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_THREAD_ID,
+                                candidate_id) == GetCurrentThreadId() &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                                GPUI_IME_BRIDGE_CANDIDATE_X,
+                                candidate_id + 1) == -5,
+                        83);
+    int32_t candidate_snapshot_id = g_host.ime_bridge_candidate_id;
+    int32_t candidate_next_id = g_host.ime_bridge_next_id;
+    int32_t candidate_snapshot_status = g_host.ime_bridge_candidate_status;
+    DWORD candidate_snapshot_error = g_host.ime_bridge_candidate_error;
+    BOOL candidate_snapshot_has_context =
+        g_host.ime_bridge_candidate_has_context;
+    DWORD candidate_snapshot_process_id =
+        g_host.ime_bridge_candidate_process_id;
+    DWORD candidate_snapshot_thread_id =
+        g_host.ime_bridge_candidate_thread_id;
+    DWORD candidate_snapshot_index = g_host.ime_bridge_candidate_index;
+    DWORD candidate_snapshot_style = g_host.ime_bridge_candidate_style;
+    POINT candidate_snapshot_position =
+        g_host.ime_bridge_candidate_position;
+    RECT candidate_snapshot_area = g_host.ime_bridge_candidate_area;
+    int32_t candidate_context_calls =
+        gpui_text_review_ime_get_context_calls;
+    int32_t candidate_calls = gpui_text_review_ime_candidate_calls;
+    int32_t candidate_release_calls = gpui_text_review_ime_release_calls;
+    LRESULT invalid_candidate = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_CANDIDATE, 0, 4);
+    LRESULT negative_candidate = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_CANDIDATE, 0, (LPARAM)-1);
+    LRESULT high_candidate = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_CANDIDATE, 0, (LPARAM)0x10000);
+    GPUI_REVIEW_REQUIRE(
+        invalid_candidate == -4 && negative_candidate == -4 &&
+            high_candidate == -4 &&
+            g_host.ime_bridge_candidate_id == candidate_snapshot_id &&
+            g_host.ime_bridge_next_id == candidate_next_id &&
+            g_host.ime_bridge_candidate_status == candidate_snapshot_status &&
+            g_host.ime_bridge_candidate_error == candidate_snapshot_error &&
+            g_host.ime_bridge_candidate_has_context ==
+                candidate_snapshot_has_context &&
+            g_host.ime_bridge_candidate_process_id ==
+                candidate_snapshot_process_id &&
+            g_host.ime_bridge_candidate_thread_id ==
+                candidate_snapshot_thread_id &&
+            g_host.ime_bridge_candidate_index == candidate_snapshot_index &&
+            g_host.ime_bridge_candidate_style == candidate_snapshot_style &&
+            memcmp(&g_host.ime_bridge_candidate_position,
+                   &candidate_snapshot_position,
+                   sizeof(candidate_snapshot_position)) == 0 &&
+            memcmp(&g_host.ime_bridge_candidate_area,
+                   &candidate_snapshot_area,
+                   sizeof(candidate_snapshot_area)) == 0 &&
+            gpui_text_review_ime_get_context_calls ==
+                candidate_context_calls &&
+            gpui_text_review_ime_candidate_calls == candidate_calls &&
+            gpui_text_review_ime_release_calls == candidate_release_calls &&
+            gpui_text_review_ime_bridge_call(
+                GPUI_IME_BRIDGE_GET_CANDIDATE_FIELD,
+                GPUI_IME_BRIDGE_CANDIDATE_X,
+                candidate_snapshot_id) == candidate_snapshot_position.x,
+        84);
+
+    gpui_text_review_associated_context = NULL;
+    LRESULT no_context_id = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_IME, 0, 0);
+    GPUI_REVIEW_REQUIRE(no_context_id > 0 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_STATUS,
+                                no_context_id) == 1 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_HAS_CONTEXT,
+                                no_context_id) == 0 &&
+                            gpui_text_review_ime_bridge_call(
+                                GPUI_IME_BRIDGE_GET_IME_FIELD,
+                                GPUI_IME_BRIDGE_IME_OPEN,
+                                no_context_id) == -1,
+                        85);
+    gpui_text_review_associated_context = (HIMC)(uintptr_t)0x1234;
+
+    gpui_text_review_focus_hwnd = NULL;
+    int32_t set_open_calls = gpui_text_review_ime_set_open_calls;
+    LRESULT unfocused_set = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_SET_OPEN, 0, TRUE);
+    GPUI_REVIEW_REQUIRE(unfocused_set == -6 &&
+                            gpui_text_review_ime_set_open_calls ==
+                                set_open_calls,
+                        86);
+    gpui_text_review_focus_hwnd = g_host.hwnd;
+    LRESULT set_open = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_SET_OPEN, 0, TRUE);
+    GPUI_REVIEW_REQUIRE(set_open == 1 && gpui_text_review_ime_open &&
+                            gpui_text_review_ime_set_open_calls ==
+                                set_open_calls + 1,
+                        87);
+#if defined(_WIN64)
+    uintptr_t conversion_request =
+        ((uintptr_t)g_host.ime_bridge_nonce << 32) |
+        (uintptr_t)GPUI_IME_BRIDGE_SET_CONVERSION;
+    LPARAM conversion_payload = (LPARAM)(((uint64_t)0x10293847u << 32) |
+                                          0xa1b2c3d4u);
+    int32_t set_conversion_calls =
+        gpui_text_review_ime_set_conversion_calls;
+    LRESULT set_conversion = gpui_text_review_ime_bridge_raw(
+        conversion_request, conversion_payload);
+    GPUI_REVIEW_REQUIRE(set_conversion == 1 &&
+                            gpui_text_review_ime_conversion == 0xa1b2c3d4u &&
+                            gpui_text_review_ime_sentence == 0x10293847u &&
+                            gpui_text_review_ime_set_conversion_calls ==
+                                set_conversion_calls + 1,
+                        88);
+#endif
+    DWORD owner_thread = g_host.owner_thread;
+    g_host.owner_thread = GetCurrentThreadId() + 1;
+    context_calls = gpui_text_review_ime_get_context_calls;
+    LRESULT wrong_thread = gpui_text_review_ime_bridge_call(
+        GPUI_IME_BRIDGE_QUERY_IME, 0, 0);
+    g_host.owner_thread = owner_thread;
+    GPUI_REVIEW_REQUIRE(wrong_thread == -8 &&
+                            gpui_text_review_ime_get_context_calls ==
+                                context_calls,
+                        89);
+  }
+
 review_cleanup:
   gpui_text_test_clear_ring(&g_host);
   gpui_text_review_message_count = 0;
   gpui_text_review_reenter_mode = 0;
   gpui_text_review_reentered = FALSE;
+  gpui_text_review_focus_hwnd = saved_focus_hwnd;
   free(g_gpui_text_session.document);
   g_gpui_text_session = saved_session;
   g_gpui_imm = saved_imm;
@@ -560,10 +1209,12 @@ review_cleanup:
 }
 
 /* Returns OK on pass and writes the numbered failing stage for CI logs. */
-int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage) {
-  if (!failed_stage)
+int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage,
+                                              double *repeat_event) {
+  if (!failed_stage || !repeat_event)
     return GPUI_WINDOWS_INVALID;
   *failed_stage = 0;
+  ZeroMemory(repeat_event, 10 * sizeof(double));
   if (InterlockedCompareExchange(&g_host_claimed, 0, 0) != 0)
     return GPUI_WINDOWS_BUSY;
   gpui_windows_host *host =
@@ -882,7 +1533,8 @@ int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage) {
 
   {
     int32_t review_stage = 0;
-    int32_t review_status = gpui_text_review_regressions(&review_stage);
+    int32_t review_status =
+        gpui_text_review_regressions(&review_stage, repeat_event);
     if (review_status != GPUI_WINDOWS_OK) {
       *failed_stage = 100 + review_stage;
       result = review_status;

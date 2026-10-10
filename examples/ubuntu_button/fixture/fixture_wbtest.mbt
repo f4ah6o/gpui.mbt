@@ -295,7 +295,7 @@ test "fixture publishes button identity name geometry and state" {
 
   assert_eq(nodes.length(), 2)
   assert_true(nodes[0].role() == @accessibility.Window)
-  assert_eq(nodes[0].name(), "Ubuntu button demo")
+  assert_eq(nodes[0].name(), "Button demo")
   assert_true(nodes[0].bounds() == expected_viewport)
   assert_true(nodes[0].parent() is None)
 

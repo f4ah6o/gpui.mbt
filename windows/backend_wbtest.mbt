@@ -51,6 +51,12 @@ extern "C" fn native_window_title_matches(
 extern "C" fn native_clipboard_validation() -> Int = "gpui_windows_test_clipboard_validation"
 
 ///|
+extern "C" fn native_clipboard_diagnostics() -> Int = "gpui_windows_test_clipboard_diagnostics"
+
+///|
+extern "C" fn native_clipboard_diagnostics_disabled() -> Int = "gpui_windows_test_clipboard_diagnostics_disabled"
+
+///|
 extern "C" fn native_clipboard_fixture_read(host : Int) -> Int = "gpui_windows_test_clipboard_fixture_read"
 
 ///|
@@ -89,9 +95,10 @@ extern "C" fn native_mouse_arm_destroy(host : Int, window : Int) -> Int = "gpui_
 extern "C" fn native_mouse_destroy_reset(host : Int, window : Int) -> Int = "gpui_windows_test_mouse_destroy_reset"
 
 ///|
-#borrow(failed_stage)
+#borrow(failed_stage, repeat_event)
 extern "C" fn native_text_session_staging(
   failed_stage : FixedArray[Int],
+  repeat_event : FixedArray[Double],
 ) -> Int = "gpui_windows_test_text_session_staging"
 
 ///|
@@ -186,6 +193,23 @@ test "Win32 status adapter returns stable framework errors" {
     assert_eq(error.code().label(), expected.label())
     assert_eq(error.operation(), "operation")
     assert_true(error.backend() == Some("windows-d3d11"))
+  }
+}
+
+///|
+test "clipboard diagnostic snapshots preserve error and read stage" {
+  required(outcome(native_clipboard_diagnostics(), "clipboard_diagnostics"))
+}
+
+///|
+test "clipboard diagnostic sink is off without its opt-in path" {
+  if @env.get_env_var("GPUI_WINDOWS_CLIPBOARD_DIAGNOSTICS_PATH") is None {
+    required(
+      outcome(
+        native_clipboard_diagnostics_disabled(),
+        "clipboard_diagnostics_disabled",
+      ),
+    )
   }
 }
 
@@ -409,9 +433,10 @@ test "non-Windows native stub never claims a real host" {
 }
 
 ///|
-test "Win32 production IMM session staging preserves message ordering" {
+test "Win32 committed composition repeat travels through WndProc and decoder" {
   let failed_stage = FixedArray::make(1, -1)
-  let status = native_text_session_staging(failed_stage)
+  let repeat_event = FixedArray::make(10, 0.0)
+  let status = native_text_session_staging(failed_stage, repeat_event)
   if status == 1 {
     // The portable non-Windows backend keeps the experimental native path
     // explicitly unavailable.
@@ -420,6 +445,14 @@ test "Win32 production IMM session staging preserves message ordering" {
   }
   assert_eq(failed_stage[0], 0)
   assert_eq(status, 0)
+  assert_true(
+    decode_event(repeat_event)
+    is Some(
+      @platform.Input(
+        @primitives.KeyPressed(key=@primitives.Enter, repeat=true, ..)
+      )
+    ),
+  )
 }
 
 ///|

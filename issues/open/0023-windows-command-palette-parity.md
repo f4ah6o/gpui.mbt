@@ -1,7 +1,7 @@
 # Windows command-palette integration and Japanese IME qualification
 
-Status: open — follow-up; implementation and native acceptance pending\
-Updated: 2026-10-09 (JST)\
+Status: open — Windows implementation is present in the candidate branch; physical-input and Japanese IME acceptance remain pending\
+Updated: 2026-10-10 (JST)\
 Parent: [0008 Windows backend](0008-windows-native-backend.md)\
 Related: [0020 command-palette milestone](0020-usable-command-palette-integration-milestone.md)
 
@@ -17,7 +17,7 @@ not qualify a command palette or real Japanese IME interaction.
 components are available on current main. The shared headless accessibility
 contract from [#48](https://github.com/gpui-mbt/gpui.mbt/pull/48) is documented
 in [docs/accessibility.md](../../docs/accessibility.md). Current main is
-`008b3c73d50108d6ed1e6c02ad9e12e930e843ec`, including merged
+`d8d7544662c31d6222580a0749b504d5f5e89b3f`, including merged
 [#51](https://github.com/gpui-mbt/gpui.mbt/pull/51), which connects a headless
 Ubuntu Button fixture to semantic projection and app-owned action dispatch.
 That fixture-specific projection does not implement or qualify macOS AX,
@@ -36,7 +36,7 @@ an entire operating system being unfinished.
 
 | Work | Current shared input | May start independently | Completion dependency |
 | --- | --- | --- | --- |
-| Windows palette | Current main `008b3c73d50108d6ed1e6c02ad9e12e930e843ec` contains the shared palette and Button | Windows owner can compose and qualify the fixture on current main | Windows-owned input, presentation, IME and lifecycle qualification below |
+| Windows palette | Current main `d8d7544662c31d6222580a0749b504d5f5e89b3f` contains the shared palette and Button | Windows owner can compose and qualify the fixture on current main | Windows-owned input, presentation, IME and lifecycle qualification below |
 | Apple Silicon palette | Shared palette #41 and scene-text renderer #49 are merged; the macOS field/ownership/live-IME work remains in draft #40 | Palette integration and tests can continue against the merged shared pieces | Final compatible #40 field/AppKit ownership slice plus actual arm64 input/IME acceptance; #49 does not close these gates |
 | Windows Button | Shared Button #47 is merged as `4ee7bd48482db16fd6757265d7d1f3decd352bd7` | Integrate and qualify from current main | [0025 Windows Button](0025-windows-button-integration.md); exact-source Windows input, pixels, lifecycle and UIA gates remain |
 | Apple Silicon Button | Shared Button #47 and bounded CoreText/Metal scene-text renderer #49 are merged | Button fixture can use the current main renderer without waiting for #40 | [0024 macOS Button](0024-apple-silicon-macos-button-integration.md); exact-source arm64 window/input/pixel acceptance remains |
@@ -64,9 +64,27 @@ Python suite reported 3 FAIL, 4 ERROR, and 1 SKIP out of 93, so it is not a
 suite-wide pass. Native diagnostics ON/OFF, required native actrun, real
 clipboard, GUI/Japanese IME, and the 12-image human and independent audits are
 UNRUN. The candidate was not published. Current main later advanced through
-#51 to `008b3c73d50108d6ed1e6c02ad9e12e930e843ec`; pin and qualify the exact
+#51 to `d8d7544662c31d6222580a0749b504d5f5e89b3f`; pin and qualify the exact
 final integrated source after any source change. Do not reuse an old run as
 acceptance for a changed source.
+
+### Windows catch-up candidate — 2026-10-10
+
+The Windows implementation is based on current main
+`d8d7544662c31d6222580a0749b504d5f5e89b3f`. The candidate includes the bounded
+palette host adapter, native command-frame/readback smoke, IME owner-thread
+query bridge and input-ownership regressions. The Windows matrix and pinned
+native/portable actrun profiles were rerun after rebasing; see the candidate's
+retained `_build/windows-actrun/manifest.json` and per-step records for exact
+source snapshot and tool identities.
+
+`scripts/run_windows_command_palette_e2e.ps1 -Mode Validate` passes its harness
+validation, but that mode does not launch the native interaction flow. Real
+palette keyboard input, Japanese IME preedit/conversion/commit, candidate
+placement, background-input recovery, pixel audit and GUI lifecycle remain
+`UNRUN` or `BLOCKED` as identified by the retained per-check records. The
+fixture remains open; no native-input or IME gate is claimed by startup/readback
+smoke or portable model tests.
 
 Linux is not globally complete. The bounded field profile in merged
 [#36](https://github.com/gpui-mbt/gpui.mbt/pull/36), merge

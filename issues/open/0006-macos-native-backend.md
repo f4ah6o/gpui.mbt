@@ -1,9 +1,9 @@
 # macOS native backend roadmap
 
 Status: open
-Model: unknown
+Model: gpt-6-luna
 Parent: [0004-platform-rendering-and-native-boundaries.md](0004-platform-rendering-and-native-boundaries.md)
-Updated: 2026-10-04
+Updated: 2026-10-10
 
 ## Current-head acceptance triage — 2026-10-04
 
@@ -227,3 +227,20 @@ menus, cross-thread command completion, full multi-window focus/display E2E,
 sustained resource-growth evidence, and performance evidence remain open. No
 support tier or release gate is promoted by source tests or workflow
 configuration alone.
+
+## Implementation progress — 2026-10-10
+
+AppKit `scrollWheel:` now emits the shared scroll event with logical pointer
+coordinates and native `scrollingDeltaX/Y` values. Precise point deltas and
+non-precise line/row deltas remain unnormalized because the portable event has
+no precision/unit discriminator. A portable decoder test and native responder
+smoke cover signed deltas, modifiers, and both AppKit precision modes. The
+responder smoke reads deltas from `NSEvent` objects created from Core Graphics
+scroll events, but does not establish normal window-system delivery or
+physical-device scrolling.
+
+The native E2E also round-trips UTF-8 through a unique private pasteboard and
+checks supported cursor selection and unsupported-tag handling. It does not
+touch the user's General Pasteboard. General Pasteboard exchange, visible
+cursor confirmation, real multi-display DPI movement, IME, accessibility,
+menus, and release/support gates remain open.
