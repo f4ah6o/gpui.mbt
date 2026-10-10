@@ -4,6 +4,22 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
+### Security
+
+### Migration
+
+## 0.2.0 - 2026-10-10
+
+### Added
+
 - Added CoreText measurement and grayscale Metal rendering for bounded macOS
   single-line scene text, plus opt-in native frame readback and host-scoped
   AppKit input hooks for E2E evidence. See [macOS native support](docs/macos-native.md).
@@ -26,6 +42,10 @@
 - Added portable `AppLifetime` tokens and app-owned capability registry creation/adoption. Stop now invalidates registered typed, GUI, and adapter handles and rejects cached or late results. See the [owner lifecycle contract](docs/capability-lifecycle.md).
 
 - Added the first macOS AppKit/Metal backend and MoonBit quad demo, with a portable backend interface, logical input/scale events, typed failures, native frame/lifecycle/input E2E, app-bundle build script, and macOS CI build/evidence workflows. See [issue 0006](issues/open/0006-macos-native-backend.md). Text/IME, accessibility, automatic renderer recovery, and production support gates remain pending.
+
+- Added macOS scroll-wheel delivery to the shared input event stream. Precise
+  point deltas and coarse line/row deltas retain their AppKit units; physical
+  device delivery remains unqualified. See [macOS native support](docs/macos-native.md).
 
 - Added a Stage A macOS example that composes the portable reusable Button fixture with the AppKit/Metal host, plus adapter regressions and completed-frame native smoke checks. See the [macOS Button guide](examples/macos_button/README.md).
 

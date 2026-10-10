@@ -2,12 +2,68 @@
 #define GPUI_TESTING 1
 #import "../../platform/macos/native.m"
 #include <assert.h>
+#include <CoreGraphics/CoreGraphics.h>
 #include <pthread.h>
 #include <stdlib.h>
 static const GpuiApi *api;
+@interface GPScrollProbe : NSObject
+@property NSPoint locationInWindow;
+@property CGFloat scrollingDeltaX, scrollingDeltaY;
+@property NSEventModifierFlags modifierFlags;
+@property BOOL hasPreciseScrollingDeltas;
+@end
+@implementation GPScrollProbe
+@end
 static int call_op(int op, int64_t token, double x, double y, NSString *text) {
   NSData *data=[text dataUsingEncoding:NSUTF8StringEncoding];
   return api->call(op,token,x,y,data.bytes,(int32_t)data.length);
+}
+static NSData *read_clipboard_bytes(void) {
+  int64_t length=api->integer(8);
+  assert(length>=0 && length<=16*1024*1024);
+  NSMutableData *data=[NSMutableData dataWithLength:(NSUInteger)length];
+  uint8_t *bytes=data.mutableBytes;
+  for (int64_t i=0;i<length;i++) bytes[i]=(uint8_t)api->integer((int32_t)(100+i));
+  return data;
+}
+static void verify_clipboard_and_cursors(void) {
+  test_clipboard=[NSPasteboard pasteboardWithUniqueName];
+  assert(test_clipboard);
+  assert(call_op(13,0,0,0,nil)==0 && api->integer(8)==0);
+  NSString *expected=@"macOS service smoke: 日本語 🙂";
+  assert(call_op(14,0,0,0,expected)==0);
+  assert(call_op(13,0,0,0,nil)==0);
+  assert([read_clipboard_bytes() isEqualToData:[expected dataUsingEncoding:NSUTF8StringEncoding]]);
+  for (int cursor=0;cursor<=2;cursor++) assert(call_op(12,0,cursor,0,nil)==0);
+  assert(call_op(12,0,3,0,nil)==9);
+  assert(call_op(12,0,0,0,nil)==0);
+}
+static void verify_scroll_delivery(int64_t token, CGScrollEventUnit units,
+                                   BOOL precise, int32_t delta_x, int32_t delta_y) {
+  GPWindow *window=windows[@(token)]; assert(window && window.window.contentView);
+  GPView *view=(GPView *)window.window.contentView;
+  NSPoint expected_view=NSMakePoint(33.5,44.25);
+  CGEventRef cg_event=CGEventCreateScrollWheelEvent(NULL,units,2,delta_x,delta_y);
+  assert(cg_event);
+  CGEventSetFlags(cg_event,kCGEventFlagMaskShift|kCGEventFlagMaskCommand);
+  NSEvent *event=[NSEvent eventWithCGEvent:cg_event];
+  CFRelease(cg_event);
+  assert(event && event.hasPreciseScrollingDeltas==precise);
+  GPScrollProbe *probe=[GPScrollProbe new];
+  probe.locationInWindow=NSMakePoint(expected_view.x,
+      view.bounds.size.height-expected_view.y);
+  probe.scrollingDeltaX=event.scrollingDeltaX;
+  probe.scrollingDeltaY=event.scrollingDeltaY;
+  probe.modifierFlags=event.modifierFlags;
+  probe.hasPreciseScrollingDeltas=event.hasPreciseScrollingDeltas;
+  [view scrollWheel:(NSEvent *)probe];
+  assert(call_op(6,0,0,0,nil)==0);
+  assert(api->integer(1)==16 && api->integer(2)==token);
+  assert(api->integer(4)==9);
+  assert(fabs(api->number(1)-expected_view.x)<0.0001);
+  assert(fabs(api->number(2)-expected_view.y)<0.0001);
+  assert(fabs(api->number(3)-event.scrollingDeltaX)<0.0001);
+  assert(fabs(api->number(4)-event.scrollingDeltaY)<0.0001);
 }
 static void *wrong_thread(void *unused) {
   (void)unused; assert(call_op(3,0,320,240,@"wrong thread") == 18); return NULL;
@@ -77,6 +133,9 @@ int main(void) {
     assert(gpui_macos_test_post_escape_v1(token)==9);
     setenv("GPUI_NATIVE_E2E","1",1);
     drain();
+    verify_clipboard_and_cursors();
+    verify_scroll_delivery(token,kCGScrollEventUnitLine,NO,1,-2);
+    verify_scroll_delivery(token,kCGScrollEventUnitPixel,YES,-4,7);
     NSString *snapshot=[NSString stringWithFormat:
       @"{\"schema_version\":1,\"viewport\":{\"x\":0,\"y\":0,\"width\":320,\"height\":240},\"scale\":%g,\"resources\":[],\"clip_chains\":[{\"id\":0,\"rects\":[{\"x\":60,\"y\":60,\"width\":80,\"height\":40}]}],\"items\":[{\"kind\":\"quad\",\"bounds\":{\"x\":40,\"y\":40,\"width\":40,\"height\":80},\"color\":{\"red\":255,\"green\":0,\"blue\":0,\"alpha\":255},\"transform\":{\"a\":1,\"b\":0,\"c\":0,\"d\":1,\"tx\":20,\"ty\":0},\"opacity\":1,\"clip_chain_id\":0},{\"kind\":\"quad\",\"bounds\":{\"x\":80,\"y\":60,\"width\":60,\"height\":40},\"color\":{\"red\":0,\"green\":0,\"blue\":255,\"alpha\":255},\"transform\":{\"a\":1,\"b\":0,\"c\":0,\"d\":1,\"tx\":0,\"ty\":0},\"opacity\":0.5,\"clip_chain_id\":null}]}",w.scale];
     assert(call_op(9,token,0,0,snapshot)==0);
@@ -183,7 +242,7 @@ int main(void) {
     assert(call_op(2,0,0,0,nil)==0); assert(call_op(2,0,0,0,nil)==0);
     assert(call_op(1,0,0,0,nil)==0); assert(call_op(0,epoch,0,0,nil)==10);
     assert(call_op(2,0,0,0,nil)==0);
-    puts("GPUI_MACOS_E2E {\"gpu_pixels\":true,\"grayscale_text\":true,\"unsupported_control_text_preserves_frame\":true,\"frame_readback\":true,\"test_input\":true,\"logical_coordinates\":true,\"resize\":true,\"wrong_thread\":true,\"churn\":32,\"stale_callbacks\":true,\"device_loss\":true,\"device_recovery\":true}");
+    puts("GPUI_MACOS_E2E {\"gpu_pixels\":true,\"grayscale_text\":true,\"unsupported_control_text_preserves_frame\":true,\"frame_readback\":true,\"test_input\":true,\"scroll_responder_precise_and_coarse\":true,\"clipboard_utf8_isolated\":true,\"cursor_kinds\":true,\"logical_coordinates\":true,\"resize\":true,\"wrong_thread\":true,\"churn\":32,\"stale_callbacks\":true,\"device_loss\":true,\"device_recovery\":true}");
   }
   return 0;
 }
