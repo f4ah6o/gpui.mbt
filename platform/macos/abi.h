@@ -18,6 +18,9 @@ typedef struct {
 // 4 modifiers, 5 button/key, 6 repeat, 7 ABI version, 8 UTF-8 output length, 9 host epoch,
 // 100+i UTF-8 output byte i. Output remains owned by the shim until the next call.
 // Number fields: 0 scale, 1 x, 2 y, 3 width, 4 height.
+// Event kind 16 is scroll: x/y are logical pointer coordinates, width/height
+// carry AppKit scrollingDeltaX/Y values (points for precise events, lines/rows
+// otherwise), with no cross-platform unit normalization.
 // Test-only E2E exports (GPUI_TESTING + GPUI_NATIVE_E2E=1): read metadata and
 // copy the last completed Metal frame as top-left RGBA8.
 int32_t gpui_macos_test_frame_meta_v1(int64_t window, double *output);

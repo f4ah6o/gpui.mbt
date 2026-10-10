@@ -1,6 +1,7 @@
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -220,21 +221,30 @@ class FieldFixtureEncoderTests(unittest.TestCase):
         fixture_sets = [seven_source_records(), origin_source_records()]
         with tempfile.TemporaryDirectory(prefix="field rerun ") as temp:
             root = Path(temp) / "evidence with spaces"
+            root.mkdir(parents=True)
             runs = []
             for records in fixture_sets:
                 lines = [json.dumps(record, ensure_ascii=False, separators=(",", ":"))
                          for record in records]
                 for _ in range(2):
-                    result = subprocess.run(
-                        ["sh", str(ROOT / "scripts/create_field_fixture_run.sh"), str(root)],
-                        text=True, capture_output=True, check=False,
-                    )
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    run = Path(result.stdout.strip())
+                    if os.name == "nt":
+                        # The run allocator is a POSIX shell script and cannot
+                        # consume native Windows paths through Git Bash. Keep
+                        # the retained-run and encoder assertions meaningful on
+                        # Windows with the equivalent native temp allocation.
+                        run = Path(tempfile.mkdtemp(prefix="field-run.", dir=root))
+                    else:
+                        result = subprocess.run(
+                            ["sh", str(ROOT / "scripts/create_field_fixture_run.sh"), str(root)],
+                            text=True, capture_output=True, check=False,
+                        )
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        run = Path(result.stdout.strip())
                     self.assertTrue(run.is_absolute())
                     self.assertEqual(run.parent, root)
                     self.assertEqual(list(run.iterdir()), [])
-                    self.assertEqual(run.stat().st_mode & 0o777, 0o700)
+                    if os.name == "posix":
+                        self.assertEqual(run.stat().st_mode & 0o777, 0o700)
                     source = run / "fixtures.jsonl"
                     source.write_text("\n".join(lines) + "\n", encoding="utf-8")
                     encoder.build_fixture_set(source, run / "encoded", "a" * 40)
@@ -300,7 +310,8 @@ class FieldFixtureEncoderTests(unittest.TestCase):
                 saved = (output / original["original"]).read_text(encoding="utf-8")
                 self.assertEqual(saved, line + "\n")
                 self.assertEqual(original["original_line_sha256"], hashlib.sha256(saved.encode()).hexdigest())
-                self.assertEqual((output / original["frame"]).stat().st_mode & 0o777, 0o600)
+                if os.name == "posix":
+                    self.assertEqual((output / original["frame"]).stat().st_mode & 0o777, 0o600)
             edited = (output / "frames/edited.gpf").read_bytes()
             self.assertEqual((output / "frames/rejected_newline.gpf").read_bytes(), edited)
             self.assertEqual((output / "frames/rejected_bidi.gpf").read_bytes(), edited)
@@ -320,7 +331,7 @@ class FieldFixtureEncoderTests(unittest.TestCase):
                        "fc_match_request=sans\n" +
                        "fc_match_request=sans:charset=65e5\n" +
                        "font content hash fixture\n")
-            (root / "font-profile.txt").write_text(profile, encoding="utf-8")
+            (root / "font-profile.txt").write_bytes(profile.encode("utf-8"))
             output = root / "fixtures"
             encoder.build_fixture_set(source, output, source_head)
             manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))

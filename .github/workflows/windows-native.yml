@@ -30,4 +30,5 @@ jobs:
           path: |
             _build/windows-native/
             _build/windows-text-field/
+            _build/windows-command-palette/
           if-no-files-found: ignore
