@@ -14,7 +14,7 @@ pub(all) enum ButtonDemoError {
 pub extend ButtonDemoError with Eq::{not_equal, equal}
 
 ///|
-/// App-owned state for the Ubuntu button example. Earlier immutable copies
+/// App-owned state for the shared native Button fixture. Earlier immutable copies
 /// share a freshness fence; the latest returned value owns future transitions.
 /// The framework Button emits an action; the fixture owns the count and reset.
 pub struct ButtonDemo {
@@ -166,7 +166,7 @@ fn demo_accessibility_specs(
     1UL,
     None,
     @accessibility.Window,
-    "Ubuntu button demo",
+    "Button demo",
     viewport,
   )
   if !button_visible {
@@ -221,7 +221,7 @@ fn demo_sync_accessibility_or_abort(demo : ButtonDemo) -> ButtonDemo {
         accessibility_snapshot: snapshot,
       })
     Err(AccessibilityError(@accessibility.ModelClosed)) => demo
-    Err(_) => abort("Ubuntu button semantic fixture invariant")
+    Err(_) => abort("Button semantic fixture invariant")
   }
 }
 

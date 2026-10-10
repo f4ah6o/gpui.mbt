@@ -45,3 +45,26 @@ test "macOS physical control keys map to portable input" {
 test "printable keys retain native Unicode payload" {
   assert_true(key_from_code(0, "あ😀") == @primitives.Character("あ😀"))
 }
+
+///|
+test "scroll decoder preserves logical position, native deltas and modifiers" {
+  let mods = @primitives.Modifiers::new(
+    shift=true,
+    control=false,
+    alt=true,
+    meta=true,
+  )
+  match decode_scroll_event(12.5, 8.25, -4.5, 7.25, mods) {
+    Ok(@platform.Input(@primitives.Scroll(position~, delta~, modifiers=actual))) => {
+      assert_eq(position.x(), 12.5)
+      assert_eq(position.y(), 8.25)
+      assert_eq(delta.x(), -4.5)
+      assert_eq(delta.y(), 7.25)
+      assert_true(actual.shift() && actual.alt() && actual.meta())
+      assert_true(!actual.control())
+    }
+    _ => fail("valid scroll values were rejected")
+  }
+  assert_true(decode_scroll_event(0.0 / 0.0, 0.0, 0.0, 1.0, mods) is Err(_))
+  assert_true(decode_scroll_event(0.0, 0.0, 0.0, 1.0 / 0.0, mods) is Err(_))
+}

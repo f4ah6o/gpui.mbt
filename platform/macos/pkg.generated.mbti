@@ -14,6 +14,16 @@ import {
 // Errors
 
 // Types and methods
+pub struct ButtonAccessibilitySnapshot {
+  name : String
+  bounds : @primitives.Rect
+  enabled : Bool
+  loading : Bool
+  focused : Bool
+  activations : Int
+}
+pub fn ButtonAccessibilitySnapshot::new(String, @primitives.Rect, Bool, Bool, Bool, Int) -> Self
+
 pub struct Host {
   // private fields
 }
@@ -25,21 +35,27 @@ pub fn Host::next_event(Self, timeout_ms? : Int) -> Result[@platform.Event?, @di
 pub fn Host::post_test_click(Self, @platform.WindowId, @primitives.Point) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::post_test_escape(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::present(Self, @platform.WindowId, @scene.SceneSnapshot) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::publish_button_accessibility(Self, @platform.WindowId, Int64, ButtonAccessibilitySnapshot) -> Result[Int64, @diagnostics.FrameworkError]
 pub fn Host::read_clipboard(Self) -> Result[String, @diagnostics.FrameworkError]
 pub fn Host::recover_renderer(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::request_close(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::request_exit(Self) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::require_capability(Self, @platform.Capability) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::revoke_button_accessibility(Self, @platform.WindowId, Int64) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::set_cursor(Self, @platform.Cursor) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::set_size(Self, @platform.WindowId, Double, Double) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::set_title(Self, @platform.WindowId, String) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::start() -> Result[Self, @diagnostics.FrameworkError]
 pub fn Host::stop(Self) -> Result[Unit, @diagnostics.FrameworkError]
+pub fn Host::take_button_accessibility_request(Self, @platform.WindowId) -> Result[Int64?, @diagnostics.FrameworkError]
 pub fn Host::wake(Self) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::window_metrics(Self, @platform.WindowId) -> Result[(Double, Double, Double), @diagnostics.FrameworkError]
 pub fn Host::write_clipboard(Self, String) -> Result[Unit, @diagnostics.FrameworkError]
 pub impl @platform.Backend for Host
 pub impl @testing.FrameReadback for Host
+
+type MacAXButtonPayload derive(ToJson)
+pub fn MacAXButtonPayload::to_json(Self) -> Json
 
 // Type aliases
 

@@ -47,6 +47,159 @@ fn mac_button_test_key_up(
 }
 
 ///|
+fn mac_button_test_ax_binding(
+  demo : @fixture.ButtonDemo,
+  token : Int64,
+) -> MacButtonAXBinding? {
+  match mac_button_accessibility_node(demo) {
+    None => None
+    Some(node) =>
+      Some({ node, transport_token: token, activations: demo.activations(), })
+  }
+}
+
+///|
+test "macOS AX mapping projects the existing shared Button snapshot" {
+  let demo = @fixture.ButtonDemo::new(640.0, 240.0).unwrap()
+  let node = mac_button_accessibility_node(demo).unwrap()
+  assert_true(node.role == @accessibility.Button)
+  assert_eq(node.name, "Run action")
+  assert_true(node.bounds == demo.button().bounds())
+  assert_true(node.enabled)
+  assert_true(!node.loading)
+  assert_true(!node.focused)
+
+  let focused = demo.focus_button().unwrap()
+  let focused_node = mac_button_accessibility_node(focused).unwrap()
+  assert_true(focused_node.node_id == node.node_id)
+  assert_true(focused_node.focused)
+
+  let loading = focused.with_loading(true).unwrap()
+  let loading_node = mac_button_accessibility_node(loading).unwrap()
+  assert_true(loading_node.loading)
+  assert_true(loading_node.focused)
+  assert_true(mac_button_ax_requires_new_binding(node, loading_node))
+}
+
+///|
+test "macOS AX projection is absent while the host session is suspended" {
+  let session = MacButtonSession::new(640.0, 240.0, 1.0).unwrap()
+  let (suspended, _) = session.sync_metrics(0.0, 240.0, 1.0)
+  assert_true(!suspended.is_presentable())
+  match mac_button_ax_current_node(suspended) {
+    Some(_) => assert_true(false)
+    None => ()
+  }
+}
+
+///|
+test "macOS semantic AX invokes remain separate app-owned effects" {
+  let demo = @fixture.ButtonDemo::new(640.0, 240.0).unwrap()
+  let mut session = MacButtonSession::new(640.0, 240.0, 1.0).unwrap()
+  session = {
+    ..session,
+    demo,
+    accessibility_binding: mac_button_test_ax_binding(demo, 901),
+  }
+
+  let (one, one_accepted) = session.dispatch_accessibility_token(901)
+  assert_true(one_accepted)
+  assert_eq(one.demo().activations(), 1)
+  let (two, two_accepted) = one.dispatch_accessibility_token(901)
+  assert_true(two_accepted)
+  assert_eq(two.demo().activations(), 2)
+}
+
+///|
+test "macOS queued AX bindings reject foreign stale removed disabled and loading targets" {
+  let original = @fixture.ButtonDemo::new(640.0, 240.0).unwrap()
+  let foreign = @fixture.ButtonDemo::new(640.0, 240.0).unwrap()
+  let mut session = MacButtonSession::new(640.0, 240.0, 1.0).unwrap()
+  let mut binding = mac_button_test_ax_binding(original, 902)
+
+  session = {
+    ..session,
+    accessibility_binding: mac_button_test_ax_binding(foreign, 902),
+  }
+  let (foreign_result, accepted) = session.dispatch_accessibility_token(902)
+  assert_true(!accepted)
+  assert_eq(foreign_result.demo().activations(), 0)
+
+  let mut stale_session = MacButtonSession::new(640.0, 240.0, 1.0).unwrap()
+  stale_session = {
+    ..stale_session,
+    demo: original,
+    accessibility_binding: binding,
+  }
+  stale_session = { ..stale_session, demo: original.reset_session().unwrap(), }
+  let (stale_result, accepted) = stale_session.dispatch_accessibility_token(902)
+  assert_true(!accepted)
+  assert_eq(stale_result.demo().activations(), 0)
+
+  let removed_demo = @fixture.ButtonDemo::new(640.0, 240.0).unwrap()
+  binding = mac_button_test_ax_binding(removed_demo, 902)
+  let mut removed_session = MacButtonSession::new(640.0, 240.0, 1.0).unwrap()
+  removed_session = {
+    ..removed_session,
+    demo: removed_demo,
+    accessibility_binding: binding,
+  }
+  removed_session = {
+    ..removed_session,
+    demo: removed_demo.resize(80.0, 30.0).unwrap(),
+  }
+  let (removed_result, accepted) = removed_session.dispatch_accessibility_token(
+    902,
+  )
+  assert_true(!accepted)
+  assert_eq(removed_result.demo().activations(), 0)
+
+  let closing = @fixture.ButtonDemo::new(640.0, 240.0).unwrap()
+  binding = mac_button_test_ax_binding(closing, 905)
+  closing.close()
+  let reopened = closing.reopen().unwrap()
+  let mut reopened_session = MacButtonSession::new(640.0, 240.0, 1.0).unwrap()
+  reopened_session = {
+    ..reopened_session,
+    accessibility_binding: binding,
+    demo: reopened,
+  }
+  let (reopened_result, accepted) = reopened_session.dispatch_accessibility_token(
+    905,
+  )
+  assert_true(!accepted)
+  assert_eq(reopened_result.demo().activations(), 0)
+
+  let enabled = @fixture.ButtonDemo::new(640.0, 240.0).unwrap()
+  let mut disabled_session = MacButtonSession::new(640.0, 240.0, 1.0).unwrap()
+  binding = mac_button_test_ax_binding(enabled, 903)
+  disabled_session = {
+    ..disabled_session,
+    accessibility_binding: binding,
+    demo: enabled.with_enabled(false).unwrap(),
+  }
+  let (disabled_result, accepted) = disabled_session.dispatch_accessibility_token(
+    903,
+  )
+  assert_true(!accepted)
+  assert_eq(disabled_result.demo().activations(), 0)
+
+  let loading = @fixture.ButtonDemo::new(640.0, 240.0).unwrap()
+  let mut loading_session = MacButtonSession::new(640.0, 240.0, 1.0).unwrap()
+  binding = mac_button_test_ax_binding(loading, 904)
+  loading_session = {
+    ..loading_session,
+    accessibility_binding: binding,
+    demo: loading.with_loading(true).unwrap(),
+  }
+  let (loading_result, accepted) = loading_session.dispatch_accessibility_token(
+    904,
+  )
+  assert_true(!accepted)
+  assert_eq(loading_result.demo().activations(), 0)
+}
+
+///|
 test "macOS event adapter routes Tab Enter and Space once" {
   let mut session = MacButtonSession::new(640.0, 240.0, 1.0).unwrap()
   let (after_tab, tab_repaint) = session

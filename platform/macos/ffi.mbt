@@ -16,6 +16,26 @@ extern "C" fn integer(field : Int) -> Int64 = "gpui_integer"
 extern "C" fn number(field : Int) -> Double = "gpui_number"
 
 ///|
+#borrow(payload, output)
+extern "C" fn accessibility_publish(
+  window : Int64,
+  binding : Int64,
+  payload : Bytes,
+  length : Int,
+  output : FixedArray[Int64],
+) -> Int = "gpui_macos_ax_publish"
+
+///|
+extern "C" fn accessibility_revoke(window : Int64, binding : Int64) -> Int = "gpui_macos_ax_revoke"
+
+///|
+#borrow(output)
+extern "C" fn accessibility_take_request(
+  window : Int64,
+  output : FixedArray[Int64],
+) -> Int = "gpui_macos_ax_take_request"
+
+///|
 #borrow(metrics)
 extern "C" fn frame_metrics(
   window : Int64,

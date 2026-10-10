@@ -1,0 +1,26 @@
+import {
+  "f4ah6o/gpui/windows" @native,
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/platform/testing",
+  "f4ah6o/gpui/examples/ubuntu_button/fixture",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/scene",
+  "f4ah6o/gpui/diagnostics",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+}
+
+import {
+  "f4ah6o/gpui/accessibility",
+  "f4ah6o/gpui/platform",
+  "f4ah6o/gpui/primitives",
+  "f4ah6o/gpui/examples/ubuntu_button/fixture",
+} for "wbtest"
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")
+
+options(
+  "native-stub": [ "stdout_observer.c" ],
+)
