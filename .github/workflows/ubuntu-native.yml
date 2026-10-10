@@ -43,9 +43,10 @@ jobs:
           pkg-config --modversion pangoft2 fontconfig
           moon version --all
       - name: Native E2E and recovery-to-first-frame timing diagnostic
+        id: ubuntu_benchmark
         env:
           GPUI_BENCH_RUNNER_CLASS: ubuntu-24.04-github-hosted
-        run: python3 scripts/benchmark_ubuntu.py --output _build/ubuntu-bench/report.json
+        run: python3 scripts/run_ubuntu_benchmark_with_trace.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
