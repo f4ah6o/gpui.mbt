@@ -394,6 +394,18 @@ static void emit_event(gpui_windows_host *host, int32_t kind, double x,
   emit_event_for(host, host ? host->window_id : 0, kind, x, y, detail, mods);
 }
 
+static void emit_wheel_event(gpui_windows_host *host, double x, double y,
+                             int32_t horizontal, double delta, int32_t mods) {
+  if (!host)
+    return;
+  int32_t slot =
+      (host->event_read + host->event_count) % GPUI_EVENT_CAPACITY;
+  int32_t previous_count = host->event_count;
+  emit_event(host, 10, x, y, horizontal, mods);
+  if (host->event_count > previous_count)
+    host->events[slot][4] = delta;
+}
+
 static void discard_events_for(gpui_windows_host *host, int32_t window_id) {
   int32_t kept_count = 0;
   int32_t old_read = host->event_read;
@@ -1730,12 +1742,9 @@ static LRESULT CALLBACK gpui_window_proc(HWND hwnd, UINT message,
     host->api.screen_to_client(hwnd, &point);
     double delta = (double)(short)HIWORD(wparam) / WHEEL_DELTA * 40.0;
     int32_t horizontal = message == WM_MOUSEHWHEEL ? 1 : 0;
-    emit_event(host, 10, (double)point.x / host->scale,
-               (double)point.y / host->scale, horizontal,
-               modifiers_from_message(host, wparam));
-    int32_t at = (host->event_read + host->event_count - 1) %
-                GPUI_EVENT_CAPACITY;
-    host->events[at][4] = delta;
+    emit_wheel_event(host, (double)point.x / host->scale,
+                     (double)point.y / host->scale, horizontal, delta,
+                     modifiers_from_message(host, wparam));
     return 0;
   }
   case WM_KEYDOWN:
@@ -3138,6 +3147,124 @@ int32_t gpui_windows_stop(int32_t token) {
   return GPUI_WINDOWS_OK;
 }
 
+static void seed_wheel_test_editor_slot(gpui_windows_host *host, int32_t slot,
+                                        uint8_t *payload) {
+  host->editor_events[slot] = TRUE;
+  for (int32_t i = 0; i < 10; ++i)
+    host->editor_fields[slot][i] = 1000.0 + i;
+  host->editor_payloads[slot] = payload;
+  host->editor_payload_bytes[slot] = 4;
+  host->editor_payload_total = 4;
+}
+
+static BOOL wheel_test_tail_unchanged(
+    gpui_windows_host *host, int32_t slot, const double event_before[10],
+    BOOL editor_before, const double editor_fields_before[10],
+    uint8_t *payload_before, int32_t payload_bytes_before,
+    int32_t payload_total_before) {
+  return memcmp(host->events[slot], event_before,
+                sizeof(host->events[slot])) == 0 &&
+         host->editor_events[slot] == editor_before &&
+         memcmp(host->editor_fields[slot], editor_fields_before,
+                sizeof(host->editor_fields[slot])) == 0 &&
+         host->editor_payloads[slot] == payload_before &&
+         host->editor_payload_bytes[slot] == payload_bytes_before &&
+         host->editor_payload_total == payload_total_before;
+}
+
+/* Exercise the production wheel enqueue helper without a real HWND. These
+ * cases cover the wrapped success path and both queue/sequence rejection
+ * paths while sentinel editor sidecars occupy the last accepted slot. */
+int32_t gpui_windows_test_wheel_enqueue(void) {
+  static gpui_windows_host host;
+  memset(&host, 0, sizeof(host));
+  host.window_id = 77;
+  host.scale = 1.5;
+  host.logical_width = 640.0;
+  host.logical_height = 480.0;
+  host.sequence = 11;
+  host.event_read = GPUI_EVENT_CAPACITY - 1;
+  host.event_count = 1;
+  host.events[host.event_read][0] = 7.0;
+  host.events[host.event_read][1] = 77.0;
+  host.events[host.event_read][2] = 11.0;
+  emit_wheel_event(&host, 12.5, 20.25, 1, -40.0, 9);
+  const double *accepted = host.events[0];
+  if (host.event_count != 2 || host.sequence != 12 || accepted[0] != 10.0 ||
+      accepted[1] != 77.0 || accepted[2] != 12.0 || accepted[3] != 1.5 ||
+      accepted[4] != -40.0 || accepted[5] != 480.0 ||
+      accepted[6] != 12.5 || accepted[7] != 20.25 || accepted[8] != 1.0 ||
+      accepted[9] != 9.0 || host.events[host.event_read][0] != 7.0 ||
+      host.events[host.event_read][4] != 0.0)
+    return 2;
+
+  memset(&host, 0, sizeof(host));
+  host.window_id = 77;
+  host.scale = 2.0;
+  host.logical_width = 640.0;
+  host.logical_height = 480.0;
+  host.sequence = 31;
+  host.event_read = GPUI_EVENT_CAPACITY - 8;
+  host.event_count = GPUI_EVENT_CAPACITY;
+  int32_t tail = (host.event_read + host.event_count - 1) %
+                 GPUI_EVENT_CAPACITY;
+  for (int32_t i = 0; i < 10; ++i)
+    host.events[tail][i] = 2000.0 + i;
+  uint8_t *payload = (uint8_t *)malloc(4);
+  if (!payload)
+    return GPUI_WINDOWS_RESOURCE;
+  memcpy(payload, "keep", 4);
+  seed_wheel_test_editor_slot(&host, tail, payload);
+  double event_before[10];
+  double editor_fields_before[10];
+  memcpy(event_before, host.events[tail], sizeof(event_before));
+  memcpy(editor_fields_before, host.editor_fields[tail],
+         sizeof(editor_fields_before));
+  int32_t count_before = host.event_count;
+  int64_t sequence_before = host.sequence;
+  emit_wheel_event(&host, 1.0, 2.0, 0, 40.0, 0);
+  BOOL queue_rejection_preserved =
+      host.error == GPUI_WINDOWS_RESOURCE && host.state == 1 &&
+      host.event_count == count_before && host.sequence == sequence_before &&
+      wheel_test_tail_unchanged(&host, tail, event_before, TRUE,
+                                editor_fields_before, payload, 4, 4);
+  if (host.editor_payloads[tail] == payload)
+    free(payload);
+  if (!queue_rejection_preserved)
+    return 3;
+
+  memset(&host, 0, sizeof(host));
+  host.window_id = 77;
+  host.scale = 2.0;
+  host.logical_width = 640.0;
+  host.logical_height = 480.0;
+  host.sequence = INT64_C(9007199254740991);
+  host.event_read = GPUI_EVENT_CAPACITY - 1;
+  host.event_count = 2;
+  tail = (host.event_read + host.event_count - 1) % GPUI_EVENT_CAPACITY;
+  for (int32_t i = 0; i < 10; ++i)
+    host.events[tail][i] = 3000.0 + i;
+  payload = (uint8_t *)malloc(4);
+  if (!payload)
+    return GPUI_WINDOWS_RESOURCE;
+  memcpy(payload, "stay", 4);
+  seed_wheel_test_editor_slot(&host, tail, payload);
+  memcpy(event_before, host.events[tail], sizeof(event_before));
+  memcpy(editor_fields_before, host.editor_fields[tail],
+         sizeof(editor_fields_before));
+  count_before = host.event_count;
+  sequence_before = host.sequence;
+  emit_wheel_event(&host, 3.0, 4.0, 1, 80.0, 0);
+  BOOL sequence_rejection_preserved =
+      host.error == GPUI_WINDOWS_RESOURCE && host.state == 1 &&
+      host.event_count == count_before && host.sequence == sequence_before &&
+      wheel_test_tail_unchanged(&host, tail, event_before, TRUE,
+                                editor_fields_before, payload, 4, 4);
+  if (host.editor_payloads[tail] == payload)
+    free(payload);
+  return sequence_rejection_preserved ? GPUI_WINDOWS_OK : 4;
+}
+
 /* Test-only independent-process probes pump sent ownership messages while
  * awaiting a bounded challenge handshake. */
 #include "clipboard_interop_test.inc"
@@ -3475,6 +3602,9 @@ int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage,
                                               double *repeat_event) {
   (void)failed_stage;
   (void)repeat_event;
+  return GPUI_WINDOWS_UNSUPPORTED;
+}
+int32_t gpui_windows_test_wheel_enqueue(void) {
   return GPUI_WINDOWS_UNSUPPORTED;
 }
 

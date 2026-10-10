@@ -101,7 +101,9 @@ back to Microsoft's WARP software driver when hardware device creation fails.
   is still pending.
 - Basic pointer movement, mouse buttons, vertical/horizontal wheel, focus,
   common navigation keys, committed `WM_CHAR` text events, and arrow/hand/text
-  cursors. Key labels are not a source of committed text. The public
+  cursors. Wheel deltas are attached only after their event slot is accepted,
+  so queue or sequence exhaustion leaves earlier input records intact. Key
+  labels are not a source of committed text. The public
   `TextInput` capability remains unadvertised; the bounded field example uses
   the existing committed-text event path directly.
 - Native Unicode plain-text clipboard read/write. The Windows E2E round-trips
