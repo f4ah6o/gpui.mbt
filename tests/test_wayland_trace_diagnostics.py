@@ -246,16 +246,23 @@ class UnifiedFailureDiagnosticTests(unittest.TestCase):
     def test_workflow_has_one_diagnostic_orchestrator_and_unconditional_artifact_upload(self) -> None:
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github/workflows/ubuntu-native.yml").read_text(encoding="utf-8")
-        self.assertEqual(workflow.count("scripts/run_ubuntu_benchmark_with_trace.py"), 1)
-        self.assertEqual(workflow.count("id: native-e2e-timing"), 1)
-        self.assertNotIn("id: ubuntu_benchmark", workflow)
-        self.assertNotIn("Capture bounded first-frame trace after E2E failure", workflow)
-        self.assertNotIn("steps.native-e2e-timing.outcome", workflow)
-        self.assertEqual(workflow.count("actions/upload-artifact@"), 1)
-        artifact = workflow[workflow.index("actions/upload-artifact@"):]
+        primary = workflow.split("  paired-weston-comparison:", maxsplit=1)[0]
+        self.assertEqual(primary.count("scripts/run_ubuntu_benchmark_with_trace.py"), 1)
+        self.assertEqual(primary.count("id: native-e2e-timing"), 1)
+        self.assertNotIn("id: ubuntu_benchmark", primary)
+        self.assertNotIn("Capture bounded first-frame trace after E2E failure", primary)
+        self.assertNotIn("steps.native-e2e-timing.outcome", primary)
+        self.assertEqual(primary.count("actions/upload-artifact@"), 1)
+        artifact = primary[primary.index("actions/upload-artifact@"):]
         self.assertIn("if: always()", artifact)
         self.assertIn("_build/ubuntu-e2e/", artifact)
         self.assertIn("_build/ubuntu-bench/", artifact)
+        comparison = workflow.split("  paired-weston-comparison:", maxsplit=1)[1]
+        self.assertEqual(comparison.count("scripts/compare_ubuntu_revisions.py"), 1)
+        self.assertNotIn("scripts/run_ubuntu_benchmark_with_trace.py", comparison)
+        self.assertNotIn("scripts/capture_ubuntu_wayland_trace.sh", comparison)
+        self.assertIn("ubuntu-weston-paired-comparison", comparison)
+        self.assertIn("if: always()", comparison)
 
     def test_one_diagnostic_script_traces_both_scales_with_finite_limits_and_filtered_records(self) -> None:
         root = Path(__file__).resolve().parents[1]

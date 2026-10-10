@@ -370,6 +370,53 @@ cause. The first failures and artifacts remain part of the record
 A fixed, paired, finite comparison with the same workflow settings is still
 needed before attributing the failures to either source or runner.
 
+The integration branch `codex/linux-six-pr-integration-20261011` adds a
+bounded paired same-runner comparison to the Ubuntu native workflow. It pins the
+baseline to public #53 head `9c70225ddcee70385b64ee24f207ec0755b2b49f` and
+tests the exact integration-branch head as the candidate. The job uses Ubuntu
+24.04, the same MoonBit version, native package set, Weston headless GL setup,
+and the same test workload. It runs six predetermined baseline/candidate
+pairs at each of scales 1 and 2, alternating revision and scale order. Each
+scale is isolated, so a scale-1 failure cannot prevent scale-2 observations.
+The full two-scale benchmark step completed in under 80 seconds on a prior
+successful hosted run
+([job log](https://github.com/gpui-mbt/gpui.mbt/actions/runs/38047565209/job/114204130342));
+the per-attempt 180-second cap leaves more than twice that observed wall time
+for each single-scale run. This is timeout sizing evidence, not a runtime
+guarantee.
+
+To keep the workload comparable despite historical test-runner edits, each
+temporary worktree receives the same baseline-derived test drivers, C test
+fixtures and MoonBit test files. The only driver changes are the validated
+single-scale selector, stage and final-wait instrumentation, cleanup-trap status
+reporting, and foregrounded bounded `timeout` commands so an outer attempt
+timeout can terminate descendants in its process group. The manifest stores
+per-file source and overlay hashes; production files are not
+overlaid. The comparison does not invoke the failure diagnostic, replay a
+failure, or adapt the attempt sequence. It records the latest test-stage
+marker, Weston exit observations, and the relevant Weston log per attempt;
+Weston's controlled SIGTERM exit 143 after the disconnect test is distinguished
+from exit 139. Each stdout/stderr stream is capped at 1 MiB while retaining its
+beginning and tail; Weston logs are capped at 512 KiB and stored with per-attempt
+commit and status metadata. The total comparison
+budget is 60 minutes, the job timeout is 70 minutes, and each attempt is capped
+at 180 seconds plus a 10-second termination grace. If the budget expires,
+unstarted attempts are recorded as incomplete and the comparison fails. The
+normal Ubuntu workflow retains its separate single failure-only diagnostic.
+
+The comparison runs on the repository-owned integration PR's initial
+`opened` event. Later branch updates do not silently repeat the 24-attempt
+experiment. If the initial event is missing, use the existing Ubuntu
+workflow's manual dispatch
+with the exact integration branch selected; the job checks its candidate SHA
+against that ref and the pinned #53 baseline before running. The artifact also
+records the runner's core limit and kernel core pattern read-only. It does not
+change core-dump settings, attach a debugger, or upload core memory; a
+backtrace may therefore remain unavailable. Results are evidence about this
+declared hosted profile only, not a causal diagnosis or a general stability
+rate. Six observations per revision and scale cannot establish that exit 139
+is absent or harmless.
+
 The merged field/origin main source `73e7082` was checked in
 [Ubuntu run37393518087](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37393518087).
 Attempt1 passed scale1, then scale2 lifecycle/stress dispatch reported native

@@ -8,6 +8,9 @@ permissions:
   contents: read
 jobs:
   linux-text-headless:
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.ref_name != 'codex/linux-six-pr-integration-20261011'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -27,6 +30,9 @@ jobs:
         run: sh scripts/test_linux_text.sh
 
   wayland-gles:
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.ref_name != 'codex/linux-six-pr-integration-20261011'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -54,3 +60,49 @@ jobs:
           path: |
             _build/ubuntu-e2e/
             _build/ubuntu-bench/
+  paired-weston-comparison:
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'opened' &&
+       github.event.pull_request.head.repo.full_name == 'gpui-mbt/gpui.mbt' &&
+       github.event.pull_request.head.ref == 'codex/linux-six-pr-integration-20261011') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref_name == 'codex/linux-six-pr-integration-20261011')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: hustcer/setup-moonbit@1522f9aef02a8ca0187dfc00a41f5dd6b16750f7
+        with:
+          version: 0.10.14+7d59c7ec9
+          core-version: 0.10.14+7d59c7ec9
+      - name: Install the same native test dependencies as Ubuntu E2E
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri adwaita-icon-theme wayland-utils weston libpango1.0-dev libfontconfig1-dev fontconfig fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji
+          dpkg-query -W build-essential pkg-config libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev libxkbcommon-dev libgl1-mesa-dri adwaita-icon-theme wayland-utils weston libpango1.0-dev libfontconfig1-dev fontconfig fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji
+          pkg-config --modversion pangoft2 fontconfig wayland-protocols wayland-client egl
+          moon version --all
+      - name: Run the fixed paired scale 1 and scale 2 comparison
+        env:
+          GITHUB_EVENT_ACTION: ${{ github.event.action || '' }}
+          GPUI_PULL_REQUEST_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
+          GPUI_PULL_REQUEST_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name || '' }}
+          GPUI_COMPARISON_EVENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASELINE_SHA: 9c70225ddcee70385b64ee24f207ec0755b2b49f
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          python3 scripts/compare_ubuntu_revisions.py
+          --baseline-sha "$BASELINE_SHA"
+          --candidate-sha "$CANDIDATE_SHA"
+          --output-dir _build/ubuntu-comparison
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: ubuntu-weston-paired-comparison
+          path: _build/ubuntu-comparison/
+          if-no-files-found: warn
