@@ -11,6 +11,13 @@ fn ubuntu_button_accessibility_token(
 }
 
 ///|
+test "Ubuntu Button test target links the private Linux raster ABI" {
+  if @env.get_env_var("GPUI_UBUNTU_E2E") == Some("1") {
+    assert_true(@linux_text.require_grayscale_raster() is Ok(_))
+  }
+}
+
+///|
 test "Ubuntu button adapter checks its live Host owner thread" {
   if @env.get_env_var("GPUI_UBUNTU_E2E") == Some("1") {
     let host = @native.Host::start().unwrap()
