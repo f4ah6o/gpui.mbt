@@ -680,7 +680,7 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         },
         # The native macOS sample is a leaf above the portable Button fixture.
         "examples/macos_button": {
-            "diagnostics", "examples/ubuntu_button/fixture", "platform",
+            "accessibility", "diagnostics", "examples/ubuntu_button/fixture", "platform",
             "platform/macos", "platform/testing", "primitives", "scene",
         },
         "examples/linux_text_field": {
@@ -696,6 +696,18 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
             "windows", "platform/windows_text", "platform",
             "controls/text_field", "text", "text_layout", "element",
             "primitives", "scene", "diagnostics",
+        },
+        "examples/windows_command_palette": {
+            "windows", "platform/windows_text", "platform",
+            "controls/text_field", "controls/command_palette", "text",
+            "text_layout", "element", "primitives", "scene", "diagnostics",
+            "capability",
+        },
+        # The Windows Button executable is a native adapter above the shared
+        # platform-neutral fixture; its model is not copied into this leaf.
+        "examples/windows_button": {
+            "windows", "platform", "platform/testing", "primitives", "scene",
+            "diagnostics", "examples/ubuntu_button/fixture",
         },
         "element": {"core", "primitives", "layout", "scene"},
         # Semantic capabilities are portable application-facing contracts. The

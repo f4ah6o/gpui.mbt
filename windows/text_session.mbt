@@ -112,6 +112,14 @@ extern "C" fn native_next_editor(
 extern "C" fn native_window_has_keyboard_focus(host : Int, window : Int) -> Int = "gpui_windows_window_has_keyboard_focus"
 
 ///|
+extern "C" fn native_session_is_current(
+  host : Int,
+  window : Int,
+  epoch : Int,
+  owner_generation : Int,
+) -> Int = "gpui_windows_session_is_current"
+
+///|
 fn session_exact_i32(value : Double) -> Bool {
   !value.is_nan() &&
   !value.is_inf() &&
@@ -355,6 +363,41 @@ pub fn Host::window_has_keyboard_focus(
     Err(error) => return Err(error)
   }
   let status = native_window_has_keyboard_focus(self.token, native_window)
+  if status < 0 {
+    Err(backend_error(-status, operation))
+  } else if status == 0 {
+    Ok(false)
+  } else if status == 1 {
+    Ok(true)
+  } else {
+    Err(backend_error(3, operation))
+  }
+}
+
+///|
+/// Check that this exact native session owner remains armed. A window can
+/// regain OS focus before the app consumes its queued focus-loss event, while
+/// Win32 has already revoked the prior IMM32 session.
+pub fn Host::text_session_is_current(
+  self : Host,
+  window : @platform.WindowId,
+  epoch : Int,
+  owner_generation : Int,
+) -> Result[Bool, @diagnostics.FrameworkError] {
+  let operation = "text_session_is_current"
+  if epoch <= 0 || owner_generation <= 0 {
+    return Err(backend_error(3, operation))
+  }
+  let native_window = match session_window_token(window, operation) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  let status = native_session_is_current(
+    self.token,
+    native_window,
+    epoch,
+    owner_generation,
+  )
   if status < 0 {
     Err(backend_error(-status, operation))
   } else if status == 0 {
@@ -739,6 +782,14 @@ test "Windows text session decoder preserves UTF-16 ranges and attributes" {
     }
     _ => fail("expected marked text record")
   }
+  data[4] = 640.0
+  data[5] = 480.0
+  assert_true(
+    match session_decode_event(data, payload, "test") {
+      Err(_) => true
+      Ok(_) => false
+    },
+  )
 }
 
 ///|
