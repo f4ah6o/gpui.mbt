@@ -49,7 +49,8 @@ class ActrunFeedbackTests(unittest.TestCase):
                     self.assertTrue(generated.exists())
                     self.assertEqual(generated.parent, directory)
                     self.assertRegex(generated.name, r"^_local-actrun-feedback-[0-9a-f]{32}\.yml$")
-                    self.assertEqual(generated.stat().st_mode & 0o777, 0o600)
+                    if os.name == "posix":
+                        self.assertEqual(generated.stat().st_mode & 0o777, 0o600)
                     raise RuntimeError("interrupted")
             self.assertFalse(generated.exists())
             self.assertEqual(hosted.read_text(), "preserve this")
@@ -68,10 +69,14 @@ class ActrunFeedbackTests(unittest.TestCase):
                     self.fail("a symlink must not be used")
 
     def test_state_must_stay_outside_checkout(self):
-        repo = Path("/tmp/example-checkout")
-        with self.assertRaisesRegex(RuntimeError, "outside"):
-            feedback.external_path(repo / "state", repo)
-        self.assertEqual(feedback.external_path("/tmp/example-profile", repo), Path("/tmp/example-profile"))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            repo = root / "example-checkout"
+            inside = repo / "state"
+            outside = root / "example-profile"
+            with self.assertRaisesRegex(RuntimeError, "outside"):
+                feedback.external_path(inside, repo)
+            self.assertEqual(feedback.external_path(outside, repo), outside.resolve())
 
     def test_profile_failure_never_runs_actrun_and_is_recorded(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -328,7 +333,8 @@ class ActrunFeedbackTests(unittest.TestCase):
             self.assertFalse(Path(captured["GPUI_ACTRUN_WORKFLOW"]).exists())
             expected = report["generated_workflow"]
             self.assertEqual(expected["path"], Path(captured["GPUI_ACTRUN_WORKFLOW"]).relative_to(repo).as_posix())
-            self.assertEqual(expected["mode"], 0o600)
+            if os.name == "posix":
+                self.assertEqual(expected["mode"], 0o600)
             self.assertEqual(expected["sha256"], hashlib.sha256((output / "workflow.yml").read_bytes()).hexdigest())
             collector.assert_called_once_with(output, environment, expected)
 
