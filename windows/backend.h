@@ -138,5 +138,8 @@ int32_t gpui_windows_test_mouse_destroy_reset(int32_t host, int32_t window);
 /* CI-only synthetic staging through the production IMM composition helpers. */
 int32_t gpui_windows_test_text_session_staging(int32_t *failed_stage,
                                               double *repeat_event);
+/* CI-only pure-data regression for accepted wheel payloads and rejected queue
+ * writes; no HWND or input injection is required. */
+int32_t gpui_windows_test_wheel_enqueue(void);
 
 #endif

@@ -102,6 +102,9 @@ extern "C" fn native_text_session_staging(
 ) -> Int = "gpui_windows_test_text_session_staging"
 
 ///|
+extern "C" fn native_wheel_enqueue() -> Int = "gpui_windows_test_wheel_enqueue"
+
+///|
 fn rect(w : Double, h : Double) -> @primitives.Rect {
   match @primitives.Rect::new(0.0, 0.0, w, h) {
     Ok(r) => r
@@ -453,6 +456,16 @@ test "Win32 committed composition repeat travels through WndProc and decoder" {
       )
     ),
   )
+}
+
+///|
+test "Windows wheel payload updates only an accepted event slot" {
+  let status = native_wheel_enqueue()
+  if status == 1 {
+    // The non-Windows backend keeps Win32 ingress unavailable.
+    return
+  }
+  assert_eq(status, 0)
 }
 
 ///|

@@ -4,7 +4,7 @@ This document keeps project-state, support boundaries, and future work out of th
 
 ## Current position
 
-The module version is `0.2.1`. The repository contains usable headless UI foundations, experimental native slices for macOS, Ubuntu/Wayland, and Windows, and the Weekboard browser demo alongside an interaction lab. It does not currently make a production-support claim for any platform.
+The module version is `0.2.2`. The repository contains usable headless UI foundations, experimental native slices for macOS, Ubuntu/Wayland, and Windows, and the Weekboard browser demo alongside an interaction lab. It does not currently make a production-support claim for any platform.
 
 The portable codebase provides application/entity lifetimes, deterministic scheduling, flex layout, element trees, hit testing, pointer and focused key/text capture/bubble dispatch, focus, scroll state, drag gestures, quad scene generation, bounded text snapshot items, clip validation, transforms, opacity, and canonical scene snapshots. The native/browser examples exercise subsets of that shared model.
 
