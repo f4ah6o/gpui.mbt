@@ -178,7 +178,7 @@ Do not take over open PR #40/#45/#46 or pending Linux PRs #53–#56.
 - [x] Mac vectors observe role/name/bounds/enabled/loading/focus from the
   shared snapshot; foreign owner, stale fixture copies, reset/removal/reopen,
   disabled/loading and close reject actions with zero owner-side effects.
-- [x] A real native AX client observes the named `Run action` control and its
+- [ ] A real native AX client observes the named `Run action` control and its
   screen bounds/state/actions on final source, then two separate accepted
   Invokes cause exactly two app activations without synthetic physical input.
 - [x] Native stale/disabled/loading requests have zero effects and teardown
@@ -225,9 +225,9 @@ desktop/AX permission must be reported as an environment blocker.
 
 ## 変更履歴
 
-Add a bounded user-facing AX Button entry to `CHANGES.md` only after the
-implemented behavior is established. Do not broaden the existing experimental
-macOS support claim.
+The bounded user-facing AX Button entry is recorded in `CHANGES.md` 0.3.0 after
+the adapter and regression coverage were implemented. Do not broaden the
+existing experimental macOS support claim.
 
 ## 注記
 
@@ -335,3 +335,27 @@ macOS support claim.
   PR identity are recorded in the task's state/memory and PR body; this broad
   issue remains open for unfinished physical-input and external conformance
   qualification. Historical failures above are retained, not current passes.
+- 2026-10-10: Catch-up candidate `99f4b91da65b9c0269f26815f20542c77250115d`
+  merges current main `7ed8d677f1341e36c035371869f775d61c552020` and adds the
+  focus-notification and bounded-cleanup review fixes. On this candidate,
+  `bash script/test_macos_button_ax.sh --all --target-dir
+  /tmp/gpui-mac-catchup-20261010/ax-all` failed: the separate client identified
+  the exact app PID, bundle ID and path after seven observations (620.1 ms),
+  then `AXWindows` returned `unavailable` with `app windows attribute missing`
+  within 15 seconds. The client log and receipt are retained at
+  `/tmp/gpui-mac-catchup-20261010/ax-all/client-89498-89406.log` and
+  `/tmp/gpui-mac-catchup-20261010/ax-all/client-receipt.txt`; the receipt records
+  client status 1 and app cleanup as `terminated-and-reaped`. An independent
+  reviewer reproduced the same AXWindows failure on baseline merge `45e651a`;
+  this comparison does not establish the cause. External AX acceptance on the
+  catch-up candidate is FAIL/UNQUALIFIED, and visible GUI/VoiceOver checks on
+  this candidate are UNRUN. Earlier post-unlock AX and GUI passes above apply to
+  their recorded older revisions only.
+- 2026-10-10: Bounded checks on candidate `99f4b91` passed: the AppKit adapter
+  notification regression, `moon test --target native --deny-warn
+  examples/macos_button` (10/10), `./script/build_macos_button.sh --build`,
+  synthetic native `--e2e`, `moon fmt --check`, and 35 contract tests. The
+  stopped app/client/watchdog cleanup probe passed twice against the same
+  target directory, reaping the owned children within four and three seconds
+  while leaving its unrelated sentinel alive. These checks do not replace the
+  failed external AX lane or qualify a visible desktop run.
