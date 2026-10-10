@@ -324,6 +324,21 @@ pub fn ButtonDemo::accessibility_snapshot(
 }
 
 ///|
+/// Return the live semantic owner and snapshot for a platform adapter. A
+/// stale immutable fixture copy cannot export an obsolete tree.
+pub fn ButtonDemo::accessibility_source(
+  self : ButtonDemo,
+) -> Result[
+  (@accessibility.AccessibilityModel, @accessibility.AccessibilitySnapshot),
+  ButtonDemoError,
+] {
+  match demo_require_current(self) {
+    Ok(_) => Ok((self.accessibility_model, self.accessibility_snapshot))
+    Err(error) => Err(error)
+  }
+}
+
+///|
 /// Validate an accessibility request without running the application action.
 /// The returned intent is a repeatable validation receipt, not a one-shot
 /// token or a command that executes by itself.

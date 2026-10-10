@@ -1,4 +1,5 @@
 import {
+  "f4ah6o/gpui/accessibility" @accessibility,
   "f4ah6o/gpui/ubuntu" @native,
   "f4ah6o/gpui/platform",
   "f4ah6o/gpui/diagnostics",
@@ -6,6 +7,13 @@ import {
   "f4ah6o/gpui/examples/ubuntu_button/fixture",
   "moonbitlang/core/env",
 }
+
+import {
+  "f4ah6o/gpui/accessibility" @accessibility,
+  "f4ah6o/gpui/ubuntu" @native,
+  "f4ah6o/gpui/examples/ubuntu_button/fixture" @fixture,
+  "moonbitlang/core/env",
+} for "wbtest"
 
 supported_targets = "native"
 

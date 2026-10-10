@@ -98,6 +98,9 @@ for scale in 1 2; do
     tail -n 120 "$PWD/_build/ubuntu-e2e/weston-scale-$scale.log" >&2 || true
     exit "$moon_status"
   fi
+  # The native button adapter test starts a Host and exercises owner-thread
+  # projection callbacks while this isolated compositor is available.
+  GPUI_UBUNTU_E2E=1 timeout 120 moon test examples/ubuntu_button --target native --deny-warn --no-parallelize
   GPUI_UBUNTU_SMOKE=1 timeout 30 moon run examples/ubuntu --target native
   GPUI_UBUNTU_BUTTON_SMOKE=1 timeout 30 moon run examples/ubuntu_button --target native
   GPUI_FIELD_E2E=1 timeout 120 moon test examples/linux_text_field \
