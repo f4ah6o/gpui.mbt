@@ -55,6 +55,52 @@ fn windows_button_test_text(sequence : Int64, text : String) -> @platform.Event 
 }
 
 ///|
+struct WindowsButtonSmallReadback {}
+
+///|
+pub impl @testing.FrameReadback for WindowsButtonSmallReadback with fn frame_metrics(
+  _self,
+  _window : @platform.WindowId,
+) -> Result[(Int, Int, Double), @diagnostics.FrameworkError] {
+  Ok((4, 3, 1.0))
+}
+
+///|
+pub impl @testing.FrameReadback for WindowsButtonSmallReadback with fn copy_frame(
+  _self,
+  _window : @platform.WindowId,
+  output : FixedArray[Byte],
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  for index in 0..<output.length() {
+    output[index] = b'\xff'
+  }
+  Ok(())
+}
+
+///|
+test "Windows button text scan clips undersized captures and accepts empty regions" {
+  let previous = @env.get_env_var("GPUI_NATIVE_E2E")
+  @env.set_env_var("GPUI_NATIVE_E2E", "1")
+  let captured = @testing.capture_frame(
+    WindowsButtonSmallReadback::{ },
+    @platform.WindowId::new(1),
+  )
+  match previous {
+    Some(value) => @env.set_env_var("GPUI_NATIVE_E2E", value)
+    None => @env.unset_env_var("GPUI_NATIVE_E2E")
+  }
+  let frame = captured.unwrap()
+  assert_eq(frame.width(), 4)
+  assert_eq(frame.height(), 3)
+  assert_eq(windows_button_text_ink(frame, -2.0, -2.0, 2.0, 2.0).count, 4)
+  assert_eq(windows_button_text_ink(frame, 3.0, 2.0, 30.0, 30.0).count, 1)
+  assert_eq(windows_button_text_ink(frame, 4.0, 0.0, 4.0, 2.0).count, 0)
+  assert_eq(windows_button_text_ink(frame, 8.0, 0.0, 16.0, 2.0).count, 0)
+  assert_eq(windows_button_text_ink(frame, 32.0, 22.0, 256.0, 68.0).count, 0)
+  assert_eq(windows_button_text_ink(frame, 8.0, 88.0, 148.0, 108.0).count, 0)
+}
+
+///|
 test "Windows adapter routes Tab Enter and Space through the shared Button once" {
   let mut session = WindowsButtonSession::new(640.0, 240.0, 1.0).unwrap()
   let (focused, repaint) = session

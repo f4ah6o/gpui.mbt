@@ -130,17 +130,25 @@ fn windows_button_text_ink(
   let y0 = (top * scale).to_int()
   let x1 = (right * scale).to_int()
   let y1 = (bottom * scale).to_int()
+  let width = frame.width()
+  let height = frame.height()
+  let x0 = if x0 < 0 { 0 } else if x0 > width { width } else { x0 }
+  let y0 = if y0 < 0 { 0 } else if y0 > height { height } else { y0 }
+  let x1 = if x1 < 0 { 0 } else if x1 > width { width } else { x1 }
+  let y1 = if y1 < 0 { 0 } else if y1 > height { height } else { y1 }
   let pixels = frame.rgba8_top_left()
   let mut count = 0
-  for y in y0..<y1 {
-    for x in x0..<x1 {
-      let offset = (y * frame.width() + x) * 4
-      let red = pixels.unsafe_get(offset).to_int()
-      let green = pixels.unsafe_get(offset + 1).to_int()
-      let blue = pixels.unsafe_get(offset + 2).to_int()
-      let alpha = pixels.unsafe_get(offset + 3).to_int()
-      if red >= 150 && green >= 150 && blue >= 150 && alpha >= 220 {
-        count += 1
+  if x0 < x1 && y0 < y1 {
+    for y in y0..<y1 {
+      for x in x0..<x1 {
+        let offset = (y * width + x) * 4
+        let red = pixels.unsafe_get(offset).to_int()
+        let green = pixels.unsafe_get(offset + 1).to_int()
+        let blue = pixels.unsafe_get(offset + 2).to_int()
+        let alpha = pixels.unsafe_get(offset + 3).to_int()
+        if red >= 150 && green >= 150 && blue >= 150 && alpha >= 220 {
+          count += 1
+        }
       }
     }
   }
