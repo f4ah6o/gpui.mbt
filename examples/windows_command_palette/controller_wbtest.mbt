@@ -8,8 +8,101 @@ struct PaletteNativeSnapshot {
 }
 
 ///|
+fn palette_test_offsets(document : @text.TextDocument) -> Array[Int] {
+  let offsets = [0]
+  let mut current = 0
+  for scalar in document.text().iter() {
+    current += if scalar.to_int() > 0xFFFF { 2 } else { 1 }
+    offsets.push(current)
+  }
+  offsets
+}
+
+///|
+fn palette_test_rect(
+  x : Double,
+  y : Double,
+  width : Double,
+  height : Double,
+) -> @primitives.Rect {
+  @primitives.Rect::new(x, y, width, height).unwrap()
+}
+
+///|
+fn palette_test_measure(
+  document : @text.TextDocument,
+) -> Result[@text_layout.TextMeasurement, @text_field.TextFieldError] {
+  let offsets = palette_test_offsets(document)
+  let carets = []
+  for index = 0; index < offsets.length(); index = index + 1 {
+    let rect = palette_test_rect(index.to_double() * 8.0, 0.0, 0.0, 16.0)
+    carets.push(
+      match @text_layout.CaretGeometry::new(offsets[index], true, rect, rect) {
+        Ok(value) => value
+        Err(_) => return Err(@text_field.UnsupportedLayout)
+      },
+    )
+  }
+  let width = (offsets.length() - 1).to_double() * 8.0
+  match
+    @text_layout.TextMeasurement::new(
+      document,
+      palette_test_rect(0.0, 0.0, width, 20.0),
+      palette_test_rect(0.0, 0.0, width, 20.0),
+      14.0,
+      1,
+      0,
+      carets,
+    ) {
+    Ok(value) => Ok(value)
+    Err(_) => Err(@text_field.UnsupportedLayout)
+  }
+}
+
+///|
+fn palette_test_admit(
+  document : @text.TextDocument,
+  measurement : @text_layout.TextMeasurement,
+) -> Result[Unit, @text_field.TextFieldError] {
+  if measurement.document() == document {
+    Ok(())
+  } else {
+    Err(@text_field.AdmissionFailed)
+  }
+}
+
+///|
+fn palette_test_hit(
+  document : @text.TextDocument,
+  point : @primitives.Point,
+) -> Result[@text_layout.TextHit, @text_field.TextFieldError] {
+  let offsets = palette_test_offsets(document)
+  let mut nearest = 0
+  let mut distance = 1.0e300
+  for index = 0; index < offsets.length(); index = index + 1 {
+    let x = index.to_double() * 8.0
+    let candidate = if x >= point.x() { x - point.x() } else { point.x() - x }
+    if candidate < distance {
+      nearest = offsets[index]
+      distance = candidate
+    }
+  }
+  match @text_layout.TextHit::new(document, nearest, 0, nearest, true, true) {
+    Ok(value) => Ok(value)
+    Err(_) => Err(@text_field.HitTestFailed)
+  }
+}
+
+///|
+fn palette_test_fixture() -> PaletteFixture {
+  palette_fixture_with_layout(
+    palette_test_measure, palette_test_admit, palette_test_hit,
+  )
+}
+
+///|
 test "Windows command palette native owner fences window epoch and FIFO sequence" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   fixture.palette.open(fixture.tree).unwrap()
   let window = @platform.WindowId::new(17L)
   let owner = palette_native_owner(2, fixture.palette.open_epoch(), 41)
@@ -87,7 +180,7 @@ fn palette_test_escape() -> @primitives.InputEvent {
 
 ///|
 test "native empty composition keeps Enter quarantined until release across end blur and reopen" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   let palette = fixture.palette
   palette.open(fixture.tree).unwrap()
   let replacement = palette.field().selection().normalized_range()
@@ -149,7 +242,7 @@ test "native empty composition keeps Enter quarantined until release across end 
 
 ///|
 test "committed native composition Enter repeat cannot activate before release" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   let palette = fixture.palette
   palette.open(fixture.tree).unwrap()
   let replacement = palette.field().selection().normalized_range()
@@ -163,6 +256,8 @@ test "committed native composition Enter repeat cannot activate before release" 
     palette.field(),
     "日本",
     replacement,
+    fixture.measure,
+    fixture.admit,
   ).unwrap()
   assert_true(ended_owner.composition is None)
   palette.install_field_at(palette.open_epoch(), committed).unwrap()
@@ -187,7 +282,7 @@ test "committed native composition Enter repeat cannot activate before release" 
 
 ///|
 test "native empty composition Escape cancels first and retains release before fresh dismissal" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   let palette = fixture.palette
   palette.open(fixture.tree).unwrap()
   let replacement = palette.field().selection().normalized_range()
@@ -257,7 +352,7 @@ test "native empty composition Escape cancels first and retains release before f
 
 ///|
 test "Windows command palette filters committed native results but not IME marks" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   let palette = fixture.palette
   palette.open(fixture.tree).unwrap()
   let field = palette.field()
@@ -270,6 +365,8 @@ test "Windows command palette filters committed native results but not IME marks
     Some(4),
     [0, 0, 0, 0],
     replacement,
+    fixture.measure,
+    fixture.admit,
   ).unwrap()
   palette.install_field_at(palette.open_epoch(), preview).unwrap()
   assert_true(palette.field().is_composing())
@@ -299,6 +396,8 @@ test "Windows command palette filters committed native results but not IME marks
     Some(4),
     [0, 0, 0, 0],
     replacement,
+    fixture.measure,
+    fixture.admit,
   ).unwrap()
   palette.install_field_at(palette.open_epoch(), preview).unwrap()
   let (committed, completed_owner) = palette_native_append_result(
@@ -306,6 +405,8 @@ test "Windows command palette filters committed native results but not IME marks
     palette.field(),
     "日本語",
     replacement,
+    fixture.measure,
+    fixture.admit,
   ).unwrap()
   palette.install_field_at(palette.open_epoch(), committed).unwrap()
   assert_false(palette.field().is_composing())
@@ -320,6 +421,8 @@ test "Windows command palette filters committed native results but not IME marks
       palette.field(),
       "日本語",
       replacement,
+      fixture.measure,
+      fixture.admit,
     )
     is Err(_),
   )
@@ -327,7 +430,7 @@ test "Windows command palette filters committed native results but not IME marks
 
 ///|
 test "native Cancelled closes before the later session sync gate" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   let palette = fixture.palette
   palette.open(fixture.tree).unwrap()
   let original = palette.field()
@@ -342,6 +445,8 @@ test "native Cancelled closes before the later session sync gate" {
     Some(1),
     [0],
     replacement,
+    fixture.measure,
+    fixture.admit,
   ).unwrap()
   palette.install_field_at(palette.open_epoch(), preview).unwrap()
   assert_true(palette.field().is_composing())
@@ -407,7 +512,7 @@ test "native Cancelled closes before the later session sync gate" {
 
 ///|
 test "focus revoked during accepted present defers the closed frame" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   let palette = fixture.palette
   palette.open(fixture.tree).unwrap()
   ignore(
@@ -425,6 +530,8 @@ test "focus revoked during accepted present defers the closed frame" {
     Some(1),
     [0],
     replacement,
+    fixture.measure,
+    fixture.admit,
   ).unwrap()
   palette.install_field_at(palette.open_epoch(), preview).unwrap()
 
@@ -522,7 +629,7 @@ test "focus revoked during accepted present defers the closed frame" {
 
 ///|
 test "Windows command palette close waits for native fence before action and focus restore" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   let palette = fixture.palette
   palette.open(fixture.tree).unwrap()
   let epoch = palette.open_epoch()
@@ -562,7 +669,7 @@ test "Windows command palette close waits for native fence before action and foc
 
 ///|
 test "fresh Enter reaches and publishes background after one-shot palette activation" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   let palette = fixture.palette
   let tree = fixture.tree
   palette.open(tree).unwrap()
@@ -633,7 +740,7 @@ test "fresh Enter reaches and publishes background after one-shot palette activa
 
 ///|
 test "Windows command palette holds the cancel key through its physical release" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   let palette = fixture.palette
   palette.open(fixture.tree).unwrap()
   let replacement = palette.field().selection().normalized_range()
@@ -648,6 +755,8 @@ test "Windows command palette holds the cancel key through its physical release"
     Some(1),
     [0],
     replacement,
+    fixture.measure,
+    fixture.admit,
   ).unwrap()
   palette.install_field_at(palette.open_epoch(), preview).unwrap()
   assert_true(palette.field().is_composing())
@@ -699,7 +808,7 @@ test "Windows command palette holds the cancel key through its physical release"
 
 ///|
 test "Windows command palette Busy presentation retains the complete retry state" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   fixture.palette.open(fixture.tree).unwrap()
   ignore(
     palette_handle_input(fixture, @primitives.TextInput(text="Go")).unwrap(),
@@ -761,7 +870,7 @@ test "Windows command palette Busy presentation retains the complete retry state
 
 ///|
 test "Windows command palette hard presentation rejection fails closed without action" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   fixture.palette.open(fixture.tree).unwrap()
   ignore(
     palette_handle_input(fixture, @primitives.TextInput(text="Go")).unwrap(),
@@ -813,7 +922,7 @@ test "Windows command palette hard presentation rejection fails closed without a
 
 ///|
 test "pending frame identity survives intervening input, external edit fence, and resize" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   let palette = fixture.palette
   palette.open(fixture.tree).unwrap()
   ignore(
@@ -882,7 +991,7 @@ test "pending frame identity survives intervening input, external edit fence, an
 
 ///|
 test "rejected native marks and results restore the transaction before next record" {
-  let fixture = palette_fixture()
+  let fixture = palette_test_fixture()
   let palette = fixture.palette
   palette.open(fixture.tree).unwrap()
   ignore(
@@ -902,6 +1011,8 @@ test "rejected native marks and results restore the transaction before next reco
     Some(86),
     [],
     replacement,
+    fixture.measure,
+    fixture.admit,
   ).unwrap()
   let marked_restored_snapshot : Ref[(String, Int, Int)] = Ref(("", -1, -1))
   assert_true(
@@ -956,6 +1067,8 @@ test "rejected native marks and results restore the transaction before next reco
     palette.field(),
     oversized,
     replacement,
+    fixture.measure,
+    fixture.admit,
   ).unwrap()
   assert_true(
     palette.install_field_at(palette.open_epoch(), oversized_result)

@@ -52,8 +52,16 @@ fn palette_hit(
 }
 
 ///|
-fn palette_field(
+fn palette_field_with_layout(
   bounds : @primitives.Rect,
+  measure : (@text.TextDocument) -> Result[
+    @text_layout.TextMeasurement,
+    @text_field.TextFieldError,
+  ],
+  admit : (@text.TextDocument, @text_layout.TextMeasurement) -> Result[
+    Unit,
+    @text_field.TextFieldError,
+  ],
 ) -> Result[@text_field.TextField, @text_field.TextFieldError] {
   let document = match @text.TextDocument::new("") {
     Ok(value) => value
@@ -64,8 +72,8 @@ fn palette_field(
     bounds,
     FIELD_FONT_SIZE,
     document,
-    palette_measure,
-    palette_admit,
+    measure,
+    admit,
   )
 }
 
@@ -510,6 +518,14 @@ fn palette_native_append_result(
   field : @text_field.TextField,
   text : String,
   replacement : @text.TextRange,
+  measure : (@text.TextDocument) -> Result[
+    @text_layout.TextMeasurement,
+    @text_field.TextFieldError,
+  ],
+  admit : (@text.TextDocument, @text_layout.TextMeasurement) -> Result[
+    Unit,
+    @text_field.TextFieldError,
+  ],
 ) -> Result[
   (@text_field.TextField, PaletteNativeOwner),
   @text_field.TextFieldError,
@@ -519,7 +535,7 @@ fn palette_native_append_result(
       if !palette_replacement_target_matches(field, replacement) {
         Err(@text_field.InvalidSelection)
       } else {
-        match field.replace_selection(text, palette_measure, palette_admit) {
+        match field.replace_selection(text, measure, admit) {
           Ok(value) => Ok((value, owner))
           Err(error) => Err(error)
         }
@@ -528,10 +544,7 @@ fn palette_native_append_result(
       if transaction.replacement_range != replacement {
         return Err(@text_field.InvalidSelection)
       }
-      match
-        transaction.original.replace_selection(
-          text, palette_measure, palette_admit,
-        ) {
+      match transaction.original.replace_selection(text, measure, admit) {
         Ok(value) => Ok((value, { ..owner, composition: None, }))
         Err(error) => Err(error)
       }
@@ -546,6 +559,14 @@ fn palette_native_update_mark(
   cursor_utf16 : Int?,
   attributes : Array[Int],
   replacement : @text.TextRange,
+  measure : (@text.TextDocument) -> Result[
+    @text_layout.TextMeasurement,
+    @text_field.TextFieldError,
+  ],
+  admit : (@text.TextDocument, @text_layout.TextMeasurement) -> Result[
+    Unit,
+    @text_field.TextFieldError,
+  ],
 ) -> Result[
   (@text_field.TextField, PaletteNativeOwner),
   @text_field.TextFieldError,
@@ -584,9 +605,7 @@ fn palette_native_update_mark(
     Ok(_) => ()
   }
   match
-    transaction.original.update_composition(
-      text, selection, palette_measure, palette_admit,
-    ) {
+    transaction.original.update_composition(text, selection, measure, admit) {
     Ok(field) => Ok((field, owner))
     Err(error) => Err(error)
   }

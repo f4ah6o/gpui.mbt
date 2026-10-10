@@ -24,6 +24,18 @@ fn report(error : @diagnostics.FrameworkError) -> Unit {
 struct PaletteFixture {
   palette : @palette.CommandPalette
   tree : Ref[@element.ElementTree]
+  measure : (@text.TextDocument) -> Result[
+    @text_layout.TextMeasurement,
+    @text_field.TextFieldError,
+  ]
+  admit : (@text.TextDocument, @text_layout.TextMeasurement) -> Result[
+    Unit,
+    @text_field.TextFieldError,
+  ]
+  hit : (@text.TextDocument, @primitives.Point) -> Result[
+    @text_layout.TextHit,
+    @text_field.TextFieldError,
+  ]
   actions : Ref[Int]
   last_action : Ref[String]
   background_presses : Ref[Int]
@@ -41,8 +53,26 @@ struct PaletteFixture {
 
 ///|
 fn palette_fixture() -> PaletteFixture {
+  palette_fixture_with_layout(palette_measure, palette_admit, palette_hit)
+}
+
+///|
+fn palette_fixture_with_layout(
+  measure : (@text.TextDocument) -> Result[
+    @text_layout.TextMeasurement,
+    @text_field.TextFieldError,
+  ],
+  admit : (@text.TextDocument, @text_layout.TextMeasurement) -> Result[
+    Unit,
+    @text_field.TextFieldError,
+  ],
+  hit : (@text.TextDocument, @primitives.Point) -> Result[
+    @text_layout.TextHit,
+    @text_field.TextFieldError,
+  ],
+) -> PaletteFixture {
   let bounds = @primitives.Rect::new(24.0, 28.0, 512.0, 44.0).unwrap()
-  let field = palette_field(bounds).unwrap()
+  let field = palette_field_with_layout(bounds, measure, admit).unwrap()
   let viewport = @primitives.Rect::new(0.0, 0.0, 640.0, 480.0).unwrap()
   let background_bounds = @primitives.Rect::new(24.0, 414.0, 360.0, 40.0).unwrap()
   let tree = Ref(
@@ -101,6 +131,9 @@ fn palette_fixture() -> PaletteFixture {
   {
     palette: @palette.CommandPalette::new(field, commands).unwrap(),
     tree,
+    measure,
+    admit,
+    hit,
     actions,
     last_action,
     background_presses: Ref(0),
@@ -119,6 +152,7 @@ fn palette_fixture() -> PaletteFixture {
 
 ///|
 fn palette_label(
+  fixture : PaletteFixture,
   id : UInt64,
   label : String,
   x : Double,
@@ -130,11 +164,11 @@ fn palette_label(
     Ok(value) => value
     Err(_) => return Err(@palette.InvalidField)
   }
-  let measurement = match palette_measure(document) {
+  let measurement = match (fixture.measure)(document) {
     Ok(value) => value
     Err(_) => return Err(@palette.InvalidField)
   }
-  match palette_admit(document, measurement) {
+  match (fixture.admit)(document, measurement) {
     Err(_) => return Err(@palette.InvalidField)
     Ok(_) => ()
   }
@@ -206,7 +240,8 @@ fn palette_scene(
     for item in field_items {
       items.push(item)
     }
-    match palette_label(120, "Search commands", 24.0, 80.0, white, None) {
+    match
+      palette_label(fixture, 120, "Search commands", 24.0, 80.0, white, None) {
       Ok(value) => items.push(value)
       Err(error) => return Err(error)
     }
@@ -224,6 +259,7 @@ fn palette_scene(
             @primitives.Color::rgba(128, 132, 140, 255).unwrap()
           }
           palette_label(
+            fixture,
             id,
             command.label(),
             position.x(),
@@ -242,13 +278,22 @@ fn palette_scene(
     }
     if picker.match_count() == 0 {
       match
-        palette_label(220, "No matching commands", 32.0, 110.0, white, Some(8)) {
+        palette_label(
+          fixture,
+          220,
+          "No matching commands",
+          32.0,
+          110.0,
+          white,
+          Some(8),
+        ) {
         Ok(value) => items.push(value)
         Err(error) => return Err(error)
       }
     }
     match
       palette_label(
+        fixture,
         230,
         "Ctrl+K opens  •  arrows navigate  •  Enter selects  •  Esc closes",
         24.0,
@@ -273,6 +318,7 @@ fn palette_scene(
     )
     match
       palette_label(
+        fixture,
         4,
         "Open command palette (click or Ctrl+K)",
         32.0,
@@ -286,6 +332,7 @@ fn palette_scene(
   }
   match
     palette_label(
+      fixture,
       240,
       "Actions: \{fixture.actions.val}    Background keys: \{fixture.background_presses.val}",
       24.0,
@@ -659,7 +706,10 @@ fn palette_handle_input(
         delivered.val = Some(
           match
             fixture.palette.handle_input(
-              routed_event, palette_measure, palette_admit, palette_hit,
+              routed_event,
+              fixture.measure,
+              fixture.admit,
+              fixture.hit,
             ) {
             Ok(value) => Ok({ consumed: value.consumed, effect: value.effect, })
             Err(error) => Err(error)
@@ -677,7 +727,10 @@ fn palette_handle_input(
       if !fixture.palette.is_open() {
         match
           fixture.palette.handle_input(
-            event, palette_measure, palette_admit, palette_hit,
+            event,
+            fixture.measure,
+            fixture.admit,
+            fixture.hit,
           ) {
           Ok(value) => Ok({ consumed: value.consumed, effect: value.effect, })
           Err(error) => Err(error)
@@ -1415,7 +1468,13 @@ fn run_palette_window() -> Unit {
               ) =>
                 match
                   palette_native_update_mark(
-                    accepted, text, cursor_utf16, attributes, replacement_range,
+                    accepted,
+                    text,
+                    cursor_utf16,
+                    attributes,
+                    replacement_range,
+                    fixture.measure,
+                    fixture.admit,
                   ) {
                   Ok((candidate, next)) =>
                     match
@@ -1445,6 +1504,8 @@ fn run_palette_window() -> Unit {
                     palette.field(),
                     text,
                     replacement_range,
+                    fixture.measure,
+                    fixture.admit,
                   ) {
                   Ok((candidate, next)) =>
                     match
