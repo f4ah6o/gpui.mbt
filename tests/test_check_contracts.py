@@ -469,7 +469,8 @@ class RuntimeDependencyTests(unittest.TestCase):
         macos_button.mkdir(parents=True)
         macos_manifest = macos_button / "moon.pkg"
         approved_imports = (
-            'import { "f4ah6o/gpui/diagnostics", '
+            'import { "f4ah6o/gpui/accessibility", '
+            '"f4ah6o/gpui/diagnostics", '
             '"f4ah6o/gpui/examples/ubuntu_button/fixture", '
             '"f4ah6o/gpui/platform", "f4ah6o/gpui/platform/macos", '
             '"f4ah6o/gpui/platform/testing", "f4ah6o/gpui/primitives", '

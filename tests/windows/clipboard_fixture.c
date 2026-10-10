@@ -1,6 +1,9 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#define GPUI_CLIPBOARD_DIAGNOSTICS_FIXTURE
+#include "../../windows/clipboard_diagnostics.h"
+#include "../../windows/clipboard_diagnostics_win32.inc"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +17,48 @@ static const char expected_gpui_text[] =
 static const char fixture_text[] =
     "fixture clipboard 日本語 😀 👩🏽‍💻\nsecond line\r\n終わり";
 static const char lock_text[] = "clipboard lock marker 日本語 🔒\nleave intact";
+
+static void clipboard_diag_event(const char *event, const char *stage,
+                                 const char *api, const char *result,
+                                 HWND caller, int error_valid, DWORD error) {
+  if (!gpui_clipboard_diag_is_enabled())
+    return;
+  gpui_clipboard_diag_record record = {0};
+  record.role = "fixture";
+  record.event = event;
+  record.stage = stage;
+  record.api = api;
+  record.result = result;
+  record.error_valid = error_valid;
+  record.error = error;
+  gpui_clipboard_diag_fill_actor(&record, caller);
+  gpui_clipboard_diag_emit(GPUI_CLIPBOARD_DIAG_ROLE_FIXTURE, &record);
+}
+
+typedef struct clipboard_diag_open_metadata {
+  gpui_clipboard_diag_record *record;
+  HWND caller;
+} clipboard_diag_open_metadata;
+
+static void clipboard_diag_capture_open_metadata(void *context) {
+  clipboard_diag_open_metadata *metadata =
+      (clipboard_diag_open_metadata *)context;
+  gpui_clipboard_diag_fill_actor(metadata->record, metadata->caller);
+  gpui_clipboard_diag_fill_opener(
+      metadata->record, GetOpenClipboardWindow, GetWindowThreadProcessId);
+}
+
+static BOOL clipboard_close(HWND owner, const char *stage) {
+  BOOL closed = CloseClipboard();
+  DWORD error = closed ? 0 : GetLastError();
+  if (gpui_clipboard_diag_is_enabled()) {
+    gpui_clipboard_diag_record record = {0};
+    gpui_clipboard_diag_set_close_record(&record, "fixture", stage, owner,
+                                         closed, error);
+    gpui_clipboard_diag_emit(GPUI_CLIPBOARD_DIAG_ROLE_FIXTURE, &record);
+  }
+  return closed;
+}
 
 static WCHAR *utf8_to_wide(const char *text, int *units) {
   int length = (int)strlen(text);
@@ -36,7 +81,27 @@ static WCHAR *utf8_to_wide(const char *text, int *units) {
 static BOOL clipboard_open(HWND owner) {
   ULONGLONG deadline = GetTickCount64() + 2000;
   do {
-    if (OpenClipboard(owner))
+    BOOL diagnostics_enabled = gpui_clipboard_diag_is_enabled();
+    gpui_clipboard_diag_record record = {0};
+    record.role = "fixture";
+    record.event = "clipboard_open";
+    record.stage = "fixture_open";
+    record.api = "OpenClipboard";
+    clipboard_diag_open_metadata metadata = {&record, owner};
+    BOOL opened = OpenClipboard(owner);
+    DWORD error = gpui_clipboard_diag_after_open(
+        opened, gpui_clipboard_diag_get_last_error, NULL,
+        diagnostics_enabled ? clipboard_diag_capture_open_metadata : NULL,
+        &metadata);
+    if (diagnostics_enabled) {
+      if (opened)
+        gpui_clipboard_diag_fill_actor(&record, owner);
+      record.result = opened ? "success" : "failure";
+      record.error_valid = !opened;
+      record.error = error;
+      gpui_clipboard_diag_emit(GPUI_CLIPBOARD_DIAG_ROLE_FIXTURE, &record);
+    }
+    if (opened)
       return TRUE;
     Sleep(1);
   } while (GetTickCount64() < deadline);
@@ -69,18 +134,29 @@ static BOOL clipboard_publish(HWND owner, const char *text,
     GlobalFree(memory);
     return FALSE;
   }
-  if (!EmptyClipboard()) {
-    CloseClipboard();
+  BOOL emptied = EmptyClipboard();
+  DWORD empty_error = emptied ? 0 : GetLastError();
+  clipboard_diag_event("clipboard_empty", "fixture_publish", "EmptyClipboard",
+                       emptied ? "success" : "failure", owner, !emptied,
+                       empty_error);
+  if (!emptied) {
+    clipboard_close(owner, "publish_failure");
     GlobalFree(memory);
     return FALSE;
   }
-  if (!SetClipboardData(CF_UNICODETEXT, memory)) {
-    CloseClipboard();
+  HANDLE transferred = SetClipboardData(CF_UNICODETEXT, memory);
+  DWORD set_error = transferred ? 0 : GetLastError();
+  clipboard_diag_event("clipboard_set_data", "fixture_publish",
+                       "SetClipboardData",
+                       transferred ? "success" : "failure", owner,
+                       !transferred, set_error);
+  if (!transferred) {
+    clipboard_close(owner, "publish_failure");
     GlobalFree(memory);
     return FALSE;
   }
   if (!leave_open)
-    CloseClipboard();
+    clipboard_close(owner, "fixture_publish");
   return TRUE;
 }
 
@@ -88,8 +164,12 @@ static BOOL clipboard_matches(HWND owner, const char *expected) {
   if (!clipboard_open(owner))
     return FALSE;
   HANDLE handle = GetClipboardData(CF_UNICODETEXT);
+  DWORD data_error = handle ? 0 : GetLastError();
+  clipboard_diag_event("clipboard_data", "fixture_read", "GetClipboardData",
+                       handle ? "success" : "failure", owner, !handle,
+                       data_error);
   if (!handle) {
-    CloseClipboard();
+    clipboard_close(owner, "read_no_data");
     return FALSE;
   }
   SIZE_T bytes = GlobalSize(handle);
@@ -112,7 +192,7 @@ static BOOL clipboard_matches(HWND owner, const char *expected) {
   free(wide_expected);
   if (actual)
     GlobalUnlock(handle);
-  CloseClipboard();
+  clipboard_close(owner, "fixture_read");
   return matches;
 }
 
@@ -169,6 +249,9 @@ static BOOL nonce_is_valid(const char *nonce) {
 int main(int argc, char **argv) {
   if (argc != 3 || !nonce_is_valid(argv[2]))
     return 2;
+  (void)gpui_clipboard_diag_is_enabled();
+  clipboard_diag_event("fixture_process_start", "startup",
+                       "GetCurrentProcessId", "success", NULL, FALSE, 0);
   const char *mode = argv[1];
   HWND owner = CreateWindowExW(0, L"STATIC", L"gpui clipboard fixture", 0,
                                0, 0, 0, 0, NULL, NULL,
@@ -197,9 +280,14 @@ int main(int argc, char **argv) {
   char line[128];
   _snprintf_s(line, sizeof(line), _TRUNCATE, "READY %s %lu %s\n", mode,
               (unsigned long)GetCurrentProcessId(), argv[2]);
-  if (!write_line(line)) {
+  BOOL ready_sent = write_line(line);
+  clipboard_diag_event("fixture_ready_sent", hold ? "hold_lock" :
+                       strcmp(mode, "read-gpui") == 0 ? "read_gpui" :
+                       "write_fixture", "pipe_write",
+                       ready_sent ? "success" : "failure", owner, FALSE, 0);
+  if (!ready_sent) {
     if (hold)
-      CloseClipboard();
+      clipboard_close(owner, "ready_failure");
     DestroyWindow(owner);
     return 5;
   }
@@ -207,7 +295,10 @@ int main(int argc, char **argv) {
   int result = 0;
   if (hold) {
     BOOL released = read_release(argv[2]);
-    BOOL closed = CloseClipboard();
+    clipboard_diag_event("fixture_release_received", "hold_lock",
+                         "pipe_read", released ? "success" : "failure",
+                         owner, FALSE, 0);
+    BOOL closed = clipboard_close(owner, "hold_lock_release");
     if (!closed) {
       result = 8;
     } else if (!released) {
@@ -215,7 +306,11 @@ int main(int argc, char **argv) {
     } else {
       _snprintf_s(line, sizeof(line), _TRUNCATE, "DONE hold-lock %lu %s\n",
                   (unsigned long)GetCurrentProcessId(), argv[2]);
-      if (!write_line(line))
+      BOOL done_sent = write_line(line);
+      clipboard_diag_event("fixture_done_sent", "hold_lock", "pipe_write",
+                           done_sent ? "success" : "failure", owner, FALSE,
+                           0);
+      if (!done_sent)
         result = 7;
     }
   }
