@@ -206,6 +206,10 @@ static int check(int token, struct host **out) {
   pthread_mutex_unlock(&registry_mutex);
   return status;
 }
+int32_t gpui_owner_thread_check(int32_t token) {
+  struct host *h;
+  return check(token, &h);
+}
 static int window_check(int token, int window, struct host **out) {
   int s = check(token, out);
   if (s)

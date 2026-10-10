@@ -93,6 +93,7 @@ static int fd_count(void) {
 static void *wrong_thread(void *unused) {
   UNUSED(unused);
   assert(gpui_dispatch(active->token, 0) == GPUI_WRONG_THREAD);
+  assert(gpui_owner_thread_check(active->token) == GPUI_WRONG_THREAD);
   return NULL;
 }
 static void drain(int host) {
@@ -902,6 +903,7 @@ int main(int argc, char **argv) {
   assert(gpui_start(999) == -GPUI_INVALID);
   int host = gpui_start(GPUI_UBUNTU_ABI);
   assert(host > 0);
+  assert(gpui_owner_thread_check(host) == GPUI_OK);
   test_clipboard_transfer_writer();
   benchmark = getenv("GPUI_BENCH_UBUNTU") &&
               !strcmp(getenv("GPUI_BENCH_UBUNTU"), "1");

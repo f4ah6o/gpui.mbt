@@ -73,6 +73,7 @@ pub(all) enum EditorEvent {
 pub struct Host {
   // private fields
 }
+pub fn Host::assert_owner_thread(Self) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::begin_text_session(Self, @platform.WindowId, @text.TextDocument, @primitives.Rect) -> Result[Int, @diagnostics.FrameworkError]
 pub fn Host::cancel_text_session(Self, @platform.WindowId, Int) -> Result[Int, @diagnostics.FrameworkError]
 pub fn Host::copy_frame(Self, @platform.WindowId, FixedArray[Byte]) -> Result[Unit, @diagnostics.FrameworkError]

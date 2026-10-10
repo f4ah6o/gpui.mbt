@@ -672,8 +672,11 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "examples/ubuntu_button/fixture": {
             "accessibility", "controls/button", "element", "primitives", "scene",
         },
+        # The native Ubuntu Button executable owns an in-process adapter over
+        # the shared semantic model; it does not add an OS accessibility bridge.
         "examples/ubuntu_button": {
-            "ubuntu", "platform", "diagnostics", "primitives", "examples/ubuntu_button/fixture",
+            "ubuntu", "accessibility", "platform", "diagnostics", "primitives",
+            "examples/ubuntu_button/fixture",
         },
         # The native macOS sample is a leaf above the portable Button fixture.
         "examples/macos_button": {
