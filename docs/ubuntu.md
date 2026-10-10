@@ -90,12 +90,24 @@ measurement contract, raster scope, and separate headless test command.
   acceptance are still pending.
 - Output enter/leave and maximum entered-output integer buffer scale. Numeric
   geometry fields, current-mode values, and scale callbacks are staged per
-  `wl_output` and become committed only at that output's `done` event;
+  wl_output and become committed only at that output's done event;
   enter/leave and EGL sizing read committed scale. Scale is queued before later
-  input/frame events and EGL buffers resize to physical pixels. Fractional
-  scale, public display metadata and multi-display E2E are pending. Output
-  tracking is bounded to 16 outputs; this slice targets one CI output and does
-  not claim broader desktop coverage.
+  input/frame events and EGL buffers resize to physical pixels.
+  Host::display_snapshot() returns a copied, bounded list of currently bound
+  outputs with readiness, committed geometry/mode/transform, integer scale,
+  and whether the window surface is entered. Physical dimensions are in
+  millimeters, mode dimensions in pixels, and refresh in millihertz; subpixel
+  and transform are raw Wayland protocol enum integers. Geometry, current mode,
+  and scale reflect the most recent wl_output.done. Readiness follows that
+  output's done event, while entered state and the bound-output list reflect
+  current surface enter/leave and output add/remove events. Each returned
+  record is a copy and does not change later; list order is ephemeral, with no
+  durable output ID, protocol proxy, manufacturer/model, or compositor-global
+  position exposed.
+  The snapshot is an on-demand read; no generic display-change event is added.
+  Fractional scale and multi-display E2E remain pending. Output tracking is
+  bounded to 16 outputs; this slice targets one CI output and does not claim
+  broader desktop coverage.
 - Bounded 1024-event FIFO. Overflow returns `ResourceExhausted` and quiesces the
   host instead of silently losing input. Sequence exhaustion also fails closed.
 - Clipboard uses the core Wayland data-device protocol for UTF-8 plain text.
@@ -321,6 +333,15 @@ log referenced by the JSON report. This keeps compositor diagnostics out of the
 strict sample records. The samples measure a headless llvmpipe recovery path, not
 a desktop frame-rate claim.
 
+GitHub native CI runs that benchmark once under a 480-second process-group
+limit. If it fails, the wrapper preserves that original exit status and starts
+one bounded diagnostic invocation; the diagnostic checks the MoonBit lifecycle
+E2E at scales 1 and 2, records numeric stage lines, separate Weston logs and a
+sanitized lifecycle-only Wayland trace capped at 256 KiB per scale. It does not
+capture protocol arguments or keyboard/data-offer interfaces. Both artifact
+roots are uploaded even when the benchmark fails. Diagnostic success never
+changes the benchmark result or proves desktop input/accessibility acceptance.
+
 | Evidence path | Distro / compositor | Graphics / session | Evidence state |
 | --- | --- | --- | --- |
 | Configured native CI | Ubuntu 24.04 x86-64; Ubuntu Weston 13 package | Weston headless GL kiosk shell; Mesa llvmpipe; integer scales 1/2 | Hosted run 2026-10-04 passed MoonBit E2E (4/4), C lifecycle/render/recovery checks at both scales, and 30 timing samples per scale. Measurement report completed with `no_baseline`; see [run and diagnostic results](performance.md#hosted-ubuntu-observation-2026-10-04). |
@@ -333,6 +354,21 @@ a desktop frame-rate claim.
 | Real Ubuntu desktop | Ubuntu 24.04 GNOME Wayland/Mutter | Desktop GPU, IME and assistive technology | Pending |
 
 ### Known hosted-compositor observation
+
+On 2026-10-10 the exact main `4ef4bb2` and #53 `9c70225` runs each completed 30
+samples at scales 1 and 2 without a Weston exit failure
+([main run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/38042332540),
+[#53 run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/38045608524)). The
+subsequent #54 first attempt failed at scale 1 with Weston 13 exit 139; #58's
+first attempt failed at scale 2 with the same exit status. Their Ubuntu 24.04.5
+runner jobs were in different regions (`westus2` and `westus`); one failed-job
+retry per PR later passed. Those selected runs do not isolate source changes
+from host/region variability and do not establish a harmless-flake rate or a
+cause. The first failures and artifacts remain part of the record
+([#54 run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/38047565209),
+[#58 run](https://github.com/gpui-mbt/gpui.mbt/actions/runs/38050672414)).
+A fixed, paired, finite comparison with the same workflow settings is still
+needed before attributing the failures to either source or runner.
 
 The merged field/origin main source `73e7082` was checked in
 [Ubuntu run37393518087](https://github.com/gpui-mbt/gpui.mbt/actions/runs/37393518087).

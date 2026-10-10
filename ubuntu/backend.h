@@ -16,6 +16,9 @@
 #define GPUI_MIXED_STRIDE 23
 #define GPUI_ORIGIN_FRAME_ABI 3
 #define GPUI_ORIGIN_STRIDE 25
+#define GPUI_OUTPUT_SNAPSHOT_ABI 1
+#define GPUI_OUTPUT_CAPACITY 16
+#define GPUI_OUTPUT_INFO_FIELDS 12
 #define GPUI_MAX_ITEMS 100000
 #define GPUI_MAX_TEXT_ITEMS 256
 #define GPUI_MAX_FRAME_TEXT_BYTES (1024 * 1024)
@@ -46,6 +49,16 @@ int32_t gpui_title(int32_t host, int32_t window, const uint8_t *title,
                    int32_t length);
 int32_t gpui_size(int32_t host, int32_t window, int32_t width, int32_t height);
 int32_t gpui_metrics(int32_t host, int32_t window, double *metrics);
+/* Copy currently bound outputs into caller-owned packed records. Each record
+ * has GPUI_OUTPUT_INFO_FIELDS doubles: ready, geometry-valid, current-mode-
+ * valid, committed scale, physical mm width/height, subpixel, transform,
+ * current-mode pixel width/height, refresh mHz, and surface-entered. The
+ * function returns the packed record count, or a negative status. Capacity
+ * is measured in doubles and must cover all GPUI_OUTPUT_CAPACITY records; errors leave the buffer intact.
+ * No registry name, proxy, global position, or persistent output identity is
+ * exposed. */
+int32_t gpui_output_snapshot_v1(int32_t abi, int32_t host, double *records,
+                                int32_t capacity);
 int32_t gpui_dispatch(int32_t host, int32_t timeout_ms);
 int32_t gpui_next(int32_t host, double *event);
 /* Private copied direct-keyboard text ingress. `event` must be non-null and
