@@ -13,6 +13,11 @@
 #include <unistd.h>
 
 enum { AX_CLIENT_UNSUPPORTED = 77, AX_MAX_DEPTH = 10, AX_MAX_NODES = 4096 };
+enum AXApplicationIdentityStatus {
+  AX_APPLICATION_IDENTITY_WAIT,
+  AX_APPLICATION_IDENTITY_MATCH,
+  AX_APPLICATION_IDENTITY_MISMATCH,
+};
 static const double AX_DISCOVERY_BUDGET_SECONDS = 15.0;
 static const double AX_OWNER_OBSERVATION_BUDGET_SECONDS = 15.0;
 static const double AX_MESSAGE_MAX_SECONDS = 0.25;
@@ -54,6 +59,64 @@ static double poll_sleep_for_remaining(double remaining) {
   return remaining < AX_POLL_MAX_SECONDS ? remaining : AX_POLL_MAX_SECONDS;
 }
 
+static enum AXApplicationIdentityStatus application_identity_status(
+    NSString *actual_bundle_id, NSString *actual_bundle_path,
+    NSString *expected_bundle_id, NSString *expected_bundle_path) {
+  if ([actual_bundle_id isKindOfClass:NSString.class] &&
+      actual_bundle_id.length > 0 &&
+      ![actual_bundle_id isEqualToString:expected_bundle_id])
+    return AX_APPLICATION_IDENTITY_MISMATCH;
+  if ([actual_bundle_path isKindOfClass:NSString.class] &&
+      actual_bundle_path.length > 0 &&
+      ![actual_bundle_path isEqualToString:expected_bundle_path])
+    return AX_APPLICATION_IDENTITY_MISMATCH;
+  if (![actual_bundle_id isKindOfClass:NSString.class] ||
+      actual_bundle_id.length == 0 ||
+      ![actual_bundle_path isKindOfClass:NSString.class] ||
+      actual_bundle_path.length == 0)
+    return AX_APPLICATION_IDENTITY_WAIT;
+  return AX_APPLICATION_IDENTITY_MATCH;
+}
+
+static const char *utf8_or_unavailable(NSString *value) {
+  const char *encoded = value.UTF8String;
+  return encoded ? encoded : "<unavailable>";
+}
+
+static NSString *application_bundle_path(NSRunningApplication *application) {
+  NSURL *bundle_url = application.bundleURL;
+  if (!bundle_url) return nil;
+  NSURL *resolved_url = [[bundle_url URLByResolvingSymlinksInPath]
+      URLByStandardizingPath];
+  return resolved_url.path;
+}
+
+static void test_application_identity_helpers(void) {
+  NSString *expected_id = @"org.gpui.mbt.macos-button.ax-test.probe";
+  NSString *expected_path = @"/tmp/gpui-ax-probe/GpuiMacButton.app";
+  require(application_identity_status(expected_id, expected_path, expected_id,
+                                      expected_path) ==
+              AX_APPLICATION_IDENTITY_MATCH,
+          "only the exact registered app identity and bundle path may match");
+  require(application_identity_status(nil, nil, expected_id, expected_path) ==
+              AX_APPLICATION_IDENTITY_WAIT &&
+              application_identity_status(expected_id, nil, expected_id,
+                                          expected_path) ==
+                  AX_APPLICATION_IDENTITY_WAIT,
+          "missing LaunchServices identity must remain pending during startup");
+  require(application_identity_status(
+              @"org.gpui.mbt.macos-button", expected_path, expected_id,
+              expected_path) == AX_APPLICATION_IDENTITY_MISMATCH &&
+              application_identity_status(
+                  @"org.gpui.mbt.macos-button", nil, expected_id,
+                  expected_path) == AX_APPLICATION_IDENTITY_MISMATCH &&
+              application_identity_status(expected_id,
+                                          @"/tmp/other.app", expected_id,
+                                          expected_path) ==
+                  AX_APPLICATION_IDENTITY_MISMATCH,
+          "a different bundle ID or path must remain a hard rejection");
+}
+
 static void test_deadline_budget_helpers(void) {
   require(fabs(remaining_seconds(20.0, 10.0) - 10.0) < 0.000001,
           "remaining budget should use the monotonic deadline");
@@ -73,6 +136,7 @@ static void test_deadline_budget_helpers(void) {
               poll_sleep_for_remaining(0.03) <= 0.03 &&
               poll_sleep_for_remaining(0.0) == 0,
           "poll sleep must be capped by the remaining budget");
+  test_application_identity_helpers();
 }
 
 static bool prepare_message(AXUIElementRef element) {
@@ -100,6 +164,61 @@ static void bounded_poll_sleep(void) {
       .tv_nsec = (long)((duration - floor(duration)) * 1000000000.0),
   };
   while (nanosleep(&request, &request) != 0 && errno == EINTR) {}
+}
+
+static void wait_for_application_identity(
+    pid_t pid, NSString *expected_bundle_id, NSString *expected_bundle_path) {
+  double started_at = monotonic_seconds();
+  int observations = 0;
+  bool saw_process = false;
+  NSString *last_bundle_id = nil;
+  NSString *last_bundle_path = nil;
+  while (remaining_seconds(active_deadline, monotonic_seconds()) > 0) {
+    observations += 1;
+    NSRunningApplication *running =
+        [NSRunningApplication runningApplicationWithProcessIdentifier:pid];
+    if (running) {
+      saw_process = true;
+      NSString *actual_bundle_id = running.bundleIdentifier;
+      NSString *actual_bundle_path = application_bundle_path(running);
+      enum AXApplicationIdentityStatus status = application_identity_status(
+          actual_bundle_id, actual_bundle_path, expected_bundle_id,
+          expected_bundle_path);
+      if (status == AX_APPLICATION_IDENTITY_MATCH) {
+        printf("AX client target pid=%d bundle_id=%s bundle_path=%s "
+               "identity_observations=%d identity_wait_ms=%.1f\n",
+               pid, actual_bundle_id.UTF8String,
+               actual_bundle_path.UTF8String, observations,
+               (monotonic_seconds() - started_at) * 1000.0);
+        return;
+      }
+      if (status == AX_APPLICATION_IDENTITY_MISMATCH) {
+        fprintf(stderr,
+                "FAIL: target PID %d registered a different app identity: "
+                "expected bundle_id=%s bundle_path=%s; actual "
+                "bundle_id=%s bundle_path=%s after %d observations\n",
+                pid, expected_bundle_id.UTF8String,
+                expected_bundle_path.UTF8String,
+                utf8_or_unavailable(actual_bundle_id),
+                utf8_or_unavailable(actual_bundle_path), observations);
+        exit(1);
+      }
+      last_bundle_id = actual_bundle_id;
+      last_bundle_path = actual_bundle_path;
+    }
+    bounded_poll_sleep();
+  }
+  fprintf(stderr,
+          "FAIL: target PID %d did not publish its expected app identity "
+          "within the 15-second discovery budget (process_observed=%s, "
+          "expected bundle_id=%s bundle_path=%s, last bundle_id=%s "
+          "bundle_path=%s, observations=%d)\n",
+          pid, saw_process ? "yes" : "no", expected_bundle_id.UTF8String,
+          expected_bundle_path.UTF8String,
+          utf8_or_unavailable(last_bundle_id),
+          utf8_or_unavailable(last_bundle_path),
+          observations);
+  exit(1);
 }
 
 static CFTypeRef attribute(AXUIElementRef element, CFStringRef name) {
@@ -376,13 +495,15 @@ static bool observable_state(AXUIElementRef button, AXUIElementRef window,
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--deadline-probe") == 0) {
     test_deadline_budget_helpers();
-    puts("PASS: AX monotonic deadline, remaining-budget IPC, and poll helpers");
+    puts("PASS: AX identity, monotonic deadline, remaining-budget IPC, and poll helpers");
     return 0;
   }
-  if (argc != 5 || strcmp(argv[1], "--pid") != 0 ||
-      strcmp(argv[3], "--bundle-id") != 0) {
+  if (argc != 7 || strcmp(argv[1], "--pid") != 0 ||
+      strcmp(argv[3], "--bundle-id") != 0 ||
+      strcmp(argv[5], "--bundle-path") != 0) {
     fprintf(stderr,
-            "usage: macos_button_ax_client --pid APP_PID --bundle-id ID\n");
+            "usage: macos_button_ax_client --pid APP_PID --bundle-id ID "
+            "--bundle-path APP_BUNDLE\n");
     return 2;
   }
   char *end = NULL;
@@ -392,16 +513,19 @@ int main(int argc, char **argv) {
     return 2;
   }
   NSString *expected_bundle_id = [NSString stringWithUTF8String:argv[4]];
-  NSRunningApplication *running =
-      [NSRunningApplication runningApplicationWithProcessIdentifier:
-                                (pid_t)parsed];
-  if (!expected_bundle_id || !running ||
-      ![running.bundleIdentifier isEqualToString:expected_bundle_id]) {
-    fprintf(stderr,
-            "FAIL: launched pid did not register the expected unique bundle id\n");
-    return 1;
+  NSURL *expected_bundle_url = [NSURL fileURLWithPath:
+      [NSString stringWithUTF8String:argv[6]] isDirectory:YES];
+  NSURL *resolved_expected_url = [[expected_bundle_url
+      URLByResolvingSymlinksInPath] URLByStandardizingPath];
+  NSString *expected_bundle_path = resolved_expected_url.path;
+  if (!expected_bundle_id || expected_bundle_id.length == 0 ||
+      !expected_bundle_path || expected_bundle_path.length == 0) {
+    fprintf(stderr, "invalid expected bundle identity arguments\n");
+    return 2;
   }
-  printf("AX client target pid=%ld bundle_id=%s\n", parsed, argv[4]);
+  active_deadline = monotonic_seconds() + AX_DISCOVERY_BUDGET_SECONDS;
+  wait_for_application_identity((pid_t)parsed, expected_bundle_id,
+                                expected_bundle_path);
   if (!AXIsProcessTrusted()) {
     fprintf(stderr,
             "UNSUPPORTED: this client is not authorized for AX observation; "
@@ -413,7 +537,6 @@ int main(int argc, char **argv) {
   AXUIElementRef button = NULL;
   AXUIElementRef window = NULL;
   bool window_seen = false;
-  active_deadline = monotonic_seconds() + AX_DISCOVERY_BUDGET_SECONDS;
   while (!button && remaining_seconds(active_deadline, monotonic_seconds()) > 0) {
     button = named_button(pid, &window, &window_seen);
     if (!button) bounded_poll_sleep();

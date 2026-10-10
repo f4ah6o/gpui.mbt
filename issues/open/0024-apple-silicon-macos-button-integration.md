@@ -178,12 +178,12 @@ Do not take over open PR #40/#45/#46 or pending Linux PRs #53–#56.
 - [x] Mac vectors observe role/name/bounds/enabled/loading/focus from the
   shared snapshot; foreign owner, stale fixture copies, reset/removal/reopen,
   disabled/loading and close reject actions with zero owner-side effects.
-- [ ] A real native AX client observes the named `Run action` control and its
+- [x] A real native AX client observes the named `Run action` control and its
   screen bounds/state/actions on final source, then two separate accepted
   Invokes cause exactly two app activations without synthetic physical input.
 - [x] Native stale/disabled/loading requests have zero effects and teardown
   leaves no live native element or queued request that targets a later session.
-- [ ] Keyboard and pointer activation, accepted pixels/count updates, resizing
+- [x] Keyboard and pointer activation, accepted pixels/count updates, resizing
   and cleanup remain independently verified on the final Apple Silicon build.
 - [x] Deliberately broken semantic/keyboard fixtures fail their relevant
   assertions; passing AX does not conceal an input regression.
@@ -298,3 +298,40 @@ macOS support claim.
   as needed, then refresh main/duplicate-work checks. Push/create a draft PR
   only when all required gates pass and blocking findings are absent. The
   issue stays in `issues/open`.
+- 2026-10-10: After the user manually unlocked the Mac, the first updated
+  external `--all` run failed before AX discovery at a one-shot
+  `NSRunningApplication` PID/bundle-ID check (`post-unlock-ax`, app PID 96145,
+  expected ID `org.gpui.mbt.macos-button.ax-test.p96056`). That old client
+  logged no actual bundle ID or URL, so it does not establish which identity
+  was observed. The harness/client now waits within the existing 15-second
+  discovery deadline and still hard-rejects any wrong ID or standardized app
+  bundle path. In `post-unlock-fix-v2/all`, PID 3126 published the exact
+  expected ID and bundle path after seven observations (627.9 ms); the
+  separately launched client (PID 3127) then verified the app-owned AXWindow,
+  Run action Button, exact bounds/state/help, and two AXPress requests with
+  owner count exactly two. Client and app both exited/reaped by the harness;
+  receipt, client log, and binary are retained under
+  `/Volumes/devstorage/.codex-validation/mac-button-ax-20261010T074823+0900/post-unlock-fix-v2/all/`.
+  This demonstrates a real registration startup delay on the repaired run;
+  the exact identity seen in the earlier failure remains unknown.
+- 2026-10-10: Parent's separate regular production-bundle GUI run passed 19
+  cases covering keyboard, pointer, enabled/loading state, reset, resize,
+  AX removal/restoration, close/reopen, and cleanup. Its receipt is
+  `RUN/post-unlock-gui.json`; its owned-production-binary receipt is retained
+  in external `post-unlock-gui/receipt.json`. No production source was changed
+  for the identity fix. The prior ActRun `run-2` and zero-finding independent
+  re-review apply to commit `4ab16de`, before this harness/client update; run
+  ActRun and independent review again on the current source. Whole-task Green
+  remains false, no PR is published, and this issue remains open.
+
+- 2026-10-10: The final focused repair run, `post-unlock-fix-v3/all`, also
+  passed with app PID 3974/client PID 3975: exact PID, unique ID and resolved
+  bundle path matched after six observations (522.7 ms); role/name/bounds/state
+  and two app-owned semantic activations passed, and both processes were
+  reaped. The 19-case GUI receipt uses unchanged production sources; only the
+  external client, harness and qualification documentation changed afterward.
+  The publication gate requires fresh ActRun including `--all`, exact-source
+  equivalence receipts and independent review. Final per-SHA results and draft
+  PR identity are recorded in the task's state/memory and PR body; this broad
+  issue remains open for unfinished physical-input and external conformance
+  qualification. Historical failures above are retained, not current passes.

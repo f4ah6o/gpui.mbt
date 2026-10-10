@@ -77,9 +77,13 @@ its pending work.
 `test_macos_button_ax.sh --adapter-only` covers the AppKit projection, bounded
 queue, stale token rejection, and lifecycle. `--all` builds the regular app
 without `GPUI_TESTING`, gives only the test bundle a unique bundle identifier,
-and launches a separate `AXUIElement` client. Monotonic deadlines bound
-discovery to 15 seconds and initial-state/action/owner-count observation to a
-separate 15 seconds. Before each synchronous AX query or action, the client
+and launches a separate `AXUIElement` client. The client waits under its
+15-second monotonic discovery deadline for the launched PID to publish the
+expected unique bundle identifier and exact bundle path; any observed mismatch
+is rejected with both actual and expected identity in the diagnostic. The
+same discovery budget covers locating the AXWindow and button. Initial-state,
+action, and owner-count observation has a separate 15-second deadline. Before
+each synchronous AX query or action, the client
 sets `AXUIElementSetMessagingTimeout` to at most 250 ms and less than the
 remaining phase budget; tree traversal and poll sleeps also stop at that
 deadline. The shell harness has a separate 35-second watchdog for the client,
@@ -134,9 +138,10 @@ the minimum viewport and restore it, then Escape to close. Read the same count
 and state in the GUI log with `tail -f "$RUN_DIR/gui/button.log"`. Record this
 manual native-input result separately from `--e2e` synthetic input/readback.
 
-`--deadline-probe` compiles the external client and tests its monotonic
-remaining-budget, per-IPC timeout, and bounded-sleep helpers without launching
-the regular example bundle, creating a native window, or making AX calls.
+`--deadline-probe` compiles the external client and tests its exact/missing/
+mismatched app-identity classification, monotonic remaining-budget, per-IPC
+timeout, and bounded-sleep helpers without launching the regular example
+bundle, creating a native window, or making AX calls.
 `--all` runs that probe before its separate client lane. The client uses
 separate 15-second discovery and owner-observation
 budgets, with at most 250 ms per remote AX call and a 5 ms dispatch margin;
@@ -152,12 +157,20 @@ platforms, or a macOS support tier.
 
 ## Current qualification status
 
-The parent-pinned ActRun `run-1` passed five stages and 27 commands on
-candidate `ff48b53bad4894788a8f90399bd4317a60a46fda`. An independent
-gpt-6.1-sol/xhigh review completed three passes across seven perspectives with
-zero blocking findings and two minor findings. The current source addresses
-those findings; ActRun and independent review must be rerun on this update.
-The latest external AX attempt on the prior candidate failed to discover an
-AXWindow; the post-unlock client and regular GUI input/AX/pixel gates remain
-blocked or unrun. Whole-task Green is false and no PR is published. Keep
-Stage B open until the final-source desktop gates and fresh review pass.
+Pinned ActRun `run-2` passed five stages and 30 commands on commit
+`4ab16de6dae5ad73712e3e69b639994e2135dc05`; the independent gpt-6.1-sol/xhigh
+re-review approved that revision with zero findings. A later post-unlock
+client run first failed at the one-shot `NSRunningApplication` identity check.
+The updated client now waits under its discovery deadline while still
+requiring the exact launched PID, unique bundle ID, and standardized bundle
+path. The first repaired run saw registration after seven observations
+(627.9 ms); the final client/harness revision also passed after six observations
+(522.7 ms). In that latest run the separate AX client checked the button role,
+name, exact bounds and state, and two owner-reported activations. The parent's
+separate regular-bundle GUI run passed 19 input, state, resize, reset,
+close/reopen, and cleanup cases against the same production binary source.
+For publication, run pinned local ActRun and independent gpt-6.1-sol/xhigh
+review on the exact final source, including the real client lane. Record their
+command results, final SHA, production-binary equivalence to the GUI receipt,
+and any remaining qualification limits in the draft PR and execution receipts.
+Keep this broader issue open for unfinished qualification.

@@ -49,6 +49,18 @@ cleanup() {
   if [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
     kill -TERM "$APP_PID" 2>/dev/null || true
     wait "$APP_PID" 2>/dev/null || true
+    if [[ -f "$TARGET_DIR/client-receipt.txt" ]]; then
+      printf 'app_process_cleanup_pid=%s\napp_process_cleanup=waited\n' \
+        "$APP_PID" >>"$TARGET_DIR/client-receipt.txt"
+    fi
+    APP_PID=""
+  elif [[ -n "$APP_PID" ]]; then
+    wait "$APP_PID" 2>/dev/null || true
+    if [[ -f "$TARGET_DIR/client-receipt.txt" ]]; then
+      printf 'app_process_cleanup_pid=%s\napp_process_cleanup=already-exited-and-reaped\n' \
+        "$APP_PID" >>"$TARGET_DIR/client-receipt.txt"
+    fi
+    APP_PID=""
   fi
   if [[ "$CLEAN_TARGET" == 1 && "$KEEP_TARGET" == 0 ]]; then
     rm -rf "$TARGET_DIR"
@@ -173,8 +185,10 @@ printf 'client_log=%s\nwatchdog_marker=%s\n' \
   "$CLIENT_LOG" "$CLIENT_WATCHDOG_FIRED" >>"$TARGET_DIR/client-receipt.txt"
 set +e
 "$CLIENT" --pid "$APP_PID" --bundle-id "$TEST_BUNDLE_ID" \
+  --bundle-path "$APP_BUNDLE" \
   >"$CLIENT_LOG" 2>&1 &
 CLIENT_PID="$!"
+printf 'client_pid=%s\n' "$CLIENT_PID" >>"$TARGET_DIR/client-receipt.txt"
 CLIENT_WATCHDOG_SECONDS=35
 python3 script/watch_macos_button_ax_client.py \
   --pid "$CLIENT_PID" --timeout-seconds "$CLIENT_WATCHDOG_SECONDS" \
@@ -184,6 +198,8 @@ wait "$CLIENT_PID"
 CLIENT_STATUS=$?
 set -e
 : >"$CLIENT_DONE"
+printf 'client_wait_status=%s\nclient_process_cleanup=waited\n' \
+  "$CLIENT_STATUS" >>"$TARGET_DIR/client-receipt.txt"
 CLIENT_PID=""
 wait "$WATCHDOG_PID" 2>/dev/null || true
 WATCHDOG_PID=""
