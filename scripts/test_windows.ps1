@@ -68,12 +68,13 @@ if ($IsWindows) {
   Invoke-CheckedCommand -Program $ownerIdTest -Arguments @() -LogName "accessibility-owner-id-test.log"
 }
 
-Invoke-CheckedCommand -Program $moon -Arguments @("fmt", "--check", "windows", "platform/windows_text", "examples/windows", "examples/windows_text_field", "examples/windows_command_palette") -LogName "format.log"
+Invoke-CheckedCommand -Program $moon -Arguments @("fmt", "--check", "windows", "platform/windows_text", "examples/windows", "examples/windows_text_field", "examples/windows_command_palette", "examples/windows_button", "examples/ubuntu_button/fixture") -LogName "format.log"
 Invoke-CheckedCommand -Program $moon -Arguments @("check", "--package-path", "windows", "--target", "native", "--deny-warn") -LogName "check-windows.log"
 Invoke-CheckedCommand -Program $moon -Arguments @("check", "--package-path", "platform/windows_text", "--target", "native", "--deny-warn") -LogName "check-text-adapter.log"
 Invoke-CheckedCommand -Program $moon -Arguments @("check", "--package-path", "examples/windows", "--target", "native", "--deny-warn") -LogName "check-example.log"
 Invoke-CheckedCommand -Program $moon -Arguments @("check", "--package-path", "examples/windows_text_field", "--target", "native", "--deny-warn") -LogName "check-text-field.log"
 Invoke-CheckedCommand -Program $moon -Arguments @("check", "--package-path", "examples/windows_command_palette", "--target", "native", "--deny-warn") -LogName "check-command-palette.log"
+Invoke-CheckedCommand -Program $moon -Arguments @("check", "--package-path", "examples/windows_button", "--target", "native", "--deny-warn") -LogName "check-button.log"
 
 Remove-Item Env:GPUI_WINDOWS_E2E -ErrorAction SilentlyContinue
 Remove-Item Env:GPUI_WINDOWS_READBACK -ErrorAction SilentlyContinue
@@ -82,6 +83,8 @@ Invoke-CheckedCommand -Program $moon -Arguments @("test", "--package", "f4ah6o/g
 Invoke-CheckedCommand -Program $moon -Arguments @("test", "--package", "f4ah6o/gpui/platform/windows_text", "--target", "native", "--deny-warn", "--no-parallelize") -LogName "text-adapter-tests.log"
 Invoke-CheckedCommand -Program $moon -Arguments @("test", "--package", "f4ah6o/gpui/examples/windows_text_field", "--target", "native", "--deny-warn", "--no-parallelize") -LogName "text-field-tests.log"
 Invoke-CheckedCommand -Program $moon -Arguments @("test", "--package", "f4ah6o/gpui/examples/windows_command_palette", "--target", "native", "--deny-warn", "--no-parallelize") -LogName "command-palette-tests.log"
+Invoke-CheckedCommand -Program $moon -Arguments @("test", "--target", "native", "--deny-warn", "--no-parallelize", "examples/windows_button") -LogName "button-tests.log"
+Invoke-CheckedCommand -Program $moon -Arguments @("test", "--target", "native", "--deny-warn", "--no-parallelize", "examples/ubuntu_button/fixture") -LogName "shared-button-fixture-tests.log"
 
 if ($PortableOnly) {
   exit 0
@@ -118,3 +121,14 @@ Invoke-CheckedCommand -Program $moon -Arguments @("run", "examples/windows", "--
 Invoke-CheckedCommand -Program "pwsh" -Arguments @("-NoProfile", "-File", "scripts/run_windows_text_field.ps1", "-Mode", "Smoke") -LogName "text-field-smoke.log"
 Invoke-CheckedCommand -Program "pwsh" -Arguments @("-NoProfile", "-File", "scripts/run_windows_text_field.ps1", "-Mode", "Smoke", "-ExperimentalIme") -LogName "text-field-imm-smoke.log"
 Invoke-CheckedCommand -Program "pwsh" -Arguments @("-NoProfile", "-File", "scripts/run_windows_command_palette.ps1", "-Mode", "Smoke", "-NoChecks") -LogName "command-palette-smoke.log"
+
+Remove-Item Env:GPUI_WINDOWS_BUTTON_SMOKE -ErrorAction SilentlyContinue
+Remove-Item Env:GPUI_NATIVE_E2E -ErrorAction SilentlyContinue
+Remove-Item Env:GPUI_WINDOWS_READBACK -ErrorAction SilentlyContinue
+$env:GPUI_WINDOWS_BUTTON_SMOKE = "1"
+$env:GPUI_NATIVE_E2E = "1"
+$env:GPUI_WINDOWS_READBACK = "1"
+Invoke-CheckedCommand -Program $moon -Arguments @("run", "examples/windows_button", "--target", "native") -LogName "button-smoke.log"
+Remove-Item Env:GPUI_WINDOWS_BUTTON_SMOKE -ErrorAction SilentlyContinue
+Remove-Item Env:GPUI_NATIVE_E2E -ErrorAction SilentlyContinue
+Remove-Item Env:GPUI_WINDOWS_READBACK -ErrorAction SilentlyContinue

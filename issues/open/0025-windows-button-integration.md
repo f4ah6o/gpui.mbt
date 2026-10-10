@@ -1,7 +1,7 @@
 # Windows reusable Button integration and qualification
 
-Status: open — fixture implementation and native acceptance pending\
-Updated: 2026-10-09 (JST); inspected 2026-10-09 23:41 JST\
+Status: open — fixture and completed-frame smoke are implemented; physical input and lifecycle acceptance remain pending\
+Updated: 2026-10-10 (JST)\
 Parent: [Windows backend](0008-windows-native-backend.md)\
 Related: [palette and shared dependency handoff](0023-windows-command-palette-parity.md)
 
@@ -12,7 +12,7 @@ The Linux/shared-component coordinator owns reusable Button corrections and the
 common API. This issue does not authorize changes to another platform's scope
 or promote a support tier.
 
-Current main is `008b3c73d50108d6ed1e6c02ad9e12e930e843ec`.
+Current main is `d8d7544662c31d6222580a0749b504d5f5e89b3f` (includes macOS catch-up #59).
 [Button #47](https://github.com/gpui-mbt/gpui.mbt/pull/47) is merged as
 `4ee7bd48482db16fd6757265d7d1f3decd352bd7`; the reusable Button is available
 on current main. This merge supplies a shared control, not a Windows fixture or
@@ -48,6 +48,27 @@ states, keyboard Tab/Enter/Space, pointer press/release, and cancellation.
 
 Stage A is independently deliverable. It is not blocked on Linux AT-SPI or an
 external automation driver, and passing it does not imply Stage B is complete.
+
+### Windows catch-up candidate evidence — 2026-10-10
+
+The candidate branch rebases on the current main above and adds
+`examples/windows_button/`, which composes `controls/button/` with the shared
+`examples/ubuntu_button/fixture/` rather than copying either model. The
+portable Windows adapter suite passes 6 tests and the shared fixture passes 16.
+The native D3D11 smoke completed a 640 × 240 frame at scale 1.0, read back the
+finished frame, and sampled the background `[24,28,36,255]`, enabled Button
+fill `[42,71,101,255]`, 183 bright label pixels and 279 status-text pixels.
+The observed host was Windows 11 Pro build 26200, x64, MSVC 19.44.35214.0,
+MoonBit `0.10.14+7d59c7ec9`, a 3440 × 1440 desktop and NVIDIA GeForce RTX 2060
+SUPER. The test did not record hardware-versus-WARP selection.
+
+The visible `SendInput` runner compiled but its preflight returned `BLOCKED`:
+`OpenInputDesktop` failed with Win32 error 5 and no foreground window was
+available. Physical keyboard/pointer gestures, GUI lifecycle, resize/close/reopen
+acceptance and UI Automation are `UNRUN` or unsupported; this does not complete
+Stage A. Japanese IME remains `UNRUN`. See the [Button guide](../../docs/windows-button.md)
+for the runnable gate and retained evidence path. The exact post-rebase source
+and actrun records are pinned in the final candidate update before merge.
 
 ## Stage B — shared semantics and UIA projection
 

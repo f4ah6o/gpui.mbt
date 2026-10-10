@@ -697,6 +697,12 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
             "text_layout", "element", "primitives", "scene", "diagnostics",
             "capability",
         },
+        # The Windows Button executable is a native adapter above the shared
+        # platform-neutral fixture; its model is not copied into this leaf.
+        "examples/windows_button": {
+            "windows", "platform", "platform/testing", "primitives", "scene",
+            "diagnostics", "examples/ubuntu_button/fixture",
+        },
         "element": {"core", "primitives", "layout", "scene"},
         # Semantic capabilities are portable application-facing contracts. The
         # optional MCP adapter is a leaf above them and owns no domain state.
