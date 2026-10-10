@@ -465,8 +465,10 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
     record_optional_service(host, @platform.Cursor, "cursor")
     require_ok(host.require_capability(@platform.GrayscaleTextFrames))
     assert_true(Host::start() is Err(_))
-    let lifecycle_trace_enabled =
-      @env.get_env_var("GPUI_UBUNTU_E2E_STAGE_TRACE") == Some("1")
+    let lifecycle_trace_enabled = @env.get_env_var(
+        "GPUI_UBUNTU_E2E_STAGE_TRACE",
+      ) ==
+      Some("1")
     let mut window_generation = 0
     for iteration = 0; iteration < 24; iteration = iteration + 1 {
       println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=create")
