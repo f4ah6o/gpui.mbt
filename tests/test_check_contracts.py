@@ -749,8 +749,15 @@ class WorkflowContractTests(unittest.TestCase):
     def test_generated_interface_gate_requires_copying_moon_info_output(self) -> None:
         workflow = ROOT / ".github/workflows/contracts.yml"
         workflow_text = workflow.read_text(encoding="utf-8")
+        info_command = "moon info --target native --package f4ah6o/gpui/ubuntu"
         copy_command = "cp _build/native/debug/check/ubuntu/ubuntu.mbti ubuntu/pkg.generated.mbti"
-        self.assertIn(copy_command, workflow_text)
+        compare_command = "git diff --exit-code -- ubuntu/pkg.generated.mbti"
+        self.assertEqual(workflow_text.count(info_command), 1)
+        self.assertEqual(workflow_text.count(copy_command), 1)
+        self.assertEqual(workflow_text.count(compare_command), 1)
+        self.assertEqual(workflow_text.count("name: ubuntu-generated-interface"), 1)
+        self.assertIn("path: ubuntu/pkg.generated.mbti", workflow_text)
+        self.assertIn("if-no-files-found: error", workflow_text)
         with tempfile.TemporaryDirectory() as tempdir:
             path = Path(tempdir) / "contracts.yml"
             path.write_text(workflow_text.replace(copy_command + "\n", "", 1), encoding="utf-8")

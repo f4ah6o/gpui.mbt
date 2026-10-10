@@ -247,6 +247,8 @@ class UnifiedFailureDiagnosticTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         workflow = (root / ".github/workflows/ubuntu-native.yml").read_text(encoding="utf-8")
         self.assertEqual(workflow.count("scripts/run_ubuntu_benchmark_with_trace.py"), 1)
+        self.assertEqual(workflow.count("id: native-e2e-timing"), 1)
+        self.assertNotIn("id: ubuntu_benchmark", workflow)
         self.assertNotIn("Capture bounded first-frame trace after E2E failure", workflow)
         self.assertNotIn("steps.native-e2e-timing.outcome", workflow)
         self.assertEqual(workflow.count("actions/upload-artifact@"), 1)
