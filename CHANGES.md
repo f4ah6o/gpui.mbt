@@ -29,6 +29,8 @@
 
 ### Fixed
 
+- Propagate CoreText framework link flags to downstream macOS native builds so
+  package consumers can use `platform/macos_text` outside a Moon workspace.
 - Post focus-change notifications with the newly focused live element, or a
   current live target after the previous Button element is removed.
 - Bound cleanup of the macOS AX harness's app, client, and watchdog processes,
@@ -41,6 +43,9 @@
 ### Security
 
 ### Migration
+
+- Provide Python 3 when building GPUI for native or LLVM targets; Moon runs the
+  module pre-build configuration script for those backends.
 
 ## 0.2.2 - 2026-10-10
 
