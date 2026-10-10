@@ -672,8 +672,11 @@ def validate_runtime_dependencies(root: Path) -> list[str]:
         "examples/ubuntu_button/fixture": {
             "accessibility", "controls/button", "element", "primitives", "scene",
         },
+        # The native Ubuntu Button executable owns an in-process adapter over
+        # the shared semantic model; it does not add an OS accessibility bridge.
         "examples/ubuntu_button": {
-            "ubuntu", "platform", "diagnostics", "primitives", "examples/ubuntu_button/fixture",
+            "ubuntu", "accessibility", "platform", "diagnostics", "primitives",
+            "examples/ubuntu_button/fixture",
         },
         # The native macOS sample is a leaf above the portable Button fixture.
         "examples/macos_button": {
@@ -806,6 +809,9 @@ def _validate_workflow(path: Path) -> list[str]:
         "python3 -m unittest discover -s tests -p 'test_*.py'",
         "python3 scripts/check_contracts.py",
         "moon version --all",
+        "moon info --target native --package f4ah6o/gpui/ubuntu",
+        "cp _build/native/debug/check/ubuntu/ubuntu.mbti ubuntu/pkg.generated.mbti",
+        "git diff --exit-code -- ubuntu/pkg.generated.mbti",
         "moon fmt --check",
         "moon check --target all --deny-warn",
         "moon test --target all --deny-warn",

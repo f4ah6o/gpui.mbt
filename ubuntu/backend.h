@@ -38,6 +38,8 @@ int32_t gpui_stop(int32_t host);
 int32_t gpui_wake(int32_t host);
 int32_t gpui_exit(int32_t host);
 int32_t gpui_state(int32_t host);
+/* Side-effect-free owner/lifetime check for UI-thread adapters. */
+int32_t gpui_owner_thread_check(int32_t host);
 int32_t gpui_create(int32_t host, int32_t width, int32_t height,
                     const uint8_t *title, int32_t length);
 int32_t gpui_close(int32_t host, int32_t window);

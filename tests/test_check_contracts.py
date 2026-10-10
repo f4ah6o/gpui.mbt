@@ -262,7 +262,13 @@ class RuntimeDependencyTests(unittest.TestCase):
     def test_accessibility_is_portable_and_cannot_import_native_or_action_leaves(self) -> None:
         manifest = self.root / "accessibility/moon.pkg"
         self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
-        for dependency in ("platform", "ubuntu", "capability", "mcp"):
+        for dependency in (
+            "platform",
+            "ubuntu",
+            "examples/ubuntu_button",
+            "capability",
+            "mcp",
+        ):
             manifest.write_text(
                 f'import {{ "f4ah6o/gpui/{dependency}" }}\n',
                 encoding="utf-8",
@@ -356,10 +362,12 @@ class RuntimeDependencyTests(unittest.TestCase):
                 '"f4ah6o/gpui/scene" }\n'
             ),
             "examples/ubuntu_button": (
-                'import { "f4ah6o/gpui/ubuntu", "f4ah6o/gpui/platform", '
+                'import { "f4ah6o/gpui/ubuntu", "f4ah6o/gpui/accessibility", '
+                '"f4ah6o/gpui/platform", '
                 '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives", '
                 '"f4ah6o/gpui/examples/ubuntu_button/fixture", '
                 '"moonbitlang/core/env" }\n'
+                'import { "f4ah6o/gpui/platform/linux_text" } for "wbtest"\n'
             ),
         }
         for package, content in manifests.items():
@@ -396,7 +404,7 @@ class RuntimeDependencyTests(unittest.TestCase):
             )
         )
 
-    def test_ubuntu_button_semantics_stay_in_the_headless_fixture_layer(self) -> None:
+    def test_ubuntu_button_adapter_stays_above_shared_semantics(self) -> None:
         manifests = {
             "controls/button": (
                 'import { "f4ah6o/gpui/primitives", '
@@ -408,7 +416,8 @@ class RuntimeDependencyTests(unittest.TestCase):
                 '"f4ah6o/gpui/primitives", "f4ah6o/gpui/scene" }\n'
             ),
             "examples/ubuntu_button": (
-                'import { "f4ah6o/gpui/ubuntu", "f4ah6o/gpui/platform", '
+                'import { "f4ah6o/gpui/ubuntu", "f4ah6o/gpui/accessibility", '
+                '"f4ah6o/gpui/platform", '
                 '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives", '
                 '"f4ah6o/gpui/examples/ubuntu_button/fixture", '
                 '"moonbitlang/core/env" }\n'
@@ -437,7 +446,7 @@ class RuntimeDependencyTests(unittest.TestCase):
 
         app_manifest = self.root / "examples/ubuntu_button/moon.pkg"
         app_manifest.write_text(
-            'import { "f4ah6o/gpui/accessibility" }\n',
+            'import { "f4ah6o/gpui/windows" }\n',
             encoding="utf-8",
         )
         errors = checker.validate_runtime_dependencies(self.root)

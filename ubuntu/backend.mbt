@@ -26,6 +26,9 @@ extern "C" fn native_stop(host : Int) -> Int = "gpui_stop"
 extern "C" fn native_state(host : Int) -> Int = "gpui_state"
 
 ///|
+extern "C" fn native_owner_thread_check(host : Int) -> Int = "gpui_owner_thread_check"
+
+///|
 extern "C" fn native_wake(host : Int) -> Int = "gpui_wake"
 
 ///|
@@ -243,6 +246,15 @@ pub fn Host::state(self : Host) -> HostState {
       _ => Stopped
     }
   }
+}
+
+///|
+/// Check that this live Host belongs to the calling UI-owner thread.
+/// The native check has no side effect and does not marshal work.
+pub fn Host::assert_owner_thread(
+  self : Host,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  outcome(native_owner_thread_check(self.token), "assert_owner_thread")
 }
 
 ///|
