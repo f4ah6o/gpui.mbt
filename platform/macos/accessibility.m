@@ -21,11 +21,40 @@
 @interface GPView : NSView
 @end
 
+@class GPUIAXButtonElement;
+
 static char gpui_ax_child_key;
 static int64_t gpui_ax_next_binding_token;
 static NSMutableArray<NSDictionary *> *gpui_ax_pending_requests;
 static id gpui_ax_close_observer;
 static id gpui_ax_resize_observer;
+
+#ifdef GPUI_TESTING
+typedef void (*GPUIAXNotificationHook)(id, NSAccessibilityNotificationName);
+static GPUIAXNotificationHook gpui_ax_notification_hook;
+
+void gpui_macos_ax_test_set_notification_hook(GPUIAXNotificationHook hook) {
+  gpui_ax_notification_hook = hook;
+}
+#endif
+
+static void gpui_ax_post_notification(
+    id element, NSAccessibilityNotificationName notification) {
+#ifdef GPUI_TESTING
+  if (gpui_ax_notification_hook)
+    gpui_ax_notification_hook(element, notification);
+#endif
+  NSAccessibilityPostNotification(element, notification);
+}
+
+static id gpui_ax_focus_fallback(NSView *view,
+                                 GPUIAXButtonElement *excluded,
+                                 GPUIAXButtonElement *previous) {
+  id focused = [NSApp accessibilityApplicationFocusedUIElement];
+  if (focused && focused != excluded && focused != previous) return focused;
+  id ancestor = NSAccessibilityUnignoredAncestor(view);
+  return ancestor ?: view;
+}
 
 @interface GPUIAXButtonElement : NSAccessibilityElement <NSAccessibilityButton>
 @property(nonatomic, weak) NSWindow *ownerWindow;
@@ -99,11 +128,16 @@ static void gpui_ax_revoke_view(NSView *view, int64_t window_token) {
       objc_getAssociatedObject(view, &gpui_ax_child_key);
   if (element) {
     int64_t binding_token = element.bindingToken;
+    BOOL was_focused = element.focused;
     [element revoke];
     gpui_ax_remove_requests(window_token, binding_token);
     objc_setAssociatedObject(view, &gpui_ax_child_key, nil,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    NSAccessibilityPostNotification(view, NSAccessibilityLayoutChangedNotification);
+    gpui_ax_post_notification(view, NSAccessibilityLayoutChangedNotification);
+    if (was_focused)
+      gpui_ax_post_notification(
+          gpui_ax_focus_fallback(view, element, nil),
+          NSAccessibilityFocusedUIElementChangedNotification);
   }
 }
 
@@ -326,6 +360,8 @@ int32_t gpui_macos_ax_publish_v1(int64_t window_token,
     GPUIAXButtonElement *current =
         objc_getAssociatedObject(view, &gpui_ax_child_key);
     if (current && current.revoked) current = nil;
+    GPUIAXButtonElement *previous = current;
+    BOOL previous_focused = previous && previous.focused;
 
     if (existing_binding_token != 0 && current &&
         current.bindingToken != existing_binding_token)
@@ -377,12 +413,18 @@ int32_t gpui_macos_ax_publish_v1(int64_t window_token,
     current.revoked = NO;
     *out_binding_token = current.bindingToken;
     gpui_ax_install_observers();
+    BOOL focused_element_changed =
+        (previous_focused != focused) || (previous_focused && previous != current);
     if (created)
-      NSAccessibilityPostNotification(view,
-                                      NSAccessibilityLayoutChangedNotification);
+      gpui_ax_post_notification(view,
+                                NSAccessibilityLayoutChangedNotification);
     else
-      NSAccessibilityPostNotification(current,
-                                      NSAccessibilityValueChangedNotification);
+      gpui_ax_post_notification(current,
+                                NSAccessibilityValueChangedNotification);
+    if (focused_element_changed)
+      gpui_ax_post_notification(
+          focused ? current : gpui_ax_focus_fallback(view, current, previous),
+          NSAccessibilityFocusedUIElementChangedNotification);
     return 0;
   }
 }

@@ -10,12 +10,13 @@ while [[ "$#" -gt 0 ]]; do
     --adapter-only) MODE="adapter"; shift ;;
     --mutation-probes) MODE="mutations"; shift ;;
     --deadline-probe) MODE="deadline"; shift ;;
+    --cleanup-probe) MODE="cleanup"; shift ;;
     --target-dir)
       [[ "$#" -ge 2 ]] || { echo '--target-dir requires a path.' >&2; exit 2; }
       TARGET_DIR="$2"
       shift 2
       ;;
-    *) echo 'usage: test_macos_button_ax.sh [--all|--adapter-only|--mutation-probes|--deadline-probe] [--target-dir PATH]' >&2; exit 2 ;;
+    *) echo 'usage: test_macos_button_ax.sh [--all|--adapter-only|--mutation-probes|--deadline-probe|--cleanup-probe] [--target-dir PATH]' >&2; exit 2 ;;
   esac
 done
 
@@ -36,39 +37,156 @@ fi
 APP_PID=""
 CLIENT_PID=""
 WATCHDOG_PID=""
+SENTINEL_PID=""
 KEEP_TARGET=0
+app_process_state() {
+  ps -p "$1" -o stat= 2>/dev/null | tr -d '[:space:]' || true
+}
+
+OWNED_PROCESS_CLEANUP_RESULT=""
+terminate_owned_process() {
+  local process_pid="$1"
+  local process_name="$2"
+  local process_state=""
+
+  if [[ -z "$process_pid" ]]; then
+    OWNED_PROCESS_CLEANUP_RESULT='not-started'
+    return 0
+  fi
+  if ! kill -0 "$process_pid" 2>/dev/null; then
+    wait "$process_pid" 2>/dev/null || true
+    OWNED_PROCESS_CLEANUP_RESULT='already-exited-and-reaped'
+    return 0
+  fi
+
+  kill -TERM "$process_pid" 2>/dev/null || true
+  kill -CONT "$process_pid" 2>/dev/null || true
+  for ((PROCESS_CLEANUP_TICK = 0; PROCESS_CLEANUP_TICK < 30; PROCESS_CLEANUP_TICK++)); do
+    process_state="$(app_process_state "$process_pid")"
+    if [[ -z "$process_state" || "$process_state" == Z* ]]; then break; fi
+    sleep 0.1
+  done
+  process_state="$(app_process_state "$process_pid")"
+  if [[ -n "$process_state" && "$process_state" != Z* ]]; then
+    kill -KILL "$process_pid" 2>/dev/null || true
+    for ((PROCESS_CLEANUP_TICK = 0; PROCESS_CLEANUP_TICK < 10; PROCESS_CLEANUP_TICK++)); do
+      process_state="$(app_process_state "$process_pid")"
+      if [[ -z "$process_state" || "$process_state" == Z* ]]; then break; fi
+      sleep 0.1
+    done
+  fi
+  process_state="$(app_process_state "$process_pid")"
+  if [[ -z "$process_state" || "$process_state" == Z* ]]; then
+    wait "$process_pid" 2>/dev/null || true
+    OWNED_PROCESS_CLEANUP_RESULT='terminated-and-reaped'
+  else
+    OWNED_PROCESS_CLEANUP_RESULT="timeout-state-$process_state"
+    echo "Timed out cleaning up owned $process_name process $process_pid (state $process_state)." >&2
+  fi
+}
+
+record_process_cleanup() {
+  local process_name="$1"
+  local process_pid="$2"
+  local process_result="$3"
+  if [[ -f "$TARGET_DIR/client-receipt.txt" ]]; then
+    printf '%s_process_cleanup_pid=%s\n%s_process_cleanup=%s\n' \
+      "$process_name" "$process_pid" "$process_name" "$process_result" \
+      >>"$TARGET_DIR/client-receipt.txt"
+  fi
+}
+
 cleanup() {
-  if [[ -n "$WATCHDOG_PID" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
-    kill -TERM "$WATCHDOG_PID" 2>/dev/null || true
-    wait "$WATCHDOG_PID" 2>/dev/null || true
+  local original_status=$?
+  trap - EXIT
+  if [[ -n "$WATCHDOG_PID" ]]; then
+    terminate_owned_process "$WATCHDOG_PID" watchdog
+    WATCHDOG_CLEANUP_RESULT="$OWNED_PROCESS_CLEANUP_RESULT"
+    record_process_cleanup watchdog "$WATCHDOG_PID" "$WATCHDOG_CLEANUP_RESULT"
+    WATCHDOG_PID=""
   fi
-  if [[ -n "$CLIENT_PID" ]] && kill -0 "$CLIENT_PID" 2>/dev/null; then
-    kill -TERM "$CLIENT_PID" 2>/dev/null || true
-    wait "$CLIENT_PID" 2>/dev/null || true
+  if [[ -n "$CLIENT_PID" ]]; then
+    terminate_owned_process "$CLIENT_PID" AX-client
+    CLIENT_CLEANUP_RESULT="$OWNED_PROCESS_CLEANUP_RESULT"
+    record_process_cleanup client "$CLIENT_PID" "$CLIENT_CLEANUP_RESULT"
+    CLIENT_PID=""
   fi
-  if [[ -n "$APP_PID" ]] && kill -0 "$APP_PID" 2>/dev/null; then
-    kill -TERM "$APP_PID" 2>/dev/null || true
-    wait "$APP_PID" 2>/dev/null || true
-    if [[ -f "$TARGET_DIR/client-receipt.txt" ]]; then
-      printf 'app_process_cleanup_pid=%s\napp_process_cleanup=waited\n' \
-        "$APP_PID" >>"$TARGET_DIR/client-receipt.txt"
-    fi
+  if [[ -n "$APP_PID" ]]; then
+    terminate_owned_process "$APP_PID" app
+    APP_CLEANUP_RESULT="$OWNED_PROCESS_CLEANUP_RESULT"
+    record_process_cleanup app "$APP_PID" "$APP_CLEANUP_RESULT"
     APP_PID=""
-  elif [[ -n "$APP_PID" ]]; then
-    wait "$APP_PID" 2>/dev/null || true
-    if [[ -f "$TARGET_DIR/client-receipt.txt" ]]; then
-      printf 'app_process_cleanup_pid=%s\napp_process_cleanup=already-exited-and-reaped\n' \
-        "$APP_PID" >>"$TARGET_DIR/client-receipt.txt"
-    fi
-    APP_PID=""
+  fi
+  if [[ "${1:-}" != '--preserve-sentinel' && -n "$SENTINEL_PID" ]]; then
+    terminate_owned_process "$SENTINEL_PID" cleanup-probe-sentinel
+    SENTINEL_PID=""
   fi
   if [[ "$CLEAN_TARGET" == 1 && "$KEEP_TARGET" == 0 ]]; then
     rm -rf "$TARGET_DIR"
   elif [[ "$CLEAN_TARGET" == 1 ]]; then
     echo "Retained AX client evidence at $TARGET_DIR" >&2
   fi
+  return "$original_status"
 }
 trap cleanup EXIT
+
+if [[ "$MODE" == cleanup ]]; then
+  CLEAN_TARGET=0
+  start_cleanup_probe_child() {
+    local process_name="$1"
+    local ignore_term="$2"
+    local ready_file="$TARGET_DIR/$process_name-cleanup-probe-ready"
+    rm -f "$ready_file"
+    if [[ "$ignore_term" == 1 ]]; then
+      python3 -c 'import pathlib, signal, sys, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); pathlib.Path(sys.argv[1]).write_text("ready"); time.sleep(60)' "$ready_file" &
+    else
+      python3 -c 'import pathlib, sys, time; pathlib.Path(sys.argv[1]).write_text("ready"); time.sleep(60)' "$ready_file" &
+    fi
+    PROBE_CHILD_PID="$!"
+    for ((APP_READY_TICK = 0; APP_READY_TICK < 30; APP_READY_TICK++)); do
+      [[ -f "$ready_file" ]] && break
+      sleep 0.1
+    done
+    if [[ ! -f "$ready_file" ]]; then
+      kill -KILL "$PROBE_CHILD_PID" 2>/dev/null || true
+      wait "$PROBE_CHILD_PID" 2>/dev/null || true
+      return 1
+    fi
+  }
+  python3 -c 'import time; time.sleep(60)' &
+  SENTINEL_PID="$!"
+  start_cleanup_probe_child app 1 || { echo 'App cleanup probe did not become ready.' >&2; exit 1; }
+  APP_PID="$PROBE_CHILD_PID"
+  start_cleanup_probe_child client 0 || { echo 'Client cleanup probe did not become ready.' >&2; exit 1; }
+  CLIENT_PID="$PROBE_CHILD_PID"
+  start_cleanup_probe_child watchdog 0 || { echo 'Watchdog cleanup probe did not become ready.' >&2; exit 1; }
+  WATCHDOG_PID="$PROBE_CHILD_PID"
+  kill -STOP "$APP_PID" "$CLIENT_PID" "$WATCHDOG_PID"
+  APP_CLEANUP_STARTED="$SECONDS"
+  cleanup --preserve-sentinel
+  APP_CLEANUP_ELAPSED=$((SECONDS - APP_CLEANUP_STARTED))
+  if [[ "$APP_CLEANUP_RESULT" != 'terminated-and-reaped' || \
+        "$CLIENT_CLEANUP_RESULT" != 'terminated-and-reaped' || \
+        "$WATCHDOG_CLEANUP_RESULT" != 'terminated-and-reaped' || \
+        "$APP_CLEANUP_ELAPSED" -gt 5 ]]; then
+    kill -TERM "$SENTINEL_PID" 2>/dev/null || true
+    wait "$SENTINEL_PID" 2>/dev/null || true
+    SENTINEL_PID=""
+    echo "Expected stopped owned child to be reaped; got $APP_CLEANUP_RESULT." >&2
+    exit 1
+  fi
+  if ! kill -0 "$SENTINEL_PID" 2>/dev/null; then
+    kill -TERM "$SENTINEL_PID" 2>/dev/null || true
+    wait "$SENTINEL_PID" 2>/dev/null || true
+    echo 'Unrelated sentinel process was terminated by owned-child cleanup.' >&2
+    exit 1
+  fi
+  kill -TERM "$SENTINEL_PID" 2>/dev/null || true
+  wait "$SENTINEL_PID" 2>/dev/null || true
+  SENTINEL_PID=""
+  echo "PASS: stopped app/client/watchdog cleaned up within ${APP_CLEANUP_ELAPSED}s; unrelated sentinel survived"
+  exit 0
+fi
 
 cd "$ROOT_DIR"
 CLIENT="$TARGET_DIR/macos_button_ax_client"

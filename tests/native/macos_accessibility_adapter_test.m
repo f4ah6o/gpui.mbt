@@ -8,6 +8,9 @@
 #include <string.h>
 #include "../../platform/macos/accessibility_abi.h"
 
+extern void gpui_macos_ax_test_set_notification_hook(
+    void (*hook)(id, NSAccessibilityNotificationName));
+
 @interface GPWindow : NSObject <NSWindowDelegate>
 @property int64_t token;
 @end
@@ -49,15 +52,18 @@ static NSWindow *make_window(int64_t token) {
   return window;
 }
 
-static const char *payload(BOOL enabled, BOOL loading, BOOL focused,
-                           int activations) {
+static const char *payload_with_bounds(BOOL enabled, BOOL loading,
+                                      BOOL focused, int activations,
+                                      double left, double top, double width,
+                                      double height) {
   static char bytes[512];
   snprintf(bytes, sizeof(bytes),
            "{\"version\":1,\"role\":\"button\","
-           "\"name\":\"Run action\",\"left\":20,\"top\":30,"
-           "\"width\":180,\"height\":48,\"enabled\":%s,"
+           "\"name\":\"Run action\",\"left\":%.3f,\"top\":%.3f,"
+           "\"width\":%.3f,\"height\":%.3f,\"enabled\":%s,"
            "\"loading\":%s,\"focused\":%s,\"activations\":%d,"
            "\"actions\":[\"Invoke\"]}",
+           left, top, width, height,
            enabled ? "true" : "false", loading ? "true" : "false",
            focused ? "true" : "false", activations);
   return bytes;
@@ -126,14 +132,17 @@ static void test_integer_payload_validation(NSWindow *window) {
   }
 }
 
-static int64_t publish(NSWindow *window, int64_t existing, BOOL enabled,
-                       BOOL loading, BOOL focused, int activations) {
+static int64_t publish_with_bounds(NSWindow *window, int64_t existing,
+                                   BOOL enabled, BOOL loading, BOOL focused,
+                                   int activations, double left, double top,
+                                   double width, double height) {
   id delegate = window.delegate;
   int64_t token = 0;
   if ([delegate respondsToSelector:@selector(token)])
     token = ((int64_t (*)(id, SEL))[delegate methodForSelector:@selector(token)])(
         delegate, @selector(token));
-  const char *bytes = payload(enabled, loading, focused, activations);
+  const char *bytes = payload_with_bounds(enabled, loading, focused,
+                                          activations, left, top, width, height);
   int64_t binding = 0;
   int32_t result = gpui_macos_ax_publish_v1(
       token, existing, (const uint8_t *)bytes, (int32_t)strlen(bytes), &binding);
@@ -143,6 +152,12 @@ static int64_t publish(NSWindow *window, int64_t existing, BOOL enabled,
     fail("publish should return a binding");
   }
   return binding;
+}
+
+static int64_t publish(NSWindow *window, int64_t existing, BOOL enabled,
+                       BOOL loading, BOOL focused, int activations) {
+  return publish_with_bounds(window, existing, enabled, loading, focused,
+                             activations, 20, 30, 180, 48);
 }
 
 static id child(NSWindow *window) {
@@ -182,6 +197,83 @@ static void test_projection_and_press(NSWindow *window, int64_t *binding_out) {
   require(gpui_macos_ax_take_request_v1(401, &returned) == 0,
           "one semantic request should be consumed once by the queue");
   *binding_out = binding;
+}
+
+static int focused_element_notifications = 0;
+static id last_focused_element;
+
+static void notification_hook(id element,
+                              NSAccessibilityNotificationName notification) {
+  if ([notification isEqualToString:
+                         NSAccessibilityFocusedUIElementChangedNotification]) {
+    focused_element_notifications += 1;
+    last_focused_element = element;
+  }
+}
+
+static id expected_focus_loss_target(NSWindow *window, id excluded,
+                                     id previous) {
+  id focused = [NSApp accessibilityApplicationFocusedUIElement];
+  if (focused && focused != excluded && focused != previous) return focused;
+  id ancestor = NSAccessibilityUnignoredAncestor(window.contentView);
+  return ancestor ?: window.contentView;
+}
+
+static void test_focus_notifications(NSWindow *window) {
+  int before = focused_element_notifications;
+
+  int64_t binding = publish(window, 0, YES, NO, NO, 0);
+  require(focused_element_notifications == before,
+          "publishing an unfocused element should not emit a focus change");
+  binding = publish(window, binding, YES, NO, YES, 0);
+  require(focused_element_notifications == before + 1,
+          "gaining AX focus should notify app observers once");
+  id focused = child(window);
+  require(last_focused_element == focused,
+          "focus notification should target the newly focused live AX element");
+  binding = publish(window, binding, YES, NO, YES, 1);
+  require(focused_element_notifications == before + 1,
+          "an unchanged focused element should not repeat the focus notification");
+  id previous = child(window);
+  id expected_loss_target = expected_focus_loss_target(window, previous, previous);
+  publish(window, binding, YES, NO, NO, 1);
+  require(focused_element_notifications == before + 2,
+          "losing AX focus should notify app observers");
+  require(last_focused_element == expected_loss_target &&
+              last_focused_element != previous,
+          "focus loss should target the current live focus or parent, not the stale child");
+
+  binding = publish(window, binding, YES, NO, YES, 1);
+  require(focused_element_notifications == before + 3,
+          "regaining AX focus should notify app observers");
+  id old_focused = child(window);
+  binding = publish_with_bounds(window, binding, YES, NO, YES, 1, 20, 30,
+                                181, 48);
+  id replacement = child(window);
+  require(replacement != old_focused && [replacement isAccessibilityElement],
+          "focused geometry replacement should expose a new live AX element");
+  require(focused_element_notifications == before + 4 &&
+              last_focused_element == replacement,
+          "focused replacement should notify with the new live AX element");
+
+  id expected_revoke_target =
+      expected_focus_loss_target(window, replacement, replacement);
+  require(gpui_macos_ax_revoke_v1(401, binding) == 0,
+          "focused AX element should revoke cleanly");
+  require(focused_element_notifications == before + 5,
+          "revoking a focused AX element should notify focus loss");
+  require(last_focused_element == expected_revoke_target &&
+              last_focused_element != replacement &&
+              ![replacement isAccessibilityElement],
+          "focused-element revocation should notify a live target after removing the stale child");
+
+  binding = publish(window, 0, NO, NO, NO, 1);
+  require(focused_element_notifications == before + 5,
+          "disabled unfocused replacement should not repeat focus loss");
+  require(![child(window) isAccessibilityEnabled],
+          "disabled replacement should still be exposed as disabled");
+  require(gpui_macos_ax_revoke_v1(401, 0) == 0,
+          "focus notification test binding should revoke cleanly");
 }
 
 static void test_queue_capacity_and_resize(NSWindow *window, int64_t binding) {
@@ -273,7 +365,9 @@ int main(void) {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
     NSWindow *window = make_window(401);
+    gpui_macos_ax_test_set_notification_hook(notification_hook);
     test_integer_payload_validation(window);
+    test_focus_notifications(window);
     int64_t binding = 0;
     test_projection_and_press(window, &binding);
     test_queue_capacity_and_resize(window, binding);

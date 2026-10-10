@@ -16,6 +16,32 @@
 
 ### Migration
 
+## 0.3.0 - 2026-10-10
+
+### Added
+
+- Added a bounded macOS AppKit accessibility adapter for the sample Button,
+  with public snapshot, publish/revoke, and semantic Invoke APIs. See the
+  [macOS Button guide](examples/macos_button/README.md); general widget and
+  VoiceOver support remain unqualified.
+
+### Changed
+
+### Fixed
+
+- Post focus-change notifications with the newly focused live element, or a
+  current live target after the previous Button element is removed.
+- Bound cleanup of the macOS AX harness's app, client, and watchdog processes,
+  including stopped children that ignore termination.
+
+### Deprecated
+
+### Removed
+
+### Security
+
+### Migration
+
 ## 0.2.1 - 2026-10-10
 
 ### Added
