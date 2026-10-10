@@ -28,7 +28,7 @@
 #include <xkbcommon/xkbcommon-compose.h>
 
 #define QUEUE_CAPACITY 1024
-#define OUTPUT_CAPACITY 16
+#define OUTPUT_CAPACITY GPUI_OUTPUT_CAPACITY
 #define CLIPBOARD_LIMIT (16 * 1024 * 1024)
 #define CLIPBOARD_TIMEOUT_MS 3000
 #define SOURCE_TRANSFER_CAPACITY 8
@@ -47,10 +47,18 @@ struct source_transfer {
   int fd;
   size_t offset;
 };
+struct output_metadata {
+  int32_t x, y, physical_width, physical_height, subpixel, transform;
+  int32_t geometry_valid;
+  uint32_t mode_flags;
+  int32_t mode_width, mode_height, mode_refresh;
+  int32_t scale;
+};
 struct output {
   struct wl_output *proxy;
   uint32_t name;
-  int scale, entered;
+  struct output_metadata committed, pending;
+  int entered, ready;
 };
 struct direct_event_meta {
   int epoch, direct_origin, text_length, revoked;
@@ -197,6 +205,10 @@ static int check(int token, struct host **out) {
     *out = active;
   pthread_mutex_unlock(&registry_mutex);
   return status;
+}
+int32_t gpui_owner_thread_check(int32_t token) {
+  struct host *h;
+  return check(token, &h);
 }
 static int window_check(int token, int window, struct host **out) {
   int s = check(token, out);
@@ -940,11 +952,30 @@ static void apply_size(struct host *h) {
     wl_egl_window_resize(h->egl_window, h->width * h->scale,
                          h->height * h->scale, 0, 0);
 }
+static struct output *find_output(struct host *h, struct wl_output *proxy) {
+  if (!proxy)
+    return NULL;
+  for (int i = 0; i < OUTPUT_CAPACITY; ++i)
+    if (h->outputs[i].proxy == proxy)
+      return &h->outputs[i];
+  return NULL;
+}
+static void init_output(struct output *output, struct wl_output *proxy,
+                        uint32_t name) {
+  memset(output, 0, sizeof(*output));
+  output->proxy = proxy;
+  output->name = name;
+  output->committed.scale = 1;
+  output->pending = output->committed;
+}
+static void reset_output(struct output *output) {
+  memset(output, 0, sizeof(*output));
+}
 static void update_scale(struct host *h) {
   int scale = 1;
   for (int i = 0; i < OUTPUT_CAPACITY; ++i)
-    if (h->outputs[i].entered && h->outputs[i].scale > scale)
-      scale = h->outputs[i].scale;
+    if (h->outputs[i].entered && h->outputs[i].committed.scale > scale)
+      scale = h->outputs[i].committed.scale;
   if (scale != h->scale) {
     h->scale = scale;
     apply_size(h);
@@ -954,35 +985,50 @@ static void update_scale(struct host *h) {
 static void output_geometry(void *d, struct wl_output *o, int32_t x, int32_t y,
                             int32_t pw, int32_t ph, int32_t sub,
                             const char *make, const char *model, int32_t tr) {
-  UNUSED(d);
-  UNUSED(o);
-  UNUSED(x);
-  UNUSED(y);
-  UNUSED(pw);
-  UNUSED(ph);
-  UNUSED(sub);
+  struct host *h = d;
+  struct output *output = find_output(h, o);
+  if (!output)
+    return;
+  output->pending.x = x;
+  output->pending.y = y;
+  output->pending.physical_width = pw;
+  output->pending.physical_height = ph;
+  output->pending.subpixel = sub;
+  output->pending.transform = tr;
+  output->pending.geometry_valid = 1;
+  /* Manufacturer/model strings are not retained by this private snapshot. */
   UNUSED(make);
   UNUSED(model);
-  UNUSED(tr);
 }
 static void output_mode(void *d, struct wl_output *o, uint32_t f, int32_t w,
                         int32_t hh, int32_t r) {
-  UNUSED(d);
-  UNUSED(o);
-  UNUSED(f);
-  UNUSED(w);
-  UNUSED(hh);
-  UNUSED(r);
+  struct host *h = d;
+  struct output *output = find_output(h, o);
+  if (!output)
+    return;
+  /* Prefer the current mode when a batch also reports preferred modes. */
+  if ((f & WL_OUTPUT_MODE_CURRENT) ||
+      !(output->pending.mode_flags & WL_OUTPUT_MODE_CURRENT)) {
+    output->pending.mode_flags = f;
+    output->pending.mode_width = w;
+    output->pending.mode_height = hh;
+    output->pending.mode_refresh = r;
+  }
 }
 static void output_done(void *d, struct wl_output *o) {
-  UNUSED(o);
-  update_scale(d);
+  struct host *h = d;
+  struct output *output = find_output(h, o);
+  if (!output)
+    return;
+  output->committed = output->pending;
+  output->ready = 1;
+  update_scale(h);
 }
 static void output_scale(void *d, struct wl_output *o, int32_t scale) {
   struct host *h = d;
-  for (int i = 0; i < OUTPUT_CAPACITY; ++i)
-    if (h->outputs[i].proxy == o)
-      h->outputs[i].scale = scale > 0 ? scale : 1;
+  struct output *output = find_output(h, o);
+  if (output)
+    output->pending.scale = scale > 0 ? scale : 1;
 }
 static const struct wl_output_listener output_listener = {
     .geometry = output_geometry,
@@ -1104,10 +1150,11 @@ static void pointer_axis(void *d, struct wl_pointer *p, uint32_t time,
   struct host *h = d;
   if (p != h->pointer)
     return;
+  int slot = (h->read + h->count) % QUEUE_CAPACITY;
+  int prior = h->count;
   event(h, 10, axis, h->px, h->py);
-  if (h->count)
-    h->queue[(h->read + h->count - 1) % QUEUE_CAPACITY][4] =
-        wl_fixed_to_double(value);
+  if (h->count != prior)
+    h->queue[slot][4] = wl_fixed_to_double(value);
 }
 static const struct wl_pointer_listener pointer_listener = {
     .enter = pointer_enter,
@@ -1340,11 +1387,10 @@ static void global(void *d, struct wl_registry *r, uint32_t name,
   } else if (!strcmp(interface, "wl_output") && version >= 2) {
     for (int i = 0; i < OUTPUT_CAPACITY; ++i)
       if (!h->outputs[i].proxy) {
-        h->outputs[i].proxy =
+        struct wl_output *output =
             wl_registry_bind(r, name, &wl_output_interface, 2);
-        h->outputs[i].name = name;
-        h->outputs[i].scale = 1;
-        wl_output_add_listener(h->outputs[i].proxy, &output_listener, h);
+        init_output(&h->outputs[i], output, name);
+        wl_output_add_listener(output, &output_listener, h);
         break;
       }
   }
@@ -1383,7 +1429,7 @@ static void global_remove(void *d, struct wl_registry *r, uint32_t name) {
   for (int i = 0; i < OUTPUT_CAPACITY; ++i)
     if (h->outputs[i].name == name) {
       wl_output_destroy(h->outputs[i].proxy);
-      memset(&h->outputs[i], 0, sizeof(h->outputs[i]));
+      reset_output(&h->outputs[i]);
     }
   update_scale(h);
 }
@@ -2003,6 +2049,43 @@ int32_t gpui_metrics(int32_t token, int32_t window, double *metrics) {
   metrics[1] = h->height;
   metrics[2] = h->scale;
   return GPUI_OK;
+}
+int32_t gpui_output_snapshot_v1(int32_t abi, int32_t token,
+                                double *records, int32_t capacity) {
+  if (abi != GPUI_OUTPUT_SNAPSHOT_ABI)
+    return -GPUI_UNSUPPORTED;
+  struct host *h;
+  int s = check(token, &h);
+  if (s)
+    return -s;
+  if (!records ||
+      capacity < GPUI_OUTPUT_CAPACITY * GPUI_OUTPUT_INFO_FIELDS)
+    return -GPUI_INVALID;
+
+  int count = 0;
+  for (int i = 0; i < OUTPUT_CAPACITY; ++i) {
+    const struct output *output = &h->outputs[i];
+    if (!output->proxy)
+      continue;
+    const struct output_metadata *metadata = &output->committed;
+    int has_current_mode =
+        (metadata->mode_flags & WL_OUTPUT_MODE_CURRENT) != 0;
+    double *record = records + count * GPUI_OUTPUT_INFO_FIELDS;
+    record[0] = output->ready ? 1.0 : 0.0;
+    record[1] = metadata->geometry_valid ? 1.0 : 0.0;
+    record[2] = has_current_mode ? 1.0 : 0.0;
+    record[3] = metadata->scale;
+    record[4] = metadata->geometry_valid ? metadata->physical_width : 0;
+    record[5] = metadata->geometry_valid ? metadata->physical_height : 0;
+    record[6] = metadata->geometry_valid ? metadata->subpixel : 0;
+    record[7] = metadata->geometry_valid ? metadata->transform : 0;
+    record[8] = has_current_mode ? metadata->mode_width : 0;
+    record[9] = has_current_mode ? metadata->mode_height : 0;
+    record[10] = has_current_mode ? metadata->mode_refresh : 0;
+    record[11] = output->entered ? 1.0 : 0.0;
+    ++count;
+  }
+  return count;
 }
 int32_t gpui_dispatch(int32_t token, int32_t timeout) {
   struct host *h;

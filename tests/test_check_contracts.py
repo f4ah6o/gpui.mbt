@@ -262,7 +262,13 @@ class RuntimeDependencyTests(unittest.TestCase):
     def test_accessibility_is_portable_and_cannot_import_native_or_action_leaves(self) -> None:
         manifest = self.root / "accessibility/moon.pkg"
         self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
-        for dependency in ("platform", "capability", "mcp"):
+        for dependency in (
+            "platform",
+            "ubuntu",
+            "examples/ubuntu_button",
+            "capability",
+            "mcp",
+        ):
             manifest.write_text(
                 f'import {{ "f4ah6o/gpui/{dependency}" }}\n',
                 encoding="utf-8",
@@ -356,10 +362,12 @@ class RuntimeDependencyTests(unittest.TestCase):
                 '"f4ah6o/gpui/scene" }\n'
             ),
             "examples/ubuntu_button": (
-                'import { "f4ah6o/gpui/ubuntu", "f4ah6o/gpui/platform", '
+                'import { "f4ah6o/gpui/ubuntu", "f4ah6o/gpui/accessibility", '
+                '"f4ah6o/gpui/platform", '
                 '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives", '
                 '"f4ah6o/gpui/examples/ubuntu_button/fixture", '
                 '"moonbitlang/core/env" }\n'
+                'import { "f4ah6o/gpui/platform/linux_text" } for "wbtest"\n'
             ),
         }
         for package, content in manifests.items():
@@ -396,7 +404,7 @@ class RuntimeDependencyTests(unittest.TestCase):
             )
         )
 
-    def test_ubuntu_button_semantics_stay_in_the_headless_fixture_layer(self) -> None:
+    def test_ubuntu_button_adapter_stays_above_shared_semantics(self) -> None:
         manifests = {
             "controls/button": (
                 'import { "f4ah6o/gpui/primitives", '
@@ -408,7 +416,8 @@ class RuntimeDependencyTests(unittest.TestCase):
                 '"f4ah6o/gpui/primitives", "f4ah6o/gpui/scene" }\n'
             ),
             "examples/ubuntu_button": (
-                'import { "f4ah6o/gpui/ubuntu", "f4ah6o/gpui/platform", '
+                'import { "f4ah6o/gpui/ubuntu", "f4ah6o/gpui/accessibility", '
+                '"f4ah6o/gpui/platform", '
                 '"f4ah6o/gpui/diagnostics", "f4ah6o/gpui/primitives", '
                 '"f4ah6o/gpui/examples/ubuntu_button/fixture", '
                 '"moonbitlang/core/env" }\n'
@@ -437,7 +446,7 @@ class RuntimeDependencyTests(unittest.TestCase):
 
         app_manifest = self.root / "examples/ubuntu_button/moon.pkg"
         app_manifest.write_text(
-            'import { "f4ah6o/gpui/accessibility" }\n',
+            'import { "f4ah6o/gpui/windows" }\n',
             encoding="utf-8",
         )
         errors = checker.validate_runtime_dependencies(self.root)
@@ -619,13 +628,30 @@ class RuntimeDependencyTests(unittest.TestCase):
     def test_backend_edges_aliases_and_whitebox_imports_are_audited(self) -> None:
         for package, content in {
             "platform": 'import { "f4ah6o/gpui/scene", "f4ah6o/gpui/diagnostics" }',
-            "ubuntu": 'import { "f4ah6o/gpui/platform" @shared, "f4ah6o/gpui/scene" }\nimport { "moonbitlang/core/env" } for "wbtest"',
+            "ubuntu": (
+                'import { "f4ah6o/gpui/accessibility", '
+                '"f4ah6o/gpui/platform" @shared, "f4ah6o/gpui/scene" }\n'
+                'import { "moonbitlang/core/env" } for "wbtest"'
+            ),
             "examples/ubuntu": 'import { "f4ah6o/gpui/ubuntu" @native }',
         }.items():
             directory = self.root / package
             directory.mkdir(parents=True)
             (directory / "moon.pkg").write_text(content)
         self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+        ubuntu_manifest = self.root / "ubuntu/moon.pkg"
+        ubuntu_manifest.write_text(
+            'import { "f4ah6o/gpui/accessibility", "f4ah6o/gpui/capability" }\n',
+            encoding="utf-8",
+        )
+        self.assertTrue(any(
+            "ubuntu/: forbidden runtime package edge" in error
+            for error in checker.validate_runtime_dependencies(self.root)
+        ))
+        ubuntu_manifest.write_text(
+            'import { "f4ah6o/gpui/accessibility" }\n',
+            encoding="utf-8",
+        )
         (self.root / "core/moon.pkg").write_text('import { "f4ah6o/gpui/ubuntu" @native }')
         self.assertTrue(any("forbidden runtime package edge" in error
                             for error in checker.validate_runtime_dependencies(self.root)))
@@ -659,7 +685,7 @@ class RuntimeDependencyTests(unittest.TestCase):
                 '"f4ah6o/gpui/platform/testing" }\n'
             ),
             "ubuntu": (
-                'import { "f4ah6o/gpui/platform", '
+                'import { "f4ah6o/gpui/accessibility", "f4ah6o/gpui/platform", '
                 '"f4ah6o/gpui/platform/linux_text", '
                 '"f4ah6o/gpui/platform/testing", "f4ah6o/gpui/text", '
                 '"f4ah6o/gpui/primitives", "f4ah6o/gpui/diagnostics", '
@@ -719,6 +745,27 @@ class WorkflowContractTests(unittest.TestCase):
             [],
         )
 
+
+    def test_generated_interface_gate_requires_copying_moon_info_output(self) -> None:
+        workflow = ROOT / ".github/workflows/contracts.yml"
+        workflow_text = workflow.read_text(encoding="utf-8")
+        info_command = "moon info --target native --package f4ah6o/gpui/ubuntu"
+        copy_command = "cp _build/native/debug/check/ubuntu/ubuntu.mbti ubuntu/pkg.generated.mbti"
+        compare_command = "git diff --exit-code -- ubuntu/pkg.generated.mbti"
+        self.assertEqual(workflow_text.count(info_command), 1)
+        self.assertEqual(workflow_text.count(copy_command), 1)
+        self.assertEqual(workflow_text.count(compare_command), 1)
+        self.assertEqual(workflow_text.count("name: ubuntu-generated-interface"), 1)
+        self.assertIn("path: ubuntu/pkg.generated.mbti", workflow_text)
+        self.assertIn("if-no-files-found: error", workflow_text)
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "contracts.yml"
+            path.write_text(workflow_text.replace(copy_command + "\n", "", 1), encoding="utf-8")
+            errors = checker._validate_workflow(path)
+        self.assertIn(
+            f".github/workflows/contracts.yml: missing required command {copy_command!r}",
+            errors,
+        )
 
 if __name__ == "__main__":
     unittest.main()

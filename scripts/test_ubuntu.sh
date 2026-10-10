@@ -23,6 +23,8 @@ _build/ubuntu-e2e/backend-test --clipboard-unit
 sh scripts/test_ubuntu_ingress.sh
 env -u DISPLAY -u WAYLAND_DISPLAY \
   moon test examples/linux_text_field --target native --deny-warn --no-parallelize
+env -u DISPLAY -u WAYLAND_DISPLAY \
+  moon test examples/ubuntu_button/fixture --target native --deny-warn --no-parallelize
 # Preserve the original scenes emitted by actual control code with the same
 # real-font provider used by the renderer. GPF1/GPF2 replay is test-only injected
 # control-to-renderer gate, distinct from actual compositor keyboard ingress.
@@ -96,7 +98,11 @@ for scale in 1 2; do
     tail -n 120 "$PWD/_build/ubuntu-e2e/weston-scale-$scale.log" >&2 || true
     exit "$moon_status"
   fi
+  # The native button adapter test starts a Host and exercises owner-thread
+  # projection callbacks while this isolated compositor is available.
+  GPUI_UBUNTU_E2E=1 timeout 120 moon test examples/ubuntu_button --target native --deny-warn --no-parallelize
   GPUI_UBUNTU_SMOKE=1 timeout 30 moon run examples/ubuntu --target native
+  GPUI_UBUNTU_BUTTON_SMOKE=1 timeout 30 moon run examples/ubuntu_button --target native
   GPUI_FIELD_E2E=1 timeout 120 moon test examples/linux_text_field \
     --target native --deny-warn --no-parallelize
   GPUI_FIELD_SMOKE=1 timeout 30 moon run examples/linux_text_field --target native

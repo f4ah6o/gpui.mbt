@@ -7,6 +7,29 @@ pub struct Host {
 }
 
 ///|
+/// A copied description of one currently bound Wayland output. Geometry, mode,
+/// and scale are committed at the last wl_output.done callback; readiness,
+/// binding, and surface-enter state reflect current protocol events. Array
+/// order is ephemeral and is not a persistent output identifier.
+pub(all) struct OutputInfo {
+  is_ready : Bool
+  has_geometry : Bool
+  has_current_mode : Bool
+  scale : Int
+  physical_width_mm : Int
+  physical_height_mm : Int
+  subpixel : Int
+  transform : Int
+  mode_width_px : Int
+  mode_height_px : Int
+  refresh_millihz : Int
+  is_entered : Bool
+} derive(Eq)
+
+///|
+pub extend OutputInfo with Eq::{not_equal, equal}
+
+///|
 pub(all) enum HostState {
   Running
   Quiescing
@@ -24,6 +47,9 @@ extern "C" fn native_stop(host : Int) -> Int = "gpui_stop"
 
 ///|
 extern "C" fn native_state(host : Int) -> Int = "gpui_state"
+
+///|
+extern "C" fn native_owner_thread_check(host : Int) -> Int = "gpui_owner_thread_check"
 
 ///|
 extern "C" fn native_wake(host : Int) -> Int = "gpui_wake"
@@ -71,6 +97,15 @@ extern "C" fn native_metrics(
   window : Int,
   metrics : FixedArray[Double],
 ) -> Int = "gpui_metrics"
+
+///|
+#borrow(records)
+extern "C" fn native_output_snapshot(
+  abi : Int,
+  host : Int,
+  records : FixedArray[Double],
+  capacity : Int,
+) -> Int = "gpui_output_snapshot_v1"
 
 ///|
 #borrow(metrics)
@@ -243,6 +278,15 @@ pub fn Host::state(self : Host) -> HostState {
       _ => Stopped
     }
   }
+}
+
+///|
+/// Check that this live Host belongs to the calling UI-owner thread.
+/// The native check has no side effect and does not marshal work.
+pub fn Host::assert_owner_thread(
+  self : Host,
+) -> Result[Unit, @diagnostics.FrameworkError] {
+  outcome(native_owner_thread_check(self.token), "assert_owner_thread")
 }
 
 ///|
@@ -494,6 +538,129 @@ fn exact_i32(value : Double) -> Bool {
   value >= -2147483648.0 &&
   value <= 2147483647.0 &&
   value.to_int().to_double() == value
+}
+
+///|
+const OUTPUT_SNAPSHOT_ABI : Int = 1
+
+///|
+const OUTPUT_CAPACITY : Int = 16
+
+///|
+const OUTPUT_INFO_FIELDS : Int = 12
+
+///|
+fn output_snapshot_decode_error(
+  message : String,
+) -> @diagnostics.FrameworkError {
+  native_text_decode_error(
+    @diagnostics.ConversionFailed,
+    "display_snapshot",
+    message,
+  )
+}
+
+///|
+/// Decode copied records. Native storage is never retained; malformed records
+/// fail closed instead of exposing partial metadata.
+fn decode_output_snapshot(
+  records : FixedArray[Double],
+  count : Int,
+) -> Result[Array[OutputInfo], @diagnostics.FrameworkError] {
+  if count < 0 ||
+    count > OUTPUT_CAPACITY ||
+    records.length() != OUTPUT_CAPACITY * OUTPUT_INFO_FIELDS {
+    return Err(output_snapshot_decode_error("invalid output snapshot length"))
+  }
+  let outputs : Array[OutputInfo] = []
+  for index = 0; index < count; index = index + 1 {
+    let base = index * OUTPUT_INFO_FIELDS
+    let mut all_integral = true
+    for field = 0; field < OUTPUT_INFO_FIELDS; field = field + 1 {
+      if !exact_i32(records[base + field]) {
+        all_integral = false
+      }
+    }
+    if !all_integral {
+      return Err(output_snapshot_decode_error("non-integer output field"))
+    }
+    let ready = records[base] == 1.0
+    let geometry = records[base + 1] == 1.0
+    let current_mode = records[base + 2] == 1.0
+    let scale = records[base + 3].to_int()
+    let physical_width = records[base + 4].to_int()
+    let physical_height = records[base + 5].to_int()
+    let subpixel = records[base + 6].to_int()
+    let transform = records[base + 7].to_int()
+    let mode_width = records[base + 8].to_int()
+    let mode_height = records[base + 9].to_int()
+    let refresh = records[base + 10].to_int()
+    let entered = records[base + 11] == 1.0
+    if records[base] < 0.0 ||
+      records[base] > 1.0 ||
+      records[base + 1] < 0.0 ||
+      records[base + 1] > 1.0 ||
+      records[base + 2] < 0.0 ||
+      records[base + 2] > 1.0 ||
+      records[base + 11] < 0.0 ||
+      records[base + 11] > 1.0 ||
+      scale < 1 ||
+      physical_width < 0 ||
+      physical_height < 0 ||
+      subpixel < 0 ||
+      mode_width < 0 ||
+      mode_height < 0 ||
+      refresh < 0 ||
+      (
+        !geometry &&
+        (
+          physical_width != 0 ||
+          physical_height != 0 ||
+          subpixel != 0 ||
+          transform != 0
+        )
+      ) ||
+      (!current_mode && (mode_width != 0 || mode_height != 0 || refresh != 0)) ||
+      (current_mode && (mode_width <= 0 || mode_height <= 0)) ||
+      (!ready && (geometry || current_mode || scale != 1)) {
+      return Err(output_snapshot_decode_error("inconsistent output metadata"))
+    }
+    outputs.push(OutputInfo::{
+      is_ready: ready,
+      has_geometry: geometry,
+      has_current_mode: current_mode,
+      scale,
+      physical_width_mm: physical_width,
+      physical_height_mm: physical_height,
+      subpixel,
+      transform,
+      mode_width_px: mode_width,
+      mode_height_px: mode_height,
+      refresh_millihz: refresh,
+      is_entered: entered,
+    })
+  }
+  Ok(outputs)
+}
+
+///|
+/// Returns copied, committed metadata for each currently bound Wayland output.
+/// The bounded list has no durable ordering or cross-call identity; Wayland
+/// global names and protocol proxies are intentionally private.
+pub fn Host::display_snapshot(
+  self : Host,
+) -> Result[Array[OutputInfo], @diagnostics.FrameworkError] {
+  let records = FixedArray::make(OUTPUT_CAPACITY * OUTPUT_INFO_FIELDS, 0.0)
+  let count = native_output_snapshot(
+    OUTPUT_SNAPSHOT_ABI,
+    self.token,
+    records,
+    records.length(),
+  )
+  if count < 0 {
+    return Err(backend_error(-count, "display_snapshot"))
+  }
+  decode_output_snapshot(records, count)
 }
 
 ///|

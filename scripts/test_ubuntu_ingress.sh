@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 sh scripts/prepare_ubuntu.sh
 build_dir=${GPUI_UBUNTU_INGRESS_BUILD_DIR:-_build/ubuntu-ingress}
 mkdir -p "$build_dir"
-for fixture in direct_text key_repeat ime_transport; do
+for fixture in direct_text key_repeat ime_transport output_metadata pointer_ingress; do
   script/linux_text_cc.py -std=c11 -Wall -Wextra -Werror ${GPUI_TEST_CFLAGS:-} \
     "tests/ubuntu/${fixture}_test.c" ubuntu/xdg-shell-protocol.c \
     ubuntu/text-input-v1-protocol.c platform/linux_text/linux_text.c \

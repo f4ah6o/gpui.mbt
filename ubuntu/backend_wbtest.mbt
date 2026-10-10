@@ -419,6 +419,22 @@ fn[T] require_ok(result : Result[T, @diagnostics.FrameworkError]) -> T raise {
 }
 
 ///|
+fn trace_ubuntu_e2e_stage(
+  enabled : Bool,
+  stage : Int,
+  iteration : Int,
+  scale : Double,
+  window_generation : Int,
+) -> Unit {
+  // 1/2 bracket first present; 3/4 bracket dispatch polls; 5 means frame complete.
+  if enabled {
+    println(
+      "GPUI_UBUNTU_E2E_STAGE stage=\{stage} iteration=\{iteration} scale=\{scale} generation=\{window_generation}",
+    )
+  }
+}
+
+///|
 /// Clipboard and cursor depend on compositor seat resources. Headless
 /// compositors may omit those resources, so require a typed result and record
 /// the observed service status without weakening the window/render E2E.
@@ -449,11 +465,17 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
     record_optional_service(host, @platform.Cursor, "cursor")
     require_ok(host.require_capability(@platform.GrayscaleTextFrames))
     assert_true(Host::start() is Err(_))
+    let lifecycle_trace_enabled = @env.get_env_var(
+        "GPUI_UBUNTU_E2E_STAGE_TRACE",
+      ) ==
+      Some("1")
+    let mut window_generation = 0
     for iteration = 0; iteration < 24; iteration = iteration + 1 {
       println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=create")
       let window = require_ok(
         host.create_window(160, 120, "gpui.mbt E2E 日本語"),
       )
+      window_generation = window_generation + 1
       let events = require_ok(host.dispatch(0))
       let mut width = 160
       let mut height = 120
@@ -470,21 +492,39 @@ test "Wayland E2E lifecycle, stale snapshots, completion, recovery and stress" {
         }
       }
       println("GPUI_UBUNTU_E2E iteration=\{iteration} stage=first-present")
+      trace_ubuntu_e2e_stage(
+        lifecycle_trace_enabled, 1, iteration, scale, window_generation,
+      )
       require_ok(
         host.present(
           window,
           mixed_snapshot(width.to_double(), height.to_double(), scale),
         ),
       )
+      trace_ubuntu_e2e_stage(
+        lifecycle_trace_enabled, 2, iteration, scale, window_generation,
+      )
       let mut completed = false
       for _attempt = 0; _attempt < 40 && !completed; _attempt = _attempt + 1 {
-        for event in require_ok(host.dispatch(100)) {
+        trace_ubuntu_e2e_stage(
+          lifecycle_trace_enabled, 3, iteration, scale, window_generation,
+        )
+        let dispatch_events = require_ok(host.dispatch(100))
+        for event in dispatch_events {
           assert_true(event.sequence() > sequence)
           sequence = event.sequence()
           if event.kind() is @platform.FrameCompleted {
             completed = true
           }
           scale = event.scale()
+        }
+        trace_ubuntu_e2e_stage(
+          lifecycle_trace_enabled, 4, iteration, scale, window_generation,
+        )
+        if completed {
+          trace_ubuntu_e2e_stage(
+            lifecycle_trace_enabled, 5, iteration, scale, window_generation,
+          )
         }
       }
       assert_true(completed)

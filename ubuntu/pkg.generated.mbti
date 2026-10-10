@@ -2,6 +2,7 @@
 package "f4ah6o/gpui/ubuntu"
 
 import {
+  "f4ah6o/gpui/accessibility",
   "f4ah6o/gpui/diagnostics",
   "f4ah6o/gpui/platform",
   "f4ah6o/gpui/platform/testing",
@@ -15,6 +16,55 @@ import {
 // Errors
 
 // Types and methods
+pub struct AccessibilityExportId {
+  // private fields
+} derive(Eq)
+pub fn AccessibilityExportId::equal(Self, Self) -> Bool
+pub fn AccessibilityExportId::not_equal(Self, Self) -> Bool
+
+pub struct AccessibilityProjection {
+  // private fields
+}
+pub fn AccessibilityProjection::close(Self) -> Unit
+pub fn AccessibilityProjection::new() -> Result[Self, AccessibilityProjectionError]
+pub fn AccessibilityProjection::publish(Self, @accessibility.AccessibilityModel, @accessibility.AccessibilitySnapshot) -> Result[AccessibilityProjectionSnapshot, AccessibilityProjectionError]
+pub fn AccessibilityProjection::resolve_action(Self, AccessibilityExportId, @accessibility.AccessibilityAction) -> Result[@accessibility.ActionIntent, AccessibilityProjectionError]
+pub fn AccessibilityProjection::snapshot(Self) -> Result[AccessibilityProjectionSnapshot, AccessibilityProjectionError]
+
+pub(all) enum AccessibilityProjectionError {
+  ExportIdentityExhausted
+  ForeignOwner
+  SourceClosed
+  StaleSnapshot
+  ProjectionClosed
+  SourceError(@accessibility.AccessibilityError)
+  ActionRejected(@accessibility.ActionError)
+} derive(Eq)
+pub fn AccessibilityProjectionError::equal(Self, Self) -> Bool
+pub fn AccessibilityProjectionError::not_equal(Self, Self) -> Bool
+
+pub struct AccessibilityProjectionNode {
+  // private fields
+}
+pub fn AccessibilityProjectionNode::bounds(Self) -> @primitives.Rect
+pub fn AccessibilityProjectionNode::children(Self) -> Array[AccessibilityExportId]
+pub fn AccessibilityProjectionNode::id(Self) -> AccessibilityExportId
+pub fn AccessibilityProjectionNode::is_enabled(Self) -> Bool
+pub fn AccessibilityProjectionNode::is_focused(Self) -> Bool
+pub fn AccessibilityProjectionNode::is_loading(Self) -> Bool
+pub fn AccessibilityProjectionNode::name(Self) -> String
+pub fn AccessibilityProjectionNode::parent(Self) -> AccessibilityExportId?
+pub fn AccessibilityProjectionNode::role(Self) -> @accessibility.AccessibilityRole
+pub fn AccessibilityProjectionNode::supported_actions(Self) -> Array[@accessibility.AccessibilityAction]
+
+pub struct AccessibilityProjectionSnapshot {
+  // private fields
+}
+pub fn AccessibilityProjectionSnapshot::nodes(Self) -> Array[AccessibilityProjectionNode]
+pub fn AccessibilityProjectionSnapshot::revision(Self) -> UInt64
+
+type AccessibilityProjectionState
+
 pub(all) enum EditorEvent {
   Platform(@platform.Event)
   TextSession(TextSessionTarget, TextSessionEvent)
@@ -23,6 +73,7 @@ pub(all) enum EditorEvent {
 pub struct Host {
   // private fields
 }
+pub fn Host::assert_owner_thread(Self) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::begin_text_session(Self, @platform.WindowId, @text.TextDocument, @primitives.Rect) -> Result[Int, @diagnostics.FrameworkError]
 pub fn Host::cancel_text_session(Self, @platform.WindowId, Int) -> Result[Int, @diagnostics.FrameworkError]
 pub fn Host::copy_frame(Self, @platform.WindowId, FixedArray[Byte]) -> Result[Unit, @diagnostics.FrameworkError]
@@ -30,6 +81,7 @@ pub fn Host::create_window(Self, Int, Int, String) -> Result[@platform.WindowId,
 pub fn Host::destroy_window(Self, @platform.WindowId) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::direct_keyboard_text_epoch(Self, @platform.WindowId) -> Result[Int, @diagnostics.FrameworkError]
 pub fn Host::dispatch(Self, Int) -> Result[Array[@platform.Event], @diagnostics.FrameworkError]
+pub fn Host::display_snapshot(Self) -> Result[Array[OutputInfo], @diagnostics.FrameworkError]
 pub fn Host::end_text_session(Self, @platform.WindowId, Int) -> Result[Unit, @diagnostics.FrameworkError]
 pub fn Host::frame_metrics(Self, @platform.WindowId) -> Result[(Int, Int, Double), @diagnostics.FrameworkError]
 pub fn Host::next_editor_event(Self, timeout_ms? : Int) -> Result[EditorEvent?, @diagnostics.FrameworkError]
@@ -63,6 +115,23 @@ pub(all) enum HostState {
 } derive(Eq)
 pub fn HostState::equal(Self, Self) -> Bool
 pub fn HostState::not_equal(Self, Self) -> Bool
+
+pub(all) struct OutputInfo {
+  is_ready : Bool
+  has_geometry : Bool
+  has_current_mode : Bool
+  scale : Int
+  physical_width_mm : Int
+  physical_height_mm : Int
+  subpixel : Int
+  transform : Int
+  mode_width_px : Int
+  mode_height_px : Int
+  refresh_millihz : Int
+  is_entered : Bool
+} derive(Eq)
+pub fn OutputInfo::equal(Self, Self) -> Bool
+pub fn OutputInfo::not_equal(Self, Self) -> Bool
 
 pub(all) struct TextSessionDeletion {
   index_bytes : Int

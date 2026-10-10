@@ -6,6 +6,7 @@ import {
   "f4ah6o/gpui/diagnostics",
   "f4ah6o/gpui/scene",
   "f4ah6o/gpui/platform/testing",
+  "f4ah6o/gpui/accessibility",
   "moonbitlang/core/encoding/utf8",
 }
 

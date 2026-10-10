@@ -44,6 +44,8 @@ text_layout ──> text + primitives + MoonBit standard/core
 platform/linux_text ──> text_layout + text + primitives + Linux PangoFT2/Fontconfig FFI
 ubuntu ──private raster ABI──> platform/linux_text
 ubuntu ──UTF-16 validation──> text
+ubuntu ──headless semantic projection──> accessibility
+examples/ubuntu_button ──transport-free adapter──> ubuntu + accessibility + button fixture
 diagnostics ─> MoonBit standard/core + primitives
 core       ──> MoonBit standard/core + diagnostics + primitives
 ```
@@ -74,8 +76,9 @@ The facade is a re-export surface; it must not contain a second implementation o
 | `renderer API` | render submission and resource-lifetime contract | `scene/`, `primitives/` | a concrete renderer vocabulary in public app APIs |
 | `platform API` | window, input, display, text, clipboard, timer, accessibility contracts | `core/`, `diagnostics/`, `primitives/`, renderer API | platform-specific types in core/facade signatures |
 | `platform/` (first slice) | shared Backend trait, logical window IDs, copied ordered events | `scene/`, `diagnostics/`, `primitives/` | native pointers or OS types |
-| `ubuntu/` | Wayland host/window, integer scale, basic input, EGL/GLES quad and bounded grayscale text renderer | `platform/`, `scene/`, `diagnostics/`, `primitives/`, `text/` for UTF-16 validation, private `platform/linux_text` raster ABI, system native APIs | native handles in public application signatures; Pango objects |
+| `ubuntu/` | Wayland host/window, integer scale, basic input, EGL/GLES quad and bounded grayscale text renderer; headless semantic-model projection without an OS bridge | `platform/`, `scene/`, `diagnostics/`, `primitives/`, `text/` for UTF-16 validation, `accessibility/` for semantic projection, private `platform/linux_text` raster ABI, system native APIs | native handles in public application signatures; Pango objects; an OS accessibility bridge |
 | `examples/ubuntu/` | native executable consuming the shared scene/window contracts | `ubuntu/`, `platform/`, `scene/`, `diagnostics/`, `primitives/`, standard env | private backend tokens |
+| `examples/ubuntu_button/` | native Button executable plus in-process semantic adapter | `ubuntu/`, `accessibility/`, `examples/ubuntu_button/fixture`, `platform/`, `scene/`, `diagnostics/`, `primitives/`, standard env | D-Bus/AT-SPI transport or OS-accessibility claims |
 | `windows/` | Win32 window/event loop, scale events, basic input, D3D11 hardware-or-WARP quad presentation | `platform/`, `scene/`, `diagnostics/`, `primitives/`, Windows system APIs | native handles in public application signatures |
 | `examples/windows/` | native executable consuming the shared scene/window contracts | `windows/`, `platform/`, `scene/`, `diagnostics/`, `primitives/`, standard env | private backend tokens |
 | `platform/windows_text/` | Windows DirectWrite copied single-line geometry and private bounded grayscale mask adapter | `text_layout/`, `text/`, `primitives/`, Windows DirectWrite APIs | native handles or shaping objects in portable values |
@@ -174,11 +177,12 @@ inventory, licenses, upgrade sources and failure behavior are documented in
 [ubuntu.md](ubuntu.md#native-dependency-inventory-and-exception). No portable
 package imports the concrete backend. The executable package audit now permits
 `platform -> scene/diagnostics/primitives`; `ubuntu` may depend on
-`platform/scene/diagnostics/primitives`, `text`, and the private
-`platform/linux_text` raster ABI.
-and the native example edges above. It audits aliased imports and whitebox
-test imports as well as blackbox test imports. All other runtime dependencies
-continue to require a written exception.
+`platform/scene/diagnostics/primitives`, `text`, `accessibility`, and the private
+`platform/linux_text` raster ABI; the Ubuntu Button executable may consume
+`accessibility` for its in-process adapter, alongside the native example edges
+above. It audits aliased imports and whitebox test imports as well as blackbox
+test imports. All other runtime dependencies continue to require a written
+exception.
 
 The Linux text adapter has a Linux-only PangoFT2/Fontconfig system-library
 exception. `text_layout/` remains portable, while `platform/linux_text/` owns
