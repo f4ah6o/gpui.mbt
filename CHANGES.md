@@ -42,6 +42,14 @@
 
 ### Migration
 
+## 0.2.2 - 2026-10-10
+
+### Fixed
+
+- Windows wheel deltas now update only the event slot accepted by the shared
+  input queue. Queue or sequence exhaustion can no longer overwrite an earlier
+  event's input payload.
+
 ## 0.2.1 - 2026-10-10
 
 ### Added
