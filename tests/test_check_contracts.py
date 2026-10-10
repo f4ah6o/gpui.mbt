@@ -262,7 +262,7 @@ class RuntimeDependencyTests(unittest.TestCase):
     def test_accessibility_is_portable_and_cannot_import_native_or_action_leaves(self) -> None:
         manifest = self.root / "accessibility/moon.pkg"
         self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
-        for dependency in ("platform", "capability", "mcp"):
+        for dependency in ("platform", "ubuntu", "capability", "mcp"):
             manifest.write_text(
                 f'import {{ "f4ah6o/gpui/{dependency}" }}\n',
                 encoding="utf-8",
@@ -619,13 +619,30 @@ class RuntimeDependencyTests(unittest.TestCase):
     def test_backend_edges_aliases_and_whitebox_imports_are_audited(self) -> None:
         for package, content in {
             "platform": 'import { "f4ah6o/gpui/scene", "f4ah6o/gpui/diagnostics" }',
-            "ubuntu": 'import { "f4ah6o/gpui/platform" @shared, "f4ah6o/gpui/scene" }\nimport { "moonbitlang/core/env" } for "wbtest"',
+            "ubuntu": (
+                'import { "f4ah6o/gpui/accessibility", '
+                '"f4ah6o/gpui/platform" @shared, "f4ah6o/gpui/scene" }\n'
+                'import { "moonbitlang/core/env" } for "wbtest"'
+            ),
             "examples/ubuntu": 'import { "f4ah6o/gpui/ubuntu" @native }',
         }.items():
             directory = self.root / package
             directory.mkdir(parents=True)
             (directory / "moon.pkg").write_text(content)
         self.assertEqual(checker.validate_runtime_dependencies(self.root), [])
+        ubuntu_manifest = self.root / "ubuntu/moon.pkg"
+        ubuntu_manifest.write_text(
+            'import { "f4ah6o/gpui/accessibility", "f4ah6o/gpui/capability" }\n',
+            encoding="utf-8",
+        )
+        self.assertTrue(any(
+            "ubuntu/: forbidden runtime package edge" in error
+            for error in checker.validate_runtime_dependencies(self.root)
+        ))
+        ubuntu_manifest.write_text(
+            'import { "f4ah6o/gpui/accessibility" }\n',
+            encoding="utf-8",
+        )
         (self.root / "core/moon.pkg").write_text('import { "f4ah6o/gpui/ubuntu" @native }')
         self.assertTrue(any("forbidden runtime package edge" in error
                             for error in checker.validate_runtime_dependencies(self.root)))
@@ -659,7 +676,7 @@ class RuntimeDependencyTests(unittest.TestCase):
                 '"f4ah6o/gpui/platform/testing" }\n'
             ),
             "ubuntu": (
-                'import { "f4ah6o/gpui/platform", '
+                'import { "f4ah6o/gpui/accessibility", "f4ah6o/gpui/platform", '
                 '"f4ah6o/gpui/platform/linux_text", '
                 '"f4ah6o/gpui/platform/testing", "f4ah6o/gpui/text", '
                 '"f4ah6o/gpui/primitives", "f4ah6o/gpui/diagnostics", '

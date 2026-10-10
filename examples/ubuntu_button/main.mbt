@@ -196,6 +196,9 @@ fn ubuntu_button_run() -> Unit {
     }
   }
 
+  // Revoke the fixture's owner-scoped accessibility model before its host
+  // window goes away, so retained requests cannot outlive the demo session.
+  demo.close()
   ignore(host.destroy_window(window))
   ubuntu_button_required(host.stop())
   if smoke && frames == 0 {

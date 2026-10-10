@@ -2,6 +2,7 @@
 package "f4ah6o/gpui/ubuntu"
 
 import {
+  "f4ah6o/gpui/accessibility",
   "f4ah6o/gpui/diagnostics",
   "f4ah6o/gpui/platform",
   "f4ah6o/gpui/platform/testing",
@@ -15,6 +16,55 @@ import {
 // Errors
 
 // Types and methods
+pub struct AccessibilityExportId {
+  // private fields
+} derive(Eq)
+pub fn AccessibilityExportId::equal(Self, Self) -> Bool
+pub fn AccessibilityExportId::not_equal(Self, Self) -> Bool
+
+pub struct AccessibilityProjection {
+  // private fields
+}
+pub fn AccessibilityProjection::close(Self) -> Unit
+pub fn AccessibilityProjection::new() -> Result[Self, AccessibilityProjectionError]
+pub fn AccessibilityProjection::publish(Self, @accessibility.AccessibilityModel, @accessibility.AccessibilitySnapshot) -> Result[AccessibilityProjectionSnapshot, AccessibilityProjectionError]
+pub fn AccessibilityProjection::resolve_action(Self, AccessibilityExportId, @accessibility.AccessibilityAction) -> Result[@accessibility.ActionIntent, AccessibilityProjectionError]
+pub fn AccessibilityProjection::snapshot(Self) -> Result[AccessibilityProjectionSnapshot, AccessibilityProjectionError]
+
+pub(all) enum AccessibilityProjectionError {
+  ExportIdentityExhausted
+  ForeignOwner
+  SourceClosed
+  StaleSnapshot
+  ProjectionClosed
+  SourceError(@accessibility.AccessibilityError)
+  ActionRejected(@accessibility.ActionError)
+} derive(Eq)
+pub fn AccessibilityProjectionError::equal(Self, Self) -> Bool
+pub fn AccessibilityProjectionError::not_equal(Self, Self) -> Bool
+
+pub struct AccessibilityProjectionNode {
+  // private fields
+}
+pub fn AccessibilityProjectionNode::bounds(Self) -> @primitives.Rect
+pub fn AccessibilityProjectionNode::children(Self) -> Array[AccessibilityExportId]
+pub fn AccessibilityProjectionNode::id(Self) -> AccessibilityExportId
+pub fn AccessibilityProjectionNode::is_enabled(Self) -> Bool
+pub fn AccessibilityProjectionNode::is_focused(Self) -> Bool
+pub fn AccessibilityProjectionNode::is_loading(Self) -> Bool
+pub fn AccessibilityProjectionNode::name(Self) -> String
+pub fn AccessibilityProjectionNode::parent(Self) -> AccessibilityExportId?
+pub fn AccessibilityProjectionNode::role(Self) -> @accessibility.AccessibilityRole
+pub fn AccessibilityProjectionNode::supported_actions(Self) -> Array[@accessibility.AccessibilityAction]
+
+pub struct AccessibilityProjectionSnapshot {
+  // private fields
+}
+pub fn AccessibilityProjectionSnapshot::nodes(Self) -> Array[AccessibilityProjectionNode]
+pub fn AccessibilityProjectionSnapshot::revision(Self) -> UInt64
+
+type AccessibilityProjectionState
+
 pub(all) enum EditorEvent {
   Platform(@platform.Event)
   TextSession(TextSessionTarget, TextSessionEvent)

@@ -401,6 +401,39 @@ pub fn AccessibilityModel::snapshot(
 }
 
 ///|
+/// Whether two model handles share one owner identity within the same target
+/// allocator/runtime scope. This distinguishes a copied handle from another
+/// live model even while both committed trees are empty, without exposing the
+/// owner token itself. Do not compare handles crossing worker or module-instance
+/// boundaries that do not share this allocator scope.
+pub fn AccessibilityModel::same_owner(
+  self : AccessibilityModel,
+  other : AccessibilityModel,
+) -> Bool {
+  self.state.val.owner == other.state.val.owner
+}
+
+///|
+/// Whether this model has been terminally closed. UI-owner-thread confined.
+pub fn AccessibilityModel::is_closed(self : AccessibilityModel) -> Bool {
+  self.state.val.closed
+}
+
+///|
+/// Whether a copied snapshot belongs to this model and is still its latest
+/// committed snapshot. Closed models return false even if the revision counter
+/// is saturated.
+pub fn AccessibilityModel::is_current_snapshot(
+  self : AccessibilityModel,
+  snapshot : AccessibilitySnapshot,
+) -> Bool {
+  let state = self.state.val
+  !state.closed &&
+  snapshot.owner == state.owner &&
+  snapshot.revision == state.current.revision
+}
+
+///|
 /// Validate and atomically publish a new complete tree. The model commits the
 /// snapshot before returning it; an adapter may notify the operating system
 /// only after this call returns. On error, the current snapshot and all

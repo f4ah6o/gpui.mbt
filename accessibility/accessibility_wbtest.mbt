@@ -158,3 +158,25 @@ test "accessibility reset can reach max revision once and close still revokes" {
   assert_true(model.snapshot().nodes.length() == 0)
   assert_true(initial.nodes.length() == 1)
 }
+
+///|
+test "accessibility model owner and close status are observable without IDs" {
+  let model = AccessibilityModel::new().unwrap()
+  let copied_handle = model
+  let foreign_model = AccessibilityModel::new().unwrap()
+  let empty = model.snapshot()
+  assert_true(model.same_owner(copied_handle))
+  assert_true(!model.same_owner(foreign_model))
+  assert_true(!model.is_closed())
+  assert_true(model.is_current_snapshot(empty))
+  assert_true(!foreign_model.is_current_snapshot(empty))
+  let committed = model.publish([accessibility_wb_root()]).unwrap()
+  assert_true(!model.is_current_snapshot(empty))
+  assert_true(model.is_current_snapshot(committed))
+  model.close()
+  assert_true(copied_handle.is_closed())
+  assert_true(!copied_handle.is_current_snapshot(committed))
+  assert_true(foreign_model.same_owner(foreign_model))
+  assert_true(!foreign_model.is_closed())
+  foreign_model.close()
+}
